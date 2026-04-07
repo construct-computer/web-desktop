@@ -84,7 +84,7 @@ export const useVoiceStore = create<VoiceStore>()((set, get) => ({
 
     // Create STT client
     sttClient = new ElevenLabsSTTClient(
-      { token: sttToken, commitStrategy: 'vad', vadSilenceThresholdSecs: 1.5 },
+      { token: sttToken, languageCode: 'en', commitStrategy: 'vad', vadSilenceThresholdSecs: 1.5 },
       {
         onSessionStarted: () => {
           set({ sttState: 'recording' });
