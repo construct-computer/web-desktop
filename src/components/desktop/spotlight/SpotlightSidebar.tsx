@@ -1,0 +1,264 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, PanelLeftClose } from 'lucide-react';
+import { useComputerStore } from '@/stores/agentStore';
+import { formatRelativeTime } from './utils';
+
+function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
+  if (key.startsWith('telegram_')) return { platform: 'Telegram', icon: Send, color: '#2AABEE' };
+  if (key.startsWith('slack_')) return { platform: 'Slack', icon: Hash, color: '#4A154B' };
+  if (key.startsWith('email_')) return { platform: 'Email', icon: Mail, color: '#EA4335' };
+  return null;
+}
+
+function SessionItem({
+  session,
+  isActive,
+  hasUnread,
+  onSwitch,
+  onRename,
+  onDelete,
+}: {
+  session: { key: string; title: string; lastActivity: number };
+  isActive: boolean;
+  hasUnread: boolean;
+  onSwitch: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(session.title);
+  const editRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editing) editRef.current?.focus();
+  }, [editing]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  const handleRename = useCallback(() => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== session.title) onRename(trimmed);
+    setEditing(false);
+  }, [editValue, session.title, onRename]);
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={() => { if (!editing) onSwitch(); }}
+        onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
+        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+          isActive
+            ? 'bg-white/10 text-[var(--color-text)]'
+            : 'text-[var(--color-text-muted)]/70 hover:bg-white/5 hover:text-[var(--color-text-muted)]'
+        }`}
+      >
+        {/* Platform or default icon */}
+        <div className="relative shrink-0">
+          {(() => {
+            const plat = getSessionPlatform(session.key);
+            if (plat) {
+              const Icon = plat.icon;
+              return <Icon className="w-3.5 h-3.5" style={{ color: plat.color, opacity: 0.8 }} />;
+            }
+            return <MessageSquare className="w-3.5 h-3.5 opacity-40" />;
+          })()}
+          {hasUnread && !isActive && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-1 ring-[#111113]" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <input
+              ref={editRef}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+                if (e.key === 'Escape') { setEditing(false); setEditValue(session.title); }
+              }}
+              onBlur={handleRename}
+              className="w-full bg-transparent text-[13px] outline-none border-b border-[var(--color-accent)]/30 text-[var(--color-text)]"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className={`text-[13px] truncate block ${hasUnread && !isActive ? 'font-semibold' : ''}`}>
+              {session.title || 'New Chat'}
+            </span>
+          )}
+        </div>
+        {!editing && (
+          <span className="text-[10px] text-[var(--color-text-muted)]/30 shrink-0 hidden group-hover:hidden">
+            {formatRelativeTime(session.lastActivity)}
+          </span>
+        )}
+        {!editing && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+            className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 transition-all"
+          >
+            <MoreHorizontal className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </button>
+
+      {/* Context menu */}
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          className="absolute right-2 top-full mt-1 z-50 min-w-[140px] rounded-lg overflow-hidden border border-white/10"
+          style={{
+            backgroundColor: 'rgba(16, 16, 20, 0.97)',
+            backdropFilter: 'blur(40px)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          }}
+        >
+          <button
+            onClick={() => {
+              setMenuOpen(false);
+              setEditValue(session.title);
+              setEditing(true);
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-white/70 hover:bg-white/10 transition-colors"
+          >
+            <Pencil className="w-3 h-3" />
+            Rename
+          </button>
+          <button
+            onClick={() => { setMenuOpen(false); onDelete(); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-red-400/80 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
+  const sessions = useComputerStore(s => s.chatSessions);
+  const activeKey = useComputerStore(s => s.activeSessionKey);
+  const createSession = useComputerStore(s => s.createSession);
+  const switchSession = useComputerStore(s => s.switchSession);
+  const deleteSession = useComputerStore(s => s.deleteSession);
+  const renameSession = useComputerStore(s => s.renameSession);
+  const loadSessions = useComputerStore(s => s.loadSessions);
+  const chatMessages = useComputerStore(s => s.chatMessages);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // On first load, mark all existing sessions as read so they don't show unread dots
+  useEffect(() => {
+    if (!initialized && sessions.length > 0) {
+      const map: Record<string, number> = {};
+      for (const s of sessions) {
+        map[s.key] = s.lastActivity;
+      }
+      setLastReadMap(map);
+      setInitialized(true);
+    }
+  }, [sessions, initialized]);
+
+  // Track when user switches sessions — mark current as read
+  useEffect(() => {
+    if (activeKey) {
+      setLastReadMap(prev => ({ ...prev, [activeKey]: Date.now() }));
+    }
+  }, [activeKey, chatMessages.length]);
+
+  const sorted = [...sessions].sort((a, b) => b.lastActivity - a.lastActivity);
+
+  const filtered = searchQuery.trim()
+    ? sorted.filter(s =>
+        s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.key.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : sorted;
+
+  return (
+    <div className="w-[240px] min-w-[240px] shrink-0 flex flex-col h-full border-r border-white/[0.08]">
+      {/* Collapse + New Chat */}
+      <div className="flex items-center gap-1.5 px-3 pt-4 pb-2">
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="shrink-0 p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] hover:bg-white/[0.06] transition-colors"
+            title="Hide sidebar"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          onClick={() => createSession()}
+          className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
+        >
+          <Plus className="w-4 h-4" />
+          New Chat
+        </button>
+      </div>
+
+      {/* Search */}
+      {sorted.length > 3 && (
+        <div className="px-3 pb-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--color-text-muted)]/30" />
+            <input
+              type="text"
+              placeholder="Search chats..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-7 pr-3 py-1.5 rounded-md text-[12px] bg-white/[0.04] border border-white/[0.06] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/20 outline-none focus:border-white/[0.12] transition-colors"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Session list */}
+      <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
+        {filtered.length > 0 && (
+          <div className="px-1 pt-2 pb-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/30">
+              Recents
+            </span>
+          </div>
+        )}
+        <div className="flex flex-col gap-0.5">
+          {filtered.map(session => (
+            <SessionItem
+              key={session.key}
+              session={session}
+              isActive={session.key === activeKey}
+              hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
+              onSwitch={() => switchSession(session.key)}
+              onRename={(title) => renameSession(session.key, title)}
+              onDelete={() => deleteSession(session.key)}
+            />
+          ))}
+        </div>
+        {filtered.length === 0 && searchQuery ? (
+          <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
+            No matches for "{searchQuery}"
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
+            No conversations yet
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

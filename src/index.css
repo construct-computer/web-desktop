@@ -1,0 +1,777 @@
+@import "tailwindcss";
+
+/* KaTeX math rendering */
+@import "katex/dist/katex.min.css";
+
+/* highlight.js syntax theme — github-dark works well in both modes.
+   We override colours via the .md-code-block styles below so the
+   actual theme choice is mainly for token granularity. */
+@import "highlight.js/styles/github-dark.min.css";
+
+/* Enable class-based dark mode (TailwindCSS v4 defaults to media query) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================
+   CONSTRUCT.COMPUTER - Glass Desktop OS Theme
+   Semi-transparent surfaces over backdrop-blur
+   ============================================ */
+
+@theme {
+  /* Font families */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-brand: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Default (light) — frosted white glass */
+  --color-bg: #f4f4f5; /* zinc-100 */
+  --color-surface: rgba(255, 255, 255, 0.35);
+  --color-surface-raised: rgba(255, 255, 255, 0.45);
+  --color-sidebar: rgba(244, 244, 245, 0.65);
+  --color-toolbar: rgba(255, 255, 255, 0.75);
+  --color-item-hover: rgba(0, 0, 0, 0.05);
+  --color-item-active: rgba(0, 0, 0, 0.1);
+  --color-border: rgba(0, 0, 0, 0.12);
+  --color-border-strong: rgba(0, 0, 0, 0.20);
+  --color-text: #111111;
+  --color-text-muted: rgba(0, 0, 0, 0.55);
+  --color-text-subtle: rgba(0, 0, 0, 0.35);
+  --color-accent: #3B82F6;
+  --color-accent-hover: #2563EB;
+  --color-accent-muted: rgba(59, 130, 246, 0.10);
+  --color-error: #DC2626;
+  --color-error-muted: rgba(220, 38, 38, 0.10);
+  --color-success: #16A34A;
+  --color-success-muted: rgba(22, 163, 74, 0.10);
+  --color-warning: #CA8A04;
+  --color-warning-muted: rgba(202, 138, 4, 0.10);
+  --color-titlebar: rgba(0, 0, 0, 0.03);
+  --color-titlebar-inactive: rgba(0, 0, 0, 0.01);
+  --color-taskbar: rgba(255, 255, 255, 0.15);
+  --color-selection: #3B82F6;
+
+  /* Window control dots - Mac style (vivid) */
+  --color-dot-close: #FF5F56;
+  --color-dot-minimize: #FFBD2E;
+  --color-dot-maximize: #27C93F;
+
+  /* Spacing */
+  --spacing-window-padding: 2px;
+  --spacing-titlebar-height: 28px;
+  --spacing-taskbar-height: 44px;
+
+  /* Border radius */
+  --radius-window: 6px;
+  --radius-button: 4px;
+  --radius-input: 4px;
+
+  /* Shadows */
+  --shadow-window: 0 10px 30px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-window-focus: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 10px 30px rgba(0, 0, 0, 0.15);
+  --shadow-menu: 0 10px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* Z-index layers */
+  --z-desktop: 0;
+  --z-window-base: 100;
+  --z-window-focused: 200;
+  --z-taskbar: 900;
+  --z-menu: 950;
+  --z-modal: 1000;
+  --z-tooltip: 2000;
+}
+
+/* Dark theme — glass on dark wallpaper */
+html.dark {
+  --color-bg: #09090b; /* zinc-950 */
+  --color-surface: rgba(255, 255, 255, 0.04);
+  --color-surface-raised: rgba(255, 255, 255, 0.08);
+  --color-sidebar: rgba(24, 24, 27, 0.55);
+  --color-toolbar: rgba(39, 39, 42, 0.65);
+  --color-item-hover: rgba(255, 255, 255, 0.1);
+  --color-item-active: rgba(255, 255, 255, 0.15);
+  --color-border: rgba(255, 255, 255, 0.10);
+  --color-border-strong: rgba(255, 255, 255, 0.18);
+  --color-text: #fafafa;
+  --color-text-muted: rgba(255, 255, 255, 0.5);
+  --color-text-subtle: rgba(255, 255, 255, 0.3);
+  --color-accent: #60A5FA;
+  --color-accent-hover: #93C5FD;
+  --color-accent-muted: rgba(96, 165, 250, 0.12);
+  --color-error: #F87171;
+  --color-error-muted: rgba(248, 113, 113, 0.12);
+  --color-success: #4ADE80;
+  --color-success-muted: rgba(74, 222, 128, 0.12);
+  --color-warning: #FACC15;
+  --color-warning-muted: rgba(250, 204, 21, 0.12);
+  --color-titlebar: rgba(255, 255, 255, 0.03);
+  --color-titlebar-inactive: rgba(255, 255, 255, 0.01);
+  --color-taskbar: rgba(0, 0, 0, 0.2);
+  --color-selection: #60A5FA;
+
+  --color-dot-close: #FF5F56;
+  --color-dot-minimize: #FFBD2E;
+  --color-dot-maximize: #27C93F;
+
+  --shadow-window: 0 15px 35px rgba(0, 0, 0, 0.4), 0 5px 15px rgba(0, 0, 0, 0.2);
+  --shadow-window-focus: 0 30px 60px rgba(0, 0, 0, 0.5), 0 12px 30px rgba(0, 0, 0, 0.3);
+  --shadow-menu: 0 15px 45px rgba(0, 0, 0, 0.45);
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace for code/terminal */
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Selection */
+::selection {
+  background-color: var(--color-selection);
+  color: white;
+}
+
+/* ═══════════════════════════════════════════════
+   Custom scrollbars — macOS-style auto-reveal
+   Thin pill-shaped thumb, auto-hides when idle
+   ═══════════════════════════════════════════════ */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+}
+
+html.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+/* Webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Default — nearly invisible */
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.25s ease;
+}
+
+/* Reveal when container is hovered */
+:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Highlight when thumb itself is hovered */
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.30);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Dragging the thumb */
+::-webkit-scrollbar-thumb:active {
+  background: rgba(0, 0, 0, 0.40);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Dark mode */
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html.dark :hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html.dark ::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.35);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* ═══════════════════════════════════════════════
+   Mobile / touch device utilities
+   ═══════════════════════════════════════════════ */
+
+/* Safe area insets for notched devices (iPhone X+, etc.) */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent pull-to-refresh and overscroll bouncing on the desktop shell */
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Disable tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Disable text selection on UI elements */
+.select-none {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Window content scrollable area */
+.window-content {
+  overflow: auto;
+  flex: 1;
+}
+
+/* Glass-compatible utility borders */
+.border-retro {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+}
+
+.border-retro-strong {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-button);
+}
+
+/* ═══════════════════════════════════════════════
+   Welcome screen — cinematic "hello" + brand reveal
+   ═══════════════════════════════════════════════ */
+
+.hello-cursive {
+  font-family: 'Betania Patmos', cursive;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* One-shot gradient shift for "hello" text.
+   With background-size: 250%, the visible window is 40% of the gradient image.
+   Position 0% shows the warm (red/orange) portion; animating to 100% slides
+   the green/emerald colours in from the right edge of the text. */
+@keyframes hello-gradient {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+/* Handwriting reveal — animated mask sweeps left to right with soft pen-tip edge.
+   Uses @property so the browser can interpolate the custom property in a gradient. */
+@property --hello-reveal {
+  syntax: '<percentage>';
+  initial-value: -10%;
+  inherits: false;
+}
+
+@keyframes hello-write {
+  from { --hello-reveal: -10%; }
+  to   { --hello-reveal: 110%; }
+}
+
+/* ═══════════════════════════════════════════════
+   Goodbye screen — cinematic "goodbye" reverse of hello
+   ═══════════════════════════════════════════════ */
+
+/* Goodbye gradient: starts warm/colorful (same palette as hello), fades to grayscale.
+   Uses background-position to shift the gradient, then filter for desaturation. */
+@keyframes goodbye-gradient {
+  0%   { background-position: 100% 50%; filter: saturate(1) brightness(1); }
+  40%  { background-position: 50% 50%;  filter: saturate(0.7) brightness(0.95); }
+  70%  { background-position: 20% 50%;  filter: saturate(0.3) brightness(0.85); }
+  100% { background-position: 0% 50%;   filter: saturate(0) brightness(0.7); }
+}
+
+/* Handwriting reveal for "goodbye" — same sweep as hello but slightly slower */
+@property --goodbye-reveal {
+  syntax: '<percentage>';
+  initial-value: -10%;
+  inherits: false;
+}
+
+@keyframes goodbye-write {
+  from { --goodbye-reveal: -10%; }
+  to   { --goodbye-reveal: 110%; }
+}
+
+/* Soft breathing glow behind content */
+@keyframes welcome-glow-pulse {
+  0%   { opacity: 0.35; transform: scale(1); }
+  50%  { opacity: 0.6;  transform: scale(1.06); }
+  100% { opacity: 0.35; transform: scale(1); }
+}
+
+@keyframes lockscreen-slide-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-100%); }
+}
+
+/* Indeterminate progress bar — slides a short bar back and forth */
+@keyframes indeterminate {
+  0%   { width: 25%; margin-left: 0; }
+  50%  { width: 35%; margin-left: 65%; }
+  100% { width: 25%; margin-left: 0; }
+}
+
+/* Toast banner slide-in from right */
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Toast banner slide-out to right */
+@keyframes toast-slide-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100%); }
+}
+
+/* Subagent shimmer — a subtle gradient sweep across running subagent labels */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-muted) 0%,
+    var(--color-accent) 40%,
+    var(--color-text-muted) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════
+   Markdown / Rich-text renderer (.md-root)
+   Used inside agent chat bubbles.
+   ═══════════════════════════════════════════════ */
+
+/* --- Prose spacing --- */
+.md-root p            { margin: 0.35em 0; line-height: 1.55; }
+.md-root p:first-child { margin-top: 0; }
+.md-root p:last-child  { margin-bottom: 0; }
+.md-root ul, .md-root ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.md-root li { margin: 0.15em 0; line-height: 1.5; }
+.md-root li > p { margin: 0; }   /* no double-spacing inside list items */
+.md-root h1, .md-root h2, .md-root h3,
+.md-root h4, .md-root h5, .md-root h6 {
+  margin: 0.75em 0 0.3em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md-root h1:first-child, .md-root h2:first-child,
+.md-root h3:first-child { margin-top: 0; }
+.md-root h1 { font-size: 1.25em; }
+.md-root h2 { font-size: 1.15em; }
+.md-root h3 { font-size: 1.05em; }
+.md-root hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0.75em 0;
+}
+
+/* --- Inline code --- */
+.md-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--color-text);
+  word-break: break-word;
+}
+html.dark .md-inline-code {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- Fenced code blocks --- */
+.md-code-block {
+  position: relative;
+  margin: 0.5em 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+.md-code-block pre {
+  margin: 0;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.55;
+  background: transparent !important;  /* override highlight.js theme bg */
+}
+.md-code-block code {
+  background: transparent !important;
+}
+
+/* Copy button — top-right of code block */
+.md-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.7em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.md-code-block:hover .md-copy-btn { opacity: 1; }
+.md-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* --- Links --- */
+.md-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  transition: color 0.12s;
+}
+.md-link:hover { color: var(--color-accent-hover); }
+
+/* --- Blockquotes --- */
+.md-blockquote {
+  margin: 0.5em 0;
+  padding: 0.25em 0.75em;
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-muted);
+  background: var(--color-accent-muted);
+  border-radius: 0 4px 4px 0;
+}
+.md-blockquote p { margin: 0.2em 0; }
+
+/* --- Tables (GFM) --- */
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.md-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.md-table-wrap th,
+.md-table-wrap td {
+  padding: 0.35em 0.6em;
+  text-align: left;
+  border: 1px solid var(--color-border);
+}
+.md-table-wrap th {
+  font-weight: 600;
+  background: var(--color-surface-raised);
+}
+.md-table-wrap tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+html.dark .md-table-wrap tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* --- KaTeX overrides --- */
+.md-root .katex-display {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md-root .katex { font-size: 1em; }
+
+/* --- Images --- */
+.md-root img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 0.4em 0;
+}
+
+/* --- Checkboxes (GFM task lists) --- */
+.md-root input[type="checkbox"] {
+  margin-right: 0.4em;
+  vertical-align: middle;
+  accent-color: var(--color-accent);
+}
+
+/* --- Strong / em --- */
+.md-root strong { font-weight: 600; }
+.md-root em     { font-style: italic; }
+
+/* ── Markdown document viewer typography ─────────────────────────────────── */
+.markdown-rendered {
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.markdown-rendered h1 { font-size: 2em; font-weight: 700; margin: 0.8em 0 0.4em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+.markdown-rendered h2 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.4em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.2em; }
+.markdown-rendered h3 { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.3em; }
+.markdown-rendered h4 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.2em; }
+.markdown-rendered h5, .markdown-rendered h6 { font-size: 1em; font-weight: 600; margin: 0.5em 0 0.2em; color: var(--color-text-muted); }
+.markdown-rendered p { margin: 0.6em 0; }
+.markdown-rendered a { color: var(--color-accent); text-decoration: underline; }
+.markdown-rendered a:hover { opacity: 0.8; }
+.markdown-rendered strong { font-weight: 600; }
+.markdown-rendered em { font-style: italic; }
+.markdown-rendered ul, .markdown-rendered ol { margin: 0.5em 0; padding-left: 1.8em; }
+.markdown-rendered li { margin: 0.25em 0; }
+.markdown-rendered ul li { list-style-type: disc; }
+.markdown-rendered ol li { list-style-type: decimal; }
+.markdown-rendered blockquote { margin: 0.5em 0; padding: 0.25em 0.75em; border-left: 3px solid var(--color-accent); color: var(--color-text-muted); background: var(--color-accent-muted); border-radius: 0 4px 4px 0; }
+.markdown-rendered code { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 0.85em; background: rgba(255,255,255,0.08); padding: 0.15em 0.35em; border-radius: 3px; }
+.markdown-rendered pre { margin: 0.6em 0; padding: 0.8em 1em; background: rgba(0,0,0,0.3); border-radius: 6px; overflow-x: auto; }
+.markdown-rendered pre code { background: none; padding: 0; font-size: 0.85em; }
+.markdown-rendered hr { border: none; border-top: 1px solid var(--color-border); margin: 1.5em 0; }
+.markdown-rendered table { width: 100%; border-collapse: collapse; margin: 0.6em 0; font-size: 0.85em; }
+.markdown-rendered th, .markdown-rendered td { padding: 0.35em 0.6em; text-align: left; border: 1px solid var(--color-border); }
+.markdown-rendered th { font-weight: 600; background: rgba(255,255,255,0.05); }
+.markdown-rendered img { max-width: 100%; border-radius: 6px; margin: 0.5em 0; }
+.markdown-rendered input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--color-accent); }
+
+/* ── Browser viewport visual feedback ──────────────────────────────────────── */
+
+/* Click ripple — expanding circle at click position, fades out */
+.viewport-click-ripple {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  margin-top: -12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  animation: viewport-ripple 350ms ease-out forwards;
+  z-index: 20;
+}
+
+@keyframes viewport-ripple {
+  0%   { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* Keystroke indicator — brief label at bottom-right of viewport */
+.viewport-keystroke {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+  animation: viewport-key-fade 500ms ease-out forwards;
+  z-index: 20;
+}
+
+@keyframes viewport-key-fade {
+  0%   { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 0.8; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* ── driver.js guided tour theme ────────────────────────────── */
+
+.construct-tour-popover.driver-popover {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+  font-family: var(--font-sans);
+  max-width: 380px;
+}
+
+.construct-tour-popover .tour-gif {
+  display: block;
+  width: 100%;
+  height: 180px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+html.dark .construct-tour-popover.driver-popover {
+  background: rgba(30, 28, 26, 0.85);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.construct-tour-popover .driver-popover-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.construct-tour-popover .driver-popover-description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+}
+
+.construct-tour-popover .driver-popover-progress-text {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-text-subtle);
+}
+
+.construct-tour-popover .driver-popover-footer {
+  margin-top: 16px;
+}
+
+.construct-tour-popover .driver-popover-navigation-btns {
+  gap: 8px;
+}
+
+.construct-tour-popover .driver-popover-next-btn,
+.construct-tour-popover .driver-popover-prev-btn,
+.construct-tour-popover .driver-popover-close-btn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 6px 14px;
+  border: none;
+  text-shadow: none;
+}
+
+.construct-tour-popover .driver-popover-next-btn {
+  background: var(--color-accent);
+  color: white;
+}
+
+.construct-tour-popover .driver-popover-next-btn:hover {
+  background: var(--color-accent-hover);
+}
+
+.construct-tour-popover .driver-popover-prev-btn {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.construct-tour-popover .driver-popover-prev-btn:hover {
+  background: var(--color-surface-raised);
+}
+
+.construct-tour-popover .driver-popover-close-btn {
+  display: none;
+}
+
+/* "fuck it, we ball" link — top-right corner, replaces the X */
+.construct-tour-popover .tour-skip-link {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  text-decoration: none;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.construct-tour-popover .tour-skip-link:hover {
+  color: var(--color-text-muted);
+  text-decoration: underline;
+}
+
+.construct-tour-popover .driver-popover-arrow-side-top {
+  border-bottom-color: rgba(255, 255, 255, 0.82);
+}
+
+.construct-tour-popover .driver-popover-arrow-side-bottom {
+  border-top-color: rgba(255, 255, 255, 0.82);
+}
+
+.construct-tour-popover .driver-popover-arrow-side-left {
+  border-right-color: rgba(255, 255, 255, 0.82);
+}
+
+.construct-tour-popover .driver-popover-arrow-side-right {
+  border-left-color: rgba(255, 255, 255, 0.82);
+}
+
+html.dark .construct-tour-popover .driver-popover-arrow-side-top {
+  border-bottom-color: rgba(30, 28, 26, 0.85);
+}
+
+html.dark .construct-tour-popover .driver-popover-arrow-side-bottom {
+  border-top-color: rgba(30, 28, 26, 0.85);
+}
+
+html.dark .construct-tour-popover .driver-popover-arrow-side-left {
+  border-right-color: rgba(30, 28, 26, 0.85);
+}
+
+html.dark .construct-tour-popover .driver-popover-arrow-side-right {
+  border-left-color: rgba(30, 28, 26, 0.85);
+}

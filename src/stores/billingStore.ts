@@ -1,0 +1,99 @@
+/**
+ * Billing & usage store — manages subscription state and current usage window.
+ * Refreshes usage periodically when the billing UI is visible.
+ */
+
+import { create } from 'zustand';
+import {
+  getSubscription,
+  getCurrentUsage,
+  getUsageHistory,
+  createCheckout,
+  createPortalSession,
+  createTopupCheckout,
+  type SubscriptionInfo,
+  type WindowUsage,
+  type UsageHistorySummary,
+} from '@/services/api';
+
+interface BillingState {
+  // Subscription
+  subscription: SubscriptionInfo | null;
+  subscriptionLoading: boolean;
+  subscriptionError: string | null;
+
+  // Current 6h usage window
+  usage: WindowUsage | null;
+  usageLoading: boolean;
+
+  // Usage history
+  history: UsageHistorySummary | null;
+
+  // Actions
+  fetchSubscription: () => Promise<void>;
+  fetchUsage: () => Promise<void>;
+  fetchHistory: (days?: number) => Promise<void>;
+  startCheckout: (coupon?: string) => Promise<string | null>;
+  openPortal: () => Promise<string | null>;
+  buyTopup: (amount: number) => Promise<string | null>;
+}
+
+export const useBillingStore = create<BillingState>((set) => ({
+  subscription: null,
+  subscriptionLoading: false,
+  subscriptionError: null,
+  usage: null,
+  usageLoading: false,
+  history: null,
+
+  fetchSubscription: async () => {
+    set({ subscriptionLoading: true, subscriptionError: null });
+    const result = await getSubscription();
+    if (result.success) {
+      set({ subscription: result.data, subscriptionLoading: false });
+    } else {
+      set({ subscriptionError: result.error, subscriptionLoading: false });
+    }
+  },
+
+  fetchUsage: async () => {
+    set({ usageLoading: true });
+    const result = await getCurrentUsage();
+    if (result.success) {
+      set({ usage: result.data, usageLoading: false });
+    } else {
+      set({ usageLoading: false });
+    }
+  },
+
+  fetchHistory: async (days = 7) => {
+    const result = await getUsageHistory(days);
+    if (result.success) {
+      set({ history: result.data });
+    }
+  },
+
+  startCheckout: async (coupon?: string) => {
+    const result = await createCheckout('pro', coupon);
+    if (result.success) {
+      return result.data.checkoutUrl;
+    }
+    return null;
+  },
+
+  openPortal: async () => {
+    const result = await createPortalSession();
+    if (result.success) {
+      return result.data.portalUrl;
+    }
+    return null;
+  },
+
+  buyTopup: async (amount: number) => {
+    const result = await createTopupCheckout(amount);
+    if (result.success) {
+      return result.data.checkoutUrl;
+    }
+    return null;
+  },
+}));

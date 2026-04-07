@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F3F4F6"/>
+    </linearGradient>
+  </defs>
+  <!-- Shadow -->
+  <rect x="10" y="14" width="100" height="96" rx="16" fill="black" opacity="0.15"/>
+  <!-- Calendar body -->
+  <rect x="10" y="10" width="100" height="96" rx="16" fill="url(#body)"/>
+  <!-- Red header -->
+  <rect x="10" y="10" width="100" height="34" rx="16" fill="url(#bg)"/>
+  <rect x="10" y="28" width="100" height="16" fill="url(#bg)"/>
+  <!-- Binding rings -->
+  <rect x="34" y="6" width="6" height="16" rx="3" fill="#9CA3AF"/>
+  <rect x="80" y="6" width="6" height="16" rx="3" fill="#9CA3AF"/>
+  <!-- Month text -->
+  <text x="60" y="36" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="white">MAR</text>
+  <!-- Day number -->
+  <text x="60" y="82" text-anchor="middle" font-family="Arial,sans-serif" font-size="36" font-weight="bold" fill="#1F2937">04</text>
+  <!-- Small dots for events -->
+  <circle cx="42" cy="92" r="3" fill="#7C3AED"/>
+  <circle cx="54" cy="92" r="3" fill="#2563EB"/>
+  <circle cx="66" cy="92" r="3" fill="#059669"/>
+</svg>
