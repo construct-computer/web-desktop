@@ -27,6 +27,7 @@ export function initAnalytics(): void {
 
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST || 'https://eu.i.posthog.com',
+    defaults: '2026-01-30',
     // Automatically capture pageviews (we use a SPA, so also enable SPA tracking)
     capture_pageview: false, // we'll track "screen views" manually via window open/close
     capture_pageleave: true,
