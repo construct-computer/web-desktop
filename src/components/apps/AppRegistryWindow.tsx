@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Search, Package, Loader2, Play,
+  Search, Package, Loader2, Play, Terminal,
   Check, X, AlertCircle, RefreshCw, ChevronLeft, Wrench, Monitor,
   User, Tag, KeyRound, Shield, ShieldAlert, Settings2, ExternalLink,
 } from 'lucide-react';
@@ -1189,6 +1189,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             search={search}
             onAppClick={openDetail}
             connectingToolkit={connectingToolkit}
+            onRefresh={fetchInstalled}
           />
         ) : isSearching ? (
           /* ── Search Results ── */
@@ -1248,11 +1249,13 @@ function InstalledTab({
   search,
   onAppClick,
   connectingToolkit,
+  onRefresh,
 }: {
   apps: UnifiedApp[];
   search: string;
   onAppClick: (app: UnifiedApp) => void;
   connectingToolkit: string | null;
+  onRefresh: () => Promise<void>;
 }) {
   // Local filter — filter by name/description matching the search bar
   const query = search.toLowerCase().trim();
@@ -1272,9 +1275,9 @@ function InstalledTab({
 
   if (filtered.length === 0) {
     if (query) {
-      return <EmptyState icon={<Search className="w-8 h-8" />} message={`No installed apps matching "${search}"`} />;
+      return (<div><EmptyState icon={<Search className="w-8 h-8" />} message={`No installed apps matching "${search}"`} /><DevInstallSection onRefresh={onRefresh} /></div>);
     }
-    return <EmptyState icon={<Package className="w-8 h-8" />} message="No apps installed" sub="Browse the Discover tab to find and install apps." />;
+    return (<div><EmptyState icon={<Package className="w-8 h-8" />} message="No apps installed" sub="Browse the Discover tab to find and install apps." /><DevInstallSection onRefresh={onRefresh} /></div>);
   }
 
   const hasMultipleSections = [mcpApps.length, skillApps.length, composioApps.length].filter(n => n > 0).length > 1;
@@ -1312,7 +1315,87 @@ function InstalledTab({
         </section>
       )}
 
+      <DevInstallSection onRefresh={onRefresh} />
     </div>
+  );
+}
+
+// ── Developer Install Section ──
+
+function DevInstallSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [installing, setInstalling] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const syncLaunchpad = useAppStore((s) => s.fetchApps);
+
+  const handleInstall = async () => {
+    if (!url.trim() || !name.trim()) return;
+    setInstalling(true);
+    setFeedback(null);
+    try {
+      const appId = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const result = await api.installApp(appId, { name: name.trim(), base_url: url.trim(), has_ui: false });
+      if (result.ok) {
+        setFeedback({ ok: true, msg: `Installed "${name.trim()}" successfully` });
+        setUrl('');
+        setName('');
+        await onRefresh();
+        syncLaunchpad();
+      } else {
+        setFeedback({ ok: false, msg: result.error || 'Installation failed' });
+      }
+    } catch (e: unknown) {
+      setFeedback({ ok: false, msg: e instanceof Error ? e.message : 'Installation failed' });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <section className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-[13px] font-medium text-black/40 dark:text-white/30 hover:text-black/60 dark:hover:text-white/50 transition-colors"
+      >
+        <Terminal className="w-3.5 h-3.5" />
+        Developer Tools
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          <input
+            type="text"
+            placeholder="My Custom App"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-1.5 text-[13px] rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/25 outline-none focus:border-black/20 dark:focus:border-white/20"
+          />
+          <input
+            type="text"
+            placeholder="https://my-app.workers.dev"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleInstall()}
+            className="w-full px-3 py-1.5 text-[13px] rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/25 outline-none focus:border-black/20 dark:focus:border-white/20"
+          />
+          <button
+            onClick={handleInstall}
+            disabled={installing || !url.trim() || !name.trim()}
+            className="px-3 py-1.5 text-[13px] font-medium rounded-lg bg-black/10 dark:bg-white/10 text-black/70 dark:text-white/70 hover:bg-black/15 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {installing ? <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" /> : null}
+            Install from URL
+          </button>
+          {feedback && (
+            <p className={`text-[12px] ${feedback.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+              {feedback.ok ? <Check className="w-3 h-3 inline mr-1" /> : <AlertCircle className="w-3 h-3 inline mr-1" />}
+              {feedback.msg}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
