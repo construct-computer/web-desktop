@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, LogOut, Monitor, Bot, Globe, Mail, Code, ArrowRight, Tag } from 'lucide-react';
+import { Loader2, LogOut, Monitor, Bot, Globe, Mail, Code, ArrowRight, Tag, Key, Zap, Check } from 'lucide-react';
 import { useSettingsStore, getWallpaperSrc } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
 import constructLogo from '@/assets/construct-logo.png';
@@ -17,12 +17,21 @@ interface SubscriptionGateProps {
   onLogout: () => void;
 }
 
-const CAPABILITIES = [
-  { icon: Bot, text: 'AI agent that works autonomously' },
-  { icon: Globe, text: 'Browses the web for you' },
-  { icon: Mail, text: 'Reads and sends emails' },
-  { icon: Code, text: 'Writes and runs code' },
-  { icon: Monitor, text: 'Your own persistent cloud desktop' },
+const STARTER_FEATURES = [
+  'Bring your own OpenRouter API key',
+  'Web search (50/day)',
+  'Terminal & code execution',
+  'Email, calendar, memory',
+  '500MB cloud storage',
+];
+
+const PRO_FEATURES = [
+  'AI included — no API key needed',
+  'Unlimited web search & browser',
+  'Unlimited terminal & code',
+  'Unlimited email, calendar, memory',
+  '2GB cloud storage',
+  'Background agents & scheduling',
 ];
 
 export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGateProps) {
@@ -31,33 +40,30 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
 
   const { fetchSubscription, startCheckout } = useBillingStore();
 
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [paymentSucceeded, setPaymentSucceeded] = useState(false);
-  const [coupon, setCoupon] = useState('');
-  const [showCoupon, setShowCoupon] = useState(false);
 
   // Check subscription on mount (handles returning from checkout via return_url)
   useEffect(() => {
     const check = async () => {
       await fetchSubscription();
       const sub = useBillingStore.getState().subscription;
-      if (sub?.plan === 'pro') {
+      if (sub?.plan === 'pro' || sub?.plan === 'starter') {
         onSubscribed();
       }
     };
     check();
   }, [fetchSubscription, onSubscribed]);
 
-  const handleSubscribe = useCallback(async () => {
-    setCheckoutLoading(true);
-    const trimmed = coupon.trim() || undefined;
-    const url = await startCheckout(trimmed);
-    setCheckoutLoading(false);
+  const handleSubscribe = useCallback(async (plan: 'starter' | 'pro') => {
+    setCheckoutLoading(plan);
+    const url = await startCheckout(undefined, plan);
+    setCheckoutLoading(null);
 
     if (url) {
       window.location.href = url;
     }
-  }, [startCheckout, coupon]);
+  }, [startCheckout]);
 
   return (
     <div className="relative h-screen flex items-center justify-center overflow-hidden">
@@ -77,17 +83,16 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
       <div className="fixed inset-0 bg-black/40" />
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col items-center max-w-md w-full mx-4">
+      <div className="relative z-10 flex flex-col items-center max-w-2xl w-full mx-4">
         <img
           src={constructLogo}
           alt="construct.computer"
-          className="w-20 h-20 mb-4 invert dark:invert-0 drop-shadow-md"
+          className="w-16 h-16 mb-3 invert dark:invert-0 drop-shadow-md"
           draggable={false}
         />
 
         {paymentSucceeded ? (
-          /* Payment succeeded — waiting for webhook */
-          <div className="w-full rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-6 shadow-2xl">
             <div className="flex flex-col items-center gap-4 py-6">
               <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
@@ -100,100 +105,91 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
           </div>
         ) : (
           <>
-            {/* Headline */}
-            <h1 className="text-[28px] text-white font-semibold tracking-tight mb-2 text-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]">
-              Your personal AI that gets things done
+            <h1 className="text-[26px] text-white font-semibold tracking-tight mb-1.5 text-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]">
+              Your personal AI computer
             </h1>
-            <p className="text-[15px] text-white/50 mb-8 text-center max-w-sm drop-shadow-sm leading-relaxed">
-              A computer in the cloud with an AI agent that can work for you — even while you're away.
+            <p className="text-[14px] text-white/50 mb-6 text-center max-w-md drop-shadow-sm leading-relaxed">
+              An AI agent with its own desktop, browser, terminal, email, and more.
             </p>
 
-            {/* Card */}
-            <div className="w-full rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-6 shadow-2xl">
-              {/* Card title */}
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-[15px] text-white font-semibold">Early Beta Access</h2>
-                <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
-                  Beta
-                </span>
-              </div>
-
-              <div className="space-y-3 mb-5">
-                {CAPABILITIES.map(({ icon: Icon, text }) => (
-                  <div key={text} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-white/[0.07] flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-4 h-4 text-white/70" />
-                    </div>
-                    <span className="text-[14px] text-white/80">{text}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Pricing */}
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-[28px] text-white font-bold">$0</span>
-                <span className="text-white/40 text-sm">for 3 days</span>
-              </div>
-              <div className="flex items-center gap-2 mb-5">
-                <span className="text-[18px] text-white/40 font-semibold line-through decoration-red-400/70 decoration-2">$250/mo</span>
-                <span className="text-[12px] text-emerald-400 font-medium">FREE for 3 days</span>
-              </div>
-              <p className="text-[12px] text-white/35 mb-5">
-                Then $250/mo after trial. Cancel anytime.
-              </p>
-
-              {/* Coupon toggle */}
-              {!showCoupon ? (
-                <button
-                  onClick={() => setShowCoupon(true)}
-                  className="flex items-center gap-1.5 text-[12px] text-white/40 hover:text-white/60 transition-colors mb-4"
-                >
-                  <Tag className="w-3 h-3" />
-                  Have a coupon code?
-                </button>
-              ) : (
-                <div className="mb-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={coupon}
-                      onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-                      placeholder="Enter code"
-                      className="flex-1 px-3 py-2 rounded-lg bg-white/[0.07] border border-white/10 text-white text-sm
-                        placeholder:text-white/25 focus:outline-none focus:border-white/25 transition-colors"
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => { setShowCoupon(false); setCoupon(''); }}
-                      className="px-3 py-2 rounded-lg text-xs text-white/40 hover:text-white/60 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+            {/* Two plan cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+              {/* Starter */}
+              <div className="rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-5 shadow-2xl flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <Key className="w-4 h-4 text-blue-400" />
+                  <h2 className="text-[14px] text-white font-semibold">Starter</h2>
                 </div>
-              )}
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  <span className="text-[24px] text-white font-bold">$9</span>
+                  <span className="text-white/40 text-sm">/month</span>
+                </div>
+                <p className="text-[11px] text-white/40 mb-4">Bring your own OpenRouter key</p>
 
-              {/* Subscribe button */}
-              <button
-                onClick={handleSubscribe}
-                disabled={checkoutLoading}
-                className="w-full py-3.5 px-4 rounded-xl bg-white text-black font-semibold text-[15px]
-                  hover:bg-white/90 active:scale-[0.98] transition-all duration-150
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  flex items-center justify-center gap-2 shadow-lg"
-              >
-                {checkoutLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    Get started
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+                <div className="space-y-2 mb-5 flex-1">
+                  {STARTER_FEATURES.map((text) => (
+                    <div key={text} className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-[12px] text-white/70 leading-snug">{text}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => handleSubscribe('starter')}
+                  disabled={!!checkoutLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white/10 border border-white/15 text-white font-semibold text-[13px]
+                    hover:bg-white/20 active:scale-[0.98] transition-all duration-150
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-2"
+                >
+                  {checkoutLoading === 'starter' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>Get Starter <ArrowRight className="w-3.5 h-3.5" /></>
+                  )}
+                </button>
+              </div>
+
+              {/* Pro */}
+              <div className="rounded-2xl border border-emerald-500/30 bg-black/40 backdrop-blur-xl p-5 shadow-2xl flex flex-col ring-1 ring-emerald-500/10">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <h2 className="text-[14px] text-white font-semibold">Pro</h2>
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-500/20 text-emerald-400 uppercase tracking-wider">Popular</span>
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  <span className="text-[24px] text-white font-bold">$250</span>
+                  <span className="text-white/40 text-sm">/month</span>
+                </div>
+                <p className="text-[11px] text-white/40 mb-4">Everything included, unlimited</p>
+
+                <div className="space-y-2 mb-5 flex-1">
+                  {PRO_FEATURES.map((text) => (
+                    <div key={text} className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-[12px] text-white/70 leading-snug">{text}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => handleSubscribe('pro')}
+                  disabled={!!checkoutLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-[13px]
+                    hover:bg-white/90 active:scale-[0.98] transition-all duration-150
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-2 shadow-lg"
+                >
+                  {checkoutLoading === 'pro' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>Get Pro <ArrowRight className="w-3.5 h-3.5" /></>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Logout link */}
             <button
               onClick={onLogout}
               className="mt-5 flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors"

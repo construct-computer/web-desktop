@@ -110,7 +110,7 @@ function App() {
   const { isConnected, forceReconnect } = useWebSocket();
   const isMobile = useIsMobile();
 
-  const isSubscribed = user?.plan === 'pro';
+  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter';
 
   const computer = useComputerStore((s) => s.computer);
   const computerLoading = useComputerStore((s) => s.isLoading);
