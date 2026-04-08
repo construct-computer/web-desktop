@@ -468,7 +468,7 @@ const PLAN_FEATURES: FeatureRow[] = [
   { label: 'AI model',           starter: 'Free (or own key)',   pro: 'Premium (included)',    starterHas: true,  proHas: true },
   { label: 'Web searches',       starter: '50 / day',            pro: 'Unlimited',             starterHas: true,  proHas: true },
   { label: 'Browser sessions',   starter: '10 / day',            pro: 'Unlimited',             starterHas: true,  proHas: true },
-  { label: 'Email inbox',         starter: '',                     pro: '@construct.computer',    starterHas: false, proHas: true },
+  { label: 'Email',               starter: 'Gmail (via Apps)',     pro: 'Agent inbox',            starterHas: true,  proHas: true },
   { label: 'Storage',            starter: '500 MB',              pro: '2 GB',                  starterHas: true,  proHas: true },
   { label: 'Apps',               starter: '3',                   pro: 'Unlimited',             starterHas: true,  proHas: true },
   { label: 'Scheduled tasks',    starter: '5',                   pro: 'Unlimited',             starterHas: true,  proHas: true },
