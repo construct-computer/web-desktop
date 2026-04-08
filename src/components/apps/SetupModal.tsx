@@ -39,14 +39,14 @@ function fullEmailUsername(base: string): string {
 }
 
 function extractBaseUsername(suggestion: string): string {
-  let s = suggestion.replace(/@agentmail\.to$/i, '');
+  let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
   s = s.replace(/-construct(-\d+)?$/, (_match, num) => num ?? '');
   return s;
 }
 
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
-  return `${base}${EMAIL_SUFFIX}@agentmail.to`;
+  return `${base}${EMAIL_SUFFIX}@construct.computer`;
 }
 
 // ── Component ──
@@ -91,7 +91,7 @@ export function SetupModal() {
   useEffect(() => {
     getEmailStatus().then((r) => {
       if (r.success && r.data?.configured && r.data.inboxId && r.data.email) {
-        const full = r.data.email.replace(/@agentmail\.to$/i, '');
+        const full = r.data.email.replace(/@(construct\.computer|agentmail\.to)$/i, '');
         const username = full.endsWith(EMAIL_SUFFIX) ? full.slice(0, -EMAIL_SUFFIX.length) : full;
         setEmailUsername(username);
         setEmailLocked(true);
@@ -271,7 +271,7 @@ export function SetupModal() {
                 disabled={emailLocked}
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-[var(--color-border)] text-[var(--color-text-muted)] text-[13px] font-medium select-none shrink-0">
-                {EMAIL_SUFFIX}@agentmail.to
+                {EMAIL_SUFFIX}@construct.computer
               </div>
             </div>
             {/* Status */}
@@ -293,7 +293,7 @@ export function SetupModal() {
               )}
               {!emailLocked && !emailChecking && emailAvailable === true && emailUsername && (
                 <span className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@agentmail.to is available
+                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@construct.computer is available
                 </span>
               )}
               {!emailLocked && !emailChecking && emailAvailable === false && (

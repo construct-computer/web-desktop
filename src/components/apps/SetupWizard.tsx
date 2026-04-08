@@ -158,7 +158,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
   useEffect(() => {
     getEmailStatus().then((r) => {
       if (r.success && r.data?.configured && r.data.inboxId && r.data.email) {
-        const full = r.data.email.replace(/@agentmail\.to$/i, '');
+        const full = r.data.email.replace(/@(construct\.computer|agentmail\.to)$/i, '');
         const username = full.endsWith(EMAIL_SUFFIX) ? full.slice(0, -EMAIL_SUFFIX.length) : full;
         setEmailUsername(username);
         setEmailLocked(true);
@@ -401,22 +401,22 @@ function fullEmailUsername(base: string): string {
  *  but also handle legacy full-form suggestions defensively.
  *  e.g. `ankush` → `ankush`
  *       `ankush-construct` → `ankush`
- *       `ankush-construct@agentmail.to` → `ankush`
+ *       `ankush-construct@construct.computer` → `ankush`
  *       `ankush-construct-2` → `ankush-2` */
 function extractBaseUsername(suggestion: string): string {
-  // Strip domain if present
-  let s = suggestion.replace(/@agentmail\.to$/i, '');
+  // Strip domain if present (handles both old and new domains)
+  let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
   // Strip -construct suffix (at end, or before a -N numeric suffix)
   s = s.replace(/-construct(-\d+)?$/, (_match, num) => num ?? '');
   return s;
 }
 
 /** Format a suggestion for display as a full email address.
- *  e.g. `ankush` → `ankush-construct@agentmail.to`
- *       `ankushsingh-2` → `ankushsingh-2-construct@agentmail.to` */
+ *  e.g. `ankush` → `ankush-construct@construct.computer`
+ *       `ankushsingh-2` → `ankushsingh-2-construct@construct.computer` */
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
-  return `${base}${EMAIL_SUFFIX}@agentmail.to`;
+  return `${base}${EMAIL_SUFFIX}@construct.computer`;
 }
 
 /* ─── Step 1: Profile + Email ───────────────────────────────── */
@@ -544,7 +544,7 @@ function Step1Screen({
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-black/5 dark:border-white/10
                               text-black/60 dark:text-white/60 text-[13px] font-medium select-none shrink-0 border-t-0 border-b-0">
-                {EMAIL_SUFFIX}@agentmail.to
+                {EMAIL_SUFFIX}@construct.computer
               </div>
             </div>
             {/* Status */}
@@ -566,7 +566,7 @@ function Step1Screen({
               )}
               {!emailLocked && !emailChecking && emailAvailable === true && emailUsername && (
                 <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 drop-shadow-sm">
-                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@agentmail.to is available
+                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@construct.computer is available
                 </span>
               )}
               {!emailLocked && !emailChecking && emailAvailable === false && (

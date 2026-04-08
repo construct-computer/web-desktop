@@ -154,7 +154,7 @@ export const STORAGE_KEYS = {
 export const UPLOAD_DIRECTORY = '/home/sandbox/workspace/uploads';
 
 /** AgentMail email domain. */
-export const AGENTMAIL_DOMAIN = 'agentmail.to';
+export const AGENTMAIL_DOMAIN = 'construct.computer';
 
 /** BroadcastChannel name for tab singleton. */
 export const TAB_SINGLETON_CHANNEL = 'construct-desktop';

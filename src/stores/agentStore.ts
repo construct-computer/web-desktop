@@ -1030,7 +1030,7 @@ export const useComputerStore = create<ComputerStore>()(
               if (cfg.data.agentmail_inbox_username) {
                 agentmailEmail = cfg.data.agentmail_inbox_username.includes('@')
                   ? cfg.data.agentmail_inbox_username
-                  : `${cfg.data.agentmail_inbox_username}@agentmail.to`;
+                  : `${cfg.data.agentmail_inbox_username}@construct.computer`;
               }
             }
           } catch { /* agent may not be ready yet */ }

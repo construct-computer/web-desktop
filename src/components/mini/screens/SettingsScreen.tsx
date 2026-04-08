@@ -117,8 +117,8 @@ function UserSection({ onBack }: { onBack: () => void }) {
         if (existing) {
           setAgentEmail(existing);
           setEmailLocked(true);
-          // Extract base username: "ankush-construct@agentmail.to" -> "ankush"
-          let base = existing.replace(/@agentmail\.to$/i, '');
+          // Extract base username: "ankush-construct@construct.computer" -> "ankush"
+          let base = existing.replace(/@(construct\.computer|agentmail\.to)$/i, '');
           base = base.replace(/-construct(-\d+)?$/, (_m: string, num: string) => num ?? '');
           setEmailUsername(base);
         } else {
@@ -217,7 +217,7 @@ function UserSection({ onBack }: { onBack: () => void }) {
                     style={{ color: textColor() }}
                   />
                   <span className="text-[12px] opacity-30 px-3 py-2.5 whitespace-nowrap select-none">
-                    {AGENT_EMAIL_SUFFIX}@agentmail.to
+                    {AGENT_EMAIL_SUFFIX}@construct.computer
                   </span>
                 </div>
               </div>

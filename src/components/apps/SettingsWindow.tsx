@@ -219,8 +219,8 @@ function UserSection() {
   // Populate email username from existing config
   useEffect(() => {
     if (existingEmail) {
-      // Extract base username: "ankush-construct@agentmail.to" → "ankush"
-      let base = existingEmail.replace(/@agentmail\.to$/i, '');
+      // Extract base username: "ankush-construct@construct.computer" → "ankush"
+      let base = existingEmail.replace(/@(construct\.computer|agentmail\.to)$/i, '');
       base = base.replace(/-construct(-\d+)?$/, (_m: string, num: string) => num ?? '');
       setEmailUsername(base);
     }
@@ -342,7 +342,7 @@ function UserSection() {
                 className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
               />
               <span className="text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
-                {AGENT_EMAIL_SUFFIX}@agentmail.to
+                {AGENT_EMAIL_SUFFIX}@construct.computer
               </span>
             </div>
           )}
