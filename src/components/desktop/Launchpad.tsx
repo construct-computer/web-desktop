@@ -4,8 +4,10 @@ import { Search, Package } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAppStore, installedAppsToDefinitions, localAppsToDefinitions, composioToolkitsToDefinitions } from '@/stores/appStore';
+import { useDevAppStore } from '@/stores/devAppStore';
 import { useSound } from '@/hooks/useSound';
 import { SYSTEM_APPS, type AppDefinition } from '@/lib/appRegistry';
+import iconGeneric from '@/icons/generic.png';
 import { cn } from '@/lib/utils';
 
 // ── App icon component ────────────────────────────────────────────
@@ -98,16 +100,34 @@ export function Launchpad() {
     }
   }, [launchpadOpen, fetchApps]);
 
-  // ── Merge system + installed + Composio apps ──
+  // ── Dev app from developer mode ──
+  const devAppInfo = useDevAppStore((s) => s.appInfo);
+  const devAppStatus = useDevAppStore((s) => s.status);
+
+  // ── Merge system + installed + Composio + dev apps ──
   const allApps = useMemo(() => {
     const installedDefs = installedAppsToDefinitions(storeInstalledApps);
     const localDefs = localAppsToDefinitions(localApps);
     const composioDefs = composioToolkitsToDefinitions(connectedToolkits);
+
+    // Dev app (connected from localhost)
+    const devDefs: AppDefinition[] = [];
+    if (devAppStatus === 'connected' && devAppInfo?.has_ui) {
+      devDefs.push({
+        id: 'dev-app',
+        label: `${devAppInfo.name} (dev)`,
+        windowType: 'app',
+        icon: iconGeneric,
+        category: 'installed',
+        appMetadata: { appId: 'dev-app', ui: { type: 'static' as const, entry: 'index.html', width: 560, height: 620 } },
+      });
+    }
+
     // Deduplicate: if an installed/composio/local app has the same id as a system app, skip it
     const systemIds = new Set(SYSTEM_APPS.map((a) => a.id));
-    const uniqueInstalled = [...installedDefs, ...localDefs, ...composioDefs].filter((a) => !systemIds.has(a.id));
+    const uniqueInstalled = [...devDefs, ...installedDefs, ...localDefs, ...composioDefs].filter((a) => !systemIds.has(a.id));
     return [...SYSTEM_APPS, ...uniqueInstalled];
-  }, [storeInstalledApps, localApps, connectedToolkits]);
+  }, [storeInstalledApps, localApps, connectedToolkits, devAppInfo, devAppStatus]);
 
   // ── Mount/unmount with animation ──
   useEffect(() => {

@@ -22,6 +22,8 @@ import { STORAGE_KEYS } from '@/lib/config';
 import { agentWS } from '@/services/websocket';
 import * as api from '@/services/api';
 import { log } from '@/lib/logger';
+import { useDevAppStore } from '@/stores/devAppStore';
+import { injectSdk } from '@/lib/constructSdk';
 
 const logger = log('AppWindow');
 
@@ -71,6 +73,14 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   if (effectiveSlug) {
     const toolkit = connectedToolkits.find((t) => t.toolkit === effectiveSlug);
     return <ComposioAppPanel config={config} slug={effectiveSlug} toolkit={toolkit} />;
+  }
+
+  // Dev app — connected from localhost via developer mode
+  const devAppInfo = useDevAppStore((s) => s.appInfo);
+  const devUrl = useDevAppStore((s) => s.devUrl);
+  const devStatus = useDevAppStore((s) => s.status);
+  if (appId === 'dev-app' && devAppInfo && devUrl && devStatus === 'connected') {
+    return <DevAppIframeView config={config} appId={appId} devUrl={devUrl} />;
   }
 
   // Local app — agent-created, served from R2 (detected by localApps list, not DB)
@@ -179,6 +189,122 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
         onError={() => { setLoading(false); setError('Failed to load app UI'); }}
         title={config.title}
       />
+    </div>
+  );
+}
+
+// ── Dev App Iframe View (fetches HTML from localhost, injects SDK) ──
+
+function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; appId: string; devUrl: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const callToolDirect = useDevAppStore((s) => s.callToolDirect);
+
+  // Fetch HTML from dev server, inject SDK, create blob URL
+  useEffect(() => {
+    let cancelled = false;
+    let currentBlobUrl: string | null = null;
+
+    (async () => {
+      try {
+        // Try /ui/index.html first, then /ui/, then /
+        let html: string | null = null;
+        for (const path of ['/ui/index.html', '/ui/', '/']) {
+          try {
+            const res = await fetch(`${devUrl}${path}`);
+            if (res.ok && res.headers.get('content-type')?.includes('html')) {
+              html = await res.text();
+              break;
+            }
+          } catch { /* try next */ }
+        }
+        if (cancelled) return;
+        if (!html) { setError('Could not load app UI from dev server'); setLoading(false); return; }
+
+        // Inject Construct SDK and base tag for relative asset resolution
+        const modified = injectSdk(html, `${devUrl}/ui`);
+        const blob = new Blob([modified], { type: 'text/html' });
+        currentBlobUrl = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(currentBlobUrl); return; }
+        setBlobUrl(currentBlobUrl);
+      } catch (err) {
+        if (!cancelled) { setError(err instanceof Error ? err.message : 'Failed to load app'); setLoading(false); }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    };
+  }, [devUrl]);
+
+  // PostMessage bridge — handles tool calls directly via localhost (no backend round-trip)
+  const handleMessage = useCallback(
+    async (event: MessageEvent) => {
+      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
+      const data = event.data;
+      if (!data || data.type !== 'construct:request') return;
+
+      const req = data as ConstructRequest;
+      let response: ConstructResponse;
+      try {
+        let result: unknown;
+        if (req.method === 'tools.call') {
+          // Route tool calls directly to localhost (not through backend)
+          const tool = req.params?.tool as string;
+          const args = (req.params?.arguments as Record<string, unknown>) || {};
+          result = await callToolDirect(tool, args);
+        } else {
+          // Other bridge methods go through the normal handler
+          result = await handleBridgeMethod(req.method, req.params || {}, config, appId);
+        }
+        response = { type: 'construct:response', id: req.id, result };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        response = { type: 'construct:response', id: req.id, error: msg };
+      }
+      iframeRef.current?.contentWindow?.postMessage(response, '*');
+    },
+    [config, appId, callToolDirect],
+  );
+
+  useEffect(() => {
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleMessage]);
+
+  return (
+    <div className="w-full h-full relative bg-[var(--color-bg-secondary)]">
+      {loading && !error && (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 mx-auto mb-3 opacity-40 animate-spin" />
+            <p className="text-sm opacity-40">Loading dev app...</p>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <div className="text-center max-w-sm">
+            <Package className="w-10 h-10 mx-auto mb-3 text-red-400/60" />
+            <p className="text-sm opacity-60 mb-1">Failed to load dev app</p>
+            <p className="text-xs opacity-30">{error}</p>
+          </div>
+        </div>
+      )}
+      {blobUrl && (
+        <iframe
+          ref={iframeRef}
+          src={blobUrl}
+          className="absolute inset-0 w-full h-full border-none"
+          sandbox="allow-scripts"
+          onLoad={() => setLoading(false)}
+          onError={() => { setLoading(false); setError('Failed to load dev app UI'); }}
+          title={config.title}
+        />
+      )}
     </div>
   );
 }

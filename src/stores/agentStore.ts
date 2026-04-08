@@ -3248,6 +3248,16 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'dev_app_tool_call': {
+          const { callId, appId: devCallAppId, toolName: devToolName, arguments: devToolArgs } = event.data as {
+            callId: string; appId: string; toolName: string; arguments: Record<string, unknown>;
+          };
+          import('@/stores/devAppStore').then(({ useDevAppStore }) => {
+            useDevAppStore.getState().handleToolCall(callId, devCallAppId, devToolName, devToolArgs || {});
+          });
+          break;
+        }
+
         case 'local_app_updated': {
           const updatedAppId = event.data?.appId as string;
           if (updatedAppId) {

@@ -470,6 +470,11 @@ class AgentWSClient {
           this.ws?.send(JSON.stringify({ type: 'set_timezone', timezone }));
         } catch {}
 
+        // Re-register dev app if connected (survives page refresh / WS reconnect)
+        import('@/stores/devAppStore').then(({ useDevAppStore }) => {
+          useDevAppStore.getState().reregister();
+        }).catch(() => {});
+
         // Flush any messages that were queued while the WS was connecting
         for (const msg of this.pendingMessages) {
           this.ws?.send(msg);
