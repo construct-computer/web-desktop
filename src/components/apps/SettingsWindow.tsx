@@ -29,6 +29,7 @@ import {
   getAgentConfig, updateAgentConfig,
 } from '@/services/api';
 import { BillingSection } from './BillingSection';
+import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
 // Dev app upload removed — apps are now hosted MCP servers
 import { useAppStore } from '@/stores/appStore';
@@ -186,6 +187,10 @@ const AGENT_EMAIL_SUFFIX = '-construct';
 function UserSection() {
   const { user, updateProfile } = useAuthStore();
   const { computer, updateComputer, isLoading: computerLoading } = useComputerStore();
+  const subscription = useBillingStore((s) => s.subscription);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
+  const isPro = subscription?.plan === 'pro';
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [agentName, setAgentName] = useState('');
@@ -331,6 +336,11 @@ function UserSection() {
               <Mail className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
               <span className="text-[13px] text-[var(--color-text)]">{existingEmail}</span>
               <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />
+            </div>
+          ) : !isPro ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-[var(--color-text-muted)]">Available on Pro plan</span>
+              <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase">Pro</span>
             </div>
           ) : (
             <div className="flex items-center gap-0 rounded-lg overflow-hidden border border-[var(--color-border)]">

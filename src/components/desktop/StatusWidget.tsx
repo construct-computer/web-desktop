@@ -144,7 +144,6 @@ export function StatusWidget() {
         rows.push(
           { label: 'Searches', used: qu?.search ?? 0, limit: pl?.dailySearches ?? 50 },
           { label: 'Browser', used: qu?.browser ?? 0, limit: pl?.dailyBrowserSessions ?? 10 },
-          { label: 'Emails', used: qu?.email_send ?? 0, limit: pl?.dailyEmails ?? 20 },
           { label: 'Sandbox', used: qu?.sandbox ?? 0, limit: pl?.dailySandboxMinutes ?? 60 },
         );
         setStarterQuotas(rows);
