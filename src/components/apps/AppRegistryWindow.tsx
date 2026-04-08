@@ -1337,7 +1337,7 @@ function DevInstallSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
     try {
       const appId = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       const result = await api.installApp(appId, { name: name.trim(), base_url: url.trim(), has_ui: false });
-      if (result.ok) {
+      if (result.success) {
         setFeedback({ ok: true, msg: `Installed "${name.trim()}" successfully` });
         setUrl('');
         setName('');

@@ -4,7 +4,7 @@ import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
 
-type MagicLinkState = 'idle' | 'sending' | 'sent' | 'error';
+type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
 
 /**
  * Clear all user-specific data from localStorage and sessionStorage
@@ -76,6 +76,7 @@ interface AuthState {
   // Actions
   loginWithGoogle: () => void;
   sendMagicLink: (email: string) => Promise<void>;
+  verifyOtp: (otp: string) => Promise<void>;
   resetMagicLink: () => void;
   handleOAuthReturn: () => Promise<boolean>;
   logout: () => void;
@@ -114,6 +115,40 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         magicLinkState: 'error',
         error: result.error || 'Failed to send magic link.',
+      });
+    }
+  },
+
+  verifyOtp: async (otp: string) => {
+    const email = useAuthStore.getState().magicLinkEmail;
+    if (!email) {
+      set({ magicLinkState: 'error', error: 'No email address. Please start over.' });
+      return;
+    }
+
+    set({ magicLinkState: 'verifying', error: null });
+
+    const result = await api.verifyOtp(email, otp);
+
+    if (result.success) {
+      api.setToken(result.data.token);
+      clearStaleUserData(result.data.user.id);
+      analytics.loginSuccess('magic_link');
+      analytics.identify(result.data.user);
+      set({
+        user: result.data.user,
+        isAuthenticated: true,
+        isLoading: false,
+        magicLinkState: 'idle',
+        magicLinkEmail: null,
+        error: null,
+      });
+    } else {
+      analytics.loginFailed('magic_link', result.error);
+      // Stay in 'sent' state so user can retry OTP (don't reset to 'error' which hides the OTP input)
+      set({
+        magicLinkState: 'sent',
+        error: result.error || 'Invalid code. Please try again.',
       });
     }
   },

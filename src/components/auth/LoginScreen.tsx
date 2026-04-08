@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
@@ -9,6 +9,7 @@ export function LoginScreen() {
   const {
     loginWithGoogle,
     sendMagicLink,
+    verifyOtp,
     resetMagicLink,
     isLoading,
     error,
@@ -63,6 +64,7 @@ export function LoginScreen() {
 
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
 
   const handleGoogleLogin = () => {
     clearError();
@@ -83,12 +85,20 @@ export function LoginScreen() {
     setShowEmailForm(true);
   };
 
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp.trim() || otp.trim().length !== 6) return;
+    play('click');
+    await verifyOtp(otp.trim());
+  };
+
   const handleBackToMain = () => {
     play('click');
     clearError();
     resetMagicLink();
     setShowEmailForm(false);
     setEmail('');
+    setOtp('');
   };
 
   // Real-time clock for the login screen
@@ -230,20 +240,58 @@ export function LoginScreen() {
 
           {/* Form Container */}
           <div className="w-full flex-col gap-3">
-            {magicLinkState === 'sent' ? (
+            {magicLinkState === 'sent' || magicLinkState === 'verifying' ? (
               <div className="flex flex-col items-center text-center gap-3 w-full bg-white/40 dark:bg-black/20 backdrop-blur-xl p-4 rounded-3xl border border-black/10 dark:border-white/10 shadow-xl transition-colors duration-500">
-                <CheckCircle className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                 <div>
                   <p className="text-[15px] font-medium text-black/90 dark:text-white mb-1">
-                    Check your email
+                    Enter sign-in code
                   </p>
-                  <p className="text-[13px] text-black/60 dark:text-white/60">
-                    Link sent to <span className="font-medium text-black/90 dark:text-white/90">{magicLinkEmail}</span>
+                  <p className="text-[12px] text-black/60 dark:text-white/60">
+                    Sent to <span className="font-medium text-black/90 dark:text-white/90">{magicLinkEmail}</span>
                   </p>
                 </div>
+                {error && (
+                  <p className="text-[12px] font-medium text-red-600 dark:text-red-400">
+                    {error}
+                  </p>
+                )}
+                <form onSubmit={handleOtpSubmit} className="w-full flex flex-col items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    autoFocus
+                    className="w-[180px] py-2.5 text-center text-[22px] font-bold tracking-[8px] rounded-xl
+                               bg-white/50 dark:bg-black/30 backdrop-blur-2xl
+                               border border-black/10 dark:border-white/15
+                               text-black/90 dark:text-white
+                               placeholder-black/20 dark:placeholder-white/20
+                               focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/40
+                               transition-all"
+                  />
+                  <button
+                    type="submit"
+                    disabled={magicLinkState === 'verifying' || otp.length !== 6}
+                    className="w-[180px] py-2 text-[13px] font-semibold rounded-full
+                               bg-black/80 dark:bg-white/90 text-white dark:text-black
+                               hover:bg-black dark:hover:bg-white
+                               disabled:opacity-50
+                               transition-colors duration-150"
+                  >
+                    {magicLinkState === 'verifying' ? 'Verifying...' : 'Continue'}
+                  </button>
+                </form>
+                <p className="text-[11px] text-black/40 dark:text-white/40 mt-1">
+                  Or click the link in the email
+                </p>
                 <button
                   onClick={handleBackToMain}
-                  className="mt-2 text-xs font-semibold text-black/50 dark:text-white/50 hover:text-black/80 dark:hover:text-white/80 transition-colors bg-black/5 dark:bg-white/5 px-4 py-1.5 rounded-full"
+                  className="text-xs font-semibold text-black/50 dark:text-white/50 hover:text-black/80 dark:hover:text-white/80 transition-colors"
                 >
                   Go Back
                 </button>
@@ -311,11 +359,10 @@ export function LoginScreen() {
                   {isLoading ? 'Authenticating...' : 'Sign in with Google'}
                 </button>
 
-                {/* Email login — hidden until functionality is ready
                 <button
                   onClick={handleShowEmail}
                   disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-4 mt-2
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4
                              text-[13px] font-medium rounded-full
                              bg-transparent border border-transparent
                              text-black/60 dark:text-white/60
@@ -326,7 +373,6 @@ export function LoginScreen() {
                   <Mail className="w-4 h-4" />
                   Sign in with Email
                 </button>
-                */}
 
               </div>
             )}

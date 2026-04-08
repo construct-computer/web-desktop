@@ -228,13 +228,42 @@ export async function sendMagicLink(email: string): Promise<ApiResult<{ success:
       body: JSON.stringify({ email }),
     });
 
-    const data = await response.json();
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = `Request failed (${response.status})`;
+      try { errorMsg = JSON.parse(text).error || errorMsg; } catch { /* plain text */ }
+      return { success: false, error: errorMsg };
+    }
+
+    return { success: true, data: { success: true } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+/**
+ * Verify a 6-digit OTP code. Returns JWT token on success.
+ */
+export async function verifyOtp(email: string, otp: string): Promise<ApiResult<{ token: string; user: User }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/magic/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp }),
+    });
+
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = {}; }
 
     if (!response.ok) {
       return { success: false, error: data.error || `Request failed (${response.status})` };
     }
 
-    return { success: true, data: { success: true } };
+    return { success: true, data };
   } catch (error) {
     return {
       success: false,
