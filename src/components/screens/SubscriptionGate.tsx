@@ -18,20 +18,20 @@ interface SubscriptionGateProps {
 }
 
 const STARTER_FEATURES = [
-  'Bring your own OpenRouter API key',
+  'Free AI models (or bring your own key)',
   'Web search (50/day)',
   'Terminal & code execution',
-  'Email, calendar, memory',
+  'Calendar & memory',
   '500MB cloud storage',
 ];
 
 const PRO_FEATURES = [
-  'AI included — no API key needed',
+  'Premium AI included',
   'Unlimited web search & browser',
   'Unlimited terminal & code',
-  'Unlimited email, calendar, memory',
-  '2GB cloud storage',
-  'Background agents & scheduling',
+  'Agent email (@construct.computer)',
+  'Unlimited calendar & memory',
+  '2GB storage, background agents',
 ];
 
 export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGateProps) {

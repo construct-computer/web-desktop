@@ -12,6 +12,7 @@ import {
 import { Button, Input, Label } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useBillingStore } from '@/stores/billingStore';
 import { checkAgentEmailAvailability } from '@/services/api';
 import { getEmailStatus } from '@/services/agentmail';
 import analytics from '@/lib/analytics';
@@ -57,6 +58,10 @@ export function SetupModal() {
   const markSetupDone = useAuthStore((s) => s.markSetupDone);
   const updateComputer = useComputerStore((s) => s.updateComputer);
   const instanceId = useComputerStore((s) => s.instanceId);
+  const subscription = useBillingStore((s) => s.subscription);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
+  const isPro = subscription?.plan === 'pro';
 
   // Profile fields
   const [ownerName, setOwnerName] = useState(user?.displayName || '');
@@ -141,13 +146,13 @@ export function SetupModal() {
     const trimmedName = ownerName.trim();
     if (!trimmedName) { setNameError('Please enter your name'); return; }
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
-    if (!emailLocked) {
+    if (!emailLocked && isPro) {
       if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
       if (emailAvailable === false) return;
     }
 
     const trimmedAgentName = agentName.trim() || 'Construct Agent';
-    const emailChanged = !emailLocked;
+    const emailChanged = !emailLocked && isPro;
 
     setIsSaving(true);
     try {
@@ -255,7 +260,16 @@ export function SetupModal() {
               <Mail className="w-3.5 h-3.5" />
               Agent Email Address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
+              {!emailLocked && !isPro && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Pro</span>}
             </Label>
+            {!isPro && !emailLocked ? (
+              <div className="rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3">
+                <p className="text-[12px] text-[var(--color-text-muted)]">
+                  Upgrade to Pro to give your agent its own <span className="font-medium">@construct.computer</span> email.
+                </p>
+              </div>
+            ) : (
+            <>
             <div className="flex items-stretch rounded-lg overflow-hidden border border-[var(--color-border)]">
               <Input
                 type="text"
@@ -312,6 +326,8 @@ export function SetupModal() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
 

@@ -22,6 +22,7 @@ import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
+import { useBillingStore } from '@/stores/billingStore';
 import {
   checkAgentEmailAvailability,
   getSlackConfigured,
@@ -106,6 +107,10 @@ export function SetupWizard({ config }: SetupWizardProps) {
   const closeWindow = useWindowStore((s) => s.closeWindow);
   const updateComputer = useComputerStore((s) => s.updateComputer);
   const instanceId = useComputerStore((s) => s.instanceId);
+  const subscription = useBillingStore((s) => s.subscription);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
+  const isPro = subscription?.plan === 'pro';
 
   // Restore saved progress
   const saved = useRef(loadProgress());
@@ -251,7 +256,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
     const trimmedName = ownerName.trim();
     if (!trimmedName) { setNameError('Please enter your name'); return; }
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
-    if (!emailLocked) {
+    if (!emailLocked && isPro) {
       if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
       if (emailAvailable === false) return;
     }
@@ -270,7 +275,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
       await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
-        ...(emailChanged && { agentmailInboxUsername: fullEmailUsername(emailUsername.trim().toLowerCase()) }),
+        ...(emailChanged && isPro && { agentmailInboxUsername: fullEmailUsername(emailUsername.trim().toLowerCase()) }),
       });
       // Move to step 2 and persist
       analytics.setupStepCompleted('profile_email', { emailChanged });
@@ -332,6 +337,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
           emailError={emailError}
           emailSuggestion={emailSuggestion}
           emailLocked={emailLocked}
+          isPro={!!isPro}
           onUseSuggestion={(s) => { const base = extractBaseUsername(s); setEmailUsername(base); checkEmailAvailability(base); }}
           onContinue={handleContinue}
           isSaving={isSaving}
@@ -428,6 +434,7 @@ function Step1Screen({
   agentName, setAgentName,
   emailUsername, setEmailUsername,
   emailChecking, emailAvailable, emailError, emailSuggestion, emailLocked,
+  isPro,
   onUseSuggestion,
   onContinue, isSaving,
 }: {
@@ -438,6 +445,7 @@ function Step1Screen({
   emailUsername: string; setEmailUsername: (v: string) => void;
   emailChecking: boolean; emailAvailable: boolean | null;
   emailError: string; emailSuggestion: string; emailLocked: boolean;
+  isPro: boolean;
   onUseSuggestion: (s: string) => void;
   onContinue: () => void;
   isSaving: boolean;
@@ -531,7 +539,16 @@ function Step1Screen({
               <Mail className="w-3.5 h-3.5" />
               Agent Email Address
               {emailLocked && <Lock className="w-3 h-3 text-black/30 dark:text-white/30" />}
+              {!emailLocked && !isPro && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Pro</span>}
             </Label>
+            {!isPro && !emailLocked ? (
+              <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/30 dark:bg-black/10 px-5 py-4">
+                <p className="text-[12px] text-black/50 dark:text-white/40">
+                  Upgrade to Pro to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@construct.computer</span> email address.
+                </p>
+              </div>
+            ) : (
+            <>
             <div className="flex items-stretch rounded-xl overflow-hidden border border-black/5 dark:border-white/10 shadow-inner bg-white/50 dark:bg-black/20 transition-all">
               <Input
                 type="text"
@@ -585,6 +602,8 @@ function Step1Screen({
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>

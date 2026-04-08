@@ -10,6 +10,7 @@ import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import analytics from '@/lib/analytics';
 import { useWindowStore } from '@/stores/windowStore';
+import { useBillingStore } from '@/stores/billingStore';
 
 import tourChat from '@/assets/tour/chat.gif';
 import tourEmail from '@/assets/tour/email.gif';
@@ -155,9 +156,14 @@ export function useDesktopTour() {
     setTimeout(() => {
     let skipped = false;
 
-    // Only include setup step if the SetupModal is visible
+    // Filter steps based on context
     const setupVisible = !!document.querySelector('[data-tour="setup"]');
-    const activeSteps = steps.filter(s => setupVisible || s.element !== '[data-tour="setup"]');
+    const isPro = useBillingStore.getState().subscription?.plan === 'pro';
+    const activeSteps = steps.filter(s => {
+      if (s.element === '[data-tour="setup"]' && !setupVisible) return false;
+      if (s.element === '[data-tour="email"]' && !isPro) return false;
+      return true;
+    });
 
     // Declare ahead so step callbacks can reference the driver instance
     let driverObj: ReturnType<typeof driver>;
