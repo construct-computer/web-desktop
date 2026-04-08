@@ -56,6 +56,7 @@ interface DashboardData {
     completionTokens: number;
     percentUsed: number;
     resetsIn: string;
+    environment?: string;
   } | null;
   events: { id: string; summary: string; start: string; allDay?: boolean }[];
   user: { displayName?: string; email?: string; username?: string } | null;
@@ -180,6 +181,7 @@ export function TelegramMiniApp() {
           completionTokens: usageRes.completionTokens,
           percentUsed: usageRes.percentUsed ?? 0,
           resetsIn,
+          environment: usageRes.environment,
         } : null,
         events: eventsList,
       }));
@@ -279,6 +281,7 @@ function Dashboard({ data }: { data: DashboardData }) {
     pending: '⏳', in_progress: '🔧', blocked: '🚫', completed: '✅', cancelled: '❌',
   };
 
+  const isStaging = data.usage?.environment === 'staging';
   const totalTokens = data.usage
     ? (data.usage.promptTokens + data.usage.completionTokens).toLocaleString()
     : '0';
@@ -307,9 +310,13 @@ function Dashboard({ data }: { data: DashboardData }) {
           const isLimited = pct >= 100;
           return (
             <>
-              <div className="grid grid-cols-3 gap-3">
-                <Stat label="Requests" value={String(data.usage?.requestCount ?? 0)} />
-                <Stat label="Tokens" value={totalTokens} />
+              <div className={`grid gap-3 ${isStaging ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                {isStaging && (
+                  <>
+                    <Stat label="Requests" value={String(data.usage?.requestCount ?? 0)} />
+                    <Stat label="Tokens" value={totalTokens} />
+                  </>
+                )}
                 <Stat label="Resets in" value={data.usage?.resetsIn ?? '—'} />
               </div>
               {/* Usage progress bar */}

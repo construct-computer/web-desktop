@@ -19,6 +19,7 @@ import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
 import type { InstalledApp } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
+import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import { openAuthRedirect } from '@/lib/utils';
@@ -494,6 +495,13 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   const [detailLoading, setDetailLoading] = useState(false);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
 
+  // Plan limits
+  const subscription = useBillingStore((s) => s.subscription);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
+  const maxApps = (subscription?.planLimits as Record<string, number> | undefined)?.maxInstalledApps ?? -1;
+  const atAppLimit = maxApps > 0 && installedApps.length >= maxApps;
+
   // Actions
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
   const [connectingToolkit, setConnectingToolkit] = useState<string | null>(null);
@@ -853,6 +861,10 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   const handleInstallRegistry = async (app: UnifiedApp) => {
     if (!app.registryApp?.repo_url) return;
+    if (atAppLimit && !installedIds.has(app.id)) {
+      setError(`App limit reached (${maxApps} apps on your plan). Uninstall an app or upgrade to Pro.`);
+      return;
+    }
     setError(null);
     setPendingActions(prev => ({ ...prev, [app.id]: true }));
     try {
@@ -873,6 +885,10 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   const handleInstallSmithery = async (app: UnifiedApp) => {
     if (!app.smitheryServer) return;
+    if (atAppLimit && !installedIds.has(app.id)) {
+      setError(`App limit reached (${maxApps} apps on your plan). Uninstall an app or upgrade to Pro.`);
+      return;
+    }
     const qn = app.smitheryServer.qualifiedName;
     const required = new Set(app.configSchema?.required || []);
     for (const field of required) {
@@ -908,6 +924,10 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   const handleInstallSkill = async (app: UnifiedApp) => {
     if (!app.smitherySkill) return;
+    if (atAppLimit && !installedIds.has(app.id)) {
+      setError(`App limit reached (${maxApps} apps on your plan). Uninstall an app or upgrade to Pro.`);
+      return;
+    }
     const sk = app.smitherySkill;
     setError(null);
     setPendingActions(prev => ({ ...prev, [app.id]: true }));
@@ -1017,6 +1037,8 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
           detailLoading={detailLoading}
           isInstalled={isAppInstalled(detail)}
           isPending={!!pendingActions[detail.id] || connectingToolkit === detail.composioSlug}
+          atAppLimit={atAppLimit}
+          maxApps={maxApps}
           configValues={configValues}
           onConfigChange={(key, value) => setConfigValues(prev => ({ ...prev, [key]: value }))}
           onBack={() => { setDetail(null); setConfigValues({}); }}
@@ -1402,7 +1424,7 @@ function DevInstallSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
 // ── App Detail View ──
 
 function AppDetailView({
-  app, detailLoading, isInstalled, isPending, configValues, onConfigChange,
+  app, detailLoading, isInstalled, isPending, atAppLimit, maxApps, configValues, onConfigChange,
   onBack, onInstallRegistry, onInstallSmithery, onInstallSkill, onUninstall, onConnect, onDisconnect,
   onOpen, error, onDismissError,
 }: {
@@ -1410,6 +1432,8 @@ function AppDetailView({
   detailLoading: boolean;
   isInstalled: boolean;
   isPending: boolean;
+  atAppLimit?: boolean;
+  maxApps?: number;
   configValues: Record<string, string>;
   onConfigChange: (key: string, value: string) => void;
   onBack: () => void;
@@ -1482,8 +1506,12 @@ function AppDetailView({
       </div>
     );
   } else if (onGetAction) {
-    // Not installed — "Get" button
-    actionButton = (
+    // Not installed — "Get" button (disabled if at app limit)
+    actionButton = atAppLimit ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-3 py-1.5 rounded-full text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/15">
+        {maxApps} app limit
+      </span>
+    ) : (
       <button onClick={onGetAction}
         className="inline-flex items-center justify-center text-xs font-bold px-6 py-1.5 rounded-full bg-[var(--color-accent)] text-white shadow-[0_1px_3px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.15)] hover:brightness-110 active:brightness-95 active:shadow-[0_0px_1px_rgba(0,0,0,0.2),inset_0_1px_2px_rgba(0,0,0,0.1)] transition-all">
         Get

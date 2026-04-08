@@ -9,6 +9,7 @@ import {
   getCurrentUsage,
   getUsageHistory,
   createCheckout,
+  switchPlan as switchPlanApi,
   createPortalSession,
   createTopupCheckout,
   type SubscriptionInfo,
@@ -33,7 +34,8 @@ interface BillingState {
   fetchSubscription: () => Promise<void>;
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
-  startCheckout: (coupon?: string) => Promise<string | null>;
+  startCheckout: (coupon?: string, plan?: 'starter' | 'pro') => Promise<string | null>;
+  switchPlan: (plan: 'starter' | 'pro') => Promise<boolean>;
   openPortal: () => Promise<string | null>;
   buyTopup: (amount: number) => Promise<string | null>;
 }
@@ -73,12 +75,25 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  startCheckout: async (coupon?: string) => {
-    const result = await createCheckout('pro', coupon);
+  startCheckout: async (coupon?: string, plan: 'starter' | 'pro' = 'pro') => {
+    const result = await createCheckout(plan, coupon);
     if (result.success) {
       return result.data.checkoutUrl;
     }
     return null;
+  },
+
+  switchPlan: async (plan: 'starter' | 'pro') => {
+    const result = await switchPlanApi(plan);
+    if (result.success) {
+      // Refresh subscription data after switching
+      const sub = await getSubscription();
+      if (sub.success) {
+        set({ subscription: sub.data });
+      }
+      return true;
+    }
+    return false;
   },
 
   openPortal: async () => {

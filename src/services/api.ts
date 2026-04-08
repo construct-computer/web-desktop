@@ -1158,16 +1158,27 @@ export interface SubscriptionInfo {
     backgroundAgent: boolean;
     containerRamMb: number;
   };
+  environment?: string;
+  byok?: boolean;
+  hasOpenRouterKey?: boolean;
+  selectedModel?: string;
+  planLimits?: Record<string, unknown>;
+  dailyQuotaUsage?: Record<string, number>;
+  bonusMessages?: number;
 }
 
 export interface WindowUsage {
   windowStart: number;
   windowEnd: number;
   resetsAt: string;
-  promptTokens: number;
-  completionTokens: number;
-  requestCount: number;
+  /** Only present in staging */
+  promptTokens?: number;
+  /** Only present in staging */
+  completionTokens?: number;
+  /** Only present in staging */
+  requestCount?: number;
   percentUsed: number;
+  plan?: string;
   environment?: string;
   /** Only present in staging */
   totalCostUsd?: number;
@@ -1231,6 +1242,13 @@ export async function createCheckout(plan = 'pro', coupon?: string): Promise<Api
   });
 }
 
+export async function switchPlan(plan: 'starter' | 'pro'): Promise<ApiResult<{ ok: boolean; plan: string }>> {
+  return request('/billing/switch-plan', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  });
+}
+
 export async function createPortalSession(): Promise<ApiResult<{ portalUrl: string }>> {
   return request('/billing/portal', { method: 'POST' });
 }
@@ -1242,6 +1260,43 @@ export async function createTopupCheckout(amount: number): Promise<ApiResult<{ c
   });
 }
 
+// ── OpenRouter Key & Model Management ──
+
+export async function saveOpenRouterKey(apiKey: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/billing/openrouter-key', {
+    method: 'POST',
+    body: JSON.stringify({ apiKey }),
+  });
+}
+
+export async function removeOpenRouterKey(): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/billing/openrouter-key', { method: 'DELETE' });
+}
+
+export async function getOpenRouterKeyStatus(): Promise<ApiResult<{ hasKey: boolean }>> {
+  return request('/billing/openrouter-key/status');
+}
+
+export interface ModelPresetsResponse {
+  freePresets: Array<{ id: string; name: string; description: string; default?: boolean }>;
+  paidPresets: Array<{ id: string; name: string; description: string; default?: boolean }>;
+  hasKey: boolean;
+  selected: string;
+  defaultFree: string;
+  defaultPaid: string;
+}
+
+export async function getModelPresets(): Promise<ApiResult<ModelPresetsResponse>> {
+  return request('/billing/models');
+}
+
+export async function saveSelectedModel(model: string): Promise<ApiResult<{ ok: boolean; model: string }>> {
+  return request('/billing/model', {
+    method: 'PUT',
+    body: JSON.stringify({ model }),
+  });
+}
+
 // ── Tweet Credits ──
 
 export interface TweetStatus {
@@ -1249,6 +1304,10 @@ export interface TweetStatus {
   tweetsRemaining: number;
   totalBonusCredits: number;
   creditPerTweet: number;
+  // Starter-specific
+  bonusMessages: number;
+  messagesPerTweet: number;
+  plan: string;
   maxTweets: number;
   shareUrl: string;
 }

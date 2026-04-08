@@ -10,7 +10,6 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   CreditCard,
   Zap,
-  TrendingUp,
   Clock,
   ExternalLink,
   Loader2,
@@ -21,6 +20,7 @@ import {
   Twitter,
   Gift,
   Check,
+  X,
 } from 'lucide-react';
 import * as api from '@/services/api';
 import { Button } from '@/components/ui';
@@ -76,6 +76,7 @@ export function BillingSection() {
     fetchSubscription,
     fetchUsage,
     startCheckout,
+    switchPlan,
     openPortal,
     buyTopup,
   } = useBillingStore();
@@ -144,12 +145,18 @@ export function BillingSection() {
     return () => clearInterval(timer);
   }, [usage?.resetsAt]);
 
-  const handleUpgrade = useCallback(async () => {
+  const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(true);
-    const url = await startCheckout();
+    const url = await startCheckout(undefined, plan);
     if (url) window.location.href = url;
     setCheckoutLoading(false);
   }, [startCheckout]);
+
+  const handleSwitchPlan = useCallback(async (plan: 'starter' | 'pro') => {
+    setCheckoutLoading(true);
+    await switchPlan(plan);
+    setCheckoutLoading(false);
+  }, [switchPlan]);
 
   const handleManage = useCallback(async () => {
     setPortalLoading(true);
@@ -163,127 +170,80 @@ export function BillingSection() {
     if (url) window.location.href = url;
   }, [buyTopup]);
 
-  const isPro = subscription?.plan === 'pro';
-  const isCancelling = subscription?.cancelAtPeriodEnd;
-  const isStaging = usage?.environment === 'staging';
+  const hasActivePlan = subscription?.plan === 'pro' || subscription?.plan === 'starter';
+  const isByok = subscription?.plan === 'starter';
+  const isStaging = subscription?.environment === 'staging' || usage?.environment === 'staging';
+  const isDevMode = isStaging || !subscription?.dodoSubscriptionId;
   const costCap = usage?.costCapUsd ?? 0;
   const isUnlimited = costCap === -1;
 
   return (
     <div className="space-y-4">
-      {/* ── Subscription Plan ── */}
+      {/* ── Plan Comparison ── */}
       <InfoCard>
-        <CardHeader icon={CreditCard} title="Plan" />
+        <CardHeader icon={CreditCard} title="Plan" trailing={
+          !isDevMode && subscription?.dodoSubscriptionId && (
+            <button
+              onClick={handleManage}
+              disabled={portalLoading}
+              className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+            >
+              {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+              Manage billing
+            </button>
+          )
+        } />
         <div className="px-4 pb-4">
           {subscriptionLoading && !subscription ? (
             <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Loading subscription...
             </div>
-          ) : isPro ? (
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[15px] font-semibold">Pro</span>
-                  <span className="px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase">
-                    Active
-                  </span>
-                  {!subscription?.dodoSubscriptionId && (
-                    <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/15 text-amber-400 font-semibold tracking-wide uppercase">
-                      Dev
-                    </span>
-                  )}
-                </div>
-                <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-                  {subscription?.dodoSubscriptionId
-                    ? isCancelling
-                      ? '$250/month — cancels at end of period'
-                      : '$250/month'
-                    : 'Subscription bypassed (dev mode)'}
-                </p>
-              </div>
-              {subscription?.dodoSubscriptionId && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={handleManage}
-                  disabled={portalLoading}
-                >
-                  {portalLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                  )}
-                  Manage
-                </Button>
-              )}
-            </div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-[15px] font-semibold">No active plan</span>
-                  <p className="text-[12px] text-[var(--color-text-muted)]">
-                    Subscribe to use your AI computer
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={handleUpgrade}
-                  disabled={checkoutLoading}
-                >
-                  {checkoutLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Zap className="w-3.5 h-3.5 mr-1.5" />
-                  )}
-                  Subscribe — $250/mo
-                </Button>
-              </div>
-              <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06] space-y-2">
-                <p className="text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
-                  Included
-                </p>
-                {[
-                  'Unlimited access to your AI computer',
-                  'All frontier AI models included',
-                  'Unlimited messages, searches, and emails',
-                ].map((feature) => (
-                  <div key={feature} className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                    {feature}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <PlanComparison
+              currentPlan={subscription?.plan || null}
+              isDevMode={isDevMode}
+              checkoutLoading={checkoutLoading}
+              onSwitchPlan={handleSwitchPlan}
+              onCheckout={handleCheckout}
+            />
           )}
         </div>
       </InfoCard>
 
-      {/* ── AI Usage ── */}
+      {/* ── Usage ── */}
       <InfoCard>
         <CardHeader
           icon={Cpu}
-          title="AI Usage"
+          title="Usage"
           trailing={
-            usage && (
+            isByok ? (
+              <span className="text-[11px] text-[var(--color-text-muted)]">Resets daily at midnight UTC</span>
+            ) : usage ? (
               <span className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
                 <Clock className="w-3 h-3" />
                 Resets in {timeLeft}
               </span>
-            )
+            ) : null
           }
         />
         <div className="px-4 pb-4">
-          {usageLoading && !usage ? (
+          {subscriptionLoading && !subscription ? (
             <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Loading usage...
             </div>
+          ) : isByok ? (
+            /* ── Starter: Daily quota bars ── */
+            <StarterUsageDisplay
+              quotaUsage={subscription?.dailyQuotaUsage as Record<string, number> | undefined}
+              planLimits={subscription?.planLimits as Record<string, number> | undefined}
+              hasKey={!!subscription?.hasOpenRouterKey}
+              bonusMessages={subscription?.bonusMessages ?? 0}
+            />
           ) : usage ? (
+            /* ── Pro: Cost-based usage ── */
             <div className="space-y-3">
-              {/* Cost display */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-[13px]">
                   <span className="text-[var(--color-text-muted)]">Cost this period</span>
@@ -307,41 +267,26 @@ export function BillingSection() {
                   <div className="h-2 rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        usage.percentUsed >= 100
-                          ? 'bg-red-500'
-                          : usage.percentUsed >= 75
-                            ? 'bg-amber-500'
-                            : 'bg-[var(--color-accent)]'
+                        usage.percentUsed >= 100 ? 'bg-red-500' : usage.percentUsed >= 75 ? 'bg-amber-500' : 'bg-[var(--color-accent)]'
                       }`}
                       style={{ width: `${Math.min(100, usage.percentUsed)}%` }}
                     />
                   </div>
                 )}
               </div>
-
-              {/* Dev stats */}
               {isStaging && (
                 <div className="flex items-center gap-4 text-[11px] text-[var(--color-text-muted)] pt-0.5">
-                  <span className="font-mono">{(usage.promptTokens + usage.completionTokens).toLocaleString()} tokens</span>
+                  <span className="font-mono">{((usage.promptTokens || 0) + (usage.completionTokens || 0)).toLocaleString()} tokens</span>
                   <span className="text-black/10 dark:text-white/10">|</span>
-                  <span className="font-mono">{usage.requestCount} requests</span>
+                  <span className="font-mono">{usage.requestCount || 0} requests</span>
                 </div>
               )}
-
-              {/* Warning banner */}
               {!isUnlimited && usage.percentUsed >= 75 && (
                 <div className={`flex items-center gap-2.5 p-2.5 rounded-lg text-[12px] ${
-                  usage.percentUsed >= 100
-                    ? 'bg-red-500/10 text-red-400'
-                    : 'bg-amber-500/10 text-amber-400'
+                  usage.percentUsed >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
                 }`}>
                   <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>
-                    {usage.percentUsed >= 100
-                      ? `Usage limit reached. Resets in ${timeLeft}.`
-                      : `${usage.percentUsed}% of usage budget used this period.`
-                    }
-                  </span>
+                  <span>{usage.percentUsed >= 100 ? `Usage limit reached. Resets in ${timeLeft}.` : `${usage.percentUsed}% of usage budget used this period.`}</span>
                 </div>
               )}
             </div>
@@ -386,25 +331,67 @@ export function BillingSection() {
         </InfoCard>
       )}
 
-      {/* ── Tweet for Credits ── */}
-      {isPro && tweetStatus && tweetStatus.tweetsRemaining > 0 && (
+      {/* ── AI Configuration (Starter/BYOK plan) ── */}
+      {subscription?.byok && (
+        <AIConfigSection />
+      )}
+
+      {/* ── Credit Top-Ups ── */}
+      {hasActivePlan && !isUnlimited && subscription?.topupsEnabled && (
         <InfoCard>
-          <CardHeader icon={Gift} title="Earn Bonus Credits" trailing={
+          <CardHeader icon={Zap} title="Credit Top-Ups" />
+          <div className="px-4 pb-4 space-y-3">
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-[var(--color-text-muted)]">Current balance</span>
+              <span className="font-mono font-medium">
+                ${subscription.topupCreditsUsd.toFixed(2)}
+              </span>
+            </div>
+            <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
+              Credits extend your AI usage when you hit the cost cap.
+            </p>
+            <div className="flex gap-2">
+              {[10, 25, 50].map((amt) => (
+                <Button key={amt} size="sm" variant="default" onClick={() => handleTopup(amt)}>
+                  +${amt}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </InfoCard>
+      )}
+
+      {/* ── Earn Bonus ── */}
+      {hasActivePlan && tweetStatus && tweetStatus.tweetsRemaining > 0 && (
+        <InfoCard>
+          <CardHeader icon={Gift} title={isByok && !subscription?.hasOpenRouterKey ? 'Earn Bonus Messages' : 'Earn Bonus Credits'} trailing={
             <span className="text-[11px] text-[var(--color-text-muted)]">
               {tweetStatus.tweetsRedeemed}/{tweetStatus.maxTweets} redeemed
             </span>
           } />
           <div className="px-4 pb-4 space-y-3">
             <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span> in bonus usage credits per tweet. One tweet per week, up to {tweetStatus.maxTweets} tweets.
+              {isByok && !subscription?.hasOpenRouterKey
+                ? <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">{tweetStatus.messagesPerTweet} bonus messages</span> per tweet. One tweet per week, up to {tweetStatus.maxTweets} tweets.</>
+                : <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span> in bonus usage credits per tweet. One tweet per week, up to {tweetStatus.maxTweets} tweets.</>
+              }
             </p>
 
             {/* Current bonus */}
-            {tweetStatus.totalBonusCredits > 0 && (
-              <div className="flex items-center justify-between text-[13px]">
-                <span className="text-[var(--color-text-muted)]">Bonus credits earned</span>
-                <span className="font-mono font-medium text-emerald-400">${tweetStatus.totalBonusCredits.toFixed(2)}</span>
-              </div>
+            {isByok && !subscription?.hasOpenRouterKey ? (
+              tweetStatus.bonusMessages > 0 && (
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-[var(--color-text-muted)]">Bonus messages remaining</span>
+                  <span className="font-mono font-medium text-emerald-400">{tweetStatus.bonusMessages}</span>
+                </div>
+              )
+            ) : (
+              tweetStatus.totalBonusCredits > 0 && (
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-[var(--color-text-muted)]">Bonus credits earned</span>
+                  <span className="font-mono font-medium text-emerald-400">${tweetStatus.totalBonusCredits.toFixed(2)}</span>
+                </div>
+              )
             )}
 
             {/* Progress dots */}
@@ -469,31 +456,475 @@ export function BillingSection() {
           </div>
         </InfoCard>
       )}
+    </div>
+  );
+}
 
-      {/* ── Credit Top-Ups ── */}
-      {isPro && !isUnlimited && subscription?.topupsEnabled && (
-        <InfoCard>
-          <CardHeader icon={Zap} title="Credit Top-Ups" />
-          <div className="px-4 pb-4 space-y-3">
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="text-[var(--color-text-muted)]">Current balance</span>
-              <span className="font-mono font-medium">
-                ${subscription.topupCreditsUsd.toFixed(2)}
-              </span>
+// ── Plan Comparison ──
+
+type FeatureRow = { label: string; starter: string; pro: string; starterHas: boolean; proHas: boolean };
+
+const PLAN_FEATURES: FeatureRow[] = [
+  { label: 'AI model',           starter: 'Free (or own key)',   pro: 'Premium (included)',    starterHas: true,  proHas: true },
+  { label: 'Web searches',       starter: '50 / day',            pro: 'Unlimited',             starterHas: true,  proHas: true },
+  { label: 'Browser sessions',   starter: '10 / day',            pro: 'Unlimited',             starterHas: true,  proHas: true },
+  { label: 'Emails',             starter: '20 / day',            pro: 'Unlimited',             starterHas: true,  proHas: true },
+  { label: 'Storage',            starter: '500 MB',              pro: '2 GB',                  starterHas: true,  proHas: true },
+  { label: 'Apps',               starter: '3',                   pro: 'Unlimited',             starterHas: true,  proHas: true },
+  { label: 'Scheduled tasks',    starter: '5',                   pro: 'Unlimited',             starterHas: true,  proHas: true },
+  { label: 'Background agents',  starter: '',                    pro: '',                      starterHas: false, proHas: true },
+];
+
+// ── Starter Daily Usage ──
+
+type QuotaRow = { key: string; label: string; used: number; limit: number; unit?: string };
+
+function StarterUsageDisplay({ quotaUsage, planLimits, hasKey, bonusMessages = 0 }: {
+  quotaUsage?: Record<string, number>;
+  planLimits?: Record<string, number>;
+  hasKey: boolean;
+  bonusMessages?: number;
+}) {
+  const rows: QuotaRow[] = [];
+
+  if (!hasKey) {
+    rows.push({
+      key: 'free_message',
+      label: 'Messages',
+      used: quotaUsage?.free_message ?? 0,
+      limit: planLimits?.dailyFreeMessages ?? 25,
+    });
+  }
+  rows.push(
+    { key: 'search', label: 'Searches', used: quotaUsage?.search ?? 0, limit: planLimits?.dailySearches ?? 50 },
+    { key: 'browser', label: 'Browser', used: quotaUsage?.browser ?? 0, limit: planLimits?.dailyBrowserSessions ?? 10 },
+    { key: 'email_send', label: 'Emails', used: quotaUsage?.email_send ?? 0, limit: planLimits?.dailyEmails ?? 20 },
+    { key: 'sandbox', label: 'Sandbox', used: quotaUsage?.sandbox ?? 0, limit: planLimits?.dailySandboxMinutes ?? 60, unit: 'min' },
+  );
+
+  const anyLow = rows.some(r => r.limit > 0 && r.used / r.limit >= 0.8);
+  const anyExhausted = rows.some(r => r.limit > 0 && r.used >= r.limit);
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2.5">
+        {rows.map((r) => {
+          const pct = r.limit > 0 ? Math.min(100, (r.used / r.limit) * 100) : 0;
+          return (
+            <div key={r.key} className="space-y-1">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-[var(--color-text-muted)]">{r.label}</span>
+                <span className="font-mono text-[11px]">
+                  <span className={pct >= 100 ? 'text-red-400' : pct >= 80 ? 'text-amber-400' : ''}>{r.used}</span>
+                  <span className="text-[var(--color-text-muted)]"> / {r.limit}{r.unit ? ` ${r.unit}` : ''}</span>
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-[var(--color-accent)]'
+                  }`}
+                  style={{ width: `${Math.max(pct > 0 ? 2 : 0, pct)}%` }}
+                />
+              </div>
             </div>
-            <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              Credits extend your AI usage when you hit the cost cap.
-            </p>
-            <div className="flex gap-2">
-              {[10, 25, 50].map((amt) => (
-                <Button key={amt} size="sm" variant="default" onClick={() => handleTopup(amt)}>
-                  +${amt}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </InfoCard>
+          );
+        })}
+      </div>
+
+      {/* Bonus messages balance */}
+      {!hasKey && bonusMessages > 0 && (
+        <div className="flex items-center justify-between text-[12px] pt-1">
+          <span className="text-[var(--color-text-muted)]">Bonus messages</span>
+          <span className="font-mono text-[11px] text-emerald-400">{bonusMessages} remaining</span>
+        </div>
+      )}
+
+      {anyExhausted && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg text-[11px] bg-red-500/10 text-red-400">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>
+            {!hasKey
+              ? (bonusMessages > 0
+                ? 'Daily limit reached. Using bonus messages.'
+                : 'Daily limit reached. Add your OpenRouter key in AI Configuration to remove message limits.')
+              : 'Some daily limits reached. Resets at midnight UTC.'}
+          </span>
+        </div>
+      )}
+      {!anyExhausted && anyLow && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg text-[11px] bg-amber-500/10 text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Some daily quotas are running low.</span>
+        </div>
       )}
     </div>
+  );
+}
+
+function PlanComparison({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, onCheckout }: {
+  currentPlan: string | null;
+  isDevMode: boolean;
+  checkoutLoading: boolean;
+  onSwitchPlan: (plan: 'starter' | 'pro') => void;
+  onCheckout: (plan: 'starter' | 'pro') => void;
+}) {
+  const isStarter = currentPlan === 'starter';
+  const isPro = currentPlan === 'pro';
+
+  function renderPlanAction(plan: 'starter' | 'pro') {
+    const isCurrent = plan === currentPlan;
+    if (isCurrent) {
+      return (
+        <div className="mt-3 text-center text-[11px] font-medium text-emerald-400 py-1.5">
+          Current plan
+        </div>
+      );
+    }
+    const isUpgrade = plan === 'pro';
+    return (
+      <Button
+        size="sm"
+        variant={isUpgrade ? 'primary' : 'default'}
+        onClick={() => isDevMode ? onSwitchPlan(plan) : onCheckout(plan)}
+        disabled={checkoutLoading}
+        className="w-full mt-3"
+      >
+        {checkoutLoading ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : isUpgrade ? (
+          <><Zap className="w-3 h-3 mr-1" /> Upgrade</>
+        ) : (
+          'Downgrade'
+        )}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Side-by-side plan cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Starter */}
+        <div className={`p-3 rounded-lg border ${
+          isStarter
+            ? 'border-emerald-500/30 bg-emerald-500/[0.03]'
+            : 'border-black/[0.06] dark:border-white/[0.06]'
+        }`}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[13px] font-semibold">Starter</span>
+            {isStarter && (
+              <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase">
+                Active
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-0.5">
+            <span className="text-[20px] font-bold">$9</span>
+            <span className="text-[11px] text-[var(--color-text-muted)]">/mo</span>
+          </div>
+          <p className="text-[10px] text-[var(--color-text-muted)] mt-1">Free AI, or bring your own key</p>
+          {renderPlanAction('starter')}
+        </div>
+
+        {/* Pro */}
+        <div className={`p-3 rounded-lg border ${
+          isPro
+            ? 'border-emerald-500/30 bg-emerald-500/[0.03]'
+            : 'border-black/[0.06] dark:border-white/[0.06]'
+        }`}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[13px] font-semibold">Pro</span>
+            {isPro && (
+              <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase">
+                Active
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-0.5">
+            <span className="text-[20px] font-bold">$250</span>
+            <span className="text-[11px] text-[var(--color-text-muted)]">/mo</span>
+          </div>
+          <p className="text-[10px] text-[var(--color-text-muted)] mt-1">AI included, unlimited</p>
+          {renderPlanAction('pro')}
+        </div>
+      </div>
+
+      {/* Feature comparison table */}
+      <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.06] overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto] text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
+          <span>Feature</span>
+          <span className="text-center w-[100px]">Starter</span>
+          <span className="text-center w-[100px]">Pro</span>
+        </div>
+        {PLAN_FEATURES.map((f, i) => (
+          <div
+            key={f.label}
+            className={`grid grid-cols-[1fr_auto_auto] items-center px-3 py-1.5 text-[11px] ${
+              i % 2 === 0 ? '' : 'bg-black/[0.015] dark:bg-white/[0.015]'
+            }`}
+          >
+            <span className="text-[var(--color-text-muted)]">{f.label}</span>
+            <span className="text-center w-[100px]">
+              {f.starterHas ? (
+                <span className={isStarter ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}>{f.starter}</span>
+              ) : (
+                <X className="w-3 h-3 text-red-400/60 mx-auto" />
+              )}
+            </span>
+            <span className="text-center w-[100px]">
+              {f.proHas ? (
+                f.pro ? (
+                  <span className={isPro ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}>{f.pro}</span>
+                ) : (
+                  <Check className="w-3 h-3 text-emerald-400 mx-auto" />
+                )
+              ) : (
+                <X className="w-3 h-3 text-red-400/60 mx-auto" />
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Shared features */}
+      <div className="space-y-1.5 pt-1">
+        <p className="text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+          Both plans include
+        </p>
+        {[
+          'Cloud desktop with AI agent',
+          'Web search, email & calendar',
+          'Terminal & code sandbox',
+          'Memory & file storage',
+        ].map((feature) => (
+          <div key={feature} className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+            {feature}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── AI Configuration (Starter plan) ──
+
+function AIConfigSection() {
+  const [keyInput, setKeyInput] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [paidModels, setPaidModels] = useState<Array<{ id: string; name: string; description: string; default?: boolean }>>([]);
+  const [freeModels, setFreeModels] = useState<Array<{ id: string; name: string; description: string; default?: boolean }>>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [defaultFree, setDefaultFree] = useState('');
+  const [customModel, setCustomModel] = useState('');
+  const [modelSaving, setModelSaving] = useState(false);
+
+  const loadModels = useCallback(() => {
+    api.getModelPresets().then(r => {
+      if (r.success) {
+        setFreeModels(r.data.freePresets);
+        setPaidModels(r.data.paidPresets);
+        setSelectedModel(r.data.selected);
+        setDefaultFree(r.data.defaultFree);
+        setHasKey(r.data.hasKey);
+      }
+    });
+  }, []);
+
+  useEffect(() => { loadModels(); }, [loadModels]);
+
+  const allModels = [...freeModels, ...paidModels];
+
+  const handleSaveKey = async () => {
+    if (!keyInput.trim()) return;
+    setSaving(true);
+    setMessage(null);
+    const result = await api.saveOpenRouterKey(keyInput.trim());
+    setSaving(false);
+    if (result.success) {
+      setHasKey(true);
+      setKeyInput('');
+      setMessage({ type: 'success', text: 'API key saved! You can now select any model.' });
+      loadModels();
+    } else {
+      setMessage({ type: 'error', text: result.error || 'Failed to save key' });
+    }
+  };
+
+  const handleRemoveKey = async () => {
+    const result = await api.removeOpenRouterKey();
+    if (result.success) {
+      setHasKey(false);
+      setSelectedModel(defaultFree);
+      await api.saveSelectedModel(defaultFree);
+      setMessage({ type: 'success', text: 'API key removed. Switched back to free AI.' });
+      loadModels();
+    }
+  };
+
+  const handleModelChange = async (model: string) => {
+    if (model === '__custom__') return;
+    setSelectedModel(model);
+    setModelSaving(true);
+    await api.saveSelectedModel(model);
+    setModelSaving(false);
+  };
+
+  const handleCustomModel = async () => {
+    if (!customModel.trim()) return;
+    setSelectedModel(customModel.trim());
+    setModelSaving(true);
+    await api.saveSelectedModel(customModel.trim());
+    setModelSaving(false);
+    setCustomModel('');
+  };
+
+  return (
+    <InfoCard>
+      <CardHeader icon={Cpu} title="AI Configuration" />
+      <div className="px-4 pb-4 space-y-4">
+
+        {!hasKey ? (
+          /* ── No key: show info + key input ── */
+          <>
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-[11px] leading-relaxed bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>Using free AI models (25 messages/day). Add your OpenRouter key to unlock premium models and remove limits.</span>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">OpenRouter API Key</span>
+              </div>
+              <p className="text-[10px] text-[var(--color-text-muted)] mb-2 leading-relaxed">
+                Add your key to choose any model — GPT-4o, Claude, Gemini Pro, and hundreds more.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="sk-or-..."
+                  className="flex-1 px-2.5 py-1.5 text-[12px] font-mono rounded-md
+                             bg-black/[0.04] dark:bg-white/[0.06]
+                             border border-black/[0.08] dark:border-white/[0.08]
+                             text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30
+                             focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
+                />
+                <button
+                  onClick={handleSaveKey}
+                  disabled={saving || !keyInput.trim()}
+                  className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-[var(--color-accent)] text-white hover:brightness-110 disabled:opacity-50 transition-all"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-[var(--color-accent)] hover:underline mt-1.5"
+              >
+                Get a key from OpenRouter <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+          </>
+        ) : (
+          /* ── Has key: show model selector + key management ── */
+          <>
+            {/* Model Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">Model</span>
+                {modelSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
+              </div>
+              <select
+                value={allModels.some(m => m.id === selectedModel) ? selectedModel : '__custom__'}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-[12px] rounded-md
+                  bg-black/[0.04] dark:bg-white/[0.06]
+                  border border-black/[0.08] dark:border-white/[0.08]
+                  text-[var(--color-text)]
+                  focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
+              >
+                <optgroup label="Free models">
+                  {freeModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.description}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Premium models (billed to your key)">
+                  {paidModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.description}
+                    </option>
+                  ))}
+                </optgroup>
+                {!allModels.some(m => m.id === selectedModel) && selectedModel && (
+                  <option value="__custom__">Custom: {selectedModel}</option>
+                )}
+              </select>
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="text"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder="or enter any OpenRouter model ID..."
+                  className="flex-1 px-2.5 py-1.5 text-[11px] font-mono rounded-md
+                             bg-black/[0.04] dark:bg-white/[0.06]
+                             border border-black/[0.08] dark:border-white/[0.08]
+                             text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30
+                             focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModel(); }}
+                />
+                <button
+                  onClick={handleCustomModel}
+                  disabled={!customModel.trim()}
+                  className="px-2.5 py-1.5 text-[10px] font-medium rounded-md bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] disabled:opacity-40 transition-colors"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {/* Key management */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">OpenRouter API Key</span>
+                <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3 h-3" /> Connected
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-[var(--color-text-muted)] font-mono">sk-or-••••••••</span>
+                <button
+                  onClick={handleRemoveKey}
+                  className="text-[11px] text-red-500 hover:text-red-400 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Message */}
+        {message && (
+          <div className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md ${
+            message.type === 'success'
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              : 'bg-red-500/10 text-red-700 dark:text-red-300'
+          }`}>
+            {message.type === 'success' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+            {message.text}
+          </div>
+        )}
+      </div>
+    </InfoCard>
   );
 }

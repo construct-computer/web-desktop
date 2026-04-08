@@ -365,6 +365,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
 
   const isPro = subscription?.plan === 'pro';
   const isCancelling = subscription?.cancelAtPeriodEnd;
+  const isStaging = usage?.environment === 'staging';
   const costCap = usage?.costCapUsd ?? 0;
   const isUnlimited = costCap === -1;
   const pct = usage?.percentUsed || 0;
@@ -466,11 +467,13 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
                     </div>
                   )}
 
-                  {/* Stats */}
-                  <div className="flex justify-between text-[11px] opacity-40 font-mono">
-                    <span>{((usage.promptTokens || 0) + (usage.completionTokens || 0)).toLocaleString()} tokens</span>
-                    <span>{usage.requestCount || 0} requests</span>
-                  </div>
+                  {/* Stats (staging only) */}
+                  {isStaging && (
+                    <div className="flex justify-between text-[11px] opacity-40 font-mono">
+                      <span>{((usage.promptTokens || 0) + (usage.completionTokens || 0)).toLocaleString()} tokens</span>
+                      <span>{usage.requestCount || 0} requests</span>
+                    </div>
+                  )}
 
                   {/* Warning */}
                   {!isUnlimited && pct >= 80 && (

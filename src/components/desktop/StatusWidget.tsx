@@ -67,6 +67,7 @@ interface UsageWindow {
   completionTokens: number;
   requestCount: number;
   resetsAt: string;
+  plan?: string;
   environment?: string;
   totalCostUsd?: number;
   costCapUsd?: number;
@@ -113,6 +114,9 @@ export function StatusWidget() {
   // Usage stats
   const [usage, setUsage] = useState<UsageWindow | null>(null);
   const [storage, setStorage] = useState<{ bytesUsed: number; maxBytes: number } | null>(null);
+  type QuotaRow = { label: string; used: number; limit: number };
+  const [starterQuotas, setStarterQuotas] = useState<QuotaRow[] | null>(null);
+  const [bonusMessages, setBonusMessages] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +126,36 @@ export function StatusWidget() {
     };
     poll();
     const iv = setInterval(poll, USAGE_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
+
+  // Fetch Starter daily quotas
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const r = await api.getSubscription();
+      if (!cancelled && r.success && r.data && r.data.plan === 'starter') {
+        const qu = r.data.dailyQuotaUsage as Record<string, number> | undefined;
+        const pl = r.data.planLimits as Record<string, number> | undefined;
+        const rows: QuotaRow[] = [];
+        if (!r.data.hasOpenRouterKey) {
+          rows.push({ label: 'Messages', used: qu?.free_message ?? 0, limit: pl?.dailyFreeMessages ?? 25 });
+        }
+        rows.push(
+          { label: 'Searches', used: qu?.search ?? 0, limit: pl?.dailySearches ?? 50 },
+          { label: 'Browser', used: qu?.browser ?? 0, limit: pl?.dailyBrowserSessions ?? 10 },
+          { label: 'Emails', used: qu?.email_send ?? 0, limit: pl?.dailyEmails ?? 20 },
+          { label: 'Sandbox', used: qu?.sandbox ?? 0, limit: pl?.dailySandboxMinutes ?? 60 },
+        );
+        setStarterQuotas(rows);
+        setBonusMessages(r.data.bonusMessages ?? 0);
+      } else if (!cancelled) {
+        setStarterQuotas(null);
+        setBonusMessages(0);
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 30_000);
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
@@ -192,43 +226,86 @@ export function StatusWidget() {
       {/* ── Divider ── */}
       <div className="my-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
 
-      {/* ── Usage stats ── */}
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Tokens
-        </span>
-        <span className="text-[14px] font-medium tabular-nums" style={{ color: 'rgba(255,255,255,0.8)' }}>
-          {fmt(total)}
-        </span>
-      </div>
-      <div className="flex justify-between mt-px text-[10px] tabular-nums" style={{ color: 'rgba(255,255,255,0.2)' }}>
-        <span>▲ {fmt(usage?.promptTokens || 0)}</span>
-        <span>▼ {fmt(usage?.completionTokens || 0)}</span>
-        {isStaging && usage?.totalCostUsd != null && <span>{fmtCost(usage.totalCostUsd)}</span>}
-      </div>
-
-      {/* Limit bar */}
-      <div className="flex items-baseline justify-between gap-2 mt-2">
-        <span className="text-[11px] font-semibold tracking-wide shrink-0" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.35)' }}>
-          {pct >= 100 ? 'Lite mode' : 'Limit'}
-        </span>
-        <span className="text-[12px] font-medium tabular-nums whitespace-nowrap" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.6)' }}>
-          {isStaging && usage?.costCapUsd
-            ? `${fmtCost(usage.totalCostUsd || 0)} / ${fmtCost(usage.costCapUsd)}`
-            : `${Math.min(pct, 100).toFixed(0)}%`}
-        </span>
-      </div>
-      <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div
-          className={`h-full rounded-full transition-all duration-1000 ease-out ${pct >= 100 ? 'animate-pulse' : ''}`}
-          style={{ width: `${Math.max(1, Math.min(100, pct))}%`, background: accent, boxShadow: `0 0 6px ${accent}66` }}
-        />
-      </div>
-      {resetsIn && (
-        <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
-          resets {resetsIn}
-        </div>
+      {/* ── Usage stats (staging only) ── */}
+      {isStaging && (
+        <>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Tokens
+            </span>
+            <span className="text-[14px] font-medium tabular-nums" style={{ color: 'rgba(255,255,255,0.8)' }}>
+              {fmt(total)}
+            </span>
+          </div>
+          <div className="flex justify-between mt-px text-[10px] tabular-nums" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            <span>▲ {fmt(usage?.promptTokens || 0)}</span>
+            <span>▼ {fmt(usage?.completionTokens || 0)}</span>
+            {usage?.totalCostUsd != null && <span>{fmtCost(usage.totalCostUsd)}</span>}
+          </div>
+        </>
       )}
+
+      {/* Limit bars — Starter shows daily quotas, Pro shows cost cap */}
+      {starterQuotas ? (
+        <>
+          {starterQuotas.map((q) => {
+            const qPct = q.limit > 0 ? Math.min(100, (q.used / q.limit) * 100) : 0;
+            const qColor = qPct >= 100 ? '#f87171' : qPct >= 80 ? '#fbbf24' : '#22d3ee';
+            return (
+              <div key={q.label} className="mt-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] font-semibold tracking-wide shrink-0" style={{ color: qPct >= 100 ? qColor : 'rgba(255,255,255,0.3)' }}>
+                    {q.label}
+                  </span>
+                  <span className="text-[10px] font-medium tabular-nums whitespace-nowrap" style={{ color: qPct >= 100 ? qColor : 'rgba(255,255,255,0.45)' }}>
+                    {q.used}/{q.limit}
+                  </span>
+                </div>
+                <div className="h-[2px] rounded-full overflow-hidden mt-0.5" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ease-out ${qPct >= 100 ? 'animate-pulse' : ''}`}
+                    style={{ width: `${Math.max(qPct > 0 ? 2 : 0, qPct)}%`, background: qColor, boxShadow: `0 0 4px ${qColor}44` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          <div className="flex items-baseline justify-between mt-1">
+            {bonusMessages > 0 && (
+              <span className="text-[9px] tabular-nums" style={{ color: 'rgba(74,222,128,0.5)' }}>
+                +{bonusMessages} bonus
+              </span>
+            )}
+            <span className="text-[9px] tabular-nums ml-auto" style={{ color: 'rgba(255,255,255,0.12)' }}>
+              resets daily
+            </span>
+          </div>
+        </>
+      ) : usage?.plan !== 'starter' ? (
+        <>
+          <div className="flex items-baseline justify-between gap-2 mt-2">
+            <span className="text-[11px] font-semibold tracking-wide shrink-0" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.35)' }}>
+              {pct >= 100 ? 'Lite mode' : 'Limit'}
+            </span>
+            <span className="text-[12px] font-medium tabular-nums whitespace-nowrap" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.6)' }}>
+              {isStaging && usage?.costCapUsd && usage.costCapUsd > 0
+                ? `${fmtCost(usage.totalCostUsd || 0)} / ${fmtCost(usage.costCapUsd)}`
+                : `${Math.min(pct, 100).toFixed(0)}%`}
+            </span>
+          </div>
+          <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ease-out ${pct >= 100 ? 'animate-pulse' : ''}`}
+              style={{ width: `${Math.max(1, Math.min(100, pct))}%`, background: accent, boxShadow: `0 0 6px ${accent}66` }}
+            />
+          </div>
+          {resetsIn && (
+            <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
+              resets {resetsIn}
+            </div>
+          )}
+        </>
+      ) : null}
 
       {/* ── Storage ── */}
       {storage && (
