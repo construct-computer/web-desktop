@@ -209,9 +209,9 @@ function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; app
 
     (async () => {
       try {
-        // Try /ui/index.html first, then /ui/, then /
+        // Try multiple paths for the app's HTML entry point
         let html: string | null = null;
-        for (const path of ['/ui/index.html', '/ui/', '/']) {
+        for (const path of ['/', '/ui/index.html', '/ui/', '/index.html']) {
           try {
             const res = await fetch(`${devUrl}${path}`);
             if (res.ok && res.headers.get('content-type')?.includes('html')) {

@@ -115,9 +115,9 @@ export function Launchpad() {
     if (devAppStatus === 'connected' && devAppInfo?.has_ui) {
       devDefs.push({
         id: 'dev-app',
-        label: `${devAppInfo.name} (dev)`,
+        label: devAppInfo.name,
         windowType: 'app',
-        icon: iconGeneric,
+        icon: devAppInfo.iconUrl || iconGeneric,
         category: 'installed',
         appMetadata: { appId: 'dev-app', ui: { type: 'static' as const, entry: 'index.html', width: 560, height: 620 } },
       });

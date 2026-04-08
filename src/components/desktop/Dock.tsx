@@ -333,6 +333,15 @@ function DockItem({
             draggable={false}
           />
         )}
+        {/* Dev app badge */}
+        {item.appId === 'dev-app' && (
+          <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2
+                          px-1 py-px rounded text-[7px] font-bold uppercase tracking-wider
+                          bg-emerald-500 text-white leading-none
+                          shadow-[0_0_4px_rgba(16,185,129,0.5)]">
+            dev
+          </div>
+        )}
         {/* Agent activity badge */}
         {isAgentActive && !badgeCount && (
           <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full

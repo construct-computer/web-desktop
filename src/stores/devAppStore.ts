@@ -13,6 +13,7 @@ export interface DevAppInfo {
   description: string;
   has_ui: boolean;
   tools: DevAppTool[];
+  iconUrl: string | null;
 }
 
 type DevAppStatus = 'disconnected' | 'validating' | 'connected' | 'error';
@@ -85,18 +86,34 @@ export const useDevAppStore = create<DevAppState>()(
           }
           const tools: DevAppTool[] = toolsResult.result?.tools || [];
 
-          // 4. Try to detect UI — check if /ui/index.html exists
+          // 4. Try to detect UI — check common entry points
           let has_ui = false;
-          try {
-            const uiCheck = await fetch(`${normalizedUrl}/ui/index.html`, { method: 'HEAD' });
-            has_ui = uiCheck.ok;
-          } catch { /* no UI */ }
+          for (const uiPath of ['/', '/ui/index.html', '/index.html']) {
+            try {
+              const uiCheck = await fetch(`${normalizedUrl}${uiPath}`, { method: 'HEAD' });
+              if (uiCheck.ok && uiCheck.headers.get('content-type')?.includes('html')) { has_ui = true; break; }
+            } catch { /* try next */ }
+          }
+
+          // 5. Try to fetch app icon
+          let iconUrl: string | null = null;
+          for (const iconPath of ['/icon.png', '/icon.svg', '/favicon.ico']) {
+            try {
+              const iconRes = await fetch(`${normalizedUrl}${iconPath}`);
+              if (iconRes.ok && iconRes.headers.get('content-type')?.startsWith('image')) {
+                const blob = await iconRes.blob();
+                iconUrl = URL.createObjectURL(blob);
+                break;
+              }
+            } catch { /* try next */ }
+          }
 
           const appInfo: DevAppInfo = {
             name: serverInfo.name || 'Dev App',
             description: serverInfo.description || `Dev server at ${normalizedUrl}`,
             has_ui,
             tools,
+            iconUrl,
           };
 
           set({ status: 'connected', appInfo, error: null });
