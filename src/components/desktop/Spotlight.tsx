@@ -10,9 +10,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelLeftOpen } from 'lucide-react';
+import { PanelLeftOpen, Sparkles } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
 import { SpotlightInput } from './spotlight/SpotlightInput';
 import { MessageList } from './spotlight/MessageList';
@@ -21,6 +22,8 @@ export function Spotlight() {
   const open = useWindowStore(s => s.spotlightOpen);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
   const instanceId = useComputerStore(s => s.instanceId);
+  const userPlan = useAuthStore(s => s.user?.plan);
+  const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
 
   const [animating, setAnimating] = useState(false);
   const [show, setShow] = useState(false);
@@ -129,18 +132,34 @@ export function Spotlight() {
 
           {/* Chat area */}
           <div className="flex-1 flex flex-col min-w-0 h-full relative">
-            {/* Floating sidebar toggle when collapsed */}
-            {!sidebarOpen && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="absolute top-2 left-2 z-10 p-1.5 rounded-lg text-[var(--color-text-muted)]/30 hover:text-[var(--color-text)] hover:bg-white/[0.08] transition-colors"
-                title="Show sidebar"
-              >
-                <PanelLeftOpen className="w-3.5 h-3.5" />
-              </button>
+            {isSubscribed ? (
+              <>
+                {/* Floating sidebar toggle when collapsed */}
+                {!sidebarOpen && (
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg text-[var(--color-text-muted)]/30 hover:text-[var(--color-text)] hover:bg-white/[0.08] transition-colors"
+                    title="Show sidebar"
+                  >
+                    <PanelLeftOpen className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <MessageList />
+                <SpotlightInput />
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center max-w-xs">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
+                  </div>
+                  <h3 className="text-[15px] font-semibold text-[var(--color-text)] mb-1">Meet your AI agent</h3>
+                  <p className="text-[13px] text-[var(--color-text-muted)] leading-relaxed">
+                    Subscribe to start chatting with your personal AI agent. It can browse the web, write code, manage files, send emails, and more.
+                  </p>
+                </div>
+              </div>
             )}
-            <MessageList />
-            <SpotlightInput />
           </div>
         </div>
       </div>

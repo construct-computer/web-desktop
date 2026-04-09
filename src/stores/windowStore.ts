@@ -7,9 +7,9 @@ import { agentWS } from '@/services/websocket';
 import analytics from '@/lib/analytics';
 import { useAuthStore } from '@/stores/authStore';
 
-/** Window types unsubscribed users can open in preview mode (read-only, no agent). */
+/** Window types unsubscribed users can open in preview mode. */
 const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
-  'settings', 'about', 'app-registry', 'files', 'calendar', 'email', 'memory',
+  'settings', 'about', 'app-registry',
 ]);
 import {
   DEFAULT_WINDOW_WIDTH,

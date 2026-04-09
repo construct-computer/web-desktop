@@ -409,6 +409,9 @@ function UserSection() {
 const SLACK_OAUTH_URL = 'https://slack.com/oauth/v2/authorize?client_id=10603607090582.10618588079921&scope=app_mentions:read,im:read,im:write,im:history,chat:write,files:write,reactions:read,reactions:write,channels:read,channels:history,users:read,users:read.email&user_scope=';
 
 function ConnectionsSection() {
+  const userPlan = useAuthStore((s) => s.user?.plan);
+  const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
+
   // Slack state
   const [slackConfigured, setSlackConfigured] = useState(false);
   const [slackConnected, setSlackConnected] = useState(false);
@@ -689,11 +692,11 @@ function ConnectionsSection() {
                 <button
                   type="button"
                   onClick={handleSlackConnect}
-                  disabled={slackConnecting}
+                  disabled={slackConnecting || !isSubscribed}
                   className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
                 >
                   {slackConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                  Add to Slack
+                  {isSubscribed ? 'Add to Slack' : 'Subscribe to connect'}
                 </button>
               </div>
             )}
@@ -823,11 +826,11 @@ function ConnectionsSection() {
             ) : (
               <button
                 onClick={handleTelegramConnect}
-                disabled={telegramGenerating}
+                disabled={telegramGenerating || !isSubscribed}
                 className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
               >
                 {telegramGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                Connect Telegram
+                {isSubscribed ? 'Connect Telegram' : 'Subscribe to connect'}
               </button>
             )}
           </div>

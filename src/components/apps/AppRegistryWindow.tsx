@@ -20,6 +20,7 @@ import * as api from '@/services/api';
 import type { InstalledApp } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import { openAuthRedirect } from '@/lib/utils';
@@ -1447,6 +1448,9 @@ function AppDetailView({
   error: string | null;
   onDismissError: () => void;
 }) {
+  const userPlan = useAuthStore((s) => s.user?.plan);
+  const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
+
   const toolCount = app.tools?.length || 0;
   const hasConfigSchema = !!(app.configSchema?.properties && Object.keys(app.configSchema.properties).length > 0);
   const isComposio = app.source === 'composio';
@@ -1506,8 +1510,12 @@ function AppDetailView({
       </div>
     );
   } else if (onGetAction) {
-    // Not installed — "Get" button (disabled if at app limit)
-    actionButton = atAppLimit ? (
+    // Not installed — "Get" button (disabled if at app limit or unsubscribed)
+    actionButton = !isSubscribed ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-3 py-1.5 rounded-full text-black/25 dark:text-white/25 bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06]">
+        Subscribe to install
+      </span>
+    ) : atAppLimit ? (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium px-3 py-1.5 rounded-full text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/15">
         {maxApps} app limit
       </span>
