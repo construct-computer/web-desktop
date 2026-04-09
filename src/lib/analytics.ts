@@ -26,25 +26,48 @@ export function initAnalytics(): void {
   if (initialized || !POSTHOG_KEY) return;
 
   posthog.init(POSTHOG_KEY, {
-    api_host: POSTHOG_HOST || 'https://eu.i.posthog.com',
+    api_host: POSTHOG_HOST || 'https://x.construct.computer',
+    ui_host: 'https://eu.posthog.com',
     defaults: '2026-01-30',
-    // Automatically capture pageviews (we use a SPA, so also enable SPA tracking)
-    capture_pageview: false, // we'll track "screen views" manually via window open/close
+
+    // ── Pageview & navigation ──
+    // 'history_change' auto-captures SPA route changes via pushState/replaceState
+    capture_pageview: 'history_change',
     capture_pageleave: true,
-    // Session recording
-    enable_recording_console_log: false,
-    // Performance
+
+    // ── Session replay ──
+    // Recording is controlled server-side in PostHog project settings.
+    // These options configure what gets captured when recording is active.
+    enable_recording_console_log: true,
+    session_recording: {
+      maskAllInputs: false,
+      maskInputOptions: { password: true },
+      recordCrossOriginIframes: true,
+    },
+
+    // ── Autocapture, heatmaps & dead clicks ──
+    autocapture: {
+      capture_copied_text: true,
+    },
+    capture_dead_clicks: true,
+
+    // ── Web vitals & performance ──
+    capture_performance: {
+      web_vitals: true,
+      web_vitals_allowed_metrics: ['LCP', 'CLS', 'FCP', 'INP'],
+    },
+
+    // ── Performance ──
     loaded: (ph) => {
-      // In development, log events to console instead of sending
       if (import.meta.env.DEV) {
         ph.debug();
       }
     },
-    // Privacy
+
+    // ── Privacy ──
+    person_profiles: 'always',
     respect_dnt: true,
     persistence: 'localStorage+cookie',
-    // Autocapture: clicks, inputs, page views
-    autocapture: true,
   });
 
   initialized = true;
@@ -55,21 +78,25 @@ export function initAnalytics(): void {
 /**
  * Identify the current user. Call after successful login/auth check.
  * Sets the user's distinct_id and attaches person properties.
+ *
+ * Accepts the API `User` object shape directly (avatarUrl, setupCompleted).
  */
 export function identifyUser(user: {
   id: string;
   email: string | null;
   displayName: string | null;
-  avatar?: string | null;
-  setupComplete?: boolean;
+  avatarUrl?: string | null;
+  setupCompleted?: boolean;
+  plan?: string;
 }): void {
   if (!initialized) return;
 
   posthog.identify(user.id, {
     email: user.email,
     name: user.displayName,
-    avatar: user.avatar,
-    setup_complete: user.setupComplete ?? false,
+    avatar: user.avatarUrl,
+    setup_complete: user.setupCompleted ?? false,
+    plan: user.plan,
   });
 }
 
