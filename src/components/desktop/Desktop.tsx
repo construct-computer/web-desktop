@@ -362,14 +362,10 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       </div>
 
 
-      {/* Agent graph — full-desktop overlay for drag-anywhere, corner-snapping */}
-      {!isMobile && <AgentGraphWidget />}
-
-      {/* Clippy-style floating agent assistant */}
-      {!isMobile && <ClippyWidget />}
-
-      {/* Desktop widgets (hidden on mobile) */}
-      {!isMobile && (
+      {/* Agent widgets — only for subscribed users (need agent connection) */}
+      {!isMobile && isSubscribed && <AgentGraphWidget />}
+      {!isMobile && isSubscribed && <ClippyWidget />}
+      {!isMobile && isSubscribed && (
         <>
           <StatusWidget />
           <div

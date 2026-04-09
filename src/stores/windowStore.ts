@@ -5,6 +5,7 @@ import type { WindowConfig, WindowType, WindowBounds, Workspace, WorkspacePlatfo
 import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import analytics from '@/lib/analytics';
+import { useAuthStore } from '@/stores/authStore';
 import {
   DEFAULT_WINDOW_WIDTH,
   DEFAULT_WINDOW_HEIGHT,
@@ -790,6 +791,15 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
+      // Block all windows except 'subscribe' for unsubscribed users
+      const userPlan = useAuthStore.getState().user?.plan;
+      if (type !== 'subscribe' && userPlan !== 'pro' && userPlan !== 'starter') {
+        // Focus the subscribe window instead
+        const sub = get().windows.find((w) => w.type === 'subscribe');
+        if (sub) get().focusWindow(sub.id);
+        return sub?.id || '';
+      }
+
       // During a workspace transition, default new windows to the destination workspace
       const wsId = options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId);
       // Prevent duplicate windows only for singleton types (settings, calendar, etc.)
@@ -928,6 +938,12 @@ export const useWindowStore = create<WindowStore>()(
     closeWindow: (id) => {
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
+
+      // Prevent closing the subscribe window for unsubscribed users
+      if (closing?.type === 'subscribe') {
+        const userPlan = useAuthStore.getState().user?.plan;
+        if (userPlan !== 'pro' && userPlan !== 'starter') return;
+      }
       if (closing) analytics.windowClosed(closing.type);
       const newWindows = windows.filter((w) => w.id !== id);
 
