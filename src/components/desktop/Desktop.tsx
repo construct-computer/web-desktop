@@ -228,9 +228,11 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.
   // Force-start from the menubar always works regardless of flags.
+  // Skip for unsubscribed users — they see the subscribe window instead.
+  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter';
   const tourTriggered = useRef(false);
   useEffect(() => {
-    if (tourTriggered.current || !user) return;
+    if (tourTriggered.current || !user || !isSubscribed) return;
 
     const needsSetup = !user.setupCompleted;
     const tourDone = localStorage.getItem('construct:tour-completed') === '1';
@@ -245,7 +247,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       window.dispatchEvent(new Event('construct:start-tour'));
     }, 600);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, isSubscribed]);
 
   // Request browser notification permission early so it's available
   // when the agent sends notifications while the tab is in the background.
@@ -396,8 +398,8 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       <Toasts />
       <NotificationCenter />
 
-      {/* Setup modal — permanent overlay until user completes initial setup */}
-      {user && !user.setupCompleted && <SetupModal />}
+      {/* Setup modal — permanent overlay until user completes initial setup (only for subscribed users) */}
+      {user && !user.setupCompleted && isSubscribed && <SetupModal />}
     </div>
   );
 }
