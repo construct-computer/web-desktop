@@ -39,6 +39,9 @@ const steps: DriveStep[] = [
       side: 'left',
       align: 'center',
       showButtons: ['next', 'previous'],
+      // Next is blocked until the user saves — the construct:setup-saved
+      // event listener (below) calls driverObj.moveNext() automatically.
+      onNextClick: () => {},
     },
   },
   {
@@ -216,6 +219,9 @@ export function useDesktopTour() {
       };
     }
 
+    // Track whether setup step has the Next button blocked
+    const setupStepIdx = activeSteps.findIndex(s => s.element === '[data-tour="setup"]');
+
     driverObj = driver({
       showProgress: true,
       animate: true,
@@ -229,7 +235,7 @@ export function useDesktopTour() {
       prevBtnText: 'Back',
       doneBtnText: 'Let\u2019s go',
       steps: activeSteps,
-      onPopoverRender: (popover) => {
+      onPopoverRender: (popover, { state }) => {
         // Inject a "fuck it, we ball" link in the top-right corner
         const skipLink = document.createElement('a');
         skipLink.textContent = 'fuck it, we ball';
@@ -237,6 +243,16 @@ export function useDesktopTour() {
         skipLink.href = '#';
         skipLink.onclick = (e) => { e.preventDefault(); skipped = true; driverObj.destroy(); };
         popover.wrapper.prepend(skipLink);
+
+        // Grey out the Next button on the setup step (user must save first)
+        if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {
+          const nextBtn = popover.nextButton;
+          if (nextBtn) {
+            nextBtn.style.opacity = '0.4';
+            nextBtn.style.cursor = 'not-allowed';
+            nextBtn.setAttribute('title', 'Save your details first');
+          }
+        }
       },
       onDestroyed: () => {
         started.current = false;
