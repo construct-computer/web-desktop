@@ -312,13 +312,13 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxHeight: 1000,
   },
   subscribe: {
-    title: 'Subscribe',
-    width: 460,
-    height: 620,
-    minWidth: 380,
+    title: 'Construct',
+    width: 720,
+    height: 640,
+    minWidth: 600,
     minHeight: 500,
-    maxWidth: 560,
-    maxHeight: 800,
+    maxWidth: 900,
+    maxHeight: 850,
   },
 };
 
