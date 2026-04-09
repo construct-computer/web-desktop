@@ -13,7 +13,7 @@ import {
   Bot, Search, Code, Cpu, Shield,
 } from 'lucide-react';
 import { useBillingStore } from '@/stores/billingStore';
-import constructIcon from '@/icons/construct-drive.png';
+import constructLogo from '@/assets/logo.png';
 
 const STARTER_FEATURES = [
   { icon: Bot, text: 'AI agent with free models' },
@@ -48,12 +48,12 @@ export function SubscriptionOverlay() {
   }, [startCheckout]);
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/25">
-      <div className="w-full max-w-[720px] bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150 rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
+      <div className="w-full max-w-[720px] bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150 rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300 pointer-events-auto">
 
         {/* Header */}
         <div className="text-center px-8 pt-7 pb-4">
-          <img src={constructIcon} alt="" className="w-14 h-14 mx-auto mb-3 rounded-xl" draggable={false} />
+          <img src={constructLogo} alt="" className="w-14 h-14 mx-auto mb-3" draggable={false} />
           <h1 className="text-[22px] text-gray-900 dark:text-white font-bold tracking-tight mb-1">
             Your personal AI computer
           </h1>

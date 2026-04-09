@@ -5,7 +5,6 @@ import type { WindowConfig, WindowType, WindowBounds, Workspace, WorkspacePlatfo
 import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import analytics from '@/lib/analytics';
-import { useAuthStore } from '@/stores/authStore';
 import {
   DEFAULT_WINDOW_WIDTH,
   DEFAULT_WINDOW_HEIGHT,
@@ -782,12 +781,6 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
-      // Block all windows for unsubscribed users (SubscriptionOverlay handles gating)
-      const userPlan = useAuthStore.getState().user?.plan;
-      if (userPlan !== 'pro' && userPlan !== 'starter') {
-        return '';
-      }
-
       // During a workspace transition, default new windows to the destination workspace
       const wsId = options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId);
       // Prevent duplicate windows only for singleton types (settings, calendar, etc.)
