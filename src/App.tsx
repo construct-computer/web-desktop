@@ -6,7 +6,7 @@ import { ReturningUserScreen } from '@/components/screens/ReturningUserScreen';
 import { WelcomeScreen } from '@/components/screens/WelcomeScreen';
 import { DuplicateTabScreen } from '@/components/screens/DuplicateTabScreen';
 import { MobileBlockScreen } from '@/components/screens/MobileBlockScreen';
-import { SubscriptionGate } from '@/components/screens/SubscriptionGate';
+// SubscriptionGate replaced by SubscribeWindow (app window instead of full-screen overlay)
 import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -185,17 +185,19 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Slide up lock screen only when container is ready (not just on auth change).
+  // Slide up lock screen when container is ready OR user is unsubscribed (show desktop with subscribe window).
   // Skip when the user has explicitly locked the screen (isLocked).
   useEffect(() => {
-    if (isAuthenticated && computer && authChecked && !lockScreenGone && !slidingUp && !isLocked) {
+    const canSlide = isAuthenticated && authChecked && !lockScreenGone && !slidingUp && !isLocked;
+    const ready = computer || !isSubscribed; // unsubscribed users go straight to desktop
+    if (canSlide && ready) {
       const timer = setTimeout(() => {
         setSlidingUp(true);
         setTimeout(() => setLockScreenGone(true), 700);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, computer, authChecked, lockScreenGone, slidingUp, isLocked]);
+  }, [isAuthenticated, isSubscribed, computer, authChecked, lockScreenGone, slidingUp, isLocked]);
 
   // loginKey forces LoginScreen to remount (replay hello animation) on logout
   const [loginKey, setLoginKey] = useState(0);
@@ -207,11 +209,14 @@ function App() {
     logout();
   }, [logout]);
 
-  // Called when SubscriptionGate detects an active subscription
-  const handleSubscribed = useCallback(async () => {
-    // Refresh user data so isSubscribed updates
-    await checkAuth();
-    // Container provisioning will start automatically via the useEffect
+  // When user subscribes (via SubscribeWindow checkout), refresh auth so provisioning starts
+  useEffect(() => {
+    // Check for billing_status=success in URL (returning from Dodo checkout)
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('billing_status') === 'success') {
+      window.history.replaceState({}, '', '/');
+      checkAuth(); // refresh plan → triggers computer provisioning
+    }
   }, [checkAuth]);
 
   // ── Lock Screen: slide in from top ──
@@ -282,8 +287,8 @@ function App() {
 
   return (
     <>
-      {/* Layer 1: Desktop (bottom) — only when authenticated AND container ready */}
-      {isAuthenticated && computer && (
+      {/* Layer 1: Desktop (bottom) — when authenticated (subscribed with computer, or unsubscribed with subscribe window) */}
+      {isAuthenticated && (computer || !isSubscribed) && (
         <div className="fixed inset-0">
           <Desktop
             onLogout={handleLogout}
@@ -313,19 +318,12 @@ function App() {
           }}
         >
           {isAuthenticated ? (
-            isSubscribed ? (
               <ReturningUserScreen
                 onUnlock={isLocked ? handleUnlock : undefined}
-                isProvisioning={computerLoading || (!computer && !computerError)}
-                provisionError={computerError}
+                isProvisioning={isSubscribed && (computerLoading || (!computer && !computerError))}
+                provisionError={isSubscribed ? computerError : null}
                 onRetry={fetchComputer}
               />
-            ) : (
-              <SubscriptionGate
-                onSubscribed={handleSubscribed}
-                onLogout={handleLogout}
-              />
-            )
           ) : (
             <LoginScreen key={loginKey} />
           )}

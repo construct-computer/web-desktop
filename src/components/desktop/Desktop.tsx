@@ -213,10 +213,21 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-open subscribe window for unsubscribed users
+  const user = useAuthStore((s) => s.user);
+  const subscribeOpened = useRef(false);
+  useEffect(() => {
+    if (subscribeOpened.current || !user) return;
+    const isSubscribed = user.plan === 'pro' || user.plan === 'starter';
+    if (!isSubscribed) {
+      subscribeOpened.current = true;
+      setTimeout(() => openWindow('subscribe'), 300);
+    }
+  }, [user, openWindow]);
+
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.
   // Force-start from the menubar always works regardless of flags.
-  const user = useAuthStore((s) => s.user);
   const tourTriggered = useRef(false);
   useEffect(() => {
     if (tourTriggered.current || !user) return;

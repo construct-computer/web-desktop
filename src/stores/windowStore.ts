@@ -310,6 +310,15 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxWidth: 1400,
     maxHeight: 1000,
   },
+  subscribe: {
+    title: 'Subscribe',
+    width: 460,
+    height: 620,
+    minWidth: 380,
+    minHeight: 500,
+    maxWidth: 560,
+    maxHeight: 800,
+  },
 };
 
 /**
@@ -566,7 +575,7 @@ const WINDOW_PLATFORM_MAP: Partial<Record<WindowType, WorkspacePlatform>> = {
 /** Window types that only allow a single instance (opening again focuses the existing one). */
 const SINGLETON_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'calendar', 'auditlogs', 'memory',
-  'email', 'files', 'access-control', 'app-registry',
+  'email', 'files', 'access-control', 'app-registry', 'subscribe',
   // NOTE: 'terminal' was removed — multiple terminal windows are supported,
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);
