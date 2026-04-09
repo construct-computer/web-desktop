@@ -244,13 +244,13 @@ export function useDesktopTour() {
         skipLink.onclick = (e) => { e.preventDefault(); skipped = true; driverObj.destroy(); };
         popover.wrapper.prepend(skipLink);
 
-        // Grey out the Next button on the setup step (user must save first)
+        // Replace the Next button text on the setup step (user must save first)
         if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {
           const nextBtn = popover.nextButton;
           if (nextBtn) {
-            nextBtn.style.opacity = '0.4';
-            nextBtn.style.cursor = 'not-allowed';
-            nextBtn.setAttribute('title', 'Save your details first');
+            nextBtn.textContent = 'Save to continue \u2192';
+            nextBtn.style.opacity = '0.5';
+            nextBtn.style.cursor = 'default';
           }
         }
       },
