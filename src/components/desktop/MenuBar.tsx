@@ -302,8 +302,8 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {/* ── Agent activity indicator (compact glanceable status) ── */}
         {!isMobile && <AgentActivityIndicator />}
 
-        {/* Debug console toggle */}
-        {!isMobile && <DebugPanelToggle />}
+        {/* Debug console toggle — staging only */}
+        {!isMobile && window.location.hostname !== 'beta.construct.computer' && <DebugPanelToggle />}
 
         {/* Connection — clickable when disconnected to trigger manual reconnect */}
         {isConnected ? (

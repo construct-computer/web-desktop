@@ -338,8 +338,8 @@ function App() {
       {/* Layer 4: Mobile block — covers everything on small screens */}
       {isMobile && <MobileBlockScreen />}
 
-      {/* Debug panel — always available, toggled from MenuBar */}
-      <DebugPanel />
+      {/* Debug panel — staging only */}
+      {window.location.hostname !== 'beta.construct.computer' && <DebugPanel />}
     </>
   );
 }
