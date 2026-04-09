@@ -12,7 +12,7 @@ import analytics from '@/lib/analytics';
 import { useWindowStore } from '@/stores/windowStore';
 import { useBillingStore } from '@/stores/billingStore';
 
-import tourChat from '@/assets/tour/chat.gif';
+import tourChat from '@/assets/tour/tour-1.webm';
 import tourEmail from '@/assets/tour/email.gif';
 import tourCalendar from '@/assets/tour/cal.gif';
 import tourBrowser from '@/assets/tour/browser.gif';
@@ -28,6 +28,11 @@ const TOUR_SKIPPED_KEY = 'construct:tour-skipped';
 /** Build an `<img>` tag for a tour GIF. */
 function gifTag(src: string, alt: string): string {
   return `<img class="tour-gif" src="${src}" alt="${alt}" />`;
+}
+
+/** Build a `<video>` tag for a tour video clip. */
+function videoTag(src: string): string {
+  return `<video class="tour-gif" src="${src}" autoplay loop muted playsinline></video>`;
 }
 
 const steps: DriveStep[] = [
@@ -48,7 +53,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="chat"]',
     popover: {
       title: 'Your Agent',
-      description: `${gifTag(tourChat, 'Chat demo')}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
+      description: `${videoTag(tourChat)}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
       side: 'top',
       align: 'center',
     },
