@@ -22,7 +22,7 @@ const logger = log('SetupModal');
 
 // ── Email helpers ──
 
-const EMAIL_SUFFIX = '-construct';
+const EMAIL_SUFFIX = '-agent';
 
 function generateEmailUsername(name: string): string {
   const base = name
@@ -41,7 +41,7 @@ function fullEmailUsername(base: string): string {
 
 function extractBaseUsername(suggestion: string): string {
   let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-  s = s.replace(/-construct(-\d+)?$/, (_match, num) => num ?? '');
+  s = s.replace(/-(agent|construct)(-\d+)?$/, (_match, _suffix, num) => num ?? '');
   return s;
 }
 

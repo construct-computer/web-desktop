@@ -28,7 +28,7 @@ type Section = 'list' | 'user' | 'connections' | 'subscription';
 
 // -- Helpers --
 
-const AGENT_EMAIL_SUFFIX = '-construct';
+const AGENT_EMAIL_SUFFIX = '-agent';
 
 function formatCost(cost: number): string {
   if (cost < 0.01) return '<$0.01';
@@ -117,14 +117,14 @@ function UserSection({ onBack }: { onBack: () => void }) {
         if (existing) {
           setAgentEmail(existing);
           setEmailLocked(true);
-          // Extract base username: "ankush-construct@construct.computer" -> "ankush"
+          // Extract base username: "ankush-agent@construct.computer" -> "ankush"
           let base = existing.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-          base = base.replace(/-construct(-\d+)?$/, (_m: string, num: string) => num ?? '');
+          base = base.replace(/-(agent|construct)(-\d+)?$/, (_m: string, _s: string, num: string) => num ?? '');
           setEmailUsername(base);
         } else {
           const inbox = agentConfig.agentmail_inbox_username || '';
           if (inbox) {
-            setEmailUsername(inbox.replace(/-construct$/, ''));
+            setEmailUsername(inbox.replace(/-(agent|construct)$/, ''));
           }
         }
       }

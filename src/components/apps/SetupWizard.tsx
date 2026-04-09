@@ -384,7 +384,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Suffix forced on every agent email address. */
-const EMAIL_SUFFIX = '-construct';
+const EMAIL_SUFFIX = '-agent';
 
 function generateEmailUsername(name: string): string {
   const base = name
@@ -406,20 +406,20 @@ function fullEmailUsername(base: string): string {
  *  The backend returns base usernames (e.g. `ankush`, `ankushsingh-2`),
  *  but also handle legacy full-form suggestions defensively.
  *  e.g. `ankush` → `ankush`
- *       `ankush-construct` → `ankush`
- *       `ankush-construct@construct.computer` → `ankush`
- *       `ankush-construct-2` → `ankush-2` */
+ *       `ankush-agent` → `ankush`
+ *       `ankush-agent@construct.computer` → `ankush`
+ *       `ankush-agent-2` → `ankush-2` */
 function extractBaseUsername(suggestion: string): string {
   // Strip domain if present (handles both old and new domains)
   let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-  // Strip -construct suffix (at end, or before a -N numeric suffix)
-  s = s.replace(/-construct(-\d+)?$/, (_match, num) => num ?? '');
+  // Strip -agent suffix (at end, or before a -N numeric suffix)
+  s = s.replace(/-(agent|construct)(-\d+)?$/, (_match, _suffix, num) => num ?? '');
   return s;
 }
 
 /** Format a suggestion for display as a full email address.
- *  e.g. `ankush` → `ankush-construct@construct.computer`
- *       `ankushsingh-2` → `ankushsingh-2-construct@construct.computer` */
+ *  e.g. `ankush` → `ankush-agent@construct.computer`
+ *       `ankushsingh-2` → `ankushsingh-2-agent@construct.computer` */
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
   return `${base}${EMAIL_SUFFIX}@construct.computer`;

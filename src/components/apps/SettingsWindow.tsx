@@ -182,7 +182,7 @@ function SettingsRow({ label, description, children, noBorder }: {
 
 // ── User Section ──
 
-const AGENT_EMAIL_SUFFIX = '-construct';
+const AGENT_EMAIL_SUFFIX = '-agent';
 
 function UserSection() {
   const { user, updateProfile } = useAuthStore();
@@ -224,9 +224,9 @@ function UserSection() {
   // Populate email username from existing config
   useEffect(() => {
     if (existingEmail) {
-      // Extract base username: "ankush-construct@construct.computer" → "ankush"
+      // Extract base username: "ankush-agent@construct.computer" → "ankush"
       let base = existingEmail.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-      base = base.replace(/-construct(-\d+)?$/, (_m: string, num: string) => num ?? '');
+      base = base.replace(/-(agent|construct)(-\d+)?$/, (_m: string, _s: string, num: string) => num ?? '');
       setEmailUsername(base);
     }
   }, [existingEmail]);
