@@ -7,6 +7,7 @@ import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
 import { Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructVideo from '@/assets/construct/loader.webm';
+import eyesGif from '@/assets/construct/eyes.gif';
 
 // ── Position logic (two states: center or corner) ───────────────────
 //
@@ -475,6 +476,43 @@ export function ClippyWidget() {
     }
   }, [shouldPlayVideo]);
 
+  // ── Idle eyes animation (randomly show eyes.gif when idle) ──
+  const [showEyes, setShowEyes] = useState(false);
+  const eyesImgRef = useRef<HTMLImageElement>(null);
+  const eyesTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Restart the GIF from frame 1 each time it fades in
+  useEffect(() => {
+    if (showEyes && eyesImgRef.current) {
+      const img = eyesImgRef.current;
+      img.src = '';
+      img.src = eyesGif;
+    }
+  }, [showEyes]);
+
+  useEffect(() => {
+    if (visualState !== 'idle') {
+      setShowEyes(false);
+      clearTimeout(eyesTimerRef.current);
+      return;
+    }
+
+    function scheduleEyes() {
+      const delay = 6000 + Math.random() * 9000; // 6-15s
+      eyesTimerRef.current = setTimeout(() => {
+        setShowEyes(true);
+        const duration = 3000 + Math.random() * 1000; // 3-4s
+        eyesTimerRef.current = setTimeout(() => {
+          setShowEyes(false);
+          scheduleEyes();
+        }, duration);
+      }, delay);
+    }
+
+    scheduleEyes();
+    return () => clearTimeout(eyesTimerRef.current);
+  }, [visualState]);
+
   const bubbleAbove = py > 140;
   // Only show bubble when there's unique context the MenuBar doesn't provide:
   // - Thinking stream (actual LLM reasoning text)
@@ -537,14 +575,9 @@ export function ClippyWidget() {
           className="w-full h-full object-contain pointer-events-none"
           draggable={false}
         />
-        {/* Video overlay on the computer screen area */}
-        <video
-          ref={videoRef}
-          src={constructVideo}
-          muted
-          loop
-          playsInline
-          className="absolute pointer-events-none object-cover"
+        {/* Screen overlay container — clips video + eyes GIF to the monitor area */}
+        <div
+          className="absolute overflow-hidden pointer-events-none"
           style={{
             // Positioned to match the blue screen area of the pixel-art computer.
             // Image is 1878×1758 rendered with object-contain in a square container,
@@ -554,7 +587,27 @@ export function ClippyWidget() {
             width: '49%',
             height: '38.4%',
           }}
-        />
+        >
+          <video
+            ref={videoRef}
+            src={constructVideo}
+            muted
+            loop
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          {/* Idle eyes animation — fades in/out randomly when agent is idle */}
+          <img
+            ref={eyesImgRef}
+            src={eyesGif}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{
+              opacity: showEyes ? 1 : 0,
+              transition: 'opacity 0.8s ease-in-out',
+            }}
+          />
+        </div>
       </div>
 
       {/* Comic bubble — rendered after avatar so it stacks on top, pointer-events-none so avatar stays clickable */}
