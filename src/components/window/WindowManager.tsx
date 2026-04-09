@@ -22,7 +22,6 @@ import { AccessControlWindow } from '../apps/AccessControlWindow';
 import { DocumentViewerWindow } from '../apps/DocumentViewerWindow';
 import { AppRegistryWindow } from '../apps/AppRegistryWindow';
 import { AppWindow } from '../apps/AppWindow';
-import { SubscribeWindow } from '../apps/SubscribeWindow';
 
 // Map window types to their content components.
 // Chat and Tracker are NOT standalone windows — they live as MenuBar dropdown panels only.
@@ -41,7 +40,6 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   'access-control': AccessControlWindow,
   'app-registry': AppRegistryWindow,
   app: AppWindow,
-  subscribe: SubscribeWindow,
 };
 
 /** Target position for a window in Mission Control mode. */

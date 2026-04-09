@@ -20,6 +20,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
 import { SetupModal } from '@/components/apps/SetupModal';
+import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { getSlackStatus } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, DOCK_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX } from '@/lib/constants';
@@ -213,17 +214,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-open subscribe window for unsubscribed users
   const user = useAuthStore((s) => s.user);
-  const subscribeOpened = useRef(false);
-  useEffect(() => {
-    if (subscribeOpened.current || !user) return;
-    const isSubscribed = user.plan === 'pro' || user.plan === 'starter';
-    if (!isSubscribed) {
-      subscribeOpened.current = true;
-      setTimeout(() => openWindow('subscribe'), 300);
-    }
-  }, [user, openWindow]);
 
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.
@@ -393,6 +384,9 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       {/* Notification system */}
       <Toasts />
       <NotificationCenter />
+
+      {/* Subscription overlay — permanent until user subscribes */}
+      {user && !isSubscribed && <SubscriptionOverlay />}
 
       {/* Setup modal — permanent overlay until user completes initial setup (only for subscribed users) */}
       {user && !user.setupCompleted && isSubscribed && <SetupModal />}

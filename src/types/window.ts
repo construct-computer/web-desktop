@@ -12,8 +12,7 @@ export type WindowType =
   | 'email'
   | 'access-control'
   | 'app-registry'
-  | 'app'
-  | 'subscribe';
+  | 'app';
 
 /** Panel types that live in the MenuBar dropdown, not as standalone windows. */
 export type MenuBarPanelType = 'chat' | 'tracker';

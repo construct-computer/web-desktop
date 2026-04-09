@@ -311,15 +311,6 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxWidth: 1400,
     maxHeight: 1000,
   },
-  subscribe: {
-    title: 'Construct',
-    width: 720,
-    height: 640,
-    minWidth: 600,
-    minHeight: 500,
-    maxWidth: 900,
-    maxHeight: 850,
-  },
 };
 
 /**
@@ -576,7 +567,7 @@ const WINDOW_PLATFORM_MAP: Partial<Record<WindowType, WorkspacePlatform>> = {
 /** Window types that only allow a single instance (opening again focuses the existing one). */
 const SINGLETON_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'calendar', 'auditlogs', 'memory',
-  'email', 'files', 'access-control', 'app-registry', 'subscribe',
+  'email', 'files', 'access-control', 'app-registry',
   // NOTE: 'terminal' was removed — multiple terminal windows are supported,
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);
@@ -791,13 +782,10 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
-      // Block all windows except 'subscribe' for unsubscribed users
+      // Block all windows for unsubscribed users (SubscriptionOverlay handles gating)
       const userPlan = useAuthStore.getState().user?.plan;
-      if (type !== 'subscribe' && userPlan !== 'pro' && userPlan !== 'starter') {
-        // Focus the subscribe window instead
-        const sub = get().windows.find((w) => w.type === 'subscribe');
-        if (sub) get().focusWindow(sub.id);
-        return sub?.id || '';
+      if (userPlan !== 'pro' && userPlan !== 'starter') {
+        return '';
       }
 
       // During a workspace transition, default new windows to the destination workspace
@@ -938,12 +926,6 @@ export const useWindowStore = create<WindowStore>()(
     closeWindow: (id) => {
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
-
-      // Prevent closing the subscribe window for unsubscribed users
-      if (closing?.type === 'subscribe') {
-        const userPlan = useAuthStore.getState().user?.plan;
-        if (userPlan !== 'pro' && userPlan !== 'starter') return;
-      }
       if (closing) analytics.windowClosed(closing.type);
       const newWindows = windows.filter((w) => w.id !== id);
 
