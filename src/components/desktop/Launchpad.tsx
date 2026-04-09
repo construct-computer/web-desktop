@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, Package } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useAppStore, installedAppsToDefinitions, localAppsToDefinitions, composioToolkitsToDefinitions } from '@/stores/appStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { useSound } from '@/hooks/useSound';
@@ -168,6 +169,12 @@ export function Launchpad() {
   const handleAppClick = useCallback(
     (app: AppDefinition) => {
       play('click');
+
+      // Unsubscribed users cannot launch apps from Launchpad
+      const userPlan = useAuthStore.getState().user?.plan;
+      if (userPlan !== 'pro' && userPlan !== 'starter') {
+        return;
+      }
 
       // Installed / Composio app — open in an app window
       if (app.category === 'installed' && app.appMetadata) {

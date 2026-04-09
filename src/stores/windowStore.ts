@@ -5,6 +5,12 @@ import type { WindowConfig, WindowType, WindowBounds, Workspace, WorkspacePlatfo
 import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import analytics from '@/lib/analytics';
+import { useAuthStore } from '@/stores/authStore';
+
+/** Window types unsubscribed users can open in preview mode (read-only, no agent). */
+const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
+  'settings', 'about', 'app-registry', 'files', 'calendar', 'email', 'memory',
+]);
 import {
   DEFAULT_WINDOW_WIDTH,
   DEFAULT_WINDOW_HEIGHT,
@@ -781,6 +787,12 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
+      // Preview mode: unsubscribed users can only open whitelisted app types
+      const userPlan = useAuthStore.getState().user?.plan;
+      if (userPlan !== 'pro' && userPlan !== 'starter' && !PREVIEW_ALLOWED_TYPES.has(type)) {
+        return '';
+      }
+
       // During a workspace transition, default new windows to the destination workspace
       const wsId = options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId);
       // Prevent duplicate windows only for singleton types (settings, calendar, etc.)
