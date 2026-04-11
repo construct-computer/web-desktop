@@ -209,15 +209,16 @@ function App() {
     logout();
   }, [logout]);
 
-  // When user subscribes (via SubscribeWindow checkout), refresh auth so provisioning starts
+  // When user subscribes or changes plan, reload the tab to pick up the new plan
   useEffect(() => {
-    // Check for billing_status=success in URL (returning from Dodo checkout)
     const params = new URLSearchParams(window.location.search);
-    if (params.get('billing_status') === 'success') {
+    const billingStatus = params.get('billing_status');
+    if (billingStatus === 'success' || billingStatus === 'portal_return') {
+      // Clear URL params and reload to pick up the new plan
       window.history.replaceState({}, '', '/');
-      checkAuth(); // refresh plan → triggers computer provisioning
+      window.location.reload();
     }
-  }, [checkAuth]);
+  }, []);
 
   // ── Lock Screen: slide in from top ──
   const handleLockScreen = useCallback(() => {

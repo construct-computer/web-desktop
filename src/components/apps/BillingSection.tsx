@@ -154,8 +154,9 @@ export function BillingSection() {
 
   const handleSwitchPlan = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(true);
-    await switchPlan(plan);
+    const success = await switchPlan(plan);
     setCheckoutLoading(false);
+    if (success) window.location.reload();
   }, [switchPlan]);
 
   const handleManage = useCallback(async () => {

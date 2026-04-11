@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Power } from 'lucide-react';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
+import { BootProgressBar } from '@/components/ui';
 import logoImg from '@/assets/construct-logo.png';
 
 interface WelcomeScreenProps {
@@ -170,6 +171,7 @@ export function WelcomeScreen({ onComplete, onExiting }: WelcomeScreenProps) {
             <Power className="w-6 h-6 text-white/50 group-hover:text-white/90 transition-colors duration-300" strokeWidth={2} />
           </button>
           <span className="text-[11px] font-medium text-white/30 tracking-widest uppercase mt-2">Power on</span>
+            <BootProgressBar />
         </div>
       )}
 
