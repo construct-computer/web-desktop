@@ -166,13 +166,14 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
     ? `${baseUrl}/${token ? `?token=${encodeURIComponent(token)}` : ''}`
     : `${baseUrl}/ui/`;
 
-  // Allow same-origin ONLY when the app is hosted on its own per-app subdomain
-  // (`<label>.construct.computer`). That gives the iframe a real distinct
-  // origin, so localStorage / cookies / IndexedDB are scoped to the app
-  // alone. Local apps live under our own origin (/api/apps/local/...), so
-  // they must stay in the strict opaque-origin sandbox to prevent them from
-  // reading the user's auth token from the construct frontend's storage.
-  const sandboxAttr = !isLocal && /^https:\/\/[a-z0-9-]+\.construct\.computer(?:\/|$)/.test(baseUrl)
+  // Allow same-origin ONLY when the app is hosted on its own per-app
+  // sub-subdomain (`<label>.apps.construct.computer`). That gives the
+  // iframe a real distinct origin, so localStorage / cookies / IndexedDB
+  // are scoped to the app alone. Local apps live under our own origin
+  // (/api/apps/local/...), so they must stay in the strict opaque-origin
+  // sandbox to prevent them from reading the user's auth token from the
+  // construct frontend's storage.
+  const sandboxAttr = !isLocal && /^https:\/\/[a-z0-9-]+\.apps\.construct\.computer(?:\/|$)/.test(baseUrl)
     ? 'allow-scripts allow-same-origin'
     : 'allow-scripts';
 
@@ -408,7 +409,7 @@ function GenericAppPanel({
     description: t.description,
   }));
 
-  // Derive host label from the base_url (e.g. devtools-hys57e.construct.computer)
+  // Derive host label from the base_url (e.g. devtools-hys57e.apps.construct.computer)
   const hostLabel = (() => {
     try {
       return new URL(appData.base_url).hostname;
