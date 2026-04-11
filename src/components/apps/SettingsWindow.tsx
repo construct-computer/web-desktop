@@ -49,25 +49,13 @@ interface SectionDef {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const SECTIONS: SectionDef[][] = [
-  // Group 1: System
-  [
-    { id: 'user', label: 'User', icon: User },
-    { id: 'connections', label: 'Connections', icon: Link2 },
-  ],
-  // Group 2: Preferences
-  [
-    { id: 'appearance', label: 'Appearance', icon: Paintbrush },
-    { id: 'sound', label: 'Sound', icon: Volume2 },
-  ],
-  // Group 3: Billing
-  [
-    { id: 'subscription', label: 'Subscription', icon: CreditCard },
-  ],
-  // Group 4: Advanced
-  [
-    { id: 'developer', label: 'Developer', icon: Code2 },
-  ],
+const SECTIONS: SectionDef[] = [
+  { id: 'user', label: 'User', icon: User },
+  { id: 'connections', label: 'Connections', icon: Link2 },
+  { id: 'appearance', label: 'Appearance', icon: Paintbrush },
+  { id: 'sound', label: 'Sound', icon: Volume2 },
+  { id: 'subscription', label: 'Subscription', icon: CreditCard },
+  { id: 'developer', label: 'Developer', icon: Code2 },
 ];
 
 // ── macOS-style toggle switch ──
@@ -108,11 +96,8 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
     <div className="flex h-full text-[var(--color-text)] select-none">
       {/* Sidebar */}
       <div className="w-[180px] flex-shrink-0 border-r border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] overflow-y-auto py-2 px-2">
-        {SECTIONS.map((group, gi) => (
-          <div key={gi}>
-            {gi > 0 && <div className="my-1.5 mx-1" />}
-            <div className="space-y-px">
-              {group.map((s) => {
+        <div className="space-y-0.5">
+          {SECTIONS.map((s) => {
                 const active = section === s.id;
                 return (
                   <button
@@ -131,9 +116,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
                   </button>
                 );
               })}
-            </div>
-          </div>
-        ))}
+        </div>
       </div>
 
       {/* Content */}
