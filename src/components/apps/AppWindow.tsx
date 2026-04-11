@@ -161,6 +161,16 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
     ? `${baseUrl}/${token ? `?token=${encodeURIComponent(token)}` : ''}`
     : `${baseUrl}/ui/`;
 
+  // Allow same-origin ONLY when the app is hosted on its own per-app subdomain
+  // (`<label>.construct.computer`). That gives the iframe a real distinct
+  // origin, so localStorage / cookies / IndexedDB are scoped to the app
+  // alone. Local apps live under our own origin (/api/apps/local/...), so
+  // they must stay in the strict opaque-origin sandbox to prevent them from
+  // reading the user's auth token from the construct frontend's storage.
+  const sandboxAttr = !isLocal && /^https:\/\/[a-z0-9-]+\.construct\.computer(?:\/|$)/.test(baseUrl)
+    ? 'allow-scripts allow-same-origin'
+    : 'allow-scripts';
+
   return (
     <div className="w-full h-full relative bg-[var(--color-bg-secondary)]">
       {loading && !error && (
@@ -184,7 +194,7 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
         ref={iframeRef}
         src={uiUrl}
         className="absolute inset-0 w-full h-full border-none"
-        sandbox="allow-scripts"
+        sandbox={sandboxAttr}
         onLoad={() => setLoading(false)}
         onError={() => { setLoading(false); setError('Failed to load app UI'); }}
         title={config.title}
