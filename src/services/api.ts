@@ -830,6 +830,19 @@ export async function getComposioAuthUrl(toolkit: string): Promise<ApiResult<{ u
   return request(`/composio/${encodeURIComponent(toolkit)}/auth-url`);
 }
 
+/** Initiate a connection for any auth scheme. For OAUTH2 returns a redirect URL;
+ *  for API_KEY/BEARER_TOKEN/BASIC/NO_AUTH creates the connected account directly. */
+export async function composioConnect(
+  toolkit: string,
+  authScheme: string,
+  fields: Record<string, string> = {},
+): Promise<ApiResult<{ requiresOAuth: boolean; url?: string; connected_account_id?: string; ok?: boolean; error?: string }>> {
+  return request(`/composio/${encodeURIComponent(toolkit)}/connect`, {
+    method: 'POST',
+    body: JSON.stringify({ authScheme, fields }),
+  });
+}
+
 export async function composioFinalize(connectedAccountId?: string): Promise<ApiResult<{ ok: boolean; finalized?: number }>> {
   return request('/composio/finalize', {
     method: 'POST',
