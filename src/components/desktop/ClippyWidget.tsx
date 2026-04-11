@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X } from 'lucide-react';
+
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -8,6 +8,8 @@ import { Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructVideo from '@/assets/construct/loader.webm';
 import eyesGif from '@/assets/construct/eyes.gif';
+import chatBubbleSrc from '@/assets/chat-bubble.png';
+import chatBubbleLgSrc from '@/assets/chat-bubble-lg.png';
 
 // ── Position logic (two states: center or corner) ───────────────────
 //
@@ -128,53 +130,33 @@ function lerp(a: number, b: number, t: number): number {
 // ── Bubble-only CSS (injected once) ─────────────────────────────────
 
 const BUBBLE_STYLES = `
-/* ── Appear: comic "pop" with bounce + wobble ── */
+/* ── Appear: comic "pop" from left with bounce + wobble ── */
 @keyframes clippy-bubble-in {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.15) rotate(-4deg); }
-  40%  { opacity: 1; transform: translateX(-50%) translateY(-4px) scale(1.12) rotate(1.5deg); }
-  60%  { transform: translateX(-50%) translateY(2px) scale(0.95) rotate(-1deg); }
-  75%  { transform: translateX(-50%) translateY(-1px) scale(1.04) rotate(0.5deg); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); }
+  0%   { opacity: 0; transform: translateX(-30px) scale(0.15) rotate(-4deg); }
+  40%  { opacity: 1; transform: translateX(4px) scale(1.12) rotate(1.5deg); }
+  60%  { transform: translateX(-2px) scale(0.95) rotate(-1deg); }
+  75%  { transform: translateX(1px) scale(1.04) rotate(0.5deg); }
+  100% { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
 }
-@keyframes clippy-bubble-in-below {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.15) rotate(4deg); }
-  40%  { opacity: 1; transform: translateX(-50%) translateY(4px) scale(1.12) rotate(-1.5deg); }
-  60%  { transform: translateX(-50%) translateY(-2px) scale(0.95) rotate(1deg); }
-  75%  { transform: translateX(-50%) translateY(1px) scale(1.04) rotate(-0.5deg); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); }
-}
-/* ── Disappear: cartoonish deflate + poof ── */
+/* ── Disappear: cartoonish deflate + poof to left ── */
 @keyframes clippy-bubble-out {
-  0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); }
-  30%  { opacity: 1; transform: translateX(-50%) translateY(-3px) scaleY(1.08) scaleX(0.94) rotate(1deg); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.3) rotate(-3deg); }
+  0%   { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
+  30%  { opacity: 1; transform: translateX(3px) scaleY(1.08) scaleX(0.94) rotate(1deg); }
+  100% { opacity: 0; transform: translateX(-20px) scale(0.3) rotate(-3deg); }
 }
-@keyframes clippy-bubble-out-below {
-  0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); }
-  30%  { opacity: 1; transform: translateX(-50%) translateY(3px) scaleY(1.08) scaleX(0.94) rotate(-1deg); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.3) rotate(3deg); }
-}
-/* ── Welcome: bigger overshoot + wiggle ── */
+/* ── Welcome: bigger overshoot + wiggle from left ── */
 @keyframes clippy-welcome-in {
-  0%   { opacity: 0; transform: translateX(-50%) scale(0.08) rotate(-6deg); }
-  30%  { opacity: 1; transform: translateX(-50%) scale(1.18) rotate(2deg); }
-  50%  { transform: translateX(-50%) scale(0.92) rotate(-1.5deg); }
-  65%  { transform: translateX(-50%) scale(1.06) rotate(0.8deg); }
-  80%  { transform: translateX(-50%) scale(0.98) rotate(-0.3deg); }
-  100% { opacity: 1; transform: translateX(-50%) scale(1) rotate(0deg); }
-}
-@keyframes clippy-welcome-in-below {
-  0%   { opacity: 0; transform: translateX(-50%) scale(0.08) rotate(6deg); }
-  30%  { opacity: 1; transform: translateX(-50%) scale(1.18) rotate(-2deg); }
-  50%  { transform: translateX(-50%) scale(0.92) rotate(1.5deg); }
-  65%  { transform: translateX(-50%) scale(1.06) rotate(-0.8deg); }
-  80%  { transform: translateX(-50%) scale(0.98) rotate(0.3deg); }
-  100% { opacity: 1; transform: translateX(-50%) scale(1) rotate(0deg); }
+  0%   { opacity: 0; transform: translateX(-40px) scale(0.08) rotate(-6deg); }
+  30%  { opacity: 1; transform: translateX(6px) scale(1.18) rotate(2deg); }
+  50%  { transform: translateX(-3px) scale(0.92) rotate(-1.5deg); }
+  65%  { transform: translateX(2px) scale(1.06) rotate(0.8deg); }
+  80%  { transform: translateX(-1px) scale(0.98) rotate(-0.3deg); }
+  100% { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
 }
 /* ── Idle float: subtle breathing while visible ── */
 @keyframes clippy-bubble-float {
-  0%, 100% { transform: translateX(-50%) translateY(0) rotate(0deg); }
-  50%      { transform: translateX(-50%) translateY(-2px) rotate(0.3deg); }
+  0%, 100% { transform: translateX(0) translateY(0) rotate(0deg); }
+  50%      { transform: translateX(0) translateY(-2px) rotate(0.3deg); }
 }`;
 
 function injectStyles() {
@@ -397,12 +379,16 @@ export function ClippyWidget() {
     }
   }, [toggleSpotlight]);
 
-  // ── Welcome bubble (shows once on mount, auto-dismisses) ──
+  // ── Welcome bubble (shows once on mount with 1s delay, auto-dismisses) ──
   // Suppress on mount if user is still in onboarding (setup wizard / tour)
-  const [welcomeMsg, setWelcomeMsg] = useState<string | null>(() =>
-    setupCompleted ? pickWelcome() : null,
-  );
+  const [welcomeMsg, setWelcomeMsg] = useState<string | null>(null);
   const welcomeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const welcomeDelayRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    if (!setupCompleted) return;
+    welcomeDelayRef.current = setTimeout(() => setWelcomeMsg(pickWelcome()), 1000);
+    return () => clearTimeout(welcomeDelayRef.current);
+  }, [setupCompleted]);
   useEffect(() => {
     if (!welcomeMsg) return;
     welcomeTimerRef.current = setTimeout(() => setWelcomeMsg(null), 6000);
@@ -513,7 +499,6 @@ export function ClippyWidget() {
     return () => clearTimeout(eyesTimerRef.current);
   }, [visualState]);
 
-  const bubbleAbove = py > 140;
   // Only show bubble when there's unique context the MenuBar doesn't provide:
   // - Thinking stream (actual LLM reasoning text)
   // - Operation goals (what a spawned agent is doing)
@@ -525,9 +510,9 @@ export function ClippyWidget() {
 
   // Determine what to show in the unified comic bubble
   const bubbleContent = showBubble
-    ? { title: stateLabel, detail: scrollText, onDismiss: () => setDismissed(true), variant: 'status' as const }
+    ? { title: stateLabel, detail: scrollText, variant: 'status' as const }
     : showWelcome
-    ? { title: welcomeMsg!, detail: '', onDismiss: () => setWelcomeMsg(null), variant: 'welcome' as const }
+    ? { title: welcomeMsg!, detail: '', variant: 'welcome' as const }
     : null;
 
   // Keep bubble mounted during exit animation
@@ -610,19 +595,15 @@ export function ClippyWidget() {
         </div>
       </div>
 
-      {/* Comic bubble — rendered after avatar so it stacks on top, pointer-events-none so avatar stays clickable */}
+      {/* Chat bubble — positioned to the left of the avatar */}
       {visibleBubble && (
-        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
-          <ComicBubble
-            above={bubbleAbove}
-            title={visibleBubble.title}
-            detail={visibleBubble.detail}
-            variant={visibleBubble.variant}
-            onDismiss={visibleBubble.onDismiss}
-            avatarSize={AVATAR_SIZE}
-            closing={bubbleClosing}
-          />
-        </div>
+        <ComicBubble
+          title={visibleBubble.title}
+          detail={visibleBubble.detail}
+          variant={visibleBubble.variant}
+          avatarSize={AVATAR_SIZE}
+          closing={bubbleClosing}
+        />
       )}
 
       {/* Shortcut hint */}
@@ -642,24 +623,34 @@ export function ClippyWidget() {
   );
 }
 
-// ── Unified Comic Bubble ────────────────────────────────────────────
+// ── Chat Bubble ─────────────────────────────────────────────────────
 //
-// Single comic speech bubble with curved SVG tail for all content types:
-// - welcome: simple greeting text
-// - status: state label + scrolling detail text (thinking, working, etc.)
+// Chat message bubble positioned to the left of the avatar.
+// Uses chat-bubble.png for short messages and chat-bubble-lg.png for expanded content.
+// Images: 800x276 (normal) and 800x676 (lg)
 
-function ComicBubble({ above, title, detail, variant, onDismiss, avatarSize, closing }: {
-  above: boolean;
+const NORMAL_BUBBLE_W = 180;
+const NORMAL_BUBBLE_H = 62;  // 276 * (180/800) ≈ 62
+const LG_BUBBLE_W = 220;
+const LG_BUBBLE_H = 186;     // 676 * (220/800) ≈ 186
+
+function ComicBubble({ title, detail, variant, avatarSize, closing }: {
   title: string;
   detail: string;
   variant: 'welcome' | 'status';
-  onDismiss: () => void;
   avatarSize: number;
   closing?: boolean;
 }) {
   const textRef = useRef<HTMLDivElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
+  const isWelcome = variant === 'welcome';
+  const hasDetail = !!detail;
+
+  // Use lg bubble for status messages with detail text, normal for welcome or no detail
+  const useLgBubble = !isWelcome && hasDetail;
+  const bubbleW = useLgBubble ? LG_BUBBLE_W : NORMAL_BUBBLE_W;
+  const bubbleH = useLgBubble ? LG_BUBBLE_H : NORMAL_BUBBLE_H;
+  const bubbleSrc = useLgBubble ? chatBubbleLgSrc : chatBubbleSrc;
 
   // Auto-scroll thinking text to bottom
   useEffect(() => {
@@ -685,114 +676,82 @@ function ComicBubble({ above, title, detail, variant, onDismiss, avatarSize, clo
     return () => cancelAnimationFrame(rafRef.current);
   }, [detail]);
 
-  const W = 250;
-  const TAIL_H = 17;
-  const isWelcome = variant === 'welcome';
-
   const springEase = 'cubic-bezier(0.22, 1.2, 0.36, 1)';
   const exitEase = 'cubic-bezier(0.55, 0, 1, 0.45)';
 
   const enterAnim = closing
-    ? (above
-      ? `clippy-bubble-out 0.3s ${exitEase} forwards`
-      : `clippy-bubble-out-below 0.3s ${exitEase} forwards`)
+    ? `clippy-bubble-out 0.3s ${exitEase} forwards`
     : isWelcome
-      ? (above
-        ? `clippy-welcome-in 0.55s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.55s infinite`
-        : `clippy-welcome-in-below 0.55s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.55s infinite`)
-      : (above
-        ? `clippy-bubble-in 0.45s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.45s infinite`
-        : `clippy-bubble-in-below 0.45s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.45s infinite`);
+      ? `clippy-welcome-in 0.55s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.55s infinite`
+      : `clippy-bubble-in 0.45s ${springEase} forwards, clippy-bubble-float 3s ease-in-out 0.45s infinite`;
+
+  // Content area padding - adjusted for the bubble image's tail (right side) and rounded corners
+  // Format: top right bottom left
+  // More padding on right to avoid tail, left padding for rounded corner
+  const contentPadding = useLgBubble ? '14px 40px 18px 34px' : '10px 36px 14px 30px';
 
   return (
     <div
-      ref={wrapRef}
       className="absolute pointer-events-auto"
       style={{
-        ...(above
-          ? { bottom: avatarSize - 8, left: '50%', transform: 'translateX(-50%)' }
-          : { top: avatarSize - 8, left: '50%', transform: 'translateX(-50%)' }
-        ),
+        right: avatarSize * 0.85 + 10,  // Tail aligns into the screen area, offset further left
+        bottom: '68%',             // Bottom of bubble at screen center Y (14% + 38.4%/2 ≈ 33% from top)
         animation: enterAnim,
-        transformOrigin: above ? '42% bottom' : '42% top',
-        width: W,
+        transformOrigin: 'right bottom',
+        width: bubbleW,
+        height: bubbleH,
+        zIndex: 10,
       }}
     >
-      {/* Tail — SVG curved comic tail (above: rendered before body) */}
-      {!above && (
-        <svg
-          className="relative z-10"
-          style={{ marginBottom: -5, marginLeft: '38%' }}
-          width="28"
-          height={TAIL_H}
-          viewBox="0 0 28 12"
-          fill="none"
-          transform="scale(1,-1)"
-        >
-          <path d="M0 0 C4 0, 8 1.5, 12 7 Q14 10.5, 14 12 Q14 10.5, 16 7 C20 1.5, 24 0, 28 0" className="fill-white dark:fill-[#f0eef5]" />
-
-        </svg>
-      )}
-
-      {/* Bubble body — cartoony rounded rect */}
+      {/* Bubble background image */}
       <div
-        className="relative rounded-[22px] bg-white dark:bg-[#f0eef5]"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          filter: 'drop-shadow(0 3px 12px rgba(0,0,0,0.13)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)',
-          transform: 'rotate(-0.5deg)',
+          backgroundImage: `url(${bubbleSrc})`,
+          backgroundSize: '100% 100%',
+          backgroundRepeat: 'no-repeat',
+          filter: 'drop-shadow(0 3px 12px rgba(0,0,0,0.2)) drop-shadow(0 1px 3px rgba(0,0,0,0.1))',
         }}
+      />
+
+      {/* Content overlay */}
+      <div
+        className="relative h-full flex flex-col items-center justify-center text-center"
+        style={{ padding: contentPadding }}
       >
-        <div className="px-4 py-3">
-          {/* Dismiss button */}
-          <button
-            className="absolute top-2 right-2 p-0.5 rounded-full opacity-0 hover:opacity-50 transition-opacity"
-            onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-            title="Dismiss"
-          >
-            <X className="w-3 h-3 text-black/60" />
-          </button>
-
-          {/* Title */}
-          <div
-            className={`pr-4 text-[#2d2b3a] ${detail ? 'text-[12px] font-semibold' : 'text-[13.5px]'}`}
-            style={{ fontWeight: detail ? 600 : 450, lineHeight: 1.45 }}
-          >
-            {title}
-          </div>
-
-          {/* Detail / thinking text */}
-          {detail && (
-            <div
-              ref={textRef}
-              className="text-[11px] leading-relaxed text-[#2d2b3a]/45 mt-1 overflow-hidden"
-              style={{
-                maxHeight: '4.5rem',
-                maxWidth: W - 36,
-                maskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 100%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 100%)',
-              }}
-            >
-              {detail}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tail — SVG curved comic tail (above: rendered after body) */}
-      {above && (
-        <svg
-          className="relative z-10"
-          style={{ marginTop: -5, marginLeft: '38%' }}
-          width="28"
-          height={TAIL_H}
-          viewBox="0 0 28 12"
-          fill="none"
+        {/* Title */}
+        <div
+          className="text-white"
+          style={{
+            fontSize: useLgBubble ? '12px' : '13px',
+            fontWeight: hasDetail ? 600 : 500,
+            lineHeight: 1.35,
+            textShadow: '0 1px 2px rgba(0,0,0,0.25)',
+            maxWidth: useLgBubble ? '160px' : '120px',
+            wordWrap: 'break-word',
+          }}
         >
-          <path d="M0 0 C4 0, 8 1.5, 12 7 Q14 10.5, 14 12 Q14 10.5, 16 7 C20 1.5, 24 0, 28 0" className="fill-white dark:fill-[#f0eef5]" />
+          {title}
+        </div>
 
-        </svg>
-      )}
+        {/* Detail / thinking text */}
+        {detail && (
+          <div
+            ref={textRef}
+            className="text-white/85 mt-1.5 overflow-hidden text-center"
+            style={{
+              fontSize: '11px',
+              lineHeight: 1.45,
+              maxHeight: useLgBubble ? '120px' : '32px',
+              textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+              maskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 100%)',
+            }}
+          >
+            {detail}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
