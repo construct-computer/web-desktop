@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useSettingsStore, getWallpaperSrc } from '@/stores/settingsStore';
-import { BootProgressBar } from '@/components/ui';
 import constructVideo from '@/assets/construct/loader.webm';
 
 const BOOT_STEPS = [
@@ -184,7 +183,6 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
                 {BOOT_STEPS[stepIndex]}
               </p>
             </div>
-            <BootProgressBar />
           </div>
         ) : isLocked ? (
           /* Locked mode — click to unlock */

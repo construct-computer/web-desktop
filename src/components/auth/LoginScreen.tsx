@@ -3,7 +3,6 @@ import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
-import { BootProgressBar } from '@/components/ui';
 import circleAppearVideo from '@/assets/construct/circle-appear.webm';
 
 export function LoginScreen() {
@@ -156,7 +155,6 @@ export function LoginScreen() {
               <svg className="w-6 h-6 text-white/50 group-hover:text-white/90 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
             </button>
             <span className="text-[11px] font-medium text-white/30 tracking-widest uppercase mt-2">Power on</span>
-            <BootProgressBar />
           </div>
         </div>
       )}
