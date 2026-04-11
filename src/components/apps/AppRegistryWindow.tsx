@@ -17,7 +17,6 @@ import type { InstalledApp, RegistryAppDetail } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
-import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import Markdown from 'react-markdown';
 
@@ -47,10 +46,13 @@ const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
 // ── Helpers ──
 
-function getInstalledIconUrl(appId: string, hasIcon: boolean): string | undefined {
-  if (!hasIcon) return undefined;
-  const token = localStorage.getItem(STORAGE_KEYS.token) || '';
-  return `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/icon?token=${encodeURIComponent(token)}`;
+/**
+ * Icon URL for an installed app. The construct backend doesn't host
+ * /api/apps/:id/icon — the icon_url field already holds a fully-qualified
+ * URL (raw.githubusercontent.com for registry apps). Just pass it through.
+ */
+function getInstalledIconUrl(app: Pick<InstalledApp, 'icon_url'> | undefined): string | undefined {
+  return app?.icon_url || undefined;
 }
 
 // ── Main Component ──
@@ -203,7 +205,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   const handleOpenInstalled = (app: InstalledApp) => {
     openWindow('app', {
       title: app.name,
-      icon: getInstalledIconUrl(app.id, !!app.icon_url),
+      icon: getInstalledIconUrl(app),
       metadata: { appId: app.id },
     } as Partial<WindowConfig>);
   };
@@ -234,7 +236,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     // Merge data: detailFull (registry detail) → detailRegistry (search result) → detailInstalled
     const fullIcon = detailFull?.icon_url || detailRegistry?.icon_url
       || ('icon_url' in detail && typeof detail.icon_url === 'string' ? detail.icon_url : undefined)
-      || getInstalledIconUrl(detail.id, true);
+      || getInstalledIconUrl(detailInstalled ?? undefined);
     const fullName = detailFull?.name || detail.name;
     const author = detailFull?.author || detailRegistry?.author;
     const version = detailFull?.latest_version || detailRegistry?.latest_version;
@@ -751,7 +753,7 @@ function InstalledAppCard({
   onClick: () => void;
   onOpen: () => void;
 }) {
-  const iconUrl = getInstalledIconUrl(app.id, !!app.icon_url);
+  const iconUrl = getInstalledIconUrl(app);
   return (
     <button
       onClick={onClick}
