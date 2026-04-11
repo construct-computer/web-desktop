@@ -866,6 +866,22 @@ export async function getComposioConnected(): Promise<ApiResult<{ connected: Arr
   return request('/composio/connected');
 }
 
+export interface ComposioAccountDetail {
+  connected: boolean;
+  accountId?: string;
+  composioUserId?: string | null;
+  status?: string;
+  createdAt?: number;
+  authScheme?: string;
+  email?: string;
+  displayName?: string;
+  profilePicture?: string;
+}
+
+export async function getComposioAccount(toolkit: string): Promise<ApiResult<ComposioAccountDetail>> {
+  return request(`/composio/${encodeURIComponent(toolkit)}/account`);
+}
+
 export async function getComposioToolkitDetail(toolkit: string): Promise<ApiResult<{
   slug: string;
   name: string;

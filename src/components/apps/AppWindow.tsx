@@ -12,9 +12,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, Package, Wrench,
   ExternalLink, KeyRound, RefreshCw, Check,
+  Search, Copy, User as UserIcon, Shield, Globe, Unplug, Hash, Calendar, Plug,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
-import type { InstalledApp } from '@/services/api';
+import type { InstalledApp, RegistryAppDetail, ComposioAccountDetail } from '@/services/api';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAppStore, localAppIframeRefs } from '@/stores/appStore';
 import type { ConnectedToolkit } from '@/stores/appStore';
@@ -331,15 +332,22 @@ function GenericAppPanel({
   appData?: InstalledApp;
 }) {
   const [appData, setAppData] = useState<InstalledApp | undefined>(initialData);
+  const [registryDetail, setRegistryDetail] = useState<RegistryAppDetail | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const result = await api.listInstalledApps();
-      if (result.success && result.data) {
-        const found = result.data.apps.find((a) => a.id === appId);
+      const [installed, registry] = await Promise.all([
+        api.listInstalledApps(),
+        api.getRegistryApp(appId).catch(() => null),
+      ]);
+      if (installed.success && installed.data) {
+        const found = installed.data.apps.find((a) => a.id === appId);
         if (found) setAppData(found);
+      }
+      if (registry && registry.success && registry.data) {
+        setRegistryDetail(registry.data);
       }
     } catch { /* ignore */ }
     setRefreshing(false);
@@ -348,77 +356,88 @@ function GenericAppPanel({
   useEffect(() => { refresh(); }, [refresh]);
 
   if (!appData) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
-        <div className="text-center">
-          <Loader2 className="w-6 h-6 mx-auto mb-2 opacity-40 animate-spin" />
-          <p className="text-xs opacity-40">Loading app...</p>
-        </div>
-      </div>
-    );
+    return <PanelLoading label="Loading app..." />;
   }
 
-  const tools = appData.tools || [];
+  const tools = (appData.tools || []).map((t) => ({
+    slug: t.name,
+    name: t.name,
+    description: t.description,
+  }));
+
+  // Derive host label from the base_url (e.g. devtools-hys57e.construct.computer)
+  const hostLabel = (() => {
+    try {
+      return new URL(appData.base_url).hostname;
+    } catch { return appData.base_url; }
+  })();
+
+  const iconUrl = registryDetail?.icon_url || appData.icon_url;
+  const author = registryDetail?.author?.name;
+  const version = registryDetail?.latest_version;
+  const category = registryDetail?.category;
+  const networkPerms = registryDetail?.permissions?.network || [];
+  const repoUrl = registryDetail?.repo_url;
+  const description = registryDetail?.long_description || appData.description;
 
   return (
-    <div className="w-full h-full flex flex-col bg-[var(--color-bg-secondary)] text-[var(--color-text)] select-none">
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-medium text-emerald-500">Hosted</span>
-          </div>
-          <button
-            onClick={async () => { setRefreshing(true); await api.refreshAppTools(appId); await refresh(); }}
-            disabled={refreshing}
-            className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30"
-            title="Refresh tools"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 opacity-40 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+    <AppShell>
+      <AppHeroHeader
+        icon={iconUrl}
+        fallbackIcon={<Package className="w-7 h-7 opacity-40" />}
+        name={appData.name || appId}
+        subtitle={[author && `by ${author}`, version && `v${version}`, category].filter(Boolean).join(' · ')}
+        description={description}
+        status={{ label: 'Hosted', tone: 'emerald' }}
+        badges={[
+          'MCP App',
+          ...(registryDetail?.verified ? ['Verified'] : []),
+          ...(registryDetail?.has_ui ? ['Has UI'] : ['Headless']),
+        ]}
+        actions={
+          <>
+            {repoUrl && (
+              <HeaderIconButton href={repoUrl} title="Source repository">
+                <ExternalLink className="w-3.5 h-3.5" />
+              </HeaderIconButton>
+            )}
+            <HeaderIconButton
+              onClick={async () => { setRefreshing(true); await api.refreshAppTools(appId); await refresh(); }}
+              disabled={refreshing}
+              title="Refresh tools"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            </HeaderIconButton>
+          </>
+        }
+      />
 
-        {/* Description */}
-        {appData.description && (
-          <p className="text-sm opacity-60 leading-relaxed mb-4">{appData.description}</p>
+      <InfoCard title="Details">
+        <InfoRow icon={<Globe className="w-3 h-3" />} label="Hosted at" value={hostLabel} mono copyable />
+        {version && <InfoRow icon={<Hash className="w-3 h-3" />} label="Version" value={version} />}
+        {appData.installed_at && (
+          <InfoRow
+            icon={<Calendar className="w-3 h-3" />}
+            label="Installed"
+            value={formatDate(appData.installed_at)}
+          />
         )}
+      </InfoCard>
 
-        {/* Badges */}
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          <Badge>MCP App</Badge>
-        </div>
-
-        {/* Tools */}
-        {tools.length > 0 && (
-          <div>
-            <h3 className="text-xs font-semibold opacity-40 uppercase tracking-wide mb-2">
-              Tools ({tools.length})
-            </h3>
-            <div className="space-y-1">
-              {tools.map((tool) => (
-                <div key={tool.name} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06]">
-                  <Wrench className="w-3 h-3 opacity-25 mt-0.5 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <span className="text-xs font-semibold font-mono opacity-70">{tool.name}</span>
-                    {tool.description && (
-                      <p className="text-[11px] opacity-35 mt-0.5 leading-relaxed line-clamp-2">{tool.description}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+      {networkPerms.length > 0 && (
+        <InfoCard title="Network access" subtitle="This app makes outbound requests to:">
+          <div className="flex flex-wrap gap-1.5">
+            {networkPerms.map((host) => (
+              <span key={host} className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                {host}
+              </span>
+            ))}
           </div>
-        )}
+        </InfoCard>
+      )}
 
-        {tools.length === 0 && (
-          <div className="text-center py-6">
-            <Package className="w-6 h-6 mx-auto mb-2 opacity-20" />
-            <p className="text-xs opacity-40">No tools cached. Click refresh to discover tools.</p>
-          </div>
-        )}
-      </div>
-    </div>
+      <ToolsList tools={tools} />
+    </AppShell>
   );
 }
 
@@ -443,20 +462,26 @@ function ComposioAppPanel({
     auth_schemes: string[];
     tools: Array<{ slug: string; name: string; description: string }>;
   } | null>(null);
+  const [account, setAccount] = useState<ComposioAccountDetail | null>(null);
   const [connected, setConnected] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [detailRes, statusRes] = await Promise.all([
+      const [detailRes, statusRes, accountRes] = await Promise.all([
         api.getComposioToolkitDetail(slug),
         api.getComposioStatus(slug),
+        api.getComposioAccount(slug).catch(() => null),
       ]);
       if (detailRes.success && detailRes.data) {
         setDetail(detailRes.data);
       }
       if (statusRes.success && statusRes.data) {
         setConnected(statusRes.data.connected);
+      }
+      if (accountRes && accountRes.success && accountRes.data) {
+        setAccount(accountRes.data);
       }
     } catch { /* ignore */ }
     setLoading(false);
@@ -473,102 +498,345 @@ function ComposioAppPanel({
     } catch { /* ignore */ }
   };
 
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await api.disconnectComposio(slug);
+      setConnected(false);
+      setAccount(null);
+    } catch { /* ignore */ }
+    setDisconnecting(false);
+  };
+
   if (loading && !detail) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
-        <div className="text-center">
-          <Loader2 className="w-6 h-6 mx-auto mb-2 opacity-40 animate-spin" />
-          <p className="text-xs opacity-40">Loading integration...</p>
-        </div>
-      </div>
-    );
+    return <PanelLoading label="Loading integration..." />;
   }
 
   const name = detail?.name || initialToolkit?.name || slug;
   const description = detail?.description || initialToolkit?.description || '';
+  const logo = detail?.logo || initialToolkit?.logo;
   const tools = detail?.tools || [];
   const categories = detail?.categories || [];
+  const primaryCategory = categories[0]?.name;
+  const authLabel = prettyAuthLabel(account?.authScheme || detail?.auth_schemes?.[0]);
 
   return (
+    <AppShell>
+      <AppHeroHeader
+        icon={logo}
+        fallbackIcon={<Plug className="w-7 h-7 opacity-40" />}
+        name={name}
+        subtitle={[authLabel, primaryCategory, 'via Composio'].filter(Boolean).join(' · ')}
+        description={description}
+        status={{
+          label: connected ? 'Connected' : 'Disconnected',
+          tone: connected ? 'emerald' : 'red',
+        }}
+        badges={[
+          'Composio',
+          'Integration',
+          ...categories.slice(0, 3).map((c) => c.name),
+        ]}
+        actions={
+          <>
+            <HeaderIconButton
+              href={`https://composio.dev/toolkits/${slug}`}
+              title="Open on Composio"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </HeaderIconButton>
+            <HeaderIconButton onClick={refresh} disabled={loading} title="Refresh">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </HeaderIconButton>
+          </>
+        }
+      />
+
+      {!connected && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 mb-4 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/15 dark:border-amber-500/20">
+          <KeyRound className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Connection lost</p>
+            <p className="text-[11px] text-amber-500/70 dark:text-amber-400/60 mt-0.5 leading-relaxed">
+              Re-authorize to restore access.
+            </p>
+            <button
+              onClick={handleReconnect}
+              className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" /> Reconnect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {connected && account && account.connected && (
+        <InfoCard
+          title="Connected account"
+          subtitle="Details of the account this integration is linked to."
+          right={
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+            >
+              {disconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unplug className="w-3 h-3" />}
+              Disconnect
+            </button>
+          }
+        >
+          {(account.email || account.displayName) && (
+            <InfoRow
+              icon={<UserIcon className="w-3 h-3" />}
+              label={account.displayName ? 'User' : 'Email'}
+              value={account.displayName ? `${account.displayName}${account.email ? ` · ${account.email}` : ''}` : account.email!}
+            />
+          )}
+          {account.accountId && (
+            <InfoRow
+              icon={<Hash className="w-3 h-3" />}
+              label="Account ID"
+              value={account.accountId}
+              mono
+              copyable
+            />
+          )}
+          {authLabel && (
+            <InfoRow icon={<Shield className="w-3 h-3" />} label="Auth type" value={authLabel} />
+          )}
+          {account.createdAt && (
+            <InfoRow
+              icon={<Calendar className="w-3 h-3" />}
+              label="Connected"
+              value={formatDate(account.createdAt)}
+            />
+          )}
+        </InfoCard>
+      )}
+
+      <ToolsList tools={tools} emptyConnected={connected && tools.length === 0} />
+    </AppShell>
+  );
+}
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] border border-black/[0.06] dark:border-white/[0.06]">
+      {children}
+    </span>
+  );
+}
+
+// ── Shared app-panel primitives ──────────────────────────────────────────
+
+function PanelLoading({ label }: { label: string }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
+      <div className="text-center">
+        <Loader2 className="w-6 h-6 mx-auto mb-2 opacity-40 animate-spin" />
+        <p className="text-xs opacity-40">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
     <div className="w-full h-full flex flex-col bg-[var(--color-bg-secondary)] text-[var(--color-text)] select-none">
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        {/* Status row */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            <span className={`text-xs font-medium ${connected ? 'text-emerald-500' : 'text-red-500'}`}>
-              {connected ? 'Connected' : 'Disconnected'}
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">{children}</div>
+    </div>
+  );
+}
+
+const STATUS_TONE: Record<'emerald' | 'red' | 'amber', { dot: string; text: string; bg: string }> = {
+  emerald: { dot: 'bg-emerald-500', text: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  red:     { dot: 'bg-red-500',     text: 'text-red-500',     bg: 'bg-red-500/10' },
+  amber:   { dot: 'bg-amber-500',   text: 'text-amber-500',   bg: 'bg-amber-500/10' },
+};
+
+function AppHeroHeader({
+  icon, fallbackIcon, name, subtitle, description, status, badges, actions,
+}: {
+  icon?: string;
+  fallbackIcon: React.ReactNode;
+  name: string;
+  subtitle?: string;
+  description?: string;
+  status: { label: string; tone: 'emerald' | 'red' | 'amber' };
+  badges?: string[];
+  actions?: React.ReactNode;
+}) {
+  const tone = STATUS_TONE[status.tone];
+  return (
+    <div className="pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+      <div className="flex items-start gap-3.5">
+        <div className="w-[56px] h-[56px] rounded-[14px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {icon ? (
+            <img src={icon} alt={name} className="w-[40px] h-[40px] object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+          ) : fallbackIcon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-[17px] font-bold leading-tight truncate">{name}</h2>
+            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-px rounded-full uppercase tracking-wide ${tone.bg} ${tone.text}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
+              {status.label}
             </span>
           </div>
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 opacity-40 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          {subtitle && (
+            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 truncate">{subtitle}</p>
+          )}
         </div>
-
-        {/* Description */}
-        {description && (
-          <p className="text-sm opacity-60 leading-relaxed mb-4">{description}</p>
-        )}
-
-        {/* Badges */}
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          <Badge>Composio</Badge>
-          <Badge>Integration</Badge>
-          {categories.map((c) => (
-            <Badge key={c.slug}>{c.name}</Badge>
-          ))}
+        {actions && <div className="flex items-center gap-1 flex-shrink-0">{actions}</div>}
+      </div>
+      {description && (
+        <p className="text-[12.5px] text-[var(--color-text)]/75 leading-relaxed mt-3">{description}</p>
+      )}
+      {badges && badges.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {badges.map((b) => <Badge key={b}>{b}</Badge>)}
         </div>
+      )}
+    </div>
+  );
+}
 
-        {/* Reconnect if disconnected */}
-        {!connected && (
-          <div className="flex items-start gap-2.5 px-3.5 py-2.5 mb-4 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/15 dark:border-amber-500/20">
-            <KeyRound className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Connection lost</p>
-              <p className="text-[11px] text-amber-500/70 dark:text-amber-400/60 mt-0.5 leading-relaxed">
-                Re-authorize to restore access.
-              </p>
-              <button
-                onClick={handleReconnect}
-                className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-              >
-                <ExternalLink className="w-3 h-3" /> Reconnect
-              </button>
-            </div>
-          </div>
-        )}
+function HeaderIconButton({
+  children, onClick, href, disabled, title,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  href?: string;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const className = "p-1.5 rounded-md text-black/50 dark:text-white/50 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors";
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className} title={title}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <button onClick={onClick} disabled={disabled} className={className} title={title}>
+      {children}
+    </button>
+  );
+}
 
-        {/* Tools */}
-        {tools.length > 0 && (
-          <div>
-            <h3 className="text-xs font-semibold opacity-40 uppercase tracking-wide mb-2">
-              Tools ({tools.length})
-            </h3>
-            <div className="space-y-1">
-              {tools.map((tool) => (
-                <div key={tool.slug} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06]">
-                  <Wrench className="w-3 h-3 opacity-25 mt-0.5 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <span className="text-xs font-semibold font-mono opacity-70">{tool.name}</span>
-                    {tool.description && (
-                      <p className="text-[11px] opacity-35 mt-0.5 leading-relaxed line-clamp-2">{tool.description}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+function InfoCard({
+  title, subtitle, children, right,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5 px-0.5">
+        <div className="min-w-0">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{title}</h3>
+          {subtitle && (
+            <p className="text-[10px] text-[var(--color-text-muted)]/70 mt-px">{subtitle}</p>
+          )}
+        </div>
+        {right}
+      </div>
+      <div className="rounded-[10px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 space-y-1">
+        {children}
+      </div>
+    </div>
+  );
+}
 
-        {tools.length === 0 && connected && (
-          <div className="text-center py-6">
-            <Check className="w-6 h-6 mx-auto mb-2 text-emerald-500/40" />
-            <p className="text-xs opacity-40">Integration is connected. Tools are available to the agent via Composio.</p>
+function InfoRow({
+  icon, label, value, mono, copyable,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  mono?: boolean;
+  copyable?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(() => {});
+  };
+  return (
+    <div className="flex items-center gap-2 min-h-[22px]">
+      <span className="text-[var(--color-text-muted)]/60 flex-shrink-0">{icon}</span>
+      <span className="text-[11px] text-[var(--color-text-muted)] min-w-[78px]">{label}</span>
+      <span className={`text-[11.5px] truncate flex-1 ${mono ? 'font-mono' : ''}`} title={value}>{value}</span>
+      {copyable && (
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
+          title="Copy"
+        >
+          {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-50" />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface DisplayTool { slug: string; name: string; description?: string }
+
+function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emptyConnected?: boolean }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
+    : tools;
+
+  if (tools.length === 0) {
+    if (emptyConnected) {
+      return (
+        <div className="text-center py-8">
+          <Check className="w-6 h-6 mx-auto mb-2 text-emerald-500/40" />
+          <p className="text-xs opacity-40">Integration is connected. Tools are available to the agent.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="text-center py-8">
+        <Package className="w-6 h-6 mx-auto mb-2 opacity-20" />
+        <p className="text-xs opacity-40">No tools cached. Try refreshing.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 px-0.5">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+          Tools · {tools.length}
+        </h3>
+      </div>
+      {tools.length > 6 && (
+        <div className="relative mb-2">
+          <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${tools.length} tools...`}
+            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
+          />
+        </div>
+      )}
+      <div className="space-y-1">
+        {filtered.map((tool) => (
+          <ToolCard key={tool.slug} tool={tool} />
+        ))}
+        {filtered.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-[11px] text-[var(--color-text-muted)]">No matches for &quot;{query}&quot;</p>
           </div>
         )}
       </div>
@@ -576,12 +844,58 @@ function ComposioAppPanel({
   );
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
+function ToolCard({ tool }: { tool: DisplayTool }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(tool.slug).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(() => {});
+  };
   return (
-    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] opacity-50 border border-black/[0.06] dark:border-white/[0.06]">
-      {children}
-    </span>
+    <div className="group flex items-start gap-2.5 px-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors">
+      <div className="w-[22px] h-[22px] rounded-[5px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 mt-px">
+        <Wrench className="w-3 h-3 opacity-50" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-semibold truncate">{tool.name}</span>
+          {tool.slug !== tool.name && (
+            <span className="text-[9px] font-mono text-[var(--color-text-muted)]/70 truncate">{tool.slug.toLowerCase()}</span>
+          )}
+        </div>
+        {tool.description && (
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed line-clamp-2">{tool.description}</p>
+        )}
+      </div>
+      <button
+        onClick={handleCopy}
+        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
+        title="Copy tool name"
+      >
+        {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-50" />}
+      </button>
+    </div>
   );
+}
+
+function formatDate(ts: number): string {
+  try {
+    return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function prettyAuthLabel(scheme?: string): string | undefined {
+  if (!scheme) return undefined;
+  const s = scheme.toUpperCase();
+  if (s === 'OAUTH2' || s === 'OAUTH1') return 'OAuth';
+  if (s === 'API_KEY') return 'API key';
+  if (s === 'BEARER_TOKEN') return 'Bearer token';
+  if (s === 'BASIC') return 'Basic auth';
+  if (s === 'NO_AUTH') return 'No auth';
+  return scheme;
 }
 
 // ── Bridge method dispatcher ──
