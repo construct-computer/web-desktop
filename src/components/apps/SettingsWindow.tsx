@@ -9,24 +9,26 @@
  *   Subscription — Billing, usage, top-ups
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   User, Link2, Paintbrush, Volume2, CreditCard,
   Image,
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
-  Code2, Upload, FileArchive, Mail, Lock, Globe,
+  Code2, Upload, FileArchive, Mail, Lock, Globe, Search, Plug, MessageCircle,
 } from 'lucide-react';
 import { Button, Input, Label } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } from '@/stores/settingsStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useSettingsNav, type SettingsSection } from '@/lib/settingsNav';
 
 import { openAuthRedirect } from '@/lib/utils';
 import {
   getSlackConfigured, getSlackInstallUrl, getSlackStatus, disconnectSlack,
   getTelegramStatus, getTelegramLinkUrl, getTelegramBotInfo, telegramLoginWidget, disconnectTelegram,
   getAgentConfig, updateAgentConfig,
+  getComposioConnected, getComposioAuthUrl, composioFinalize, disconnectComposio, searchComposioToolkits,
 } from '@/services/api';
 import { BillingSection } from './BillingSection';
 import { useBillingStore } from '@/stores/billingStore';
@@ -38,7 +40,7 @@ import type { WindowConfig } from '@/types';
 
 // ── Types ──
 
-type Section = 'user' | 'connections' | 'appearance' | 'sound' | 'subscription' | 'developer';
+type Section = SettingsSection;
 
 interface SectionDef {
   id: Section;
@@ -91,7 +93,15 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── Main Component ──
 
 export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
-  const [section, setSection] = useState<Section>('user');
+  const pendingSection = useSettingsNav((s) => s.pendingSection);
+  const setPendingSection = useSettingsNav((s) => s.setPendingSection);
+  const [localSection, setLocalSection] = useState<Section>('user');
+  // pendingSection (set by other windows) overrides local until the user navigates.
+  const section = pendingSection ?? localSection;
+  const setSection = (next: Section) => {
+    if (pendingSection) setPendingSection(null);
+    setLocalSection(next);
+  };
 
   return (
     <div className="flex h-full text-[var(--color-text)] select-none">
@@ -408,6 +418,25 @@ function UserSection() {
 
 const SLACK_OAUTH_URL = 'https://slack.com/oauth/v2/authorize?client_id=10603607090582.10618588079921&scope=app_mentions:read,im:read,im:write,im:history,chat:write,files:write,reactions:read,reactions:write,channels:read,channels:history,users:read,users:read.email&user_scope=';
 
+interface ConnectionDef {
+  slug: string;
+  name: string;
+  description: string;
+}
+
+const DEFAULT_COMPOSIO_INTEGRATIONS: ConnectionDef[] = [
+  { slug: 'gmail', name: 'Gmail', description: 'Read, compose, and manage email.' },
+  { slug: 'googledrive', name: 'Google Drive', description: 'Access and organize cloud files.' },
+  { slug: 'googledocs', name: 'Google Docs', description: 'Create and edit documents.' },
+  { slug: 'googlesheets', name: 'Google Sheets', description: 'Manage spreadsheets and formulas.' },
+  { slug: 'googlecalendar', name: 'Google Calendar', description: 'Manage events and scheduling.' },
+  { slug: 'github', name: 'GitHub', description: 'Manage repos, issues, and pull requests.' },
+];
+
+function composioLogoUrl(slug: string, logo?: string): string {
+  return logo || `https://logos.composio.dev/api/${slug}`;
+}
+
 function ConnectionsSection() {
   const userPlan = useAuthStore((s) => s.user?.plan);
   const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
@@ -432,7 +461,28 @@ function ConnectionsSection() {
   const [telegramLinking, setTelegramLinking] = useState(false);
   const telegramWidgetRef = useRef<HTMLDivElement>(null);
 
+  // Composio state
+  const [composioConnected, setComposioConnected] = useState<Set<string>>(new Set());
+  const [composioLoading, setComposioLoading] = useState(true);
+  const [composioPending, setComposioPending] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ slug: string; name: string; description: string; logo?: string }>>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   const [error, setError] = useState<string | null>(null);
+
+  const refreshComposio = useCallback(async () => {
+    try {
+      const r = await getComposioConnected();
+      if (r.success && r.data?.connected) {
+        setComposioConnected(new Set(r.data.connected.map((a) => a.toolkit)));
+      }
+    } catch { /* ignore */ }
+    finally {
+      setComposioLoading(false);
+    }
+  }, []);
 
   // Check status on mount
   useEffect(() => {
@@ -458,7 +508,9 @@ function ConnectionsSection() {
       } catch { /* ignore */ }
       setTelegramLoading(false);
     })();
-  }, []);
+
+    refreshComposio();
+  }, [refreshComposio]);
 
   // Telegram polling
   useEffect(() => {
@@ -511,6 +563,12 @@ function ConnectionsSection() {
     const messageHandler = (e: MessageEvent) => {
       if (e.data?.type === 'slack_auth_complete' && e.data.success) refreshSlack();
       if (e.data?.type === 'construct:oauth-callback') handleOAuthCallback(e.data.params || {});
+      if (e.data?.type === 'composio:connected') {
+        composioFinalize().finally(() => {
+          refreshComposio();
+          setComposioPending(null);
+        });
+      }
     };
 
     // Focus listener (fallback: refresh when popup closes)
@@ -523,7 +581,7 @@ function ConnectionsSection() {
       window.removeEventListener('focus', focusHandler);
       oauthChannel?.close();
     };
-  }, []);
+  }, [refreshComposio]);
 
   // Slack handlers
   const handleSlackConnect = async () => {
@@ -633,212 +691,364 @@ function ConnectionsSection() {
     setTelegramWidgetReady(false);
   };
 
+  // Composio handlers
+  const runComposioSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    try {
+      const r = await searchComposioToolkits(q.trim());
+      if (r.success && r.data?.toolkits) {
+        setSearchResults(r.data.toolkits);
+      }
+    } catch { /* ignore */ }
+    setSearching(false);
+  }, []);
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => runComposioSearch(q), 350);
+  };
+
+  const handleComposioConnect = async (slug: string) => {
+    setError(null);
+    setComposioPending(slug);
+    try {
+      const r = await getComposioAuthUrl(slug);
+      if (r.success && r.data?.url) {
+        openAuthRedirect(r.data.url);
+        setTimeout(() => setComposioPending((cur) => (cur === slug ? null : cur)), 300_000);
+      } else {
+        const msg = (r.success && r.data?.error) || (!r.success && r.error) || `Failed to connect ${slug}`;
+        setError(typeof msg === 'string' ? msg : `Failed to connect ${slug}`);
+        setComposioPending(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to connect ${slug}`);
+      setComposioPending(null);
+    }
+  };
+
+  const handleComposioDisconnect = async (slug: string) => {
+    setComposioPending(slug);
+    await disconnectComposio(slug);
+    setComposioConnected((prev) => { const next = new Set(prev); next.delete(slug); return next; });
+    setComposioPending(null);
+  };
+
+  // Build full list: Slack + Telegram + composio defaults + extras
+  const defaultSlugs = new Set(DEFAULT_COMPOSIO_INTEGRATIONS.map((d) => d.slug));
+  const extraConnected: ConnectionDef[] = [...composioConnected]
+    .filter((s) => !defaultSlugs.has(s))
+    .map((s) => ({ slug: s, name: s.charAt(0).toUpperCase() + s.slice(1), description: 'Connected integration.' }));
+  const composioList = [...DEFAULT_COMPOSIO_INTEGRATIONS, ...extraConnected];
+  const filteredSearchResults = searchResults.filter((r) => !defaultSlugs.has(r.slug));
+
   return (
-    <SectionPanel title="Connections" subtitle="Connect your agent to messaging platforms.">
+    <SectionPanel title="Connections" subtitle="Connect your agent to messaging platforms and third-party services.">
       {error && (
-        <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
+        <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-3">
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
         </div>
       )}
 
-      {/* Slack */}
+      {/* ── Built-in integrations (Slack, Telegram) ── */}
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <MessageCircle className="w-4 h-4 text-[var(--color-text-muted)]" />
+        <span className="text-[13px] font-semibold">Built-in</span>
+      </div>
+      <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
+        Chat with your agent on the messaging platforms you already use.
+      </p>
       <SettingsCard>
-        <div className="px-4 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="w-[34px] h-[34px] rounded-[8px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0">
-              <PlatformIcon platform="slack" size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium">Slack</span>
-                {slackConnected && (
-                  <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
-                    Connected
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                {slackConnected
-                  ? `Connected to ${slackTeamName || 'workspace'}`
-                  : 'Connect your agent to a Slack workspace'
-                }
-              </p>
-            </div>
-          </div>
+        {/* Slack row */}
+        <ConnectionRow
+          icon={<PlatformIcon platform="slack" size={20} />}
+          name="Slack"
+          description={
+            slackConnected
+              ? `Connected to ${slackTeamName || 'workspace'}`
+              : 'Connect your agent to a Slack workspace.'
+          }
+          isConnected={slackConnected}
+          isPending={slackConnecting || slackDisconnecting}
+          isLoading={slackLoading}
+          disabled={!isSubscribed}
+          onConnect={handleSlackConnect}
+          onDisconnect={handleSlackDisconnect}
+        />
 
-          {/* Actions */}
-          <div className="mt-3">
-            {slackLoading ? (
-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span className="text-[12px]">Checking status...</span>
-              </div>
-            ) : slackConnected ? (
-              <div className="space-y-2">
-                <p className="text-[12px] text-[var(--color-text-muted)]">
-                  @mention the bot in any channel or DM it directly.
-                </p>
-                <button
-                  onClick={handleSlackDisconnect}
-                  disabled={slackDisconnecting}
-                  className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
-                >
-                  {slackDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unplug className="w-3 h-3" />}
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <div>
-                <button
-                  type="button"
-                  onClick={handleSlackConnect}
-                  disabled={slackConnecting || !isSubscribed}
-                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
-                >
-                  {slackConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                  {isSubscribed ? 'Add to Slack' : 'Subscribe to connect'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Telegram row */}
+        <ConnectionRow
+          icon={<PlatformIcon platform="telegram" size={20} />}
+          name="Telegram"
+          description={
+            telegramConnected
+              ? `Linked via @${telegramBotUsername || 'bot'}`
+              : 'Chat with your agent directly in Telegram.'
+          }
+          isConnected={telegramConnected}
+          isPending={telegramGenerating || telegramDisconnecting || telegramLinking}
+          isLoading={telegramLoading}
+          disabled={!isSubscribed}
+          onConnect={handleTelegramConnect}
+          onDisconnect={handleTelegramDisconnect}
+          isLast
+          expanded={
+            !telegramConnected && (telegramWidgetReady || telegramLinkUrl) ? (
+              <TelegramExpanded
+                widgetReady={telegramWidgetReady}
+                widgetRef={telegramWidgetRef}
+                linkUrl={telegramLinkUrl}
+                generating={telegramGenerating}
+                onUseDeepLink={handleTelegramDeepLink}
+              />
+            ) : null
+          }
+        />
       </SettingsCard>
 
-      <div className="h-3" />
+      {/* ── Third-party integrations (Composio) ── */}
+      <div className="h-6" />
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <Plug className="w-4 h-4 text-[var(--color-text-muted)]" />
+        <span className="text-[13px] font-semibold">Third-party integrations</span>
+      </div>
+      <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
+        Connect services so your agent can read your email, manage files, and more.
+      </p>
 
-      {/* Telegram */}
-      <SettingsCard>
-        <div className="px-4 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="w-[34px] h-[34px] rounded-[8px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0">
-              <PlatformIcon platform="telegram" size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium">Telegram</span>
-                {telegramConnected && (
-                  <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
-                    Connected
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                {telegramConnected
-                  ? `Linked via @${telegramBotUsername || 'bot'}`
-                  : 'Chat with your agent directly in Telegram'
-                }
-              </p>
-            </div>
-          </div>
+      {/* Search */}
+      <div className="relative mb-3">
+        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => handleSearchChange(e.target.value)}
+          placeholder="Search for more integrations (Notion, Linear, Discord...)"
+          className="w-full text-[12px] pl-9 pr-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
+        />
+      </div>
 
-          {/* Actions */}
-          <div className="mt-3">
-            {telegramLoading ? (
-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span className="text-[12px]">Checking status...</span>
-              </div>
-            ) : telegramConnected ? (
-              <div className="space-y-2">
-                <p className="text-[12px] text-[var(--color-text-muted)]">
-                  Send DMs or add the bot to groups and use /bind.
-                </p>
-                <button
-                  onClick={handleTelegramDisconnect}
-                  disabled={telegramDisconnecting}
-                  className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
-                >
-                  {telegramDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unplug className="w-3 h-3" />}
-                  Disconnect
-                </button>
-              </div>
-            ) : telegramLinking ? (
-              <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span className="text-[12px]">Linking account...</span>
-              </div>
-            ) : telegramWidgetReady ? (
-              <div className="space-y-3">
-                {/* Telegram Login Widget renders here */}
-                <div ref={telegramWidgetRef} />
+      {/* Inline hints — never replace the list with an empty state */}
+      {(() => {
+        const isSearchActive = searchQuery.trim().length >= 2;
+        const hasSearchResults = filteredSearchResults.length > 0;
+        const showResults = isSearchActive && hasSearchResults;
 
-                <p className="text-[11px] text-[var(--color-text-muted)]">
-                  Click the button above to sign in with your Telegram account.
-                </p>
-
-                {/* Fallback: deep link */}
-                <div className="border-t border-[var(--color-border)] pt-2.5 mt-2.5">
-                  <button
-                    onClick={handleTelegramDeepLink}
-                    disabled={telegramGenerating}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-                  >
-                    <Send className="w-3 h-3" />
-                    Or link via bot message instead
-                  </button>
-                </div>
+        return (
+          <>
+            {isSearchActive && searching && (
+              <div className="flex items-center gap-2 mb-2 px-1 text-[11px] text-[var(--color-text-muted)]">
+                <Loader2 className="w-3 h-3 animate-spin" /> Searching...
               </div>
-            ) : telegramLinkUrl ? (
-              <div className="space-y-3">
-                <a
-                  href={telegramLinkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#2AABEE] hover:text-[#2AABEE]/80 transition-colors"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Open in Telegram
-                </a>
-
-                {/* Copyable /start command */}
-                {(() => {
-                  const match = telegramLinkUrl.match(/t\.me\/([^?]+)\?start=(.+)/);
-                  if (!match) return null;
-                  const [, botUser, code] = match;
-                  const command = `/start ${code}`;
-                  return (
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] text-[var(--color-text-muted)]">
-                        Or send this to <a href={`https://t.me/${botUser}`} target="_blank" rel="noopener noreferrer" className="font-medium text-[#2AABEE] hover:underline">@{botUser}</a>:
-                      </p>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(command)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-colors cursor-pointer"
-                        title="Click to copy"
-                      >
-                        <code className="text-[11px] font-mono">{command}</code>
-                        <svg className="w-3 h-3 text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <rect x="9" y="9" width="13" height="13" rx="2" />
-                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })()}
-
-                <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Waiting for confirmation...
-                </div>
-                <p className="text-[10px] text-[var(--color-text-muted)]">
-                  The link expires in 10 minutes.
-                </p>
-              </div>
-            ) : (
-              <button
-                onClick={handleTelegramConnect}
-                disabled={telegramGenerating || !isSubscribed}
-                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
-              >
-                {telegramGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                {isSubscribed ? 'Connect Telegram' : 'Subscribe to connect'}
-              </button>
             )}
-          </div>
-        </div>
-      </SettingsCard>
+            {isSearchActive && !searching && !hasSearchResults && (
+              <p className="text-[11px] text-[var(--color-text-muted)] mb-2 px-1">
+                No matches for &quot;{searchQuery.trim()}&quot;. Showing suggestions instead.
+              </p>
+            )}
+
+            <SettingsCard>
+              {showResults ? (
+                filteredSearchResults.slice(0, 10).map((r, i) => (
+                  <ConnectionRow
+                    key={r.slug}
+                    icon={
+                      <img
+                        src={composioLogoUrl(r.slug, r.logo)}
+                        alt={r.name}
+                        className="w-[20px] h-[20px] object-contain"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    }
+                    name={r.name}
+                    description={r.description || r.slug}
+                    isConnected={composioConnected.has(r.slug)}
+                    isPending={composioPending === r.slug}
+                    disabled={!isSubscribed}
+                    onConnect={() => handleComposioConnect(r.slug)}
+                    onDisconnect={() => handleComposioDisconnect(r.slug)}
+                    isLast={i === Math.min(filteredSearchResults.length, 10) - 1}
+                  />
+                ))
+              ) : composioLoading ? (
+                <div className="flex items-center gap-2 px-4 py-4 text-[11px] text-[var(--color-text-muted)]">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Checking integrations...
+                </div>
+              ) : (
+                composioList.map((def, i) => (
+                  <ConnectionRow
+                    key={def.slug}
+                    icon={
+                      <img
+                        src={composioLogoUrl(def.slug)}
+                        alt={def.name}
+                        className="w-[20px] h-[20px] object-contain"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    }
+                    name={def.name}
+                    description={def.description}
+                    isConnected={composioConnected.has(def.slug)}
+                    isPending={composioPending === def.slug}
+                    disabled={!isSubscribed}
+                    onConnect={() => handleComposioConnect(def.slug)}
+                    onDisconnect={() => handleComposioDisconnect(def.slug)}
+                    isLast={i === composioList.length - 1}
+                  />
+                ))
+              )}
+            </SettingsCard>
+          </>
+        );
+      })()}
     </SectionPanel>
   );
 }
+
+// ── Shared connection row used by all rows in ConnectionsSection ──
+
+function ConnectionRow({
+  icon, name, description, isConnected, isPending, isLoading, disabled,
+  onConnect, onDisconnect, expanded, isLast,
+}: {
+  icon: React.ReactNode;
+  name: string;
+  description: string;
+  isConnected: boolean;
+  isPending: boolean;
+  isLoading?: boolean;
+  disabled?: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  expanded?: React.ReactNode;
+  isLast?: boolean;
+}) {
+  return (
+    <div className={!isLast ? 'border-b border-black/[0.06] dark:border-white/[0.06]' : ''}>
+      <div className="flex items-center gap-3 px-4 py-3 min-h-[52px]">
+        <div className="w-[28px] h-[28px] rounded-[6px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium truncate">{name}</span>
+            {isConnected && (
+              <span className="text-[9px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
+                Connected
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 truncate">{description}</p>
+        </div>
+        <div className="flex-shrink-0">
+          {isLoading ? (
+            <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
+          ) : isConnected ? (
+            <button
+              onClick={onDisconnect}
+              disabled={isPending}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+            >
+              {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unplug className="w-3 h-3" />}
+              Disconnect
+            </button>
+          ) : (
+            <button
+              onClick={onConnect}
+              disabled={isPending || disabled}
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
+            >
+              {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
+              {disabled ? 'Subscribe' : 'Connect'}
+            </button>
+          )}
+        </div>
+      </div>
+      {expanded && (
+        <div className="px-4 pb-3 -mt-1">{expanded}</div>
+      )}
+    </div>
+  );
+}
+
+function TelegramExpanded({
+  widgetReady, widgetRef, linkUrl, generating, onUseDeepLink,
+}: {
+  widgetReady: boolean;
+  widgetRef: React.RefObject<HTMLDivElement | null>;
+  linkUrl: string | null;
+  generating: boolean;
+  onUseDeepLink: () => void;
+}) {
+  if (widgetReady) {
+    return (
+      <div className="space-y-2 pl-[40px]">
+        <div ref={widgetRef} />
+        <p className="text-[10px] text-[var(--color-text-muted)]">
+          Click the button above to sign in with your Telegram account.
+        </p>
+        <button
+          onClick={onUseDeepLink}
+          disabled={generating}
+          className="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+        >
+          <Send className="w-2.5 h-2.5" />
+          Or link via bot message instead
+        </button>
+      </div>
+    );
+  }
+  if (linkUrl) {
+    const match = linkUrl.match(/t\.me\/([^?]+)\?start=(.+)/);
+    return (
+      <div className="space-y-2 pl-[40px]">
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#2AABEE] hover:text-[#2AABEE]/80 transition-colors"
+        >
+          <Send className="w-3 h-3" />
+          Open in Telegram
+        </a>
+        {match && (() => {
+          const [, botUser, code] = match;
+          const command = `/start ${code}`;
+          return (
+            <div className="space-y-1">
+              <p className="text-[10px] text-[var(--color-text-muted)]">
+                Or send this to <a href={`https://t.me/${botUser}`} target="_blank" rel="noopener noreferrer" className="font-medium text-[#2AABEE] hover:underline">@{botUser}</a>:
+              </p>
+              <button
+                onClick={() => navigator.clipboard.writeText(command)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-colors"
+                title="Click to copy"
+              >
+                <code className="text-[10px] font-mono">{command}</code>
+              </button>
+            </div>
+          );
+        })()}
+        <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)]">
+          <Loader2 className="w-2.5 h-2.5 animate-spin" /> Waiting for confirmation... (link expires in 10 minutes)
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 
 // ── Appearance Section ──
 
