@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { WindowState } from '@/types';
 
@@ -13,6 +14,8 @@ interface TitleBarProps {
   onDoubleClick?: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Optional element rendered on the right side (e.g. per-app action button). */
+  rightAccessory?: ReactNode;
 }
 
 export function TitleBar({
@@ -27,6 +30,7 @@ export function TitleBar({
   onDoubleClick,
   onPointerDown,
   onContextMenu,
+  rightAccessory,
 }: TitleBarProps) {
   return (
     <div
@@ -111,8 +115,21 @@ export function TitleBar({
         {title}
       </span>
       
-      {/* Spacer to balance the dots on the left */}
-      <div className={isMobile ? 'w-[28px]' : 'w-[58px]'} />
+      {/* Right-side accessory slot (per-app action buttons). Falls back to a
+          spacer sized to match the left-side traffic-light cluster so the
+          centered title stays balanced. */}
+      {rightAccessory ? (
+        <div
+          className={cn('flex items-center justify-end min-w-[58px] gap-0.5', isMobile && 'min-w-[28px]')}
+          // Stop drag — so tapping inside the accessory doesn't start a window drag.
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {rightAccessory}
+        </div>
+      ) : (
+        <div className={isMobile ? 'w-[28px]' : 'w-[58px]'} />
+      )}
     </div>
   );
 }

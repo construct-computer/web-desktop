@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWindowStore } from '@/stores/windowStore';
+import { useWindowAccessoryStore } from '@/stores/windowAccessoryStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -85,6 +86,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const isMobile = useIsMobile();
   const focusedWindowId = useWindowStore((s) => s.focusedWindowId);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
+  const titleBarAccessory = useWindowAccessoryStore((s) => s.accessories[config.id]);
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
   const {
     focusWindow,
@@ -883,6 +885,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
           onDoubleClick={inMC ? undefined : handleMaximize}
           onPointerDown={inMC ? undefined : handleDragStart}
           onContextMenu={inMC ? undefined : handleContextMenu}
+          rightAccessory={inMC ? undefined : titleBarAccessory}
         />
         
         <div className="flex-1 overflow-hidden relative">

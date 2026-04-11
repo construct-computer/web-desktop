@@ -13,9 +13,12 @@ import {
   Loader2, Package, Wrench,
   ExternalLink, KeyRound, RefreshCw, Check,
   Search, Copy, User as UserIcon, Shield, Globe, Unplug, Hash, Calendar, Plug,
+  Info,
 } from 'lucide-react';
+import Markdown from 'react-markdown';
 import type { WindowConfig } from '@/types';
 import type { InstalledApp, RegistryAppDetail, ComposioAccountDetail } from '@/services/api';
+import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAppStore, localAppIframeRefs } from '@/stores/appStore';
 import type { ConnectedToolkit } from '@/stores/appStore';
@@ -95,9 +98,10 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   const appData = installedApps.find((a) => a.id === appId);
   const hasCustomUI = !!appData?.has_ui;
 
-  // Apps with custom UI get the iframe
+  // Apps with custom UI get the iframe — wrapped so the user can toggle
+  // to the generic details panel via an info button in the title bar.
   if (hasCustomUI && appData) {
-    return <IframeAppView config={config} appId={appId} baseUrl={appData.base_url} />;
+    return <InstalledAppView config={config} appId={appId} appData={appData} />;
   }
 
   // App not found yet — if we haven't fetched, show loading spinner
@@ -318,6 +322,45 @@ function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; app
       )}
     </div>
   );
+}
+
+// ── Installed App with UI — iframe + info-toggle to details panel ──
+
+/**
+ * For apps that ship a UI, the default view is the iframe. A small info
+ * button in the title bar flips between the iframe and the same generic
+ * details panel that headless apps use, so the user can inspect tools,
+ * hosting info, and network permissions without leaving the window.
+ */
+function InstalledAppView({
+  config, appId, appData,
+}: {
+  config: WindowConfig;
+  appId: string;
+  appData: InstalledApp;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+
+  useWindowTitleBarAccessory(
+    config.id,
+    <button
+      onClick={() => setShowDetails((v) => !v)}
+      className={`p-1 rounded-[5px] transition-colors ${
+        showDetails
+          ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+          : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+      }`}
+      title={showDetails ? 'Show app UI' : 'Show app details'}
+      aria-label={showDetails ? 'Show app UI' : 'Show app details'}
+    >
+      <Info className="w-3.5 h-3.5" />
+    </button>,
+  );
+
+  if (showDetails) {
+    return <GenericAppPanel config={config} appId={appId} appData={appData} />;
+  }
+  return <IframeAppView config={config} appId={appId} baseUrl={appData.base_url} />;
 }
 
 // ── Generic App Management Panel ──
@@ -690,7 +733,34 @@ function AppHeroHeader({
         {actions && <div className="flex items-center gap-1 flex-shrink-0">{actions}</div>}
       </div>
       {description && (
-        <p className="text-[12.5px] text-[var(--color-text)]/75 leading-relaxed mt-3">{description}</p>
+        <div className="text-[12.5px] text-[var(--color-text)]/75 leading-relaxed mt-3 app-description-md">
+          <Markdown
+            components={{
+              // Inline-style: render paragraphs as plain blocks without browser defaults
+              // since we already set spacing on the wrapper. Links open in new tabs.
+              p: ({ children }) => <p className="m-0 [&+p]:mt-2">{children}</p>,
+              a: ({ children, href }) => (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--color-accent)] hover:underline"
+                >
+                  {children}
+                </a>
+              ),
+              code: ({ children }) => (
+                <code className="text-[11.5px] font-mono px-1 py-px rounded bg-black/[0.06] dark:bg-white/[0.08]">
+                  {children}
+                </code>
+              ),
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+            }}
+          >
+            {description}
+          </Markdown>
+        </div>
       )}
       {badges && badges.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
