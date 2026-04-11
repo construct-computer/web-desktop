@@ -1373,8 +1373,34 @@ export async function searchRegistry(q?: string, category?: string): Promise<Api
   return request(`/apps/registry?${params}`);
 }
 
+export interface RegistryAppDetail {
+  id: string;
+  name: string;
+  description: string;
+  long_description?: string;
+  author: { name: string; url?: string };
+  category: string;
+  tags: string[];
+  latest_version: string;
+  install_count: number;
+  avg_rating: number;
+  rating_count: number;
+  featured: boolean;
+  verified: boolean;
+  has_ui: boolean;
+  base_url: string;
+  icon_url?: string;
+  repo_url: string;
+  tools: Array<{ name: string; description: string }>;
+  permissions?: { network?: string[] };
+  screenshots?: string[];
+  readme_url?: string;
+  versions?: Array<{ version: string; commit: string; changelog: string | null; date: string }>;
+  reviews?: unknown[];
+}
+
 /** Get detailed info about a specific app from the registry. */
-export async function getRegistryApp(appId: string): Promise<ApiResult<Record<string, unknown>>> {
+export async function getRegistryApp(appId: string): Promise<ApiResult<RegistryAppDetail>> {
   return request(`/apps/registry/${encodeURIComponent(appId)}`);
 }
 

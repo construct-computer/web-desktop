@@ -9,10 +9,11 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Plug, Upload, Wrench, Shield,
+  Tag, Globe, Star, Download, History, BadgeCheck, Sparkles,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
-import type { InstalledApp } from '@/services/api';
+import type { InstalledApp, RegistryAppDetail } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -36,6 +37,7 @@ interface RegistryApp {
   tools: Array<{ name: string; description: string }>;
   install_count: number;
   featured: boolean;
+  verified?: boolean;
 }
 
 type Tab = 'discover' | 'installed';
@@ -66,6 +68,10 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   // Detail view
   const [detail, setDetail] = useState<RegistryApp | InstalledApp | null>(null);
+  const [detailFull, setDetailFull] = useState<RegistryAppDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [readme, setReadme] = useState<string | null>(null);
+  const [readmeLoading, setReadmeLoading] = useState(false);
 
   // Pending install/uninstall
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
@@ -118,6 +124,42 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     Promise.all([fetchRegistry(), fetchInstalled()]).finally(() => setLoading(false));
   };
 
+  // ── Detail open / close ──
+
+  const openDetail = useCallback(async (app: RegistryApp | InstalledApp) => {
+    setDetail(app);
+    setDetailFull(null);
+    setReadme(null);
+    setDetailLoading(true);
+    try {
+      const r = await api.getRegistryApp(app.id);
+      if (r.success && r.data) {
+        setDetailFull(r.data);
+        // Lazy-fetch README from raw GitHub URL.
+        if (r.data.readme_url) {
+          setReadmeLoading(true);
+          try {
+            const res = await fetch(r.data.readme_url);
+            if (res.ok) {
+              const text = await res.text();
+              setReadme(text);
+            }
+          } catch { /* ignore */ }
+          setReadmeLoading(false);
+        }
+      }
+    } catch { /* installed-only apps may not be in registry — fall back gracefully */ }
+    setDetailLoading(false);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetail(null);
+    setDetailFull(null);
+    setReadme(null);
+    setDetailLoading(false);
+    setReadmeLoading(false);
+  }, []);
+
   // ── Actions ──
 
   const handleInstall = async (app: RegistryApp) => {
@@ -149,7 +191,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
       const result = await api.uninstallApp(appId);
       if (!result.success) throw new Error(result.error || 'Uninstall failed');
       await fetchInstalled();
-      setDetail(null);
+      closeDetail();
     } catch (err) {
       setError(`Uninstall failed: ${err instanceof Error ? err.message : err}`);
     }
@@ -177,12 +219,33 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   if (detail) {
     const isInstalled = 'installed_at' in detail || installedIds.has(detail.id);
-    const detailIcon = 'icon_url' in detail
-      ? (typeof detail.icon_url === 'string' && detail.icon_url) || getInstalledIconUrl(detail.id, true)
-      : undefined;
     const detailRegistry = 'latest_version' in detail ? (detail as RegistryApp) : null;
     const detailInstalled = 'installed_at' in detail ? (detail as InstalledApp) : null;
-    const tools = detailRegistry?.tools || detailInstalled?.tools || [];
+
+    // Merge data: detailFull (registry detail) → detailRegistry (search result) → detailInstalled
+    const fullIcon = detailFull?.icon_url || detailRegistry?.icon_url
+      || ('icon_url' in detail && typeof detail.icon_url === 'string' ? detail.icon_url : undefined)
+      || getInstalledIconUrl(detail.id, true);
+    const fullName = detailFull?.name || detail.name;
+    const author = detailFull?.author || detailRegistry?.author;
+    const version = detailFull?.latest_version || detailRegistry?.latest_version;
+    const category = detailFull?.category || detailRegistry?.category;
+    const tags = detailFull?.tags || detailRegistry?.tags || [];
+    const installCount = detailFull?.install_count ?? detailRegistry?.install_count;
+    const avgRating = detailFull?.avg_rating;
+    const ratingCount = detailFull?.rating_count;
+    const verified = detailFull?.verified ?? detailRegistry?.verified;
+    const featured = detailFull?.featured ?? detailRegistry?.featured;
+    const hasUi = detailFull?.has_ui ?? detailRegistry?.has_ui ?? detailInstalled?.has_ui;
+    const repoUrl = detailFull?.repo_url || detailRegistry?.repo_url;
+    const baseUrl = detailFull?.base_url;
+    const longDescription = detailFull?.long_description || detail.description;
+    const tools = detailFull?.tools && detailFull.tools.length > 0
+      ? detailFull.tools
+      : (detailRegistry?.tools || detailInstalled?.tools || []);
+    const networkPerms = detailFull?.permissions?.network || [];
+    const screenshots = detailFull?.screenshots || [];
+    const versions = detailFull?.versions || [];
     const isPending = !!pendingActions[detail.id];
 
     return (
@@ -190,37 +253,58 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
         {/* Detail header */}
         <div className="flex-shrink-0 px-5 pt-4 pb-3 border-b border-black/[0.06] dark:border-white/[0.06]">
           <button
-            onClick={() => setDetail(null)}
+            onClick={closeDetail}
             className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors mb-3"
           >
             <ChevronLeft className="w-3.5 h-3.5" /> Back
           </button>
           <div className="flex items-start gap-3">
             <div className="w-[56px] h-[56px] rounded-[12px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
-              {detailIcon ? (
-                <img src={detailIcon} alt={detail.name} className="w-[40px] h-[40px] object-contain" />
+              {fullIcon ? (
+                <img src={fullIcon} alt={fullName} className="w-[40px] h-[40px] object-contain" />
               ) : (
                 <Wrench className="w-6 h-6 text-black/30 dark:text-white/30" />
               )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[18px] font-bold truncate">{detail.name}</h2>
+                <h2 className="text-[18px] font-bold truncate">{fullName}</h2>
                 {isInstalled && (
                   <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
                     Installed
                   </span>
                 )}
+                {verified && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-400 bg-blue-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
+                    <BadgeCheck className="w-2.5 h-2.5" /> Verified
+                  </span>
+                )}
+                {featured && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
+                    <Sparkles className="w-2.5 h-2.5" /> Featured
+                  </span>
+                )}
+                {version && (
+                  <span className="text-[10px] font-mono text-[var(--color-text-muted)] bg-black/[0.04] dark:bg-white/[0.06] px-1.5 py-px rounded-full">
+                    v{version}
+                  </span>
+                )}
               </div>
-              {detailRegistry?.author?.name && (
-                <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">by {detailRegistry.author.name}</p>
+              {author?.name && (
+                <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                  by {author.url ? (
+                    <a href={author.url} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--color-text)] underline-offset-2 hover:underline">
+                      {author.name}
+                    </a>
+                  ) : author.name}
+                </p>
               )}
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {isInstalled ? (
                   <>
                     <button
                       onClick={() => detailInstalled && handleOpenInstalled(detailInstalled)}
-                      disabled={!detailInstalled || !(detailInstalled.has_ui)}
+                      disabled={!detailInstalled || !hasUi}
                       className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
                     >
                       Open
@@ -242,9 +326,9 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                     {isPending ? <Loader2 className="w-3 h-3 animate-spin inline" /> : atAppLimit ? 'Limit reached' : 'Install'}
                   </button>
                 ) : null}
-                {detailRegistry?.repo_url && (
+                {repoUrl && (
                   <a
-                    href={detailRegistry.repo_url}
+                    href={repoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
@@ -265,18 +349,72 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             </div>
           )}
 
-          <p className="text-[13px] text-[var(--color-text)]/80 leading-relaxed mb-4">
-            <Markdown>{detail.description}</Markdown>
-          </p>
+          {/* Stats row */}
+          <div className="flex items-center gap-3 flex-wrap text-[11px] text-[var(--color-text-muted)] mb-4">
+            {category && (
+              <span className="inline-flex items-center gap-1">
+                <Tag className="w-3 h-3" /> {category}
+              </span>
+            )}
+            {typeof installCount === 'number' && (
+              <span className="inline-flex items-center gap-1">
+                <Download className="w-3 h-3" /> {installCount.toLocaleString()} installs
+              </span>
+            )}
+            {typeof avgRating === 'number' && avgRating > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Star className="w-3 h-3" /> {avgRating.toFixed(1)}
+                {ratingCount ? ` (${ratingCount})` : ''}
+              </span>
+            )}
+            {hasUi !== undefined && (
+              <span className="inline-flex items-center gap-1">
+                {hasUi ? 'Has window UI' : 'Headless (tools only)'}
+              </span>
+            )}
+          </div>
 
-          {tools.length > 0 && (
-            <div className="mt-5">
-              <div className="flex items-center gap-2 mb-2">
-                <Wrench className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-                <span className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                  {tools.length} tool{tools.length === 1 ? '' : 's'}
+          {/* Long description */}
+          <div className="text-[13px] text-[var(--color-text)]/85 leading-relaxed mb-4">
+            <Markdown>{longDescription}</Markdown>
+          </div>
+
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-4">
+              {tags.map((tag) => (
+                <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] border border-black/[0.06] dark:border-white/[0.06]">
+                  {tag}
                 </span>
+              ))}
+            </div>
+          )}
+
+          {detailLoading && (
+            <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] mb-4">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading details...
+            </div>
+          )}
+
+          {/* Screenshots */}
+          {screenshots.length > 0 && (
+            <DetailSection icon={<Sparkles className="w-3.5 h-3.5" />} title="Screenshots">
+              <div className="grid grid-cols-2 gap-2">
+                {screenshots.map((src, i) => (
+                  <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="block rounded-[8px] overflow-hidden border border-black/[0.06] dark:border-white/[0.06] hover:border-[var(--color-accent)]/40 transition-colors">
+                    <img src={src} alt={`Screenshot ${i + 1}`} className="w-full h-auto" />
+                  </a>
+                ))}
               </div>
+            </DetailSection>
+          )}
+
+          {/* Tools */}
+          {tools.length > 0 && (
+            <DetailSection
+              icon={<Wrench className="w-3.5 h-3.5" />}
+              title={`${tools.length} tool${tools.length === 1 ? '' : 's'}`}
+            >
               <div className="space-y-1.5">
                 {tools.map((t) => (
                   <div key={t.name} className="rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] px-3 py-2">
@@ -285,7 +423,68 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                   </div>
                 ))}
               </div>
-            </div>
+            </DetailSection>
+          )}
+
+          {/* Network permissions */}
+          {networkPerms.length > 0 && (
+            <DetailSection icon={<Globe className="w-3.5 h-3.5" />} title="Network access">
+              <p className="text-[11px] text-[var(--color-text-muted)] mb-1.5">
+                This app makes outbound requests to:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {networkPerms.map((host) => (
+                  <span key={host} className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                    {host}
+                  </span>
+                ))}
+              </div>
+            </DetailSection>
+          )}
+
+          {/* Hosting / base URL — only relevant for installed apps or headless */}
+          {baseUrl && (
+            <DetailSection icon={<Plug className="w-3.5 h-3.5" />} title="Hosted at">
+              <code className="text-[11px] font-mono text-[var(--color-text-muted)] break-all">{baseUrl}</code>
+            </DetailSection>
+          )}
+
+          {/* README */}
+          {(readmeLoading || readme) && (
+            <DetailSection icon={<Shield className="w-3.5 h-3.5" />} title="README">
+              {readmeLoading ? (
+                <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading README...
+                </div>
+              ) : (
+                <div className="text-[12px] text-[var(--color-text)]/80 leading-relaxed prose-readme">
+                  <Markdown>{readme || ''}</Markdown>
+                </div>
+              )}
+            </DetailSection>
+          )}
+
+          {/* Version history */}
+          {versions.length > 0 && (
+            <DetailSection icon={<History className="w-3.5 h-3.5" />} title="Version history">
+              <div className="space-y-1">
+                {versions.map((v) => (
+                  <div key={v.commit} className="flex items-center justify-between gap-2 text-[11px] py-1 border-b border-black/[0.04] dark:border-white/[0.04] last:border-0">
+                    <span className="font-mono font-semibold">v{v.version}</span>
+                    <span className="text-[var(--color-text-muted)]">{v.date}</span>
+                    <a
+                      href={`${repoUrl}/commit/${v.commit}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-colors"
+                      title={v.commit}
+                    >
+                      {v.commit.slice(0, 7)}
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
           )}
         </div>
       </div>
@@ -419,7 +618,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                   isInstalled={installedIds.has(app.id)}
                   isPending={!!pendingActions[app.id]}
                   atLimit={atAppLimit}
-                  onClick={() => setDetail(app)}
+                  onClick={() => openDetail(app)}
                   onInstall={() => handleInstall(app)}
                 />
               ))}
@@ -435,7 +634,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                   key={app.id}
                   app={app}
                   isPending={!!pendingActions[app.id]}
-                  onClick={() => setDetail(app)}
+                  onClick={() => openDetail(app)}
                   onOpen={() => handleOpenInstalled(app)}
                 />
               ))}
@@ -448,6 +647,20 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 }
 
 // ── Sub-components ──
+
+function DetailSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[var(--color-text-muted)]">{icon}</span>
+        <span className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+          {title}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 function AppGrid({ children }: { children: React.ReactNode }) {
   return (
