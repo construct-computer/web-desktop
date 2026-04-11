@@ -154,12 +154,12 @@ function describeToolCall(tool: string, params?: Record<string, unknown>): { tex
     return { text: `Deleting ${p.path || 'file'}`, activityType: 'file' };
   }
 
-  // Memory tool
+  // Memory tool — storing is automatic and never surfaces here.
   if (tool === 'memory') {
     const action = p.action as string | undefined;
     switch (action) {
-      case 'remember': return { text: 'Storing memory', activityType: 'tool' };
       case 'recall': return { text: 'Recalling memories', activityType: 'tool' };
+      case 'list': return { text: 'Listing memories', activityType: 'tool' };
       case 'forget': return { text: 'Forgetting memory', activityType: 'tool' };
       default: return { text: `Memory: ${action || 'operation'}`, activityType: 'tool' };
     }
