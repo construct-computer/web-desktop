@@ -222,7 +222,14 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   if (detail) {
     const isInstalled = 'installed_at' in detail || installedIds.has(detail.id);
     const detailRegistry = 'latest_version' in detail ? (detail as RegistryApp) : null;
-    const detailInstalled = 'installed_at' in detail ? (detail as InstalledApp) : null;
+    // detailInstalled: use the detail if it's an InstalledApp directly (from
+    // the Installed tab), otherwise look up the installed record by id so
+    // clicking a Discover-tab card for an already-installed app still gets
+    // an Open button.
+    const detailInstalled: InstalledApp | null =
+      'installed_at' in detail
+        ? (detail as InstalledApp)
+        : (installedApps.find((a) => a.id === detail.id) ?? null);
 
     // Merge data: detailFull (registry detail) → detailRegistry (search result) → detailInstalled
     const fullIcon = detailFull?.icon_url || detailRegistry?.icon_url
@@ -306,7 +313,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                   <>
                     <button
                       onClick={() => detailInstalled && handleOpenInstalled(detailInstalled)}
-                      disabled={!detailInstalled || !hasUi}
+                      disabled={!detailInstalled}
                       className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
                     >
                       Open
