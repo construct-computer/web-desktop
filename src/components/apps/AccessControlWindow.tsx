@@ -15,6 +15,7 @@ import {
   type PlatformSettings,
 } from '@/services/access-control';
 import { useComputerStore } from '@/stores/agentStore';
+import { Select } from '@/components/ui';
 
 type Tab = 'queue' | 'list' | 'settings';
 
@@ -329,17 +330,25 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
       {showAdd && (
         <div className="border border-[var(--color-border)] rounded-lg p-2 bg-[var(--color-surface-raised)] space-y-2">
           <div className="flex gap-2">
-            <select value={addPlatform} onChange={e => setAddPlatform(e.target.value)}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs">
-              <option value="slack">Slack</option>
-              <option value="telegram">Telegram</option>
-              <option value="email">Email</option>
-            </select>
-            <select value={addStatus} onChange={e => setAddStatus(e.target.value as 'trusted' | 'blocked')}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs">
-              <option value="trusted">Trusted</option>
-              <option value="blocked">Blocked</option>
-            </select>
+            <Select
+              value={addPlatform}
+              onChange={setAddPlatform}
+              options={[
+                { value: 'slack', label: 'Slack' },
+                { value: 'telegram', label: 'Telegram' },
+                { value: 'email', label: 'Email' },
+              ]}
+              inline
+            />
+            <Select
+              value={addStatus}
+              onChange={(v) => setAddStatus(v as 'trusted' | 'blocked')}
+              options={[
+                { value: 'trusted', label: 'Trusted' },
+                { value: 'blocked', label: 'Blocked' },
+              ]}
+              inline
+            />
           </div>
           <input value={addSenderId} onChange={e => setAddSenderId(e.target.value)}
             placeholder="User ID / email address"
@@ -446,15 +455,13 @@ function SettingsTab({ settings, bindings, onRefresh }: {
             <div className="flex items-center gap-2">
               <PlatformBadge platform={platform} />
             </div>
-            <select
+            <Select
               value={settings[platform] || 'block'}
-              onChange={e => handleModeChange(platform, e.target.value)}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs"
-            >
-              {modes.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+              onChange={(v) => handleModeChange(platform, v)}
+              options={modes.map(m => ({ value: m.value, label: m.label }))}
+              inline
+              align="right"
+            />
           </div>
         ))}
         <p className="text-[10px] text-[var(--color-text-muted)] mt-1">

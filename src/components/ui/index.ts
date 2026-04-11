@@ -12,6 +12,7 @@ export {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from './dropdown-menu';
+export { Select, type SelectOption, type SelectGroup } from './Select';
 export { ErrorBoundary } from './ErrorBoundary';
 export { Toasts } from './Toasts';
 export { MarkdownRenderer } from './MarkdownRenderer';

@@ -16,7 +16,7 @@ import {
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
   Code2, Upload, FileArchive, Mail, Lock, Globe, Search, Plug, MessageCircle,
 } from 'lucide-react';
-import { Button, Input, Label } from '@/components/ui';
+import { Button, Input, Label, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } from '@/stores/settingsStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -373,18 +373,16 @@ function UserSection() {
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mt-5 mb-1.5">Timezone</h3>
       <SettingsCard>
         <SettingsRow label="Timezone" noBorder>
-          <div className="flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-            <select
+          <div className="flex items-center gap-1.5 max-w-[240px]">
+            <Globe className="w-3.5 h-3.5 text-[var(--color-text-muted)] flex-shrink-0" />
+            <Select
               value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="bg-transparent text-[13px] outline-none cursor-pointer text-right max-w-[220px] truncate"
-              style={{ color: 'var(--color-text)' }}
-            >
-              {getTimezoneOptions().map(tz => (
-                <option key={tz.value} value={tz.value}>{tz.label}</option>
-              ))}
-            </select>
+              onChange={setTimezone}
+              options={getTimezoneOptions()}
+              searchable
+              align="right"
+              className="text-[12px]"
+            />
           </div>
         </SettingsRow>
       </SettingsCard>

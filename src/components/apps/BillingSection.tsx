@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import * as api from '@/services/api';
-import { Button } from '@/components/ui';
+import { Button, Select, type SelectGroup } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 
 function formatTimeRemaining(resetsAt: number | string): string {
@@ -842,33 +842,25 @@ function AIConfigSection() {
                 <span className="text-[12px] font-medium text-[var(--color-text-muted)]">Model</span>
                 {modelSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
               </div>
-              <select
-                value={allModels.some(m => m.id === selectedModel) ? selectedModel : '__custom__'}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-[12px] rounded-md
-                  bg-black/[0.04] dark:bg-white/[0.06]
-                  border border-black/[0.08] dark:border-white/[0.08]
-                  text-[var(--color-text)]
-                  focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
-              >
-                <optgroup label="Free models">
-                  {freeModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} — {m.description}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Premium models (billed to your key)">
-                  {paidModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} — {m.description}
-                    </option>
-                  ))}
-                </optgroup>
-                {!allModels.some(m => m.id === selectedModel) && selectedModel && (
-                  <option value="__custom__">Custom: {selectedModel}</option>
-                )}
-              </select>
+              {(() => {
+                const groups: SelectGroup[] = [
+                  { label: 'Free models', options: freeModels.map((m) => ({ value: m.id, label: m.name, description: m.description })) },
+                  { label: 'Premium models (billed to your key)', options: paidModels.map((m) => ({ value: m.id, label: m.name, description: m.description })) },
+                ];
+                if (!allModels.some(m => m.id === selectedModel) && selectedModel) {
+                  groups.push({ options: [{ value: '__custom__', label: `Custom: ${selectedModel}` }] });
+                }
+                const triggerValue = allModels.some(m => m.id === selectedModel) ? selectedModel : '__custom__';
+                return (
+                  <Select
+                    value={triggerValue}
+                    onChange={handleModelChange}
+                    groups={groups}
+                    searchable
+                    placeholder="Select a model..."
+                  />
+                );
+              })()}
               <div className="flex gap-2 mt-2">
                 <input
                   type="text"

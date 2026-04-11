@@ -20,7 +20,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, Input, Label, Separator } from '@/components/ui';
+import { Button, Input, Label, Separator, Select } from '@/components/ui';
 import {
   listAgentCalendarEvents,
   createAgentCalendarEvent,
@@ -1241,19 +1241,18 @@ function EventDialog({
             {/* Repeat / Recurrence */}
             <div className="space-y-2">
               <Label className="text-xs">Repeat</Label>
-              <select
+              <Select
                 value={form.repeatType}
-                onChange={(e) => update({ repeatType: e.target.value as RepeatType })}
-                className="w-full px-2 py-1.5 text-sm rounded-md border border-black/10 dark:border-white/10
-                           bg-black/5 dark:bg-white/5 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
-              >
-                <option value="none">Does not repeat</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-                <option value="custom">Custom...</option>
-              </select>
+                onChange={(v) => update({ repeatType: v as RepeatType })}
+                options={[
+                  { value: 'none', label: 'Does not repeat' },
+                  { value: 'daily', label: 'Daily' },
+                  { value: 'weekly', label: 'Weekly' },
+                  { value: 'monthly', label: 'Monthly' },
+                  { value: 'yearly', label: 'Yearly' },
+                  { value: 'custom', label: 'Custom...' },
+                ]}
+              />
 
               {form.repeatType !== 'none' && (
                 <div className="space-y-2.5">
