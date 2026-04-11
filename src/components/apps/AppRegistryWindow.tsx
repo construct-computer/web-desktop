@@ -38,6 +38,7 @@ interface RegistryApp {
   install_count: number;
   featured: boolean;
   verified?: boolean;
+  base_url?: string;
 }
 
 type Tab = 'discover' | 'installed';
@@ -175,6 +176,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
         description: app.description,
         icon_url: app.icon_url,
         has_ui: app.has_ui,
+        base_url: app.base_url,
       });
       if (!result.success) throw new Error(result.error || 'Install failed');
       await fetchInstalled();

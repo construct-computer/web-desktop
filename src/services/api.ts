@@ -1363,7 +1363,7 @@ export async function searchRegistry(q?: string, category?: string): Promise<Api
     id: string; name: string; description: string; latest_version: string;
     author: { name: string; url?: string }; category: string; tags: string[];
     repo_url: string; icon_url?: string; has_ui: boolean; tools: Array<{ name: string; description: string }>;
-    install_count: number; featured: boolean;
+    install_count: number; featured: boolean; verified?: boolean; base_url?: string;
   }>;
   total: number; page: number; pages: number;
 }>> {
