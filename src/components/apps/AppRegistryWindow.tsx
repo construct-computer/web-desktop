@@ -40,7 +40,7 @@ interface RegistryApp {
 
 type Tab = 'discover' | 'installed';
 
-const PUBLISH_URL = 'https://github.com/construct-computer/app-registry';
+const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
 // ── Helpers ──
 
