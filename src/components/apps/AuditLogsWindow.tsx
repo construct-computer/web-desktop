@@ -2,12 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Loader2,
-  CalendarDays,
   AlertCircle,
   Terminal,
   ArrowDownLeft,
   ArrowUpRight,
-  Zap,
   Settings,
   Search,
   ChevronDown,
@@ -21,13 +19,11 @@ import type { WindowConfig } from '@/types';
 // ── Constants ──
 
 const CATEGORY_OPTIONS = [
-  { value: '', label: 'All categories' },
-  { value: 'tool_call', label: 'Tool calls' },
-  { value: 'calendar_event', label: 'Calendar events' },
-  { value: 'message_in', label: 'Incoming messages' },
-  { value: 'message_out', label: 'Outgoing messages' },
-  { value: 'background', label: 'Background tasks' },
+  { value: '', label: 'All activity' },
+  { value: 'tool', label: 'Tools & Actions' },
+  { value: 'message', label: 'Messages' },
   { value: 'system', label: 'System events' },
+  { value: 'error', label: 'Errors' },
 ] as const;
 
 const DATE_RANGE_OPTIONS = [
@@ -62,42 +58,38 @@ function getDateRangeBounds(range: DateRangeValue): { timeMin?: string; timeMax?
   }
 }
 
-function getCategoryIcon(category: string) {
-  switch (category) {
-    case 'tool_call': return Terminal;
-    case 'calendar_event': return CalendarDays;
-    case 'message_in': return ArrowDownLeft;
-    case 'message_out': return ArrowUpRight;
-    case 'background': return Zap;
-    case 'system': return Settings;
-    default: return FileText;
+function getCategoryIcon(category: string, action: string) {
+  if (category === 'tool') return Terminal;
+  if (category === 'message') {
+    return action.includes('out') ? ArrowUpRight : ArrowDownLeft;
   }
+  if (category === 'system') return Settings;
+  if (category === 'error') return AlertCircle;
+  return FileText;
 }
 
-function getCategoryColor(category: string): string {
-  switch (category) {
-    case 'tool_call': return 'text-blue-500';
-    case 'calendar_event': return 'text-violet-500';
-    case 'message_in': return 'text-emerald-500';
-    case 'message_out': return 'text-cyan-500';
-    case 'background': return 'text-amber-500';
-    case 'system': return 'text-neutral-500';
-    default: return 'text-neutral-400';
+function getCategoryColor(category: string, action: string): string {
+  if (category === 'tool') return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
+  if (category === 'message') {
+    return action.includes('out') ? 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20' : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
   }
+  if (category === 'system') return 'text-neutral-500 bg-neutral-500/10 border-neutral-500/20';
+  if (category === 'error') return 'text-red-500 bg-red-500/10 border-red-500/20';
+  return 'text-neutral-400 bg-neutral-500/10 border-neutral-500/20';
 }
 
 function getResultBadge(result: string): { label: string; className: string } {
   switch (result) {
     case 'success':
-      return { label: 'Success', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' };
+      return { label: 'Success', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' };
     case 'error':
-      return { label: 'Error', className: 'bg-red-500/15 text-red-600 dark:text-red-400' };
+      return { label: 'Error', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' };
     case 'pending':
-      return { label: 'Pending', className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' };
+      return { label: 'Pending', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
     case 'skipped':
-      return { label: 'Skipped', className: 'bg-neutral-500/15 text-neutral-600 dark:text-neutral-400' };
+      return { label: 'Skipped', className: 'bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border-neutral-500/20' };
     default:
-      return { label: result, className: 'bg-neutral-500/15 text-neutral-500' };
+      return { label: result, className: 'bg-neutral-500/10 text-neutral-500 border-neutral-500/20' };
   }
 }
 
@@ -125,6 +117,50 @@ function formatAuditDate(ts: string): string {
   } catch {
     return ts;
   }
+}
+
+function recursivelyParseJSON(obj: any): any {
+  if (typeof obj === 'string') {
+    try {
+      const parsed = JSON.parse(obj);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return recursivelyParseJSON(parsed);
+      }
+      return parsed;
+    } catch {
+      return obj;
+    }
+  } else if (Array.isArray(obj)) {
+    return obj.map(recursivelyParseJSON);
+  } else if (typeof obj === 'object' && obj !== null) {
+    const newObj: any = {};
+    for (const key in obj) {
+      newObj[key] = recursivelyParseJSON(obj[key]);
+    }
+    return newObj;
+  }
+  return obj;
+}
+
+function formatDetailData(data: any): string {
+  if (!data) return '';
+  let parsed = data;
+  
+  if (typeof data === 'string') {
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return data; // Return unescaped string if it's not valid JSON (e.g. truncated)
+    }
+  }
+  
+  parsed = recursivelyParseJSON(parsed);
+  
+  if (typeof parsed === 'string') {
+    return parsed;
+  }
+  
+  return JSON.stringify(parsed, null, 2);
 }
 
 // ── Component ──
@@ -221,84 +257,91 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-h-0 h-full bg-[var(--color-surface)]">
       {/* Filters bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
-        {/* Category filter */}
-        <div ref={categoryRef}>
-          <button
-            ref={categoryBtnRef}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-[var(--color-border)]
-                       bg-[var(--color-surface)] hover:bg-[var(--color-accent-muted)] transition-colors"
-            onClick={() => {
-              if (showCategoryDropdown) {
-                setShowCategoryDropdown(false);
-              } else {
-                setCategoryRect(categoryBtnRef.current?.getBoundingClientRect() ?? null);
-                setShowCategoryDropdown(true);
-              }
-            }}
-          >
-            <span className="truncate max-w-[100px]">{selectedCategoryLabel}</span>
-            <ChevronDown className="w-3 h-3 shrink-0" />
-          </button>
-          {showCategoryDropdown && categoryRect && createPortal(
-            <div
-              id="auditlog-category-dropdown"
-              className="fixed w-44 bg-[var(--color-surface)] backdrop-blur-2xl
-                          border border-black/10 dark:border-white/15 rounded-lg shadow-xl z-[9999] py-1"
-              style={{ top: categoryRect.bottom + 4, left: categoryRect.left }}
-            >
-              {CATEGORY_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  className={cn(
-                    'w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--color-accent-muted)] transition-colors',
-                    category === opt.value && 'font-medium text-[var(--color-accent)]',
-                  )}
-                  onClick={() => { setCategory(opt.value); setShowCategoryDropdown(false); }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>,
-            document.body,
-          )}
+      <div className="flex flex-col border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2 text-[var(--color-text)]">
+            <FileText className="w-5 h-5 text-[var(--color-text-muted)]" />
+            <span className="font-semibold text-sm">Activity Log</span>
+          </div>
+          <span className="text-xs font-medium text-[var(--color-text-muted)] bg-black/5 dark:bg-white/10 px-2 py-1 rounded-full tabular-nums">
+            {total.toLocaleString()} event{total !== 1 ? 's' : ''}
+          </span>
         </div>
-
-        {/* Date range filter */}
-        <div className="flex items-center gap-0.5 bg-[var(--color-surface)] rounded-md border border-[var(--color-border)] p-0.5">
-          {DATE_RANGE_OPTIONS.map(opt => (
+        
+        <div className="flex flex-wrap items-center gap-3 px-4 pb-3">
+          {/* Category filter */}
+          <div ref={categoryRef} className="relative">
             <button
-              key={opt.value}
-              className={cn(
-                'px-2 py-0.5 text-[11px] rounded transition-colors whitespace-nowrap',
-                dateRange === opt.value ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]',
-              )}
-              onClick={() => setDateRange(opt.value)}
+              ref={categoryBtnRef}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--color-border)]
+                         bg-[var(--color-surface)] hover:bg-[var(--color-accent-muted)] transition-colors shadow-sm"
+              onClick={() => {
+                if (showCategoryDropdown) {
+                  setShowCategoryDropdown(false);
+                } else {
+                  setCategoryRect(categoryBtnRef.current?.getBoundingClientRect() ?? null);
+                  setShowCategoryDropdown(true);
+                }
+              }}
             >
-              {opt.label}
+              <span className="truncate max-w-[120px]">{selectedCategoryLabel}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-70" />
             </button>
-          ))}
+            {showCategoryDropdown && categoryRect && createPortal(
+              <div
+                id="auditlog-category-dropdown"
+                className="fixed w-48 bg-[var(--color-surface)] backdrop-blur-2xl
+                            border border-black/10 dark:border-white/15 rounded-xl shadow-xl z-[9999] p-1.5 flex flex-col gap-0.5"
+                style={{ top: categoryRect.bottom + 6, left: categoryRect.left }}
+              >
+                {CATEGORY_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    className={cn(
+                      'w-full text-left px-3 py-2 text-xs font-medium rounded-md hover:bg-[var(--color-accent-muted)] transition-colors',
+                      category === opt.value && 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]',
+                    )}
+                    onClick={() => { setCategory(opt.value); setShowCategoryDropdown(false); }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>,
+              document.body,
+            )}
+          </div>
+
+          {/* Date range filter */}
+          <div className="flex items-center bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] p-0.5 shadow-sm">
+            {DATE_RANGE_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                className={cn(
+                  'px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap',
+                  dateRange === opt.value ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'hover:bg-black/5 dark:hover:bg-white/5 text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+                )}
+                onClick={() => setDateRange(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 min-w-[20px]" />
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+            <input
+              type="text"
+              placeholder="Search activity..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 w-[200px] text-xs rounded-lg border border-[var(--color-border)]
+                         bg-[var(--color-surface)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] shadow-sm transition-all"
+            />
+          </div>
         </div>
-
-        <div className="flex-1" />
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--color-text-muted)]" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-7 pr-2 py-1 w-[160px] text-xs rounded-md border border-[var(--color-border)]
-                       bg-[var(--color-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
-          />
-        </div>
-
-        {/* Count badge */}
-        <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
-          {total.toLocaleString()} event{total !== 1 ? 's' : ''}
-        </span>
       </div>
 
       {/* Error */}
@@ -312,83 +355,104 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
 
       {/* Content */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
+        <div className="flex-1 flex items-center justify-center bg-[var(--color-background)]">
+          <Loader2 className="w-6 h-6 animate-spin text-[var(--color-accent)]" />
         </div>
       ) : entries.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)]">
-          <FileText className="w-10 h-10 opacity-40" />
-          <p className="text-sm">No activity recorded</p>
-          <p className="text-xs opacity-60">
-            {category ? 'Try a different category filter' : dateRange !== 'all' ? 'Try expanding the date range' : 'Activity will appear here as the agent works'}
-          </p>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-[var(--color-text-muted)] bg-[var(--color-background)]">
+          <div className="w-16 h-16 rounded-2xl bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2 border border-[var(--color-border)]/50">
+            <FileText className="w-8 h-8 opacity-40" />
+          </div>
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium text-[var(--color-text)]">No activity found</p>
+            <p className="text-xs opacity-80 max-w-[250px] leading-relaxed">
+              {category || dateRange !== 'all' || searchQuery 
+                ? 'Try adjusting your filters or search query to find what you are looking for.' 
+                : 'Activity logs will appear here automatically as the agent works.'}
+            </p>
+          </div>
+          {(category || dateRange !== 'all' || searchQuery) && (
+            <Button variant="ghost" size="sm" onClick={() => {
+              setCategory('');
+              setDateRange('all');
+              setSearchQuery('');
+            }} className="mt-2 text-xs h-8">
+              Clear filters
+            </Button>
+          )}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 bg-[var(--color-background)]">
           {Array.from(grouped).map(([dateLabel, dayEntries]) => (
-            <div key={dateLabel}>
-              <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-titlebar)] sticky top-0 z-10">
+            <div key={dateLabel} className="mb-4 last:mb-0">
+              <div className="px-4 py-2 text-[11px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/5 dark:bg-white/5 backdrop-blur-md sticky top-0 z-10 border-y border-[var(--color-border)]/50">
                 {dateLabel}
               </div>
-              <div className="divide-y divide-[var(--color-border)]/50">
+              <div className="bg-[var(--color-surface)]">
                 {dayEntries.map(entry => {
-                  const Icon = getCategoryIcon(entry.category);
-                  const iconColor = getCategoryColor(entry.category);
+                  const Icon = getCategoryIcon(entry.category, entry.action);
+                  const iconColor = getCategoryColor(entry.category, entry.action);
                   const badge = getResultBadge(entry.result);
                   const isExpanded = expandedId === entry.id;
 
                   return (
-                    <div key={entry.id}>
+                    <div key={entry.id} className="group border-b border-[var(--color-border)]/50 last:border-0 relative">
+                      {/* Highlight bar on hover */}
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-transparent group-hover:bg-[var(--color-accent)] transition-colors" />
+                      
                       <button
-                        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[var(--color-accent-muted)] transition-colors text-left"
+                        className={cn(
+                          "w-full flex items-start gap-3 px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors text-left",
+                          isExpanded && "bg-black/[0.02] dark:bg-white/[0.02]"
+                        )}
                         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                       >
                         {/* Category icon */}
-                        <div className={cn('shrink-0', iconColor)}>
+                        <div className={cn('shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center mt-0.5', iconColor)}>
                           <Icon className="w-4 h-4" />
                         </div>
 
                         {/* Main content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium truncate">{entry.action}</span>
-                            <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium', badge.className)}>
+                        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-semibold text-[var(--color-text)] truncate">{entry.action}</span>
+                            <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium border border-current/10', badge.className)}>
                               {badge.label}
                             </span>
                           </div>
-                          <p className="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">
+                          <p className="text-[12px] text-[var(--color-text-muted)] line-clamp-2 leading-relaxed">
                             {entry.summary}
                           </p>
                         </div>
 
                         {/* Right side: duration + time */}
-                        <div className="shrink-0 flex flex-col items-end gap-0.5">
-                          <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
-                            {formatAuditTimestamp(entry.timestamp)}
-                          </span>
+                        <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                            <span>{formatAuditTimestamp(entry.timestamp)}</span>
+                          </div>
                           {entry.durationMs != null && (
-                            <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums opacity-60">
+                            <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums opacity-60 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded-md">
                               {formatDuration(entry.durationMs)}
                             </span>
                           )}
                         </div>
 
                         {/* Expand chevron */}
-                        <ChevronDown className={cn('w-3 h-3 shrink-0 text-[var(--color-text-muted)] transition-transform', isExpanded && 'rotate-180')} />
+                        <ChevronDown className={cn('w-4 h-4 mt-1 shrink-0 text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 transition-all', isExpanded && 'rotate-180 opacity-100')} />
                       </button>
 
                       {/* Expanded detail */}
                       {isExpanded && (
-                        <div className="px-3 pb-3 pt-0">
-                          <div className="ml-6.5 p-2.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.03] border border-[var(--color-border)]/50 space-y-2">
+                        <div className="px-4 pb-4 pt-1 bg-black/[0.02] dark:bg-white/[0.02]">
+                          <div className="ml-11 p-3 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3">
                              {/* Full message content — scrollable fixed-height section */}
                              {entry.summary && (
                                <div>
-                                 <span className="text-[10px] text-[var(--color-text-muted)]">
-                                   {entry.category === 'message_in' ? 'Message:' : entry.category === 'message_out' ? 'Response:' : 'Summary:'}
+                                 <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">
+                                   {entry.category === 'message' ? (entry.action.includes('out') ? 'Response:' : 'Message:') : 'Summary:'}
                                  </span>
-                                 <div className="mt-0.5 max-h-[120px] overflow-y-auto rounded bg-black/[0.03] dark:bg-white/[0.03] border border-[var(--color-border)]/30 p-2">
-                                   <p className="text-[11px] text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
+                                 <div className="mt-1.5 max-h-[140px] overflow-y-auto rounded-lg bg-[var(--color-background)] border border-[var(--color-border)]/50 p-2.5">
+                                   <p className="text-[12px] text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed font-mono">
                                      {entry.summary}
                                    </p>
                                  </div>
@@ -396,48 +460,68 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                              )}
 
                              {/* Meta info row */}
-                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--color-text-muted)]">
-                               <span>Category: <strong className="font-medium text-[var(--color-text)]">{entry.category}</strong></span>
+                             <div className="flex flex-wrap gap-x-5 gap-y-2 py-2 border-y border-[var(--color-border)]/50">
+                               <div className="flex flex-col gap-0.5">
+                                 <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Category</span>
+                                 <span className="text-[12px] text-[var(--color-text)]">{entry.category}</span>
+                               </div>
                                {entry.sourceType && (
-                                 <span>Source: <strong className="font-medium text-[var(--color-text)]">{entry.sourceType}</strong></span>
+                                 <div className="flex flex-col gap-0.5">
+                                   <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Source</span>
+                                   <span className="text-[12px] text-[var(--color-text)]">{entry.sourceType}</span>
+                                 </div>
                                )}
                                {entry.relatedEventId && (
-                                 <span>Event: <strong className="font-medium text-[var(--color-text)] font-mono">{entry.relatedEventId}</strong></span>
+                                 <div className="flex flex-col gap-0.5">
+                                   <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Event ID</span>
+                                   <span className="text-[12px] text-[var(--color-text)] font-mono">{entry.relatedEventId}</span>
+                                 </div>
                                )}
                                {entry.sessionKey && (
-                                 <span>Session: <strong className="font-medium text-[var(--color-text)] font-mono">{entry.sessionKey.slice(0, 12)}...</strong></span>
+                                 <div className="flex flex-col gap-0.5">
+                                   <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Session</span>
+                                   <span className="text-[12px] text-[var(--color-text)] font-mono">{entry.sessionKey.slice(0, 8)}...</span>
+                                 </div>
                                )}
                              </div>
 
                              {/* Result detail */}
                              {entry.resultDetail && (
                                <div>
-                                 <span className="text-[10px] text-[var(--color-text-muted)]">Result:</span>
-                                 <pre className="mt-0.5 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[160px] overflow-y-auto">
+                                 <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Result:</span>
+                                 <pre className="mt-1.5 p-2.5 rounded-lg bg-[var(--color-background)] border border-red-500/20 text-red-600 dark:text-red-400 text-[12px] font-mono whitespace-pre-wrap break-all max-h-[160px] overflow-y-auto">
                                    {entry.resultDetail}
                                  </pre>
                                </div>
                              )}
 
                              {/* Detail JSON */}
-                             {entry.detail && Object.keys(entry.detail).length > 0 && (
-                               <div>
-                                 <span className="text-[10px] text-[var(--color-text-muted)]">Details:</span>
-                                 <pre className="mt-0.5 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[200px] overflow-y-auto">
-                                   {JSON.stringify(entry.detail, null, 2)}
-                                 </pre>
-                               </div>
-                             )}
+                             {entry.detail && (() => {
+                               const detailStr = formatDetailData(entry.detail);
+                               if (!detailStr || detailStr === '{}' || detailStr === '[]') return null;
+                               return (
+                                 <div>
+                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Details:</span>
+                                   <pre className="mt-1.5 p-2.5 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)]/50 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[200px] overflow-y-auto">
+                                     {detailStr}
+                                   </pre>
+                                 </div>
+                               );
+                             })()}
 
                              {/* Source meta */}
-                             {entry.sourceMeta && Object.keys(entry.sourceMeta).length > 0 && (
-                               <div>
-                                 <span className="text-[10px] text-[var(--color-text-muted)]">Source details:</span>
-                                 <pre className="mt-0.5 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[120px] overflow-y-auto">
-                                   {JSON.stringify(entry.sourceMeta, null, 2)}
-                                 </pre>
-                               </div>
-                             )}
+                             {entry.sourceMeta && (() => {
+                               const metaStr = formatDetailData(entry.sourceMeta);
+                               if (!metaStr || metaStr === '{}' || metaStr === '[]') return null;
+                               return (
+                                 <div>
+                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Source Meta:</span>
+                                   <pre className="mt-1.5 p-2.5 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)]/50 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[120px] overflow-y-auto">
+                                     {metaStr}
+                                   </pre>
+                                 </div>
+                               );
+                             })()}
                            </div>
                         </div>
                       )}

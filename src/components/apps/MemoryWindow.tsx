@@ -421,8 +421,11 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
       setError(null);
       const result = await getMemories();
       if (result.success) {
-        setMemories(result.data.memories || []);
-        setRelations(result.data.relations || []);
+        const mems = result.data.memories || [];
+        const rels = result.data.relations || [];
+        setMemories(mems);
+        setRelations(rels);
+        if (rels.length === 0) setView('list');
       } else {
         setError(result.error || 'Failed to load memories');
       }
