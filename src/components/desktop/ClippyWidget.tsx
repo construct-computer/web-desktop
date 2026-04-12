@@ -597,13 +597,14 @@ export function ClippyWidget() {
 
       {/* Chat bubble — positioned to the left of the avatar */}
       {visibleBubble && (
-        <ComicBubble
-          title={visibleBubble.title}
-          detail={visibleBubble.detail}
-          variant={visibleBubble.variant}
-          avatarSize={AVATAR_SIZE}
-          closing={bubbleClosing}
-        />
+<ComicBubble
+           title={visibleBubble.title}
+           detail={visibleBubble.detail}
+           variant={visibleBubble.variant}
+           avatarSize={AVATAR_SIZE}
+           closing={bubbleClosing}
+           onClickBubble={() => toggleSpotlight()}
+         />
       )}
 
       {/* Shortcut hint */}
@@ -634,12 +635,13 @@ const NORMAL_BUBBLE_H = 62;  // 276 * (180/800) ≈ 62
 const LG_BUBBLE_W = 220;
 const LG_BUBBLE_H = 186;     // 676 * (220/800) ≈ 186
 
-function ComicBubble({ title, detail, variant, avatarSize, closing }: {
+function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubble }: {
   title: string;
   detail: string;
   variant: 'welcome' | 'status';
   avatarSize: number;
   closing?: boolean;
+  onClickBubble?: () => void;
 }) {
   const textRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
@@ -714,6 +716,11 @@ function ComicBubble({ title, detail, variant, avatarSize, closing }: {
         }}
       />
 
+      {/* Clickable overlay */}
+      <div
+        className="absolute inset-0 cursor-pointer"
+        onClick={onClickBubble}
+      />
       {/* Content overlay */}
       <div
         className="relative h-full flex flex-col items-center justify-center text-center"
