@@ -297,10 +297,10 @@ const WELCOME_GREETINGS = [
 ];
 
 const FIRST_TIME_GREETINGS = [
-  "All set! Click me or press Ctrl+Space to chat.",
-  "Ready to go! Click me to start chatting.",
-  "Setup complete! I'm here whenever you need me.",
-  "You're all set! Tap me to get started.",
+  "All set! Click me to chat.",
+  "Ready to go! Click to start.",
+  "Setup complete! I'm here for you.",
+  "You're all set! Tap to start.",
 ];
 
 function pickWelcome(): string {
