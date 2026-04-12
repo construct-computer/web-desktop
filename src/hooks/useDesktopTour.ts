@@ -10,15 +10,11 @@ import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import analytics from '@/lib/analytics';
 import { useWindowStore } from '@/stores/windowStore';
-import { useBillingStore } from '@/stores/billingStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 
-import tourChat from '@/assets/tour/tour-1.webm';
-import tourEmail from '@/assets/tour/email.gif';
-import tourCalendar from '@/assets/tour/cal.gif';
-import tourBrowser from '@/assets/tour/browser.gif';
-import tourTerminal from '@/assets/tour/terminal.gif';
+import tourChat from '@/assets/tour/tour-chat.webm';
+import tourEmail from '@/assets/tour/tour-email.webm';
 import tourNotification from '@/assets/tour/notification.gif';
-import tourDashboard from '@/assets/tour/last.gif';
 
 const TOUR_EVENT = 'construct:start-tour';
 const TOUR_FORCE_EVENT = 'construct:force-tour';
@@ -26,13 +22,13 @@ const TOUR_SEEN_KEY = 'construct:tour-completed';
 const TOUR_SKIPPED_KEY = 'construct:tour-skipped';
 
 /** Build an `<img>` tag for a tour GIF. */
-function gifTag(src: string, alt: string): string {
-  return `<img class="tour-gif" src="${src}" alt="${alt}" />`;
+function gifTag(src: string, alt: string, aspectRatio: string): string {
+  return `<img class="tour-gif" src="${src}" alt="${alt}" style="aspect-ratio: ${aspectRatio};" />`;
 }
 
 /** Build a `<video>` tag for a tour video clip. */
-function videoTag(src: string): string {
-  return `<video class="tour-gif" src="${src}" autoplay loop muted playsinline></video>`;
+function videoTag(src: string, aspectRatio: string): string {
+  return `<video class="tour-gif" src="${src}" autoplay loop muted playsinline style="aspect-ratio: ${aspectRatio};"></video>`;
 }
 
 const steps: DriveStep[] = [
@@ -53,85 +49,31 @@ const steps: DriveStep[] = [
     element: '[data-tour="chat"]',
     popover: {
       title: 'Your Agent',
-      description: `${videoTag(tourChat)}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
+      description: `${videoTag(tourChat, '3074/2160')}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
       side: 'top',
       align: 'center',
     },
   },
   {
-    element: '[data-tour="email"]',
+    element: '[data-tour="dock"]',
     popover: {
-      title: 'Email',
-      description: `${gifTag(tourEmail, 'Email demo')}Your agent reads incoming emails and replies automatically.`,
+      title: 'Dock & Launchpad',
+      description: `${videoTag(tourEmail, '2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
       side: 'top',
       align: 'center',
     },
   },
   {
-    element: '[data-tour="calendar"]',
+    element: '#notification-center-drawer',
     popover: {
-      title: 'Calendar',
-      description: `${gifTag(tourCalendar, 'Calendar demo')}Schedule tasks and recurring events — they run automatically.`,
-      side: 'top',
-      align: 'center',
-    },
-  },
-  {
-    element: '[data-tour="browser"]',
-    popover: {
-      title: 'Browser',
-      description: `${gifTag(tourBrowser, 'Browser demo')}Your agent can browse the web, research topics, and compile reports.`,
-      side: 'top',
-      align: 'center',
-    },
-  },
-  {
-    element: '[data-tour="terminal"]',
-    popover: {
-      title: 'Terminal',
-      description: `${gifTag(tourTerminal, 'Terminal demo')}Full shell access — run commands, install packages, and execute scripts.`,
-      side: 'top',
-      align: 'center',
-    },
-  },
-  {
-    element: '[data-tour="launchpad"]',
-    popover: {
-      title: 'Launchpad',
-      description: 'All your apps in one place — system tools, installed MCP servers, and connected services.',
-      side: 'top',
-      align: 'center',
-    },
-  },
-  {
-    element: '[data-tour="launchpad-apps"]',
-    popover: {
-      title: 'Your Apps',
-      description: 'Browse and open your apps here. Install more from the App Registry in the menu.',
-      side: 'top',
-      align: 'center',
-    },
-  },
-  {
-    element: '#notification-center-toggle',
-    popover: {
-      title: 'Notifications',
-      description: `${gifTag(tourNotification, 'Notifications demo')}Get alerts for emails, messages, and completed tasks.`,
-      side: 'bottom',
-      align: 'end',
-    },
-  },
-  {
-    element: '[data-tour="widgets"]',
-    popover: {
-      title: 'Dashboard',
-      description: `${gifTag(tourDashboard, 'Dashboard demo')}Monitor your agent's activity, tasks, and system resources.`,
+      title: 'Control Center',
+      description: `${gifTag(tourNotification, 'Notifications demo', '512/361')}View your latest notifications, emails, and active agent processes in the side panel.`,
       side: 'left',
       align: 'start',
     },
   },
   {
-    element: '[data-tour="menu"]',
+    element: '#tour-menu-overlay',
     popover: {
       title: 'Menu',
       description: 'Access settings, the app registry, and more from this menu.',
@@ -166,60 +108,107 @@ export function useDesktopTour() {
 
     // Filter steps based on context
     const setupVisible = !!document.querySelector('[data-tour="setup"]');
-    const isPro = useBillingStore.getState().subscription?.plan === 'pro';
     const activeSteps = steps.filter(s => {
       if (s.element === '[data-tour="setup"]' && !setupVisible) return false;
-      if (s.element === '[data-tour="email"]' && !isPro) return false;
       return true;
     });
 
     // Declare ahead so step callbacks can reference the driver instance
     let driverObj: ReturnType<typeof driver>;
+    
+    // Store ID of the sample notification so we can clean it up
+    let sampleNotificationId: string | null = null;
 
-    // ── Patch launchpad steps to auto-open/close the Launchpad overlay ──
-    const lpIdx = activeSteps.findIndex(s => s.element === '[data-tour="launchpad"]');
-    const lpAppsIdx = activeSteps.findIndex(s => s.element === '[data-tour="launchpad-apps"]');
-    const notifIdx = activeSteps.findIndex(s => s.element === '#notification-center-toggle');
+    // ── Pre-create the menu overlay element so driver.js can find it ──
+    // The menu dropdown is portaled outside the menubar, so we need a
+    // synthetic overlay that spans both the button and the open dropdown.
+    // It must exist in the DOM before driver.js tries to resolve the step.
+    let menuOverlayEl = document.getElementById('tour-menu-overlay');
+    if (!menuOverlayEl) {
+      const menuBtn = document.querySelector<HTMLElement>('[data-tour="menu"]');
+      menuOverlayEl = document.createElement('div');
+      menuOverlayEl.id = 'tour-menu-overlay';
+      menuOverlayEl.style.position = 'fixed';
+      menuOverlayEl.style.pointerEvents = 'none';
+      menuOverlayEl.style.zIndex = '-1';
+      if (menuBtn) {
+        const r = menuBtn.getBoundingClientRect();
+        menuOverlayEl.style.top = `${r.top}px`;
+        menuOverlayEl.style.left = `${r.left}px`;
+        menuOverlayEl.style.width = `${r.width}px`;
+        menuOverlayEl.style.height = `${r.height}px`;
+      }
+      document.body.appendChild(menuOverlayEl);
+    }
 
-    if (lpIdx >= 0) {
-      activeSteps[lpIdx] = {
-        ...activeSteps[lpIdx],
-        popover: {
-          ...activeSteps[lpIdx].popover,
-          onNextClick: () => {
-            const ws = useWindowStore.getState();
-            if (!ws.launchpadOpen) ws.toggleLaunchpad();
-            setTimeout(() => driverObj.moveNext(), 600);
-          },
-        },
-      };
-    }
-    if (lpAppsIdx >= 0) {
-      activeSteps[lpAppsIdx] = {
-        ...activeSteps[lpAppsIdx],
-        popover: {
-          ...activeSteps[lpAppsIdx].popover,
-          onNextClick: () => {
-            useWindowStore.getState().closeLaunchpad();
-            setTimeout(() => driverObj.moveNext(), 400);
-          },
-          onPrevClick: () => {
-            useWindowStore.getState().closeLaunchpad();
-            setTimeout(() => driverObj.movePrevious(), 400);
-          },
-        },
-      };
-    }
+    // ── Patch steps to auto-open/close the notifications panel ──
+    const notifIdx = activeSteps.findIndex(s => s.element === '#notification-center-drawer');
+    const menuIdx = activeSteps.findIndex(s => s.element === '#tour-menu-overlay');
+
     if (notifIdx >= 0) {
       activeSteps[notifIdx] = {
         ...activeSteps[notifIdx],
         popover: {
           ...activeSteps[notifIdx].popover,
-          onPrevClick: () => {
-            const ws = useWindowStore.getState();
-            if (!ws.launchpadOpen) ws.toggleLaunchpad();
-            setTimeout(() => driverObj.movePrevious(), 600);
+          onNextClick: () => {
+            const ns = useNotificationStore.getState();
+            if (ns.drawerOpen) ns.toggleDrawer();
+            if (sampleNotificationId) {
+              ns.removeNotification(sampleNotificationId);
+              sampleNotificationId = null;
+            }
+            setTimeout(() => driverObj.moveNext(), 400);
           },
+          onPrevClick: () => {
+            const ns = useNotificationStore.getState();
+            if (ns.drawerOpen) ns.toggleDrawer();
+            if (sampleNotificationId) {
+              ns.removeNotification(sampleNotificationId);
+              sampleNotificationId = null;
+            }
+            setTimeout(() => driverObj.movePrevious(), 400);
+          },
+        },
+        onHighlightStarted: () => {
+          const ns = useNotificationStore.getState();
+          if (!ns.drawerOpen) ns.toggleDrawer();
+          
+          // Inject an informative sample notification for the tour
+          sampleNotificationId = ns.addNotification({
+            variant: 'info',
+            title: 'Welcome to Construct!',
+            body: 'This side panel is where your agent reports back. Completed tasks, new emails, and active processes appear here.',
+            source: 'SYSTEM',
+          });
+        },
+      };
+    }
+
+    if (menuIdx >= 0) {
+      activeSteps[menuIdx] = {
+        ...activeSteps[menuIdx],
+        onHighlightStarted: () => {
+          // Open the Apple menu via custom event (reliable, no click simulation)
+          window.dispatchEvent(new Event('construct:open-apple-menu'));
+
+          // After the dropdown portal renders, expand overlay to encompass both
+          setTimeout(() => {
+            const menuBtn = document.querySelector<HTMLElement>('[data-tour="menu"]');
+            const dropdown = document.getElementById('menu-dropdown-portal');
+            const overlay = document.getElementById('tour-menu-overlay');
+            if (!menuBtn || !overlay) return;
+
+            if (dropdown) {
+              const btnRect = menuBtn.getBoundingClientRect();
+              const dropRect = dropdown.getBoundingClientRect();
+              overlay.style.top = `${Math.min(btnRect.top, dropRect.top)}px`;
+              overlay.style.left = `${Math.min(btnRect.left, dropRect.left)}px`;
+              overlay.style.width = `${Math.max(btnRect.right, dropRect.right) - Math.min(btnRect.left, dropRect.left)}px`;
+              overlay.style.height = `${Math.max(btnRect.bottom, dropRect.bottom) - Math.min(btnRect.top, dropRect.top)}px`;
+            }
+
+            if (driverObj) driverObj.refresh();
+          }, 150);
         },
       };
     }
@@ -236,6 +225,7 @@ export function useDesktopTour() {
       stagePadding: 8,
       stageRadius: 12,
       popoverClass: 'construct-tour-popover',
+      popoverOffset: 20,
       nextBtnText: 'Next',
       prevBtnText: 'Back',
       doneBtnText: 'Let\u2019s go',
@@ -261,8 +251,23 @@ export function useDesktopTour() {
       },
       onDestroyed: () => {
         started.current = false;
-        // Close launchpad if it was left open during the tour
-        useWindowStore.getState().closeLaunchpad();
+        // Close panels if they were left open during the tour
+        const ns = useNotificationStore.getState();
+        if (ns.drawerOpen) ns.toggleDrawer();
+        
+        // Clean up sample notification if user skipped while panel was open
+        if (sampleNotificationId) {
+          ns.removeNotification(sampleNotificationId);
+          sampleNotificationId = null;
+        }
+
+        // Close menu if it was left open using the custom event
+        window.dispatchEvent(new Event('construct:close-apple-menu'));
+        
+        // Clean up the invisible union overlay
+        const overlay = document.getElementById('tour-menu-overlay');
+        if (overlay) overlay.remove();
+        
         // Only mark tour as completed if the user went through all steps.
         // Skipping via "fuck it, we ball" does NOT count — the tour will
         // re-trigger on next page load until step 1 (email) is done.

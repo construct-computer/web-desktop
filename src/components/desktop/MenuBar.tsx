@@ -119,6 +119,22 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
     }
   }, [menu.open]);
 
+  // Robust tour integration
+  useEffect(() => {
+    const handleForceOpen = () => {
+      setMenu({ open: 'apple' });
+      closeMenuBarPanel();
+    };
+    const handleForceClose = () => setMenu({ open: null });
+    
+    window.addEventListener('construct:open-apple-menu', handleForceOpen);
+    window.addEventListener('construct:close-apple-menu', handleForceClose);
+    return () => {
+      window.removeEventListener('construct:open-apple-menu', handleForceOpen);
+      window.removeEventListener('construct:close-apple-menu', handleForceClose);
+    };
+  }, [closeMenuBarPanel]);
+
   // Close panel on outside click
   useEffect(() => {
     if (!panel) return;

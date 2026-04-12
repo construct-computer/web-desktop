@@ -177,6 +177,7 @@ export function NotificationCenter() {
 
       {/* Drawer panel */}
       <div
+        id="notification-center-drawer"
         ref={drawerRef}
         className="fixed flex flex-col
                    bg-white/50 dark:bg-black/40 backdrop-blur-2xl saturate-150

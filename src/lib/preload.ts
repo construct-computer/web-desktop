@@ -89,14 +89,9 @@ import iconConstructDrive from '@/icons/construct-drive.png';
 import iconSetupWizard from '@/icons/setup-wizard.png';
 
 // Phase 5: Tour & extras
-import tourVideo from '@/assets/tour/tour-1.webm';
-import tourEmail from '@/assets/tour/email.gif';
-import tourCal from '@/assets/tour/cal.gif';
-import tourBrowser from '@/assets/tour/browser.gif';
-import tourTerminal from '@/assets/tour/terminal.gif';
+import tourChat from '@/assets/tour/tour-chat.webm';
+import tourEmail from '@/assets/tour/tour-email.webm';
 import tourNotification from '@/assets/tour/notification.gif';
-import tourLast from '@/assets/tour/last.gif';
-import tourChat from '@/assets/tour/chat.gif';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -230,14 +225,9 @@ export function preloadAllAssets(): void {
   // Phase 5: Tour & extras — lowest priority
   desktopPhase.then(() =>
     Promise.all([
-      preloadVideo(tourVideo),
-      preloadGif(tourEmail),
-      preloadGif(tourCal),
-      preloadGif(tourBrowser),
-      preloadGif(tourTerminal),
+      preloadVideo(tourChat),
+      preloadVideo(tourEmail),
       preloadGif(tourNotification),
-      preloadGif(tourLast),
-      preloadGif(tourChat),
     ])
   );
 }

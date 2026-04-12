@@ -505,6 +505,7 @@ export function Dock() {
 
   return (
     <div
+      data-tour="dock"
       className={cn(
         'absolute bottom-0 left-1/2 -translate-x-1/2 transition-all duration-[400ms] ease-out',
         missionControlActive

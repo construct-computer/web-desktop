@@ -644,16 +644,17 @@ html.dark .md-table-wrap tr:nth-child(even) {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
   padding: 20px;
   font-family: var(--font-sans);
-  max-width: 380px;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
 }
 
 .construct-tour-popover .tour-gif {
   display: block;
   width: 100%;
-  height: 180px;
-  object-fit: contain;
-  border-radius: 8px;
+  height: auto;
   margin-bottom: 8px;
+  border-radius: 8px;
 }
 
 html.dark .construct-tour-popover.driver-popover {
