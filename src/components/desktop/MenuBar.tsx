@@ -234,6 +234,11 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             {/* Apps & configuration */}
             <MenuItem label="App Registry..." isMobile={isMobile} icon={<Package className="w-3.5 h-3.5" />} onClick={() => { openWindow('app-registry'); setMenu({ open: null }); }} />
             <MenuItem label="Settings..." isMobile={isMobile} icon={<Settings className="w-3.5 h-3.5" />} onClick={() => { openWindow('settings'); setMenu({ open: null }); }} />
+            <MenuDivider />
+            <MenuItem label="Access Control" isMobile={isMobile} icon={<Shield className="w-3.5 h-3.5" />} onClick={() => { openWindow('access-control'); setMenu({ open: null }); }} />
+            <MenuItem label="Audit Logs" isMobile={isMobile} icon={<FileText className="w-3.5 h-3.5" />} onClick={() => { openWindow('auditlogs'); setMenu({ open: null }); }} />
+            <MenuItem label="Memory" isMobile={isMobile} icon={<Brain className="w-3.5 h-3.5" />} onClick={() => { openWindow('memory'); setMenu({ open: null }); }} />
+            <MenuDivider />
             <MenuItem label="Take a Tour" isMobile={isMobile} icon={<Map className="w-3.5 h-3.5" />} onClick={() => { setMenu({ open: null }); window.dispatchEvent(new Event('construct:force-tour')); }} />
             <MenuDivider />
 
