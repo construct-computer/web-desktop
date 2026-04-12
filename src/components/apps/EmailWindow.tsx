@@ -124,7 +124,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     try {
       const res = await getEmailStatus()
       if (res.error) { setInitError(res.error); return }
-      if (!res.data?.configured) { setInitError('Email is available on the Pro plan. Upgrade in Settings > Subscription to give your agent its own @construct.computer email.'); return }
+      if (!res.data?.configured) { setInitError('Email is available on the Pro plan. Upgrade in Settings > Subscription to give your agent its own @agents.construct.computer email.'); return }
       setInboxId(res.data.inboxId)
       setInboxEmail(res.data.email || '')
     } catch (err) {

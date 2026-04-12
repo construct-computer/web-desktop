@@ -163,8 +163,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
   useEffect(() => {
     getEmailStatus().then((r) => {
       if (r.success && r.data?.configured && r.data.inboxId && r.data.email) {
-        const full = r.data.email.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-        const username = full.endsWith(EMAIL_SUFFIX) ? full.slice(0, -EMAIL_SUFFIX.length) : full;
+        const username = extractBaseUsername(r.data.email);
         setEmailUsername(username);
         setEmailLocked(true);
         emailInitialized.current = true;
@@ -220,7 +219,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
     }
     setEmailChecking(true); setEmailError(''); setEmailSuggestion('');
     emailCheckTimer.current = setTimeout(async () => {
-      const result = await checkAgentEmailAvailability(instanceId, fullEmailUsername(username));
+      const result = await checkAgentEmailAvailability(instanceId, username);
       setEmailChecking(false);
       if (result.success) {
         setEmailAvailable(result.data.available);
@@ -275,7 +274,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
       await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
-        ...(emailChanged && isPro && { agentmailInboxUsername: fullEmailUsername(emailUsername.trim().toLowerCase()) }),
+        ...(emailChanged && isPro && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
       });
       // Move to step 2 and persist
       analytics.setupStepCompleted('profile_email', { emailChanged });
@@ -383,9 +382,6 @@ export function SetupWizard({ config }: SetupWizardProps) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Suffix forced on every agent email address. */
-const EMAIL_SUFFIX = '-agent';
-
 function generateEmailUsername(name: string): string {
   const base = name
     .toLowerCase()
@@ -393,36 +389,19 @@ function generateEmailUsername(name: string): string {
     .trim()
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
-    .slice(0, 30 - EMAIL_SUFFIX.length);
+    .slice(0, 30);
   return base || 'my';
 }
 
-/** Build the full inbox username (base + forced suffix). */
-function fullEmailUsername(base: string): string {
-  return `${base}${EMAIL_SUFFIX}`;
-}
-
-/** Extract the base username (without suffix or domain) from a suggestion.
- *  The backend returns base usernames (e.g. `ankush`, `ankushsingh-2`),
- *  but also handle legacy full-form suggestions defensively.
- *  e.g. `ankush` → `ankush`
- *       `ankush-agent` → `ankush`
- *       `ankush-agent@construct.computer` → `ankush`
- *       `ankush-agent-2` → `ankush-2` */
+/** Extract the username (without domain) from an email or suggestion. */
 function extractBaseUsername(suggestion: string): string {
-  // Strip domain if present (handles both old and new domains)
-  let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-  // Strip -agent suffix (at end, or before a -N numeric suffix)
-  s = s.replace(/-(agent|construct)(-\d+)?$/, (_match, _suffix, num) => num ?? '');
-  return s;
+  return suggestion.replace(/@.*$/, '');
 }
 
-/** Format a suggestion for display as a full email address.
- *  e.g. `ankush` → `ankush-agent@construct.computer`
- *       `ankushsingh-2` → `ankushsingh-2-agent@construct.computer` */
+/** Format a suggestion for display as a full email address. */
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
-  return `${base}${EMAIL_SUFFIX}@construct.computer`;
+  return `${base}@agents.construct.computer`;
 }
 
 /* ─── Step 1: Profile + Email ───────────────────────────────── */
@@ -544,7 +523,7 @@ function Step1Screen({
             {!isPro && !emailLocked ? (
               <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/30 dark:bg-black/10 px-5 py-4">
                 <p className="text-[12px] text-black/50 dark:text-white/40">
-                  Upgrade to Pro to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@construct.computer</span> email address.
+                  Upgrade to Pro to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span> email address.
                 </p>
               </div>
             ) : (
@@ -561,7 +540,7 @@ function Step1Screen({
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-black/5 dark:border-white/10
                               text-black/60 dark:text-white/60 text-[13px] font-medium select-none shrink-0 border-t-0 border-b-0">
-                {EMAIL_SUFFIX}@construct.computer
+                @agents.construct.computer
               </div>
             </div>
             {/* Status */}
@@ -583,7 +562,7 @@ function Step1Screen({
               )}
               {!emailLocked && !emailChecking && emailAvailable === true && emailUsername && (
                 <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 drop-shadow-sm">
-                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@construct.computer is available
+                  <Check className="w-3.5 h-3.5" /> {emailUsername}@agents.construct.computer is available
                 </span>
               )}
               {!emailLocked && !emailChecking && emailAvailable === false && (

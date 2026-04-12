@@ -28,7 +28,6 @@ type Section = 'list' | 'user' | 'connections' | 'subscription';
 
 // -- Helpers --
 
-const AGENT_EMAIL_SUFFIX = '-agent';
 
 function formatCost(cost: number): string {
   if (cost < 0.01) return '<$0.01';
@@ -117,14 +116,12 @@ function UserSection({ onBack }: { onBack: () => void }) {
         if (existing) {
           setAgentEmail(existing);
           setEmailLocked(true);
-          // Extract base username: "ankush-agent@construct.computer" -> "ankush"
-          let base = existing.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-          base = base.replace(/-(agent|construct)(-\d+)?$/, (_m: string, _s: string, num: string) => num ?? '');
-          setEmailUsername(base);
+          // Extract base username: "ankush@agents.construct.computer" -> "ankush"
+          setEmailUsername(existing.replace(/@.*$/, ''));
         } else {
           const inbox = agentConfig.agentmail_inbox_username || '';
           if (inbox) {
-            setEmailUsername(inbox.replace(/-(agent|construct)$/, ''));
+            setEmailUsername(inbox.replace(/@.*$/, ''));
           }
         }
       }
@@ -142,7 +139,7 @@ function UserSection({ onBack }: { onBack: () => void }) {
       };
 
       if (!emailLocked && emailUsername.trim()) {
-        updateData.email_username = `${emailUsername.trim()}${AGENT_EMAIL_SUFFIX}`;
+        updateData.email_username = emailUsername.trim();
       }
 
       const [profileRes, agentRes] = await Promise.all([
@@ -217,7 +214,7 @@ function UserSection({ onBack }: { onBack: () => void }) {
                     style={{ color: textColor() }}
                   />
                   <span className="text-[12px] opacity-30 px-3 py-2.5 whitespace-nowrap select-none">
-                    {AGENT_EMAIL_SUFFIX}@construct.computer
+                    @agents.construct.computer
                   </span>
                 </div>
               </div>

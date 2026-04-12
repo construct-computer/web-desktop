@@ -29,7 +29,7 @@ const PRO_FEATURES = [
   'Premium AI included',
   'Unlimited web search & browser',
   'Unlimited terminal & code',
-  'Agent email (@construct.computer)',
+  'Agent email (@agents.construct.computer)',
   'Unlimited calendar & memory',
   '2GB storage, background agents',
 ];

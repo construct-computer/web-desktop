@@ -440,9 +440,9 @@ function SettingsTab({ settings, bindings, onRefresh }: {
   };
 
   const modes = [
-    { value: 'open', label: 'Open', desc: 'Everyone gets full access' },
-    { value: 'guest', label: 'Guest', desc: 'Unknown users get restricted access' },
-    { value: 'block', label: 'Approval Required', desc: 'Unknown users must be approved' },
+    { value: 'open', label: 'Open' },
+    { value: 'block', label: 'Approval Required' },
+    { value: 'closed', label: 'Closed' },
   ];
 
   return (
@@ -465,7 +465,7 @@ function SettingsTab({ settings, bindings, onRefresh }: {
           </div>
         ))}
         <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
-          Open = no restrictions. Guest = restricted tools, escalations queued. Approval Required = all messages queued.
+          Open — anyone can message your agent. Approval Required — unknown senders are held for your review. Closed — only trusted contacts can reach your agent.
         </p>
       </div>
 

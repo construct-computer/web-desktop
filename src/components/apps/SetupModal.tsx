@@ -22,8 +22,6 @@ const logger = log('SetupModal');
 
 // ── Email helpers ──
 
-const EMAIL_SUFFIX = '-agent';
-
 function generateEmailUsername(name: string): string {
   const base = name
     .toLowerCase()
@@ -31,23 +29,17 @@ function generateEmailUsername(name: string): string {
     .trim()
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
-    .slice(0, 30 - EMAIL_SUFFIX.length);
+    .slice(0, 30);
   return base || 'my';
 }
 
-function fullEmailUsername(base: string): string {
-  return `${base}${EMAIL_SUFFIX}`;
-}
-
 function extractBaseUsername(suggestion: string): string {
-  let s = suggestion.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-  s = s.replace(/-(agent|construct)(-\d+)?$/, (_match, _suffix, num) => num ?? '');
-  return s;
+  return suggestion.replace(/@.*$/, '');
 }
 
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
-  return `${base}${EMAIL_SUFFIX}@construct.computer`;
+  return `${base}@agents.construct.computer`;
 }
 
 // ── Component ──
@@ -96,8 +88,7 @@ export function SetupModal() {
   useEffect(() => {
     getEmailStatus().then((r) => {
       if (r.success && r.data?.configured && r.data.inboxId && r.data.email) {
-        const full = r.data.email.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-        const username = full.endsWith(EMAIL_SUFFIX) ? full.slice(0, -EMAIL_SUFFIX.length) : full;
+        const username = extractBaseUsername(r.data.email);
         setEmailUsername(username);
         setEmailLocked(true);
         emailInitialized.current = true;
@@ -120,7 +111,7 @@ export function SetupModal() {
     }
     setEmailChecking(true); setEmailError(''); setEmailSuggestion('');
     emailCheckTimer.current = setTimeout(async () => {
-      const result = await checkAgentEmailAvailability(instanceId, fullEmailUsername(username));
+      const result = await checkAgentEmailAvailability(instanceId, username);
       setEmailChecking(false);
       if (result.success) {
         setEmailAvailable(result.data.available);
@@ -160,7 +151,7 @@ export function SetupModal() {
       await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
-        ...(emailChanged && { agentmailInboxUsername: fullEmailUsername(emailUsername.trim().toLowerCase()) }),
+        ...(emailChanged && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
       });
       analytics.setupStepCompleted('profile_email', { emailChanged });
 
@@ -265,7 +256,7 @@ export function SetupModal() {
             {!isPro && !emailLocked ? (
               <div className="rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3">
                 <p className="text-[12px] text-[var(--color-text-muted)]">
-                  Upgrade to Pro to give your agent its own <span className="font-medium">@construct.computer</span> email.
+                  Upgrade to Pro to give your agent its own <span className="font-medium">@agents.construct.computer</span> email.
                 </p>
               </div>
             ) : (
@@ -285,7 +276,7 @@ export function SetupModal() {
                 disabled={emailLocked}
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-[var(--color-border)] text-[var(--color-text-muted)] text-[13px] font-medium select-none shrink-0">
-                {EMAIL_SUFFIX}@construct.computer
+                @agents.construct.computer
               </div>
             </div>
             {/* Status */}
@@ -307,7 +298,7 @@ export function SetupModal() {
               )}
               {!emailLocked && !emailChecking && emailAvailable === true && emailUsername && (
                 <span className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="w-3.5 h-3.5" /> {fullEmailUsername(emailUsername)}@construct.computer is available
+                  <Check className="w-3.5 h-3.5" /> {emailUsername}@agents.construct.computer is available
                 </span>
               )}
               {!emailLocked && !emailChecking && emailAvailable === false && (

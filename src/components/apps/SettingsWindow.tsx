@@ -176,8 +176,6 @@ function SettingsRow({ label, description, children, noBorder }: {
 
 // ── User Section ──
 
-const AGENT_EMAIL_SUFFIX = '-agent';
-
 function UserSection() {
   const { user, updateProfile } = useAuthStore();
   const { computer, updateComputer, isLoading: computerLoading } = useComputerStore();
@@ -218,9 +216,8 @@ function UserSection() {
   // Populate email username from existing config
   useEffect(() => {
     if (existingEmail) {
-      // Extract base username: "ankush-agent@construct.computer" → "ankush"
-      let base = existingEmail.replace(/@(construct\.computer|agentmail\.to)$/i, '');
-      base = base.replace(/-(agent|construct)(-\d+)?$/, (_m: string, _s: string, num: string) => num ?? '');
+      // Extract base username: "ankush@agents.construct.computer" → "ankush"
+      const base = existingEmail.replace(/@.*$/, '');
       setEmailUsername(base);
     }
   }, [existingEmail]);
@@ -250,7 +247,7 @@ function UserSection() {
 
       // Include email username if not already set
       if (!emailLocked && emailUsername.trim()) {
-        updateData.agentmailInboxUsername = `${emailUsername.trim()}${AGENT_EMAIL_SUFFIX}`;
+        updateData.agentmailInboxUsername = emailUsername.trim();
       }
 
       // Save timezone to agent config
@@ -346,7 +343,7 @@ function UserSection() {
                 className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
               />
               <span className="text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
-                {AGENT_EMAIL_SUFFIX}@construct.computer
+                @agents.construct.computer
               </span>
             </div>
           )}

@@ -29,7 +29,7 @@ const PRO_FEATURES = [
   { icon: Sparkles, text: 'Premium AI models included', highlight: true },
   { icon: Globe, text: 'Unlimited web search & browser', highlight: true },
   { icon: Terminal, text: 'Unlimited terminal & code' },
-  { icon: Mail, text: 'Agent email (@construct.computer)', highlight: true },
+  { icon: Mail, text: 'Agent email (@agents.construct.computer)', highlight: true },
   { icon: Calendar, text: 'Unlimited calendar & memory' },
   { icon: HardDrive, text: '2 GB cloud storage' },
   { icon: Bot, text: 'Background agents & tasks', highlight: true },

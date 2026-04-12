@@ -1030,7 +1030,7 @@ export const useComputerStore = create<ComputerStore>()(
               if (cfg.data.agentmail_inbox_username) {
                 agentmailEmail = cfg.data.agentmail_inbox_username.includes('@')
                   ? cfg.data.agentmail_inbox_username
-                  : `${cfg.data.agentmail_inbox_username}@construct.computer`;
+                  : `${cfg.data.agentmail_inbox_username}@agents.construct.computer`;
               }
             }
           } catch { /* agent may not be ready yet */ }
@@ -3738,11 +3738,17 @@ export const useComputerStore = create<ComputerStore>()(
           // opens the Access Control window when clicked.
           set(state => ({ pendingApprovalCount: state.pendingApprovalCount + 1 }));
           const accessUserName = (event.data?.senderName as string) || (event.data?.displayName as string) || (event.data?.senderHandle as string) || (event.data?.username as string) || 'A user';
-          const accessToolName = event.data?.toolName as string || 'a restricted action';
+          const accessPlatform = event.data?.platform as string || '';
+          const accessToolName = event.data?.toolName as string;
+          const accessBody = accessPlatform === 'email'
+            ? `${accessUserName} sent your agent an email`
+            : accessToolName
+              ? `${accessUserName} wants to use ${accessToolName}`
+              : `${accessUserName} is requesting access via ${accessPlatform || 'an external platform'}`;
           useNotificationStore.getState().addNotification(
             {
-              title: `Permission Request`,
-              body: `${accessUserName} wants to use ${accessToolName}`,
+              title: accessPlatform === 'email' ? 'New Email from Unknown Sender' : 'Permission Request',
+              body: accessBody,
               source: 'Access Control',
               variant: 'info',
               onClick: () => {

@@ -31,9 +31,9 @@ const PLATFORM_BORDER_COLORS: Record<string, string> = {
 };
 
 const ACCESS_MODES = [
-  { value: 'open', label: 'Open', desc: 'Everyone gets full access' },
-  { value: 'guest', label: 'Guest', desc: 'Unknown users get restricted access' },
-  { value: 'block', label: 'Approval Required', desc: 'Unknown users must be approved' },
+  { value: 'open', label: 'Open', desc: 'Anyone can message your agent' },
+  { value: 'block', label: 'Approval Required', desc: 'Unknown senders are held for your review' },
+  { value: 'closed', label: 'Closed', desc: 'Only trusted contacts can reach your agent' },
 ] as const;
 
 // ── Component ──
