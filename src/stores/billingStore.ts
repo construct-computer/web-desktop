@@ -35,7 +35,7 @@ interface BillingState {
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
   startCheckout: (coupon?: string, plan?: 'starter' | 'pro') => Promise<string | null>;
-  switchPlan: (plan: 'starter' | 'pro') => Promise<boolean>;
+  switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean>;
   openPortal: () => Promise<string | null>;
   buyTopup: (amount: number) => Promise<string | null>;
 }
@@ -83,7 +83,7 @@ export const useBillingStore = create<BillingState>((set) => ({
     return null;
   },
 
-  switchPlan: async (plan: 'starter' | 'pro') => {
+  switchPlan: async (plan: 'free' | 'starter' | 'pro') => {
     const result = await switchPlanApi(plan);
     if (result.success) {
       // Refresh subscription data after switching

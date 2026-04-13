@@ -6,9 +6,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import * as api from '@/services/api';
 import { USAGE_POLL_INTERVAL_MS } from '@/lib/config';
+import { openSettingsToSection } from '@/lib/settingsNav';
+import buyIcon from '@/icons/buy.png';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,13 +65,25 @@ function fmtTime(ms: number): string {
 }
 
 interface UsageWindow {
-  percentUsed: number;
-  promptTokens: number;
-  completionTokens: number;
-  requestCount: number;
-  resetsAt: string;
+  weeklyPercentUsed: number;
+  windowPercentUsed: number;
+  weeklyResetsAt: string;
+  windowResetsAt: string;
   plan?: string;
+  allowed: boolean;
+  shouldDowngrade: boolean;
   environment?: string;
+  // Staging-only
+  weeklyUsedUsd?: number;
+  weeklyCapUsd?: number;
+  windowUsedUsd?: number;
+  windowCapUsd?: number;
+  // Legacy aliases
+  percentUsed?: number;
+  resetsAt?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  requestCount?: number;
   totalCostUsd?: number;
   costCapUsd?: number;
 }
@@ -79,6 +94,7 @@ const EMPTY_HISTORY: Array<{ tool: string; timestamp: number }> = [];
 
 export function StatusWidget() {
   const { containerStyle, containerProps } = useDraggableWidget('status', 'tr');
+  const userPlan = useAuthStore((s) => s.user?.plan);
 
   // Agent status
   const connected = useComputerStore((s) => s.agentConnected);
@@ -114,9 +130,6 @@ export function StatusWidget() {
   // Usage stats
   const [usage, setUsage] = useState<UsageWindow | null>(null);
   const [storage, setStorage] = useState<{ bytesUsed: number; maxBytes: number } | null>(null);
-  type QuotaRow = { label: string; used: number; limit: number };
-  const [starterQuotas, setStarterQuotas] = useState<QuotaRow[] | null>(null);
-  const [bonusMessages, setBonusMessages] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,32 +142,9 @@ export function StatusWidget() {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  // Fetch Starter daily quotas
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const r = await api.getSubscription();
-      if (!cancelled && r.success && r.data && r.data.plan === 'starter') {
-        const qu = r.data.dailyQuotaUsage as Record<string, number> | undefined;
-        const pl = r.data.planLimits as Record<string, number> | undefined;
-        const rows: QuotaRow[] = [];
-        rows.push({ label: 'Messages', used: qu?.free_message ?? 0, limit: pl?.dailyFreeMessages ?? 25 });
-        rows.push(
-          { label: 'Searches', used: qu?.search ?? 0, limit: pl?.dailySearches ?? 50 },
-          { label: 'Browser', used: qu?.browser ?? 0, limit: pl?.dailyBrowserSessions ?? 10 },
-          { label: 'Sandbox', used: qu?.sandbox ?? 0, limit: pl?.dailySandboxMinutes ?? 60 },
-        );
-        setStarterQuotas(rows);
-        setBonusMessages(r.data.bonusMessages ?? 0);
-      } else if (!cancelled) {
-        setStarterQuotas(null);
-        setBonusMessages(0);
-      }
-    };
-    poll();
-    const iv = setInterval(poll, 30_000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, []);
+  // Daily quotas removed — all tiers use percentage-based usage now
+  const starterQuotas = null;
+  const bonusMessages = 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -167,16 +157,17 @@ export function StatusWidget() {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  const pct = usage?.percentUsed || 0;
+  const pct = usage?.weeklyPercentUsed ?? usage?.percentUsed ?? 0;
   const isStaging = usage?.environment === 'staging';
-  const resetsIn = usage?.resetsAt ? fmtTime(new Date(usage.resetsAt).getTime() - Date.now()) : null;
+  const resetSource = usage?.weeklyResetsAt || usage?.resetsAt;
+  const resetsIn = resetSource ? fmtTime(new Date(resetSource).getTime() - Date.now()) : null;
   const accent = pct < 60 ? '#22d3ee' : pct < 85 ? '#fbbf24' : '#f87171';
   const total = (usage?.promptTokens || 0) + (usage?.completionTokens || 0);
 
   return (
-    <div style={containerStyle} {...containerProps}>
+    <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
       <div
-        className="px-5 py-4 rounded-2xl"
+        className="px-5 py-4 rounded-2xl w-full"
         style={{
           maskImage: 'radial-gradient(ellipse 85% 75% at center, black 55%, transparent 100%)',
           WebkitMaskImage: 'radial-gradient(ellipse 85% 75% at center, black 55%, transparent 100%)',
@@ -242,51 +233,16 @@ export function StatusWidget() {
         </>
       )}
 
-      {/* Limit bars — Starter shows daily quotas, Pro shows cost cap */}
-      {starterQuotas ? (
-        <>
-          {starterQuotas.map((q) => {
-            const qPct = q.limit > 0 ? Math.min(100, (q.used / q.limit) * 100) : 0;
-            const qColor = qPct >= 100 ? '#f87171' : qPct >= 80 ? '#fbbf24' : '#22d3ee';
-            return (
-              <div key={q.label} className="mt-1.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[10px] font-semibold tracking-wide shrink-0" style={{ color: qPct >= 100 ? qColor : 'rgba(255,255,255,0.3)' }}>
-                    {q.label}
-                  </span>
-                  <span className="text-[10px] font-medium tabular-nums whitespace-nowrap" style={{ color: qPct >= 100 ? qColor : 'rgba(255,255,255,0.45)' }}>
-                    {q.used}/{q.limit}
-                  </span>
-                </div>
-                <div className="h-[2px] rounded-full overflow-hidden mt-0.5" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                  <div
-                    className={`h-full rounded-full transition-all duration-1000 ease-out ${qPct >= 100 ? 'animate-pulse' : ''}`}
-                    style={{ width: `${Math.max(qPct > 0 ? 2 : 0, qPct)}%`, background: qColor, boxShadow: `0 0 4px ${qColor}44` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-          <div className="flex items-baseline justify-between mt-1">
-            {bonusMessages > 0 && (
-              <span className="text-[9px] tabular-nums" style={{ color: 'rgba(74,222,128,0.5)' }}>
-                +{bonusMessages} bonus
-              </span>
-            )}
-            <span className="text-[9px] tabular-nums ml-auto" style={{ color: 'rgba(255,255,255,0.12)' }}>
-              resets daily
-            </span>
-          </div>
-        </>
-      ) : usage?.plan !== 'starter' ? (
+      {/* ── Weekly usage bar ── */}
+      {usage && (
         <>
           <div className="flex items-baseline justify-between gap-2 mt-2">
             <span className="text-[11px] font-semibold tracking-wide shrink-0" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.35)' }}>
-              {pct >= 100 ? 'Lite mode' : 'Limit'}
+              {pct >= 100 ? 'Limit reached' : 'Usage'}
             </span>
             <span className="text-[12px] font-medium tabular-nums whitespace-nowrap" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.6)' }}>
-              {isStaging && usage?.costCapUsd && usage.costCapUsd > 0
-                ? `${fmtCost(usage.totalCostUsd || 0)} / ${fmtCost(usage.costCapUsd)}`
+              {isStaging && usage.weeklyCapUsd && usage.weeklyCapUsd > 0
+                ? `${fmtCost(usage.weeklyUsedUsd || 0)} / ${fmtCost(usage.weeklyCapUsd)}`
                 : `${Math.min(pct, 100).toFixed(0)}%`}
             </span>
           </div>
@@ -302,7 +258,7 @@ export function StatusWidget() {
             </div>
           )}
         </>
-      ) : null}
+      )}
 
       {/* ── Storage ── */}
       {storage && (
@@ -328,6 +284,24 @@ export function StatusWidget() {
         </>
       )}
       </div>
+
+      {/* Get Premium shortcut — free plan only */}
+      {userPlan === 'free' && (
+        <button
+          onClick={() => openSettingsToSection('subscription')}
+          className="flex flex-col items-center gap-1 mt-2 group cursor-pointer self-center"
+        >
+          <img
+            src={buyIcon}
+            alt="Get Premium"
+            className="w-12 h-12 drop-shadow-lg group-hover:scale-110 transition-transform duration-150"
+            draggable={false}
+          />
+          <span className="text-[10px] font-medium drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+            Get Premium
+          </span>
+        </button>
+      )}
     </div>
   );
 }

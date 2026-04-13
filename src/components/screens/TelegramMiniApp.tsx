@@ -161,9 +161,9 @@ export function TelegramMiniApp() {
       const now = Date.now();
       let resetsIn = '';
       if (usageRes) {
-        const windowMs = 6 * 60 * 60 * 1000;
-        const windowEnd = usageRes.windowStart + windowMs;
-        const mins = Math.max(0, Math.round((windowEnd - now) / 60_000));
+        const resetsAt = usageRes.weeklyResetsAt || usageRes.resetsAt;
+        const resetTs = resetsAt ? new Date(resetsAt).getTime() : now;
+        const mins = Math.max(0, Math.round((resetTs - now) / 60_000));
         resetsIn = `${Math.floor(mins / 60)}h ${mins % 60}m`;
       }
 
@@ -176,10 +176,10 @@ export function TelegramMiniApp() {
         status: statusRes,
         tasks: tasksList,
         usage: usageRes ? {
-          requestCount: usageRes.requestCount,
-          promptTokens: usageRes.promptTokens,
-          completionTokens: usageRes.completionTokens,
-          percentUsed: usageRes.percentUsed ?? 0,
+          requestCount: usageRes.requestCount || 0,
+          promptTokens: usageRes.promptTokens || 0,
+          completionTokens: usageRes.completionTokens || 0,
+          percentUsed: usageRes.weeklyPercentUsed ?? usageRes.percentUsed ?? 0,
           resetsIn,
           environment: usageRes.environment,
         } : null,

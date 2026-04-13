@@ -16,23 +16,23 @@ import { useBillingStore } from '@/stores/billingStore';
 import constructLogo from '@/assets/logo.png';
 
 const STARTER_FEATURES = [
-  { icon: Bot, text: 'AI agent with free models' },
-  { icon: Code, text: 'OpenRouter Free via AI Gateway' },
-  { icon: Search, text: 'Web search (50/day)' },
+  { icon: Bot, text: 'Fast AI model (Workers AI)' },
+  { icon: Search, text: 'Web search & browser' },
   { icon: Terminal, text: 'Terminal & code execution' },
   { icon: Calendar, text: 'Calendar & reminders' },
   { icon: Cpu, text: 'Memory & context' },
-  { icon: HardDrive, text: '500 MB cloud storage' },
+  { icon: HardDrive, text: '1 GB cloud storage' },
+  { icon: Code, text: 'Bring your own API key' },
 ];
 
 const PRO_FEATURES = [
-  { icon: Sparkles, text: 'Premium AI models included', highlight: true },
-  { icon: Globe, text: 'Unlimited web search & browser', highlight: true },
-  { icon: Terminal, text: 'Unlimited terminal & code' },
-  { icon: Mail, text: 'Agent email (@agents.construct.computer)', highlight: true },
-  { icon: Calendar, text: 'Unlimited calendar & memory' },
+  { icon: Sparkles, text: 'Premium AI (Gemini 2.5 Pro)', highlight: true },
+  { icon: Globe, text: 'Web search & browser', highlight: false },
+  { icon: Terminal, text: 'Terminal & code execution' },
+  { icon: Mail, text: 'Agent email inbox', highlight: true },
+  { icon: Calendar, text: 'Calendar & memory' },
   { icon: HardDrive, text: '2 GB cloud storage' },
-  { icon: Bot, text: 'Background agents & tasks', highlight: true },
+  { icon: Bot, text: 'Background agents & scheduled tasks', highlight: true },
   { icon: Shield, text: 'Priority support' },
 ];
 
@@ -113,7 +113,7 @@ export function SubscriptionOverlay() {
             <div className="mb-3">
               <h2 className="text-[15px] text-gray-900 dark:text-white font-semibold mb-0.5">Pro</h2>
               <div className="flex items-baseline gap-1">
-                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$250</span>
+                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$99</span>
                 <span className="text-gray-400 dark:text-white/30 text-sm">/mo</span>
               </div>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400/80 mt-1">3 days free trial</p>

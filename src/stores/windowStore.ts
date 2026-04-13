@@ -789,7 +789,7 @@ export const useWindowStore = create<WindowStore>()(
     openWindow: (type, options = {}) => {
       // Preview mode: unsubscribed users can only open whitelisted app types
       const userPlan = useAuthStore.getState().user?.plan;
-      if (userPlan !== 'pro' && userPlan !== 'starter' && !PREVIEW_ALLOWED_TYPES.has(type)) {
+      if (userPlan !== 'pro' && userPlan !== 'starter' && userPlan !== 'free' && !PREVIEW_ALLOWED_TYPES.has(type)) {
         return '';
       }
 

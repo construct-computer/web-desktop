@@ -352,20 +352,21 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
   }, []);
 
   // Reset countdown timer
+  const resetsAt = usage?.weeklyResetsAt || usage?.resetsAt;
   useEffect(() => {
-    if (!usage?.resetsAt) return;
-    const update = () => setTimeLeft(formatTimeRemaining(usage.resetsAt));
+    if (!resetsAt) return;
+    const update = () => setTimeLeft(formatTimeRemaining(resetsAt));
     update();
     const timer = setInterval(update, 30_000);
     return () => clearInterval(timer);
-  }, [usage?.resetsAt]);
+  }, [resetsAt]);
 
   const isPro = subscription?.plan === 'pro';
   const isCancelling = subscription?.cancelAtPeriodEnd;
   const isStaging = usage?.environment === 'staging';
-  const costCap = usage?.costCapUsd ?? 0;
+  const costCap = usage?.weeklyCapUsd ?? usage?.costCapUsd ?? 0;
   const isUnlimited = costCap === -1;
-  const pct = usage?.percentUsed || 0;
+  const pct = usage?.weeklyPercentUsed ?? usage?.percentUsed ?? 0;
   const barColor = pct >= 95 ? '#ef4444' : pct >= 80 ? '#f59e0b' : accent();
 
   return (
@@ -386,7 +387,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
                     className="text-[13px] font-medium capitalize"
                     style={{ color: isPro ? '#22d3ee' : textColor() }}
                   >
-                    {isPro ? 'Pro' : 'Free'}
+                    {subscription?.plan || 'Free'}
                   </span>
                   {isPro && (
                     <span className="text-[10px] font-semibold px-1.5 py-px rounded-full uppercase tracking-wide"
@@ -398,7 +399,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
               </div>
               {isPro && (
                 <p className="text-[12px] opacity-40 mt-1">
-                  {isCancelling ? '$250/month — cancels at end of period' : '$250/month'}
+                  {isCancelling ? '$99/month — cancels at end of period' : '$99/month'}
                 </p>
               )}
             </Card>
@@ -530,7 +531,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
             )}
 
             {/* Credit Top-Ups */}
-            {isPro && !isUnlimited && subscription?.topupsEnabled && (
+            {isPro && !isUnlimited && isStaging && (subscription?.topupCreditsUsd ?? 0) > 0 && (
               <>
                 <SectionLabel>Credit Top-Ups</SectionLabel>
                 <Card>

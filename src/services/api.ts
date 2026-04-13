@@ -1172,56 +1172,77 @@ export async function deleteMemory(memoryId: string): Promise<ApiResult<{ succes
 
 export interface SubscriptionInfo {
   plan: string;
+  planSource: string;
   status: string;
-  price: number;
   dodoCustomerId: string | null;
   dodoSubscriptionId: string | null;
   currentPeriodStart: number | null;
   currentPeriodEnd: number | null;
   cancelAtPeriodEnd: boolean;
-  topupCreditsUsd: number;
-  topupsEnabled: boolean;
-  limits: {
-    costCapPerWindow: number;
-    allowedModelTiers: string[];
-    backgroundAgent: boolean;
-    containerRamMb: number;
-  };
   environment?: string;
   byok?: boolean;
   hasOpenRouterKey?: boolean;
   selectedModel?: string;
-  planLimits?: Record<string, unknown>;
-  dailyQuotaUsage?: Record<string, number>;
+  planLimits?: {
+    weeklyCapUsd: number;
+    windowCapUsd: number;
+    email: boolean;
+    backgroundAgents: boolean;
+    byok: boolean;
+    maxIterations: number;
+    maxSandboxTimeout: number;
+    maxConcurrentSubagents: number;
+    maxScheduledTasks: number;
+    maxStorageBytes: number;
+    maxInstalledApps: number;
+  };
   bonusMessages?: number;
+  /** Only present in staging */
+  topupCreditsUsd?: number;
+  /** Only present in staging */
+  limits?: {
+    windowCapUsd: number;
+    weeklyCapUsd: number;
+  };
 }
 
 export interface WindowUsage {
-  windowStart: number;
-  windowEnd: number;
-  resetsAt: string;
-  /** Only present in staging */
-  promptTokens?: number;
-  /** Only present in staging */
-  completionTokens?: number;
-  /** Only present in staging */
-  requestCount?: number;
-  percentUsed: number;
+  windowResetsAt: string;
+  weeklyResetsAt: string;
+  windowPercentUsed: number;
+  weeklyPercentUsed: number;
   plan?: string;
+  allowed: boolean;
+  shouldDowngrade: boolean;
   environment?: string;
   /** Only present in staging */
-  totalCostUsd?: number;
+  windowUsedUsd?: number;
   /** Only present in staging */
+  windowCapUsd?: number;
+  /** Only present in staging */
+  weeklyUsedUsd?: number;
+  /** Only present in staging */
+  weeklyCapUsd?: number;
+  // Legacy aliases (kept for compatibility with usage display)
+  resetsAt?: string;
+  percentUsed?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  requestCount?: number;
+  totalCostUsd?: number;
   costCapUsd?: number;
 }
 
 export interface UsageHistorySummary {
-  period: { days: number; sinceMs: number };
-  summary: {
-    openrouter: { requests: number; promptTokens: number; completionTokens: number; costUsd: number };
-    tinyfish: { requests: number; costUsd: number };
-    agentmail: { requests: number; costUsd: number };
-  };
+  days: number;
+  environment?: string;
+  services: {
+    service: string;
+    requestCount: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalCostUsd?: number;
+  }[];
 }
 
 export interface UsageRecord {
@@ -1271,7 +1292,7 @@ export async function createCheckout(plan = 'pro', coupon?: string): Promise<Api
   });
 }
 
-export async function switchPlan(plan: 'starter' | 'pro'): Promise<ApiResult<{ ok: boolean; plan: string }>> {
+export async function switchPlan(plan: 'free' | 'starter' | 'pro'): Promise<ApiResult<{ ok: boolean; plan: string }>> {
   return request('/billing/switch-plan', {
     method: 'POST',
     body: JSON.stringify({ plan }),

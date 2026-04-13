@@ -18,20 +18,21 @@ interface SubscriptionGateProps {
 }
 
 const STARTER_FEATURES = [
-  'Free AI models (or bring your own key)',
-  'Web search (50/day)',
+  'Fast AI model (Workers AI)',
+  'Web search & browser',
   'Terminal & code execution',
   'Calendar & memory',
-  '500MB cloud storage',
+  '1 GB cloud storage',
+  'Bring your own API key',
 ];
 
 const PRO_FEATURES = [
-  'Premium AI included',
-  'Unlimited web search & browser',
-  'Unlimited terminal & code',
-  'Agent email (@agents.construct.computer)',
-  'Unlimited calendar & memory',
-  '2GB storage, background agents',
+  'Premium AI (Gemini 2.5 Pro)',
+  'Web search & browser',
+  'Terminal & code execution',
+  'Agent email inbox',
+  'Calendar & memory',
+  '2 GB storage, background agents',
 ];
 
 export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGateProps) {
@@ -48,7 +49,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
     const check = async () => {
       await fetchSubscription();
       const sub = useBillingStore.getState().subscription;
-      if (sub?.plan === 'pro' || sub?.plan === 'starter') {
+      if (sub?.plan === 'pro' || sub?.plan === 'starter' || sub?.plan === 'free') {
         onSubscribed();
       }
     };
@@ -160,7 +161,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
                   <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-500/20 text-emerald-400 uppercase tracking-wider">Popular</span>
                 </div>
                 <div className="flex items-baseline gap-1.5 mb-1">
-                  <span className="text-[24px] text-white font-bold">$250</span>
+                  <span className="text-[24px] text-white font-bold">$99</span>
                   <span className="text-white/40 text-sm">/month</span>
                 </div>
                 <p className="text-[11px] text-white/40 mb-1">Everything included, unlimited</p>

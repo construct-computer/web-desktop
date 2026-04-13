@@ -220,7 +220,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // or on first visit if the user hasn't completed/skipped the tour yet.
   // Force-start from the menubar always works regardless of flags.
   // Skip for unsubscribed users — they see the subscribe window instead.
-  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter';
+  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
   const tourTriggered = useRef(false);
   useEffect(() => {
     if (tourTriggered.current || !user || !isSubscribed) return;

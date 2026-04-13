@@ -23,7 +23,7 @@ export function Spotlight() {
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
   const instanceId = useComputerStore(s => s.instanceId);
   const userPlan = useAuthStore(s => s.user?.plan);
-  const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
+  const isSubscribed = userPlan === 'pro' || userPlan === 'starter' || userPlan === 'free';
 
   const [animating, setAnimating] = useState(false);
   const [show, setShow] = useState(false);

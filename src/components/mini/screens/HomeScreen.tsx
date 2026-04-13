@@ -81,12 +81,13 @@ export function HomeScreen({ onNavigate }: Props) {
     ]);
 
     if (usageRes) {
-      const resetsAt = usageRes.resetsAt
-        ? (typeof usageRes.resetsAt === 'string' ? new Date(usageRes.resetsAt).getTime() : usageRes.resetsAt)
-        : (usageRes.windowStart + (usageRes.windowMs || 3 * 60 * 60 * 1000));
-      const mins = Math.max(0, Math.round((resetsAt - Date.now()) / 60_000));
+      const resetsAt = usageRes.weeklyResetsAt || usageRes.resetsAt;
+      const resetTs = resetsAt
+        ? (typeof resetsAt === 'string' ? new Date(resetsAt).getTime() : resetsAt)
+        : Date.now();
+      const mins = Math.max(0, Math.round((resetTs - Date.now()) / 60_000));
       setUsage({
-        percentUsed: usageRes.percentUsed || 0,
+        percentUsed: usageRes.weeklyPercentUsed ?? usageRes.percentUsed ?? 0,
         resetsIn: `${Math.floor(mins / 60)}h ${mins % 60}m`,
         requestCount: usageRes.requestCount || 0,
       });
