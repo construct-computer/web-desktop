@@ -17,7 +17,7 @@ import constructLogo from '@/assets/logo.png';
 
 const STARTER_FEATURES = [
   { icon: Bot, text: 'AI agent with free models' },
-  { icon: Code, text: 'Bring your own OpenRouter API key' },
+  { icon: Code, text: 'OpenRouter Free via AI Gateway' },
   { icon: Search, text: 'Web search (50/day)' },
   { icon: Terminal, text: 'Terminal & code execution' },
   { icon: Calendar, text: 'Calendar & reminders' },

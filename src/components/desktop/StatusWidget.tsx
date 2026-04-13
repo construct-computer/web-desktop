@@ -138,9 +138,7 @@ export function StatusWidget() {
         const qu = r.data.dailyQuotaUsage as Record<string, number> | undefined;
         const pl = r.data.planLimits as Record<string, number> | undefined;
         const rows: QuotaRow[] = [];
-        if (!r.data.hasOpenRouterKey) {
-          rows.push({ label: 'Messages', used: qu?.free_message ?? 0, limit: pl?.dailyFreeMessages ?? 25 });
-        }
+        rows.push({ label: 'Messages', used: qu?.free_message ?? 0, limit: pl?.dailyFreeMessages ?? 25 });
         rows.push(
           { label: 'Searches', used: qu?.search ?? 0, limit: pl?.dailySearches ?? 50 },
           { label: 'Browser', used: qu?.browser ?? 0, limit: pl?.dailyBrowserSessions ?? 10 },

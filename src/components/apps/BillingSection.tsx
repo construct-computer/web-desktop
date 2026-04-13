@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import * as api from '@/services/api';
-import { Button, Select, type SelectGroup } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 
 function formatTimeRemaining(resetsAt: number | string): string {
@@ -239,7 +239,6 @@ export function BillingSection() {
             <StarterUsageDisplay
               quotaUsage={subscription?.dailyQuotaUsage as Record<string, number> | undefined}
               planLimits={subscription?.planLimits as Record<string, number> | undefined}
-              hasKey={!!subscription?.hasOpenRouterKey}
               bonusMessages={subscription?.bonusMessages ?? 0}
             />
           ) : usage ? (
@@ -332,11 +331,6 @@ export function BillingSection() {
         </InfoCard>
       )}
 
-      {/* ── AI Configuration (Starter/BYOK plan) ── */}
-      {subscription?.byok && (
-        <AIConfigSection />
-      )}
-
       {/* ── Credit Top-Ups ── */}
       {hasActivePlan && !isUnlimited && subscription?.topupsEnabled && (
         <InfoCard>
@@ -365,21 +359,21 @@ export function BillingSection() {
       {/* ── Earn Bonus ── */}
       {hasActivePlan && tweetStatus && tweetStatus.tweetsRemaining > 0 && (
         <InfoCard>
-          <CardHeader icon={Gift} title={isByok && !subscription?.hasOpenRouterKey ? 'Earn Bonus Messages' : 'Earn Bonus Credits'} trailing={
+          <CardHeader icon={Gift} title={isByok ? 'Earn Bonus Messages' : 'Earn Bonus Credits'} trailing={
             <span className="text-[11px] text-[var(--color-text-muted)]">
               {tweetStatus.tweetsRedeemed}/{tweetStatus.maxTweets} redeemed
             </span>
           } />
           <div className="px-4 pb-4 space-y-3">
             <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              {isByok && !subscription?.hasOpenRouterKey
+              {isByok
                 ? <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">{tweetStatus.messagesPerTweet} bonus messages</span> per tweet. One tweet per week, up to {tweetStatus.maxTweets} tweets.</>
                 : <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span> in bonus usage credits per tweet. One tweet per week, up to {tweetStatus.maxTweets} tweets.</>
               }
             </p>
 
             {/* Current bonus */}
-            {isByok && !subscription?.hasOpenRouterKey ? (
+            {isByok ? (
               tweetStatus.bonusMessages > 0 && (
                 <div className="flex items-center justify-between text-[13px]">
                   <span className="text-[var(--color-text-muted)]">Bonus messages remaining</span>
@@ -480,27 +474,22 @@ const PLAN_FEATURES: FeatureRow[] = [
 
 type QuotaRow = { key: string; label: string; used: number; limit: number; unit?: string };
 
-function StarterUsageDisplay({ quotaUsage, planLimits, hasKey, bonusMessages = 0 }: {
+function StarterUsageDisplay({ quotaUsage, planLimits, bonusMessages = 0 }: {
   quotaUsage?: Record<string, number>;
   planLimits?: Record<string, number>;
-  hasKey: boolean;
   bonusMessages?: number;
 }) {
-  const rows: QuotaRow[] = [];
-
-  if (!hasKey) {
-    rows.push({
+  const rows: QuotaRow[] = [
+    {
       key: 'free_message',
       label: 'Messages',
       used: quotaUsage?.free_message ?? 0,
       limit: planLimits?.dailyFreeMessages ?? 25,
-    });
-  }
-  rows.push(
+    },
     { key: 'search', label: 'Searches', used: quotaUsage?.search ?? 0, limit: planLimits?.dailySearches ?? 50 },
     { key: 'browser', label: 'Browser', used: quotaUsage?.browser ?? 0, limit: planLimits?.dailyBrowserSessions ?? 10 },
     { key: 'sandbox', label: 'Sandbox', used: quotaUsage?.sandbox ?? 0, limit: planLimits?.dailySandboxMinutes ?? 60, unit: 'min' },
-  );
+  ];
 
   const anyLow = rows.some(r => r.limit > 0 && r.used / r.limit >= 0.8);
   const anyExhausted = rows.some(r => r.limit > 0 && r.used >= r.limit);
@@ -533,7 +522,7 @@ function StarterUsageDisplay({ quotaUsage, planLimits, hasKey, bonusMessages = 0
       </div>
 
       {/* Bonus messages balance */}
-      {!hasKey && bonusMessages > 0 && (
+      {bonusMessages > 0 && (
         <div className="flex items-center justify-between text-[12px] pt-1">
           <span className="text-[var(--color-text-muted)]">Bonus messages</span>
           <span className="font-mono text-[11px] text-emerald-400">{bonusMessages} remaining</span>
@@ -544,10 +533,8 @@ function StarterUsageDisplay({ quotaUsage, planLimits, hasKey, bonusMessages = 0
         <div className="flex items-center gap-2 p-2.5 rounded-lg text-[11px] bg-red-500/10 text-red-400">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
           <span>
-            {!hasKey
-              ? (bonusMessages > 0
-                ? 'Daily limit reached. Using bonus messages.'
-                : 'Daily limit reached. Add your OpenRouter key in AI Configuration to remove message limits.')
+            {bonusMessages > 0
+              ? 'Daily limit reached. Using bonus messages.'
               : 'Some daily limits reached. Resets at midnight UTC.'}
           </span>
         </div>
@@ -708,215 +695,3 @@ function PlanComparison({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan,
   );
 }
 
-// ── AI Configuration (Starter plan) ──
-
-function AIConfigSection() {
-  const [keyInput, setKeyInput] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const [paidModels, setPaidModels] = useState<Array<{ id: string; name: string; description: string; default?: boolean }>>([]);
-  const [freeModels, setFreeModels] = useState<Array<{ id: string; name: string; description: string; default?: boolean }>>([]);
-  const [selectedModel, setSelectedModel] = useState('');
-  const [defaultFree, setDefaultFree] = useState('');
-  const [customModel, setCustomModel] = useState('');
-  const [modelSaving, setModelSaving] = useState(false);
-
-  const loadModels = useCallback(() => {
-    api.getModelPresets().then(r => {
-      if (r.success) {
-        setFreeModels(r.data.freePresets);
-        setPaidModels(r.data.paidPresets);
-        setSelectedModel(r.data.selected);
-        setDefaultFree(r.data.defaultFree);
-        setHasKey(r.data.hasKey);
-      }
-    });
-  }, []);
-
-  useEffect(() => { loadModels(); }, [loadModels]);
-
-  const allModels = [...freeModels, ...paidModels];
-
-  const handleSaveKey = async () => {
-    if (!keyInput.trim()) return;
-    setSaving(true);
-    setMessage(null);
-    const result = await api.saveOpenRouterKey(keyInput.trim());
-    setSaving(false);
-    if (result.success) {
-      setHasKey(true);
-      setKeyInput('');
-      setMessage({ type: 'success', text: 'API key saved! You can now select any model.' });
-      loadModels();
-    } else {
-      setMessage({ type: 'error', text: result.error || 'Failed to save key' });
-    }
-  };
-
-  const handleRemoveKey = async () => {
-    const result = await api.removeOpenRouterKey();
-    if (result.success) {
-      setHasKey(false);
-      setSelectedModel(defaultFree);
-      await api.saveSelectedModel(defaultFree);
-      setMessage({ type: 'success', text: 'API key removed. Switched back to free AI.' });
-      loadModels();
-    }
-  };
-
-  const handleModelChange = async (model: string) => {
-    if (model === '__custom__') return;
-    setSelectedModel(model);
-    setModelSaving(true);
-    await api.saveSelectedModel(model);
-    setModelSaving(false);
-  };
-
-  const handleCustomModel = async () => {
-    if (!customModel.trim()) return;
-    setSelectedModel(customModel.trim());
-    setModelSaving(true);
-    await api.saveSelectedModel(customModel.trim());
-    setModelSaving(false);
-    setCustomModel('');
-  };
-
-  return (
-    <InfoCard>
-      <CardHeader icon={Cpu} title="AI Configuration" />
-      <div className="px-4 pb-4 space-y-4">
-
-        {!hasKey ? (
-          /* ── No key: show info + key input ── */
-          <>
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-[11px] leading-relaxed bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-              <span>Using free AI models (25 messages/day). Add your OpenRouter key to unlock premium models and remove limits.</span>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">OpenRouter API Key</span>
-              </div>
-              <p className="text-[10px] text-[var(--color-text-muted)] mb-2 leading-relaxed">
-                Add your key to choose any model — GPT-4o, Claude, Gemini Pro, and hundreds more.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder="sk-or-..."
-                  className="flex-1 px-2.5 py-1.5 text-[12px] font-mono rounded-md
-                             bg-black/[0.04] dark:bg-white/[0.06]
-                             border border-black/[0.08] dark:border-white/[0.08]
-                             text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30
-                             focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
-                />
-                <button
-                  onClick={handleSaveKey}
-                  disabled={saving || !keyInput.trim()}
-                  className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-[var(--color-accent)] text-white hover:brightness-110 disabled:opacity-50 transition-all"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] text-[var(--color-accent)] hover:underline mt-1.5"
-              >
-                Get a key from OpenRouter <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-          </>
-        ) : (
-          /* ── Has key: show model selector + key management ── */
-          <>
-            {/* Model Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">Model</span>
-                {modelSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
-              </div>
-              {(() => {
-                const groups: SelectGroup[] = [
-                  { label: 'Free models', options: freeModels.map((m) => ({ value: m.id, label: m.name, description: m.description })) },
-                  { label: 'Premium models (billed to your key)', options: paidModels.map((m) => ({ value: m.id, label: m.name, description: m.description })) },
-                ];
-                if (!allModels.some(m => m.id === selectedModel) && selectedModel) {
-                  groups.push({ options: [{ value: '__custom__', label: `Custom: ${selectedModel}` }] });
-                }
-                const triggerValue = allModels.some(m => m.id === selectedModel) ? selectedModel : '__custom__';
-                return (
-                  <Select
-                    value={triggerValue}
-                    onChange={handleModelChange}
-                    groups={groups}
-                    searchable
-                    placeholder="Select a model..."
-                  />
-                );
-              })()}
-              <div className="flex gap-2 mt-2">
-                <input
-                  type="text"
-                  value={customModel}
-                  onChange={(e) => setCustomModel(e.target.value)}
-                  placeholder="or enter any OpenRouter model ID..."
-                  className="flex-1 px-2.5 py-1.5 text-[11px] font-mono rounded-md
-                             bg-black/[0.04] dark:bg-white/[0.06]
-                             border border-black/[0.08] dark:border-white/[0.08]
-                             text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30
-                             focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40"
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModel(); }}
-                />
-                <button
-                  onClick={handleCustomModel}
-                  disabled={!customModel.trim()}
-                  className="px-2.5 py-1.5 text-[10px] font-medium rounded-md bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] disabled:opacity-40 transition-colors"
-                >
-                  Set
-                </button>
-              </div>
-            </div>
-
-            {/* Key management */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[12px] font-medium text-[var(--color-text-muted)]">OpenRouter API Key</span>
-                <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="w-3 h-3" /> Connected
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] text-[var(--color-text-muted)] font-mono">sk-or-••••••••</span>
-                <button
-                  onClick={handleRemoveKey}
-                  className="text-[11px] text-red-500 hover:text-red-400 transition-colors"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Message */}
-        {message && (
-          <div className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md ${
-            message.type === 'success'
-              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-              : 'bg-red-500/10 text-red-700 dark:text-red-300'
-          }`}>
-            {message.type === 'success' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-            {message.text}
-          </div>
-        )}
-      </div>
-    </InfoCard>
-  );
-}

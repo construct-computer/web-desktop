@@ -1306,25 +1306,6 @@ export async function getOpenRouterKeyStatus(): Promise<ApiResult<{ hasKey: bool
   return request('/billing/openrouter-key/status');
 }
 
-export interface ModelPresetsResponse {
-  freePresets: Array<{ id: string; name: string; description: string; default?: boolean }>;
-  paidPresets: Array<{ id: string; name: string; description: string; default?: boolean }>;
-  hasKey: boolean;
-  selected: string;
-  defaultFree: string;
-  defaultPaid: string;
-}
-
-export async function getModelPresets(): Promise<ApiResult<ModelPresetsResponse>> {
-  return request('/billing/models');
-}
-
-export async function saveSelectedModel(model: string): Promise<ApiResult<{ ok: boolean; model: string }>> {
-  return request('/billing/model', {
-    method: 'PUT',
-    body: JSON.stringify({ model }),
-  });
-}
 
 // ── Tweet Credits ──
 

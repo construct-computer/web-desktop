@@ -124,7 +124,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
                   <span className="text-[24px] text-white font-bold">$9</span>
                   <span className="text-white/40 text-sm">/month</span>
                 </div>
-                <p className="text-[11px] text-white/40 mb-1">Bring your own OpenRouter key</p>
+                <p className="text-[11px] text-white/40 mb-1">Managed free AI via Cloudflare AI Gateway</p>
                 <p className="text-[11px] text-emerald-400/80 mb-4">1 day free trial</p>
 
                 <div className="space-y-2 mb-5 flex-1">
