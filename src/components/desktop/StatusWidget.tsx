@@ -58,8 +58,10 @@ function fmtBytes(bytes: number): string {
 
 function fmtTime(ms: number): string {
   if (ms <= 0) return 'now';
-  const h = Math.floor(ms / 3_600_000);
+  const d = Math.floor(ms / 86_400_000);
+  const h = Math.floor((ms % 86_400_000) / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
@@ -252,7 +254,7 @@ export function StatusWidget() {
               style={{ width: `${Math.max(1, Math.min(100, pct))}%`, background: accent, boxShadow: `0 0 6px ${accent}66` }}
             />
           </div>
-          {resetsIn && (
+          {resetsIn && pct > 0 && (
             <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
               resets {resetsIn}
             </div>

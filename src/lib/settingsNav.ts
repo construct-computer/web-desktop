@@ -15,6 +15,7 @@ export type SettingsSection =
   | 'appearance'
   | 'sound'
   | 'subscription'
+  | 'usage'
   | 'developer';
 
 interface SettingsNavState {

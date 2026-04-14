@@ -1223,6 +1223,10 @@ export interface WindowUsage {
   weeklyUsedUsd?: number;
   /** Only present in staging */
   weeklyCapUsd?: number;
+  // Session token tracking (free tier)
+  sessionTokensUsed?: number;
+  sessionTokensCap?: number;
+  sessionPercentUsed?: number;
   // Legacy aliases (kept for compatibility with usage display)
   resetsAt?: string;
   percentUsed?: number;

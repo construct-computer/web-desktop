@@ -15,6 +15,7 @@ import {
   Image,
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
   Code2, Upload, FileArchive, Mail, Lock, Globe, Search, Plug, MessageCircle,
+  Zap,
 } from 'lucide-react';
 import { Button, Input, Label, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
@@ -32,6 +33,7 @@ import {
   composioConnect, getComposioToolkitDetail,
 } from '@/services/api';
 import { BillingSection } from './BillingSection';
+import { UsageSection } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
 // Dev app upload removed — apps are now hosted MCP servers
@@ -55,6 +57,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'sound', label: 'Sound', icon: Volume2 },
   { id: 'subscription', label: 'Subscription', icon: CreditCard },
+  { id: 'usage', label: 'Usage', icon: Zap },
   { id: 'developer', label: 'Developer', icon: Code2 },
 ];
 
@@ -126,6 +129,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
         {section === 'appearance' && <AppearanceSection />}
         {section === 'sound' && <SoundSection />}
         {section === 'subscription' && <SubscriptionSection />}
+        {section === 'usage' && <UsageSectionWrapper />}
         {section === 'developer' && <DeveloperSection />}
       </div>
     </div>
@@ -526,6 +530,12 @@ function ConnectionsSection() {
   const [composioConnected, setComposioConnected] = useState<Set<string>>(new Set());
   const [composioLoading, setComposioLoading] = useState(true);
   const [composioPending, setComposioPending] = useState<string | null>(null);
+  const [expandedComposio, setExpandedComposio] = useState<string | null>(null);
+  const [composioDetails, setComposioDetails] = useState<Record<string, {
+    tools: Array<{ slug: string; name: string; description: string }>;
+    toolsCount: number;
+    loading: boolean;
+  }>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ slug: string; name: string; description: string; logo?: string; auth_schemes?: string[]; no_auth?: boolean }>>([]);
   const [searching, setSearching] = useState(false);
@@ -1006,82 +1016,203 @@ function ConnectionsSection() {
 
             <SettingsCard>
               {showResults ? (
-                filteredSearchResults.slice(0, 10).map((r, i) => (
-                  (() => {
-                    const at = inferAuthType(r.auth_schemes, r.no_auth);
-                    return (
-                      <ConnectionRow
-                        key={r.slug}
-                        icon={
-                          <img
-                            src={composioLogoUrl(r.slug, r.logo)}
-                            alt={r.name}
-                            className="w-[20px] h-[20px] object-contain"
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                filteredSearchResults.slice(0, 10).map((r, i) => {
+                  const at = inferAuthType(r.auth_schemes, r.no_auth);
+                  const isItemExpanded = expandedComposio === r.slug;
+                  const isFormActive = connectForm?.slug === r.slug;
+                  return (
+                    <ConnectionRow
+                      key={r.slug}
+                      icon={
+                        <img
+                          src={composioLogoUrl(r.slug, r.logo)}
+                          alt={r.name}
+                          className="w-[20px] h-[20px] object-contain"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      }
+                      name={r.name}
+                      description={r.description || r.slug}
+                      authType={at}
+                      isConnected={composioConnected.has(r.slug)}
+                      isPending={composioPending === r.slug}
+                      disabled={!isSubscribed}
+                      onConnect={() => handleComposioConnect(r.slug, at)}
+                      onDisconnect={() => handleComposioDisconnect(r.slug)}
+                      isLast={i === Math.min(filteredSearchResults.length, 10) - 1}
+                      onToggleExpand={() => {
+                        const willExpand = !isItemExpanded;
+                        setExpandedComposio(willExpand ? r.slug : null);
+                        if (willExpand && !composioDetails[r.slug] && !isFormActive) {
+                          setComposioDetails(prev => ({ ...prev, [r.slug]: { ...prev[r.slug], loading: true } }));
+                          getComposioToolkitDetail(r.slug).then(res => {
+                            if (res.success && res.data) {
+                              setComposioDetails(prev => ({
+                                ...prev,
+                                [r.slug]: {
+                                  tools: res.data.tools.slice(0, 20),
+                                  toolsCount: res.data.tools_count,
+                                  loading: false
+                                }
+                              }));
+                            } else {
+                              setComposioDetails(prev => ({ ...prev, [r.slug]: { tools: [], toolsCount: 0, loading: false } }));
+                            }
+                          }).catch(() => {
+                            setComposioDetails(prev => ({ ...prev, [r.slug]: { tools: [], toolsCount: 0, loading: false } }));
+                          });
+                        }
+                      }}
+                      isExpanded={isItemExpanded}
+                      expanded={
+                        isFormActive ? (
+                          <CredentialsForm
+                            form={connectForm}
+                            submitting={composioPending === r.slug}
+                            onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
+                            onSubmit={handleSubmitConnectForm}
+                            onCancel={() => setConnectForm(null)}
                           />
-                        }
-                        name={r.name}
-                        description={r.description || r.slug}
-                        authType={at}
-                        isConnected={composioConnected.has(r.slug)}
-                        isPending={composioPending === r.slug}
-                        disabled={!isSubscribed}
-                        onConnect={() => handleComposioConnect(r.slug, at)}
-                        onDisconnect={() => handleComposioDisconnect(r.slug)}
-                        isLast={i === Math.min(filteredSearchResults.length, 10) - 1}
-                        expanded={
-                          connectForm?.slug === r.slug ? (
-                            <CredentialsForm
-                              form={connectForm}
-                              submitting={composioPending === r.slug}
-                              onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
-                              onSubmit={handleSubmitConnectForm}
-                              onCancel={() => setConnectForm(null)}
-                            />
-                          ) : null
-                        }
-                      />
-                    );
-                  })()
-                ))
+                        ) : isItemExpanded ? (
+                          <div className="pt-3 pl-[40px]">
+                            {composioDetails[r.slug]?.loading ? (
+                              <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Loading tools...
+                              </div>
+                            ) : composioDetails[r.slug]?.toolsCount ? (
+                              <div>
+                                <div className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                                  Tools ({composioDetails[r.slug].toolsCount}):
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {composioDetails[r.slug].tools.slice(0, 7).map(tool => (
+                                    <span
+                                      key={tool.slug}
+                                      title={tool.description}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] bg-white/5 text-white/80 rounded border border-white/10 hover:bg-white/10 transition-colors"
+                                    >
+                                      <span className="w-1 h-1 rounded-full bg-[var(--color-accent)]"></span>
+                                      {tool.name}
+                                    </span>
+                                  ))}
+                                  {composioDetails[r.slug].toolsCount > 7 && (
+                                    <span className="inline-flex items-center px-2 py-0.5 text-[9px] text-white/40">
+                                      +{composioDetails[r.slug].toolsCount - 7} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-[var(--color-text-muted)]">No tools available</div>
+                            )}
+                          </div>
+                        ) : null
+                      }
+                    />
+                  );
+                })
               ) : composioLoading ? (
                 <div className="flex items-center gap-2 px-4 py-4 text-[11px] text-[var(--color-text-muted)]">
                   <Loader2 className="w-3 h-3 animate-spin" /> Checking integrations...
                 </div>
               ) : (
-                composioList.map((def, i) => (
-                  <ConnectionRow
-                    key={def.slug}
-                    icon={
-                      <img
-                        src={composioLogoUrl(def.slug)}
-                        alt={def.name}
-                        className="w-[20px] h-[20px] object-contain"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    }
-                    name={def.name}
-                    description={def.description}
-                    authType={def.authType}
-                    isConnected={composioConnected.has(def.slug)}
-                    isPending={composioPending === def.slug}
-                    disabled={!isSubscribed}
-                    onConnect={() => handleComposioConnect(def.slug, def.authType)}
-                    onDisconnect={() => handleComposioDisconnect(def.slug)}
-                    isLast={i === composioList.length - 1}
-                    expanded={
-                      connectForm?.slug === def.slug ? (
-                        <CredentialsForm
-                          form={connectForm}
-                          submitting={composioPending === def.slug}
-                          onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
-                          onSubmit={handleSubmitConnectForm}
-                          onCancel={() => setConnectForm(null)}
+                composioList.map((def, i) => {
+                  const isItemExpanded = expandedComposio === def.slug;
+                  const isFormActive = connectForm?.slug === def.slug;
+                  return (
+                    <ConnectionRow
+                      key={def.slug}
+                      icon={
+                        <img
+                          src={composioLogoUrl(def.slug)}
+                          alt={def.name}
+                          className="w-[20px] h-[20px] object-contain"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                         />
-                      ) : null
-                    }
-                  />
-                ))
+                      }
+                      name={def.name}
+                      description={def.description}
+                      authType={def.authType}
+                      isConnected={composioConnected.has(def.slug)}
+                      isPending={composioPending === def.slug}
+                      disabled={!isSubscribed}
+                      onConnect={() => handleComposioConnect(def.slug, def.authType)}
+                      onDisconnect={() => handleComposioDisconnect(def.slug)}
+                      isLast={i === composioList.length - 1}
+                      onToggleExpand={() => {
+                        const willExpand = !isItemExpanded;
+                        setExpandedComposio(willExpand ? def.slug : null);
+                        // Fetch details when expanding
+                        if (willExpand && !composioDetails[def.slug] && !isFormActive) {
+                          setComposioDetails(prev => ({ ...prev, [def.slug]: { ...prev[def.slug], loading: true } }));
+                          getComposioToolkitDetail(def.slug).then(r => {
+                            if (r.success && r.data) {
+                              setComposioDetails(prev => ({
+                                ...prev,
+                                [def.slug]: {
+                                  tools: r.data.tools.slice(0, 20),
+                                  toolsCount: r.data.tools_count,
+                                  loading: false
+                                }
+                              }));
+                            } else {
+                              setComposioDetails(prev => ({ ...prev, [def.slug]: { tools: [], toolsCount: 0, loading: false } }));
+                            }
+                          }).catch(() => {
+                            setComposioDetails(prev => ({ ...prev, [def.slug]: { tools: [], toolsCount: 0, loading: false } }));
+                          });
+                        }
+                      }}
+                      isExpanded={isItemExpanded}
+                      expanded={
+                        isFormActive ? (
+                          <CredentialsForm
+                            form={connectForm}
+                            submitting={composioPending === def.slug}
+                            onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
+                            onSubmit={handleSubmitConnectForm}
+                            onCancel={() => setConnectForm(null)}
+                          />
+                        ) : isItemExpanded ? (
+                          <div className="pt-3 pl-[40px]">
+                            {composioDetails[def.slug]?.loading ? (
+                              <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Loading tools...
+                              </div>
+                            ) : composioDetails[def.slug]?.toolsCount ? (
+                              <div>
+                                <div className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                                  Tools ({composioDetails[def.slug].toolsCount}):
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {composioDetails[def.slug].tools.slice(0, 7).map(tool => (
+                                    <span
+                                      key={tool.slug}
+                                      title={tool.description}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] bg-white/5 text-white/80 rounded border border-white/10 hover:bg-white/10 transition-colors"
+                                    >
+                                      <span className="w-1 h-1 rounded-full bg-[var(--color-accent)]"></span>
+                                      {tool.name}
+                                    </span>
+                                  ))}
+                                  {composioDetails[def.slug].toolsCount > 7 && (
+                                    <span className="inline-flex items-center px-2 py-0.5 text-[9px] text-white/40">
+                                      +{composioDetails[def.slug].toolsCount - 7} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-[var(--color-text-muted)]">No tools available</div>
+                            )}
+                          </div>
+                        ) : null
+                      }
+                    />
+                  );
+                })
               )}
             </SettingsCard>
           </>
@@ -1095,7 +1226,7 @@ function ConnectionsSection() {
 
 function ConnectionRow({
   icon, name, description, authType, isConnected, isPending, isLoading, disabled,
-  onConnect, onDisconnect, expanded, isLast,
+  onConnect, onDisconnect, expanded, isLast, onToggleExpand, isExpanded,
 }: {
   icon: React.ReactNode;
   name: string;
@@ -1109,14 +1240,20 @@ function ConnectionRow({
   onDisconnect: () => void;
   expanded?: React.ReactNode;
   isLast?: boolean;
+  onToggleExpand?: () => void;
+  isExpanded?: boolean;
 }) {
+  const expandable = onToggleExpand !== undefined;
   return (
     <div className={!isLast ? 'border-b border-black/[0.06] dark:border-white/[0.06]' : ''}>
       <div className="flex items-center gap-3 px-4 py-3 min-h-[52px]">
         <div className="w-[28px] h-[28px] rounded-[6px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
           {icon}
         </div>
-        <div className="flex-1 min-w-0">
+        <button
+          onClick={expandable ? onToggleExpand : undefined}
+          className={`flex-1 min-w-0 text-left ${expandable ? 'cursor-pointer' : ''}`}
+        >
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[13px] font-medium truncate">{name}</span>
             {isConnected && (
@@ -1126,8 +1263,8 @@ function ConnectionRow({
             )}
             {authType && <AuthBadge type={authType} />}
           </div>
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 truncate">{description}</p>
-        </div>
+          <p className={`text-[11px] text-[var(--color-text-muted)] mt-0.5 ${isExpanded ? 'whitespace-normal' : 'truncate'}`}>{description}</p>
+        </button>
         <div className="flex-shrink-0">
           {isLoading ? (
             <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
@@ -1452,8 +1589,18 @@ function SoundSection() {
 
 function SubscriptionSection() {
   return (
-    <SectionPanel title="Subscription" subtitle="Manage your billing and usage.">
+    <SectionPanel title="Subscription" subtitle="Manage your plan and earn bonus credits.">
       <BillingSection />
+    </SectionPanel>
+  );
+}
+
+// ── Usage Section ──
+
+function UsageSectionWrapper() {
+  return (
+    <SectionPanel title="Usage" subtitle="AI usage and storage statistics.">
+      <UsageSection />
     </SectionPanel>
   );
 }
