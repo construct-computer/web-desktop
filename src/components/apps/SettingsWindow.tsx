@@ -943,12 +943,9 @@ function ConnectionsSection() {
       <div className="flex items-center gap-2 mb-2 px-1">
         <MessageCircle className="w-4 h-4 text-[var(--color-text-muted)]" />
         <span className="text-[13px] font-semibold">Built-in</span>
-        <span className="text-[9px] font-medium px-1.5 py-px rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-          All plans
-        </span>
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
-        Chat with your agent on the messaging platforms you already use. Available on all plans.
+        Chat with your agent on the messaging platforms you already use.
       </p>
       <SettingsCard>
         {/* Slack row */}
@@ -1337,12 +1334,12 @@ function ConnectionRow({
               {disabled && showTooltip && disabledReason && (
                 <div
                   ref={tooltipRef}
-                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] shadow-lg"
+                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)]/90 backdrop-blur-md border border-[var(--color-border)] shadow-lg"
                 >
                   <p className="text-[11px] text-[var(--color-text)] leading-snug">
                     {disabledReason}
                   </p>
-                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)] border-t border-l border-[var(--color-border)] rotate-45 transform" />
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)]/90 border-t border-l border-[var(--color-border)] rotate-45 transform" />
                 </div>
               )}
             </div>
