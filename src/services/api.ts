@@ -1485,6 +1485,17 @@ export interface RegistryAppDetail {
   readme_url?: string;
   versions?: Array<{ version: string; commit: string; changelog: string | null; date: string }>;
   reviews?: unknown[];
+  auth?: {
+    oauth2?: {
+      authorization_url: string;
+      token_url: string;
+      scopes?: string[];
+      client_id?: string;
+    };
+    apiKey?: { header_name?: string };
+    bearer?: {};
+    basic?: {};
+  };
 }
 
 /** Get detailed info about a specific app from the registry. */

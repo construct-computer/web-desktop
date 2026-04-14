@@ -10,6 +10,7 @@ import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Plug, Upload, Wrench, Shield,
   Tag, Globe, Star, Download, History, BadgeCheck, Sparkles,
+  Lock, Unlock,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -79,6 +80,12 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   // Pending install/uninstall
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
 
+  // App connection state (for apps that require auth)
+  const [connectionStatus, setConnectionStatus] = useState<api.AppConnectionStatus | null>(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
+  const [showCredentialsForm, setShowCredentialsForm] = useState(false);
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+
   // Plan limits
   const subscription = useBillingStore((s) => s.subscription);
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
@@ -129,15 +136,38 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   // ── Detail open / close ──
 
+  const fetchConnectionStatus = useCallback(async (appId: string) => {
+    setConnectionLoading(true);
+    try {
+      const result = await api.getAppConnection(appId);
+      if (result.success && result.data) {
+        setConnectionStatus(result.data);
+        // If auth type requires credentials (not OAuth), initialize empty fields
+        if (result.data.fields) {
+          const initialCreds: Record<string, string> = {};
+          result.data.fields.forEach(f => { initialCreds[f.name] = ''; });
+          setCredentials(initialCreds);
+        }
+      }
+    } catch { /* ignore */ }
+    setConnectionLoading(false);
+  }, []);
+
   const openDetail = useCallback(async (app: RegistryApp | InstalledApp) => {
     setDetail(app);
     setDetailFull(null);
     setReadme(null);
+    setConnectionStatus(null);
+    setShowCredentialsForm(false);
     setDetailLoading(true);
     try {
       const r = await api.getRegistryApp(app.id);
       if (r.success && r.data) {
         setDetailFull(r.data);
+        // If app requires auth and is installed, fetch connection status
+        if (r.data.auth && installedIds.has(app.id)) {
+          await fetchConnectionStatus(app.id);
+        }
         // Lazy-fetch README from raw GitHub URL.
         if (r.data.readme_url) {
           setReadmeLoading(true);
@@ -153,7 +183,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
       }
     } catch { /* installed-only apps may not be in registry — fall back gracefully */ }
     setDetailLoading(false);
-  }, []);
+  }, [fetchConnectionStatus, installedIds]);
 
   const closeDetail = useCallback(() => {
     setDetail(null);
@@ -161,6 +191,9 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setReadme(null);
     setDetailLoading(false);
     setReadmeLoading(false);
+    setConnectionStatus(null);
+    setShowCredentialsForm(false);
+    setCredentials({});
   }, []);
 
   // ── Actions ──
@@ -208,6 +241,90 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
       icon: getInstalledIconUrl(app),
       metadata: { appId: app.id },
     } as Partial<WindowConfig>);
+  };
+
+  // ── Connection Actions ──
+
+  const handleConnect = async () => {
+    if (!detail) return;
+    setError(null);
+    setConnectionLoading(true);
+    try {
+      const result = await api.getAppConnection(detail.id);
+      if (!result.success) {
+        setError(result.error || 'Failed to initiate connection');
+        return;
+      }
+      const status = result.data;
+      if (status.connected) {
+        // Already connected
+        setConnectionStatus(status);
+      } else if (status.authorizationUrl) {
+        // OAuth flow - open popup
+        const width = 500;
+        const height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+          status.authorizationUrl,
+          'app-oauth',
+          `width=${width},height=${height},left=${left},top=${top},popup=1`
+        );
+        if (!popup) {
+          setError('Popup blocked. Please allow popups for this site.');
+          return;
+        }
+        // Poll for completion
+        const checkInterval = setInterval(async () => {
+          if (popup.closed) {
+            clearInterval(checkInterval);
+            // Check connection status again
+            await fetchConnectionStatus(detail.id);
+          }
+        }, 1000);
+      } else if (status.fields) {
+        // Show credentials form
+        setShowCredentialsForm(true);
+      }
+    } catch (err) {
+      setError(`Connection failed: ${err instanceof Error ? err.message : err}`);
+    }
+    setConnectionLoading(false);
+  };
+
+  const handleSubmitCredentials = async () => {
+    if (!detail) return;
+    setError(null);
+    setConnectionLoading(true);
+    try {
+      const result = await api.submitAppCredentials(detail.id, credentials);
+      if (!result.success) {
+        setError(result.error || 'Failed to submit credentials');
+      } else {
+        setShowCredentialsForm(false);
+        await fetchConnectionStatus(detail.id);
+      }
+    } catch (err) {
+      setError(`Failed to submit credentials: ${err instanceof Error ? err.message : err}`);
+    }
+    setConnectionLoading(false);
+  };
+
+  const handleDisconnect = async () => {
+    if (!detail) return;
+    setError(null);
+    setConnectionLoading(true);
+    try {
+      const result = await api.disconnectApp(detail.id);
+      if (!result.success) {
+        setError(result.error || 'Failed to disconnect');
+      } else {
+        setConnectionStatus(null);
+      }
+    } catch (err) {
+      setError(`Disconnect failed: ${err instanceof Error ? err.message : err}`);
+    }
+    setConnectionLoading(false);
   };
 
   // ── Filtered lists ──
@@ -457,6 +574,87 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
           {baseUrl && (
             <DetailSection icon={<Plug className="w-3.5 h-3.5" />} title="Hosted at">
               <code className="text-[11px] font-mono text-[var(--color-text-muted)] break-all">{baseUrl}</code>
+            </DetailSection>
+          )}
+
+          {/* Authentication — for apps that require auth */}
+          {isInstalled && detailFull?.auth && (
+            <DetailSection 
+              icon={connectionStatus?.connected ? <Lock className="w-3.5 h-3.5 text-emerald-500" /> : <Unlock className="w-3.5 h-3.5 text-amber-500" />}
+              title="Authentication"
+            >
+              {connectionLoading ? (
+                <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Checking connection...
+                </div>
+              ) : connectionStatus?.connected ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-500">
+                      <Check className="w-3 h-3" /> Connected
+                    </span>
+                    <span className="text-[10px] text-[var(--color-text-muted)]">
+                      via {connectionStatus.authType}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleDisconnect}
+                    disabled={connectionLoading}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-red-500 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+                  >
+                    {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Disconnect'}
+                  </button>
+                </div>
+              ) : showCredentialsForm && connectionStatus?.fields ? (
+                <div className="space-y-3">
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    This app requires {connectionStatus.authType} authentication.
+                  </p>
+                  {connectionStatus.fields.map((field) => (
+                    <div key={field.name}>
+                      <label className="block text-[11px] font-medium mb-1">
+                        {field.displayName}
+                        {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                      </label>
+                      <input
+                        type={field.type === 'password' ? 'password' : 'text'}
+                        value={credentials[field.name] || ''}
+                        onChange={(e) => setCredentials(prev => ({ ...prev, [field.name]: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] outline-none focus:border-[var(--color-accent)] transition-colors"
+                        placeholder={`Enter ${field.displayName.toLowerCase()}`}
+                      />
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSubmitCredentials}
+                      disabled={connectionLoading || connectionStatus.fields.some(f => f.required && !credentials[f.name])}
+                      className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    >
+                      {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Connect'}
+                    </button>
+                    <button
+                      onClick={() => setShowCredentialsForm(false)}
+                      className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    This app requires {Object.keys(detailFull.auth)[0]} authentication to use its tools.
+                  </p>
+                  <button
+                    onClick={handleConnect}
+                    disabled={connectionLoading}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}
+                  </button>
+                </div>
+              )}
             </DetailSection>
           )}
 

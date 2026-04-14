@@ -378,6 +378,10 @@ function GenericAppPanel({
   const [appData, setAppData] = useState<InstalledApp | undefined>(initialData);
   const [registryDetail, setRegistryDetail] = useState<RegistryAppDetail | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Connection state
+  const [connectionStatus, setConnectionStatus] = useState<api.AppConnectionStatus | null>(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -392,12 +396,61 @@ function GenericAppPanel({
       }
       if (registry && registry.success && registry.data) {
         setRegistryDetail(registry.data);
+        // Check if app requires auth
+        if (registry.data.auth) {
+          setConnectionLoading(true);
+          const conn = await api.getAppConnection(appId);
+          if (conn.success && conn.data) {
+            setConnectionStatus(conn.data);
+          }
+          setConnectionLoading(false);
+        }
       }
     } catch { /* ignore */ }
     setRefreshing(false);
   }, [appId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  const handleConnect = async () => {
+    setConnectionLoading(true);
+    try {
+      const result = await api.getAppConnection(appId);
+      if (!result.success) return;
+      const status = result.data;
+      if (status.connected) {
+        setConnectionStatus(status);
+      } else if (status.authorizationUrl) {
+        // OAuth flow
+        const width = 500, height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+          status.authorizationUrl,
+          'app-oauth',
+          `width=${width},height=${height},left=${left},top=${top},popup=1`
+        );
+        if (!popup) return;
+        const checkInterval = setInterval(async () => {
+          if (popup.closed) {
+            clearInterval(checkInterval);
+            const conn = await api.getAppConnection(appId);
+            if (conn.success && conn.data) setConnectionStatus(conn.data);
+          }
+        }, 1000);
+      }
+    } catch { /* ignore */ }
+    setConnectionLoading(false);
+  };
+
+  const handleDisconnect = async () => {
+    setConnectionLoading(true);
+    try {
+      await api.disconnectApp(appId);
+      setConnectionStatus(null);
+    } catch { /* ignore */ }
+    setConnectionLoading(false);
+  };
 
   if (!appData) {
     return <PanelLoading label="Loading app..." />;
@@ -423,6 +476,7 @@ function GenericAppPanel({
   const networkPerms = registryDetail?.permissions?.network || [];
   const repoUrl = registryDetail?.repo_url;
   const description = registryDetail?.long_description || appData.description;
+  const requiresAuth = !!registryDetail?.auth;
 
   return (
     <AppShell>
@@ -467,6 +521,46 @@ function GenericAppPanel({
           />
         )}
       </InfoCard>
+
+      {/* Connection status for apps that require auth */}
+      {requiresAuth && (
+        <InfoCard title="Authentication" subtitle={connectionStatus?.connected ? undefined : 'This app requires authentication to use its tools'}>
+          {connectionLoading ? (
+            <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+              <Loader2 className="w-3 h-3 animate-spin" /> Checking...
+            </div>
+          ) : connectionStatus?.connected ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-500">
+                  <Check className="w-3 h-3" /> Connected
+                </span>
+                <span className="text-[10px] text-[var(--color-text-muted)]">
+                  via {connectionStatus.authType}
+                </span>
+              </div>
+              <button
+                onClick={handleDisconnect}
+                disabled={connectionLoading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-red-500 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-amber-500">Not connected</span>
+              <button
+                onClick={handleConnect}
+                disabled={connectionLoading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                Connect
+              </button>
+            </div>
+          )}
+        </InfoCard>
+      )}
 
       {networkPerms.length > 0 && (
         <InfoCard title="Network access" subtitle="This app makes outbound requests to:">
