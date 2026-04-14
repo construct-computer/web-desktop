@@ -245,6 +245,7 @@ const PLAN_FEATURES: FeatureRow[] = [
   { label: 'Usage',             free: '1x',      starter: '3x',    pro: '30x',        freeHas: true,  starterHas: true,  proHas: true },
   { label: 'AI model',          free: 'Basic',   starter: 'Fast',  pro: 'Premium',    freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Storage',           free: '500 MB',  starter: '1 GB',  pro: '2 GB',       freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Integrations',      free: 'Selected', starter: 'More', pro: 'Full',       freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Agent email',       free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
   { label: 'Background agents', free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
 ];

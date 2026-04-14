@@ -104,6 +104,8 @@ interface UnifiedApp {
   authConfig?: Array<{ mode: string; fields: Array<{ name: string; displayName: string; description?: string; required: boolean }> }>;
   composioManaged?: boolean;
   unavailable?: boolean;
+  requiresUpgrade?: boolean;
+  available?: boolean;
 }
 
 // ── Constants ──
@@ -244,7 +246,15 @@ function composioToUnified(def: CuratedDef, connected: boolean): UnifiedApp {
   };
 }
 
-function composioSearchToUnified(t: { slug: string; name: string; description: string; logo?: string; auth_schemes?: string[] }, connected: boolean, curated?: CuratedDef[]): UnifiedApp {
+function composioSearchToUnified(t: { 
+  slug: string; 
+  name: string; 
+  description: string; 
+  logo?: string; 
+  auth_schemes?: string[];
+  requiresUpgrade?: boolean;
+  available?: boolean;
+}, connected: boolean, curated?: CuratedDef[]): UnifiedApp {
   return {
     id: `composio-${t.slug}`, name: t.name, description: t.description || t.slug,
     icon: composioIconUrl(t.slug, t.logo),
@@ -253,6 +263,8 @@ function composioSearchToUnified(t: { slug: string; name: string; description: s
     status: connected ? 'connected' : 'available',
     composioSlug: t.slug, composioLogo: t.logo, verified: true,
     authSchemes: Array.isArray(t.auth_schemes) ? t.auth_schemes.map((s: any) => typeof s === 'string' ? s : s?.mode || 'unknown') : [],
+    requiresUpgrade: t.requiresUpgrade,
+    available: t.available,
   };
 }
 
@@ -668,6 +680,17 @@ export function AppStoreScreen() {
             </div>
           </div>
 
+          {/* Upgrade banner for paid integrations */}
+          {detail.requiresUpgrade && (
+            <div className="flex items-start gap-2 px-3 py-3 rounded-xl mb-4" style={{ backgroundColor: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)' }}>
+              <span className="text-[14px]">🔒</span>
+              <div className="flex-1">
+                <p className="text-[12px] font-medium" style={{ color: '#fbbf24' }}>Upgrade to connect</p>
+                <p className="text-[11px] opacity-60 mt-0.5">This integration requires a Starter or Pro plan. Upgrade to unlock access.</p>
+              </div>
+            </div>
+          )}
+
           {/* Action button */}
           <div className="mb-4">
             {isPending ? (
@@ -692,6 +715,14 @@ export function AppStoreScreen() {
                   </button>
                 )}
               </div>
+            ) : detail.requiresUpgrade ? (
+              <button
+                onClick={() => window.location.href = '/?settings=subscription'}
+                className="w-full py-2.5 rounded-xl text-[14px] font-medium"
+                style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}
+              >
+                Upgrade to Starter
+              </button>
             ) : getAction ? (
               <button
                 onClick={() => {
@@ -1091,6 +1122,10 @@ function AppListItem({ app, onClick }: { app: UnifiedApp; onClick: () => void })
         ) : app.unavailable ? (
           <span className="text-[10px] font-medium px-3 py-1 rounded-full opacity-20">
             N/A
+          </span>
+        ) : app.requiresUpgrade ? (
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+            Pro
           </span>
         ) : (
           <span className="text-[11px] font-bold px-3.5 py-1 rounded-full" style={{ backgroundColor: `${accent()}15`, color: accent() }}>
