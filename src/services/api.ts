@@ -900,6 +900,72 @@ export async function getComposioToolkitDetail(toolkit: string): Promise<ApiResu
   return request(`/composio/${encodeURIComponent(toolkit)}/detail`);
 }
 
+// ============================================================================
+// App Registry Connections (OAuth/API key auth for installed apps)
+// ============================================================================
+
+export interface AppConnectionField {
+  name: string;
+  displayName: string;
+  type: 'text' | 'password';
+  required: boolean;
+}
+
+export interface AppConnectionStatus {
+  connected: boolean;
+  connectionId?: string;
+  authType?: 'oauth2' | 'api_key' | 'bearer' | 'basic' | 'none';
+  connectedAt?: number;
+  authorizationUrl?: string;
+  fields?: AppConnectionField[];
+}
+
+export interface AppConnection {
+  id: string;
+  appId: string;
+  appName: string;
+  authType: string;
+  status: string;
+  connectedAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Get connection status for an app, or start OAuth flow
+ */
+export async function getAppConnection(appId: string): Promise<ApiResult<AppConnectionStatus>> {
+  return request(`/apps/connect/${encodeURIComponent(appId)}`);
+}
+
+/**
+ * Submit credentials for API key, Bearer, or Basic auth
+ */
+export async function submitAppCredentials(
+  appId: string,
+  credentials: Record<string, string>,
+): Promise<ApiResult<{ success: boolean; connectionId: string; authType: string; connectedAt: number }>> {
+  return request(`/apps/connect/${encodeURIComponent(appId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ credentials }),
+  });
+}
+
+/**
+ * Disconnect/revoke an app connection
+ */
+export async function disconnectApp(appId: string): Promise<ApiResult<{ success: boolean }>> {
+  return request(`/apps/connect/${encodeURIComponent(appId)}/disconnect`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * List all app connections for the user
+ */
+export async function listAppConnections(): Promise<ApiResult<{ connections: AppConnection[] }>> {
+  return request('/apps/connect');
+}
+
 // ── Agent Calendar CRUD ──
 
 export interface AgentCalendarEvent {
