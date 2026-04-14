@@ -98,7 +98,7 @@ async function request<T>(
           context: { endpoint, status: response.status, response: data },
         });
       } catch { /* errorStore not loaded yet during startup */ }
-      return { success: false, error: errorMsg };
+      return { success: false, error: errorMsg, data };
     }
 
     return { success: true, data: data as T };
@@ -1362,7 +1362,14 @@ export async function createCheckout(plan = 'pro', coupon?: string): Promise<Api
   });
 }
 
-export async function switchPlan(plan: 'free' | 'starter' | 'pro'): Promise<ApiResult<{ ok: boolean; plan: string }>> {
+export async function switchPlan(plan: 'free' | 'starter' | 'pro'): Promise<ApiResult<{ 
+  ok: boolean; 
+  plan: string; 
+  message?: string;
+  portalUrl?: string;
+  redirectToCheckout?: boolean;
+  targetPlan?: string;
+}>> {
   return request('/billing/switch-plan', {
     method: 'POST',
     body: JSON.stringify({ plan }),

@@ -35,7 +35,7 @@ interface BillingState {
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
   startCheckout: (coupon?: string, plan?: 'starter' | 'pro') => Promise<string | null>;
-  switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean>;
+  switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
   openPortal: () => Promise<string | null>;
   buyTopup: (amount: number) => Promise<string | null>;
 }
@@ -86,12 +86,21 @@ export const useBillingStore = create<BillingState>((set) => ({
   switchPlan: async (plan: 'free' | 'starter' | 'pro') => {
     const result = await switchPlanApi(plan);
     if (result.success) {
+      // If portal URL is returned (for downgrades in production), redirect to portal
+      if (result.data.portalUrl) {
+        window.location.href = result.data.portalUrl;
+        return true;
+      }
       // Refresh subscription data after switching
       const sub = await getSubscription();
       if (sub.success) {
         set({ subscription: sub.data });
       }
       return true;
+    }
+    // If upgrade is required, return the error info so UI can redirect to checkout
+    if (!result.success && result.data?.redirectToCheckout) {
+      return { redirectToCheckout: true, targetPlan: result.data.targetPlan as string };
     }
     return false;
   },

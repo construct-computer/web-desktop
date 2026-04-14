@@ -82,10 +82,15 @@ export function BillingSection() {
 
   const handleSwitchPlan = useCallback(async (plan: 'free' | 'starter' | 'pro') => {
     setCheckoutLoading(true);
-    const success = await switchPlan(plan);
+    const result = await switchPlan(plan);
     setCheckoutLoading(false);
-    if (success) window.location.reload();
-  }, [switchPlan]);
+    if (result === true) {
+      window.location.reload();
+    } else if (typeof result === 'object' && result.redirectToCheckout) {
+      // If upgrade required, redirect to checkout
+      handleCheckout(result.targetPlan as 'starter' | 'pro');
+    }
+  }, [switchPlan, handleCheckout]);
 
   const handleManage = useCallback(async () => {
     setPortalLoading(true);
