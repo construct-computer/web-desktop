@@ -352,7 +352,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
   }, []);
 
   // Reset countdown timer
-  const resetsAt = usage?.weeklyResetsAt || usage?.resetsAt;
+  const resetsAt = usage?.weeklyResetsAt;
   useEffect(() => {
     if (!resetsAt) return;
     const update = () => setTimeLeft(formatTimeRemaining(resetsAt));
@@ -363,10 +363,9 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
 
   const isPro = subscription?.plan === 'pro';
   const isCancelling = subscription?.cancelAtPeriodEnd;
-  const isStaging = usage?.environment === 'staging';
-  const costCap = usage?.weeklyCapUsd ?? usage?.costCapUsd ?? 0;
-  const isUnlimited = costCap === -1;
-  const pct = usage?.weeklyPercentUsed ?? usage?.percentUsed ?? 0;
+  const hasWeeklyUsd = usage?.weeklyUsedUsd !== undefined && usage?.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0;
+  const isUnlimited = usage?.weeklyCapUsd === -1;
+  const pct = usage?.weeklyPercentUsed ?? 0;
   const barColor = pct >= 95 ? '#ef4444' : pct >= 80 ? '#f59e0b' : accent();
 
   return (
@@ -427,22 +426,20 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
             {usage ? (
               <Card>
                 <div className="space-y-2.5">
-                  {/* Cost + reset timer */}
+                  {/* Usage + reset timer */}
                   <div className="flex items-center justify-between">
-                    <span className="text-[13px] opacity-50">Cost this period</span>
+                    <span className="text-[13px] opacity-50">Usage this period</span>
                     <span className="text-[13px] font-mono font-medium">
                       {isUnlimited ? (
+                        <span className="opacity-40 font-normal text-[12px]">unlimited</span>
+                      ) : hasWeeklyUsd ? (
                         <>
-                          {formatCost(usage.totalCostUsd || 0)}
-                          <span className="opacity-40 font-normal text-[12px] ml-1">(unlimited)</span>
-                        </>
-                      ) : costCap > 0 ? (
-                        <>
-                          {formatCost(usage.totalCostUsd || 0)}
-                          <span className="opacity-40 font-normal"> / {formatCost(costCap)}</span>
+                          {formatCost(usage.weeklyUsedUsd || 0)}
+                          <span className="opacity-40 font-normal"> / {formatCost(usage.weeklyCapUsd)}</span>
+                          <span className="opacity-40 font-normal"> ({Math.round(pct)}%)</span>
                         </>
                       ) : (
-                        <>{pct}% used</>
+                        <>{Math.round(pct)}% used</>
                       )}
                     </span>
                   </div>
@@ -465,14 +462,6 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
                     </div>
                   )}
 
-                  {/* Stats (staging only) */}
-                  {isStaging && (
-                    <div className="flex justify-between text-[11px] opacity-40 font-mono">
-                      <span>{((usage.promptTokens || 0) + (usage.completionTokens || 0)).toLocaleString()} tokens</span>
-                      <span>{usage.requestCount || 0} requests</span>
-                    </div>
-                  )}
-
                   {/* Warning */}
                   {!isUnlimited && pct >= 80 && (
                     <div
@@ -484,8 +473,8 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
                     >
                       <AlertTriangle size={14} className="shrink-0" />
                       {pct >= 95
-                        ? `AI cost limit nearly reached. Resets in ${timeLeft}.`
-                        : `${pct}% of AI cost budget used this period.`}
+                        ? `Weekly usage nearly exhausted. Resets in ${timeLeft}.`
+                        : `${Math.round(pct)}% of weekly usage consumed.`}
                     </div>
                   )}
                 </div>
@@ -530,22 +519,23 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
               </>
             )}
 
-            {/* Credit Top-Ups */}
-            {isPro && !isUnlimited && isStaging && (subscription?.topupCreditsUsd ?? 0) > 0 && (
+            {/* Bonus Credits */}
+            {(subscription?.hasBonusCredits || (subscription?.topupCreditsUsd ?? 0) > 0) && (
               <>
-                <SectionLabel>Credit Top-Ups</SectionLabel>
+                <SectionLabel>Bonus Credits</SectionLabel>
                 <Card>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[13px]">
-                      <span className="opacity-50">Current balance</span>
-                      <span className="font-mono font-medium">
-                        ${(subscription.topupCreditsUsd || 0).toFixed(2)}
-                      </span>
-                    </div>
+                    {(subscription?.topupCreditsUsd ?? 0) > 0 && (
+                      <div className="flex items-center justify-between text-[13px]">
+                        <span className="opacity-50">Current balance</span>
+                        <span className="font-mono font-medium">
+                          ${(subscription.topupCreditsUsd || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                     <p className="text-[12px] opacity-40">
-                      Credits extend your AI usage when you hit the cost cap.
+                      Extends your usage once the weekly limit is hit.
                     </p>
-                    <p className="text-[11px] opacity-30">Purchase top-ups from the desktop app</p>
                   </div>
                 </Card>
               </>

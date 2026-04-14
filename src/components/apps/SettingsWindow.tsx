@@ -1006,7 +1006,7 @@ function ConnectionsSection() {
         {userPlan === 'free' && (
           <>
             {' '}
-            <span className="text-amber-400">
+            <span className="text-amber-400/70">
               Free plan: limited to essential integrations. Upgrade for full access.
             </span>
           </>
@@ -1334,12 +1334,12 @@ function ConnectionRow({
               {disabled && showTooltip && disabledReason && (
                 <div
                   ref={tooltipRef}
-                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)]/95 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl"
+                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-zinc-900 border border-zinc-700 shadow-2xl"
                 >
-                  <p className="text-[11px] text-[var(--color-text)] leading-snug">
+                  <p className="text-[11px] text-white leading-snug">
                     {disabledReason}
                   </p>
-                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)]/95 border-t border-l border-[var(--color-border)] rotate-45 transform" />
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-zinc-900 border-t border-l border-zinc-700 rotate-45 transform" />
                 </div>
               )}
             </div>

@@ -37,12 +37,6 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 3600)}h`;
 }
 
-function fmt(n: number): string {
-  if (n < 1000) return n.toFixed(0);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
-}
-
 function fmtCost(usd: number): string {
   if (usd < 0.01) return '$0.00';
   if (usd < 1) return `$${usd.toFixed(3)}`;
@@ -66,29 +60,7 @@ function fmtTime(ms: number): string {
   return `${m}m`;
 }
 
-interface UsageWindow {
-  weeklyPercentUsed: number;
-  windowPercentUsed: number;
-  weeklyResetsAt: string;
-  windowResetsAt: string;
-  plan?: string;
-  allowed: boolean;
-  shouldDowngrade: boolean;
-  environment?: string;
-  // Staging-only
-  weeklyUsedUsd?: number;
-  weeklyCapUsd?: number;
-  windowUsedUsd?: number;
-  windowCapUsd?: number;
-  // Legacy aliases
-  percentUsed?: number;
-  resetsAt?: string;
-  promptTokens?: number;
-  completionTokens?: number;
-  requestCount?: number;
-  totalCostUsd?: number;
-  costCapUsd?: number;
-}
+type UsageWindow = api.WindowUsage;
 
 const EMPTY_HISTORY: Array<{ tool: string; timestamp: number }> = [];
 
@@ -144,10 +116,6 @@ export function StatusWidget() {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  // Daily quotas removed — all tiers use percentage-based usage now
-  const starterQuotas = null;
-  const bonusMessages = 0;
-
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -159,12 +127,13 @@ export function StatusWidget() {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  const pct = usage?.weeklyPercentUsed ?? usage?.percentUsed ?? 0;
-  const isStaging = usage?.environment === 'staging';
-  const resetSource = usage?.weeklyResetsAt || usage?.resetsAt;
-  const resetsIn = resetSource ? fmtTime(new Date(resetSource).getTime() - Date.now()) : null;
+  const pct = usage?.weeklyPercentUsed ?? 0;
+  const windowPct = usage?.windowPercentUsed ?? 0;
+  const resetsIn = usage?.weeklyResetsAt ? fmtTime(new Date(usage.weeklyResetsAt).getTime() - Date.now()) : null;
+  const windowResetsIn = usage?.windowResetsAt ? fmtTime(new Date(usage.windowResetsAt).getTime() - Date.now()) : null;
   const accent = pct < 60 ? '#22d3ee' : pct < 85 ? '#fbbf24' : '#f87171';
-  const total = (usage?.promptTokens || 0) + (usage?.completionTokens || 0);
+  const hasWeeklyUsd = usage?.weeklyUsedUsd !== undefined && usage?.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0;
+  const hasWindowUsd = usage?.windowUsedUsd !== undefined && usage?.windowCapUsd !== undefined && usage.windowCapUsd > 0;
 
   return (
     <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
@@ -216,35 +185,16 @@ export function StatusWidget() {
       {/* ── Divider ── */}
       <div className="my-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
 
-      {/* ── Usage stats (staging only) ── */}
-      {isStaging && (
-        <>
-          <div className="flex items-baseline justify-between">
-            <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Tokens
-            </span>
-            <span className="text-[14px] font-medium tabular-nums" style={{ color: 'rgba(255,255,255,0.8)' }}>
-              {fmt(total)}
-            </span>
-          </div>
-          <div className="flex justify-between mt-px text-[10px] tabular-nums" style={{ color: 'rgba(255,255,255,0.2)' }}>
-            <span>▲ {fmt(usage?.promptTokens || 0)}</span>
-            <span>▼ {fmt(usage?.completionTokens || 0)}</span>
-            {usage?.totalCostUsd != null && <span>{fmtCost(usage.totalCostUsd)}</span>}
-          </div>
-        </>
-      )}
-
       {/* ── Weekly usage bar ── */}
       {usage && (
         <>
           <div className="flex items-baseline justify-between gap-2 mt-2">
             <span className="text-[11px] font-semibold tracking-wide shrink-0" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.35)' }}>
-              {pct >= 100 ? 'Limit reached' : 'Usage'}
+              {pct >= 100 ? 'Limit reached' : 'Weekly'}
             </span>
             <span className="text-[12px] font-medium tabular-nums whitespace-nowrap" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.6)' }}>
-              {isStaging && usage.weeklyCapUsd && usage.weeklyCapUsd > 0
-                ? `${fmtCost(usage.weeklyUsedUsd || 0)} / ${fmtCost(usage.weeklyCapUsd)}`
+              {hasWeeklyUsd
+                ? `${fmtCost(usage!.weeklyUsedUsd!)} / ${fmtCost(usage!.weeklyCapUsd!)}`
                 : `${Math.min(pct, 100).toFixed(0)}%`}
             </span>
           </div>
@@ -258,6 +208,32 @@ export function StatusWidget() {
             <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
               resets {resetsIn}
             </div>
+          )}
+
+          {windowPct > 0 && (
+            <>
+              <div className="flex items-baseline justify-between gap-2 mt-1.5">
+                <span className="text-[10px] tracking-wide shrink-0" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  4h window
+                </span>
+                <span className="text-[11px] font-medium tabular-nums whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {hasWindowUsd
+                    ? `${fmtCost(usage!.windowUsedUsd!)} / ${fmtCost(usage!.windowCapUsd!)}`
+                    : `${Math.min(windowPct, 100).toFixed(0)}%`}
+                </span>
+              </div>
+              <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${Math.max(1, Math.min(100, windowPct))}%`, background: 'rgba(255,255,255,0.35)' }}
+                />
+              </div>
+              {windowResetsIn && (
+                <div className="text-[9px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.12)' }}>
+                  resets {windowResetsIn}
+                </div>
+              )}
+            </>
           )}
         </>
       )}

@@ -312,7 +312,7 @@ export function SpotlightInput() {
 
   const billingUsage = useBillingStore(s => s.usage);
   const fetchUsage = useBillingStore(s => s.fetchUsage);
-  const isOnLiteModel = useComputerStore(s => s.isOnLiteModel) || (billingUsage?.percentUsed ?? 0) >= 100;
+  const isOnLiteModel = useComputerStore(s => s.isOnLiteModel) || billingUsage?.shouldDowngrade === true;
 
   // Fetch usage on mount so the lite model indicator works
   useEffect(() => { fetchUsage(); }, [fetchUsage]);

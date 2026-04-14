@@ -1274,7 +1274,7 @@ export interface SubscriptionInfo {
     maxStorageBytes: number;
     maxInstalledApps: number;
   };
-  bonusMessages?: number;
+  hasBonusCredits?: boolean;
   /** Only present in staging */
   topupCreditsUsd?: number;
   /** Only present in staging */
@@ -1285,34 +1285,27 @@ export interface SubscriptionInfo {
 }
 
 export interface WindowUsage {
-  windowResetsAt: string;
-  weeklyResetsAt: string;
-  windowPercentUsed: number;
-  weeklyPercentUsed: number;
   plan?: string;
   allowed: boolean;
+  reason?: string;
+  windowPercentUsed: number;
+  weeklyPercentUsed: number;
+  windowResetsAt: string;
+  weeklyResetsAt: string;
   shouldDowngrade: boolean;
+  usingBonus?: boolean;
+  hasBonusCredits?: boolean;
   environment?: string;
-  /** Only present in staging */
+  /** Staging only */
   windowUsedUsd?: number;
-  /** Only present in staging */
+  /** Staging only */
   windowCapUsd?: number;
-  /** Only present in staging */
+  /** Staging only */
   weeklyUsedUsd?: number;
-  /** Only present in staging */
+  /** Staging only */
   weeklyCapUsd?: number;
-  // Session token tracking (free tier)
-  sessionTokensUsed?: number;
-  sessionTokensCap?: number;
-  sessionPercentUsed?: number;
-  // Legacy aliases (kept for compatibility with usage display)
-  resetsAt?: string;
-  percentUsed?: number;
-  promptTokens?: number;
-  completionTokens?: number;
-  requestCount?: number;
-  totalCostUsd?: number;
-  costCapUsd?: number;
+  /** Staging only */
+  topupCreditsUsd?: number;
 }
 
 export interface UsageHistorySummary {
@@ -1422,21 +1415,22 @@ export async function getOpenRouterKeyStatus(): Promise<ApiResult<{ hasKey: bool
 export interface TweetStatus {
   tweetsRedeemed: number;
   tweetsRemaining: number;
-  totalBonusCredits: number;
-  creditPerTweet: number;
-  // Starter-specific
-  bonusMessages: number;
-  messagesPerTweet: number;
-  plan: string;
   maxTweets: number;
+  hasBonusCredits: boolean;
+  /** ISO timestamp (ms) when user is next eligible to redeem. Null if eligible now. */
+  nextEligibleAt: number | null;
   shareUrl: string;
+  /** Staging only */
+  creditPerTweet?: number;
+  /** Staging only */
+  totalBonusCredits?: number;
 }
 
 export async function getTweetStatus(): Promise<ApiResult<TweetStatus>> {
   return request('/billing/tweet-status');
 }
 
-export async function redeemTweet(tweetUrl: string): Promise<ApiResult<{ ok: boolean; creditAdded: number; totalBonusCredits: number; tweetsRemaining: number; message: string }>> {
+export async function redeemTweet(tweetUrl: string): Promise<ApiResult<{ ok: boolean; tweetsRemaining: number; message: string }>> {
   return request('/billing/redeem-tweet', {
     method: 'POST',
     body: JSON.stringify({ tweetUrl }),

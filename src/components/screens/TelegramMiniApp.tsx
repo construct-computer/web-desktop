@@ -51,12 +51,10 @@ interface DashboardData {
   status: { state: string; agent_name?: string; connections?: number } | null;
   tasks: { id: string; title?: string; description?: string; status: string }[];
   usage: {
-    requestCount: number;
-    promptTokens: number;
-    completionTokens: number;
-    percentUsed: number;
+    weeklyPercentUsed: number;
+    weeklyUsedUsd?: number;
+    weeklyCapUsd?: number;
     resetsIn: string;
-    environment?: string;
   } | null;
   events: { id: string; summary: string; start: string; allDay?: boolean }[];
   user: { displayName?: string; email?: string; username?: string } | null;
@@ -160,14 +158,12 @@ export function TelegramMiniApp() {
 
       const now = Date.now();
       let resetsIn = '';
-      if (usageRes) {
-        const resetsAt = usageRes.weeklyResetsAt || usageRes.resetsAt;
-        const resetTs = resetsAt ? new Date(resetsAt).getTime() : now;
+      if (usageRes?.weeklyResetsAt) {
+        const resetTs = new Date(usageRes.weeklyResetsAt).getTime();
         const mins = Math.max(0, Math.round((resetTs - now) / 60_000));
         resetsIn = `${Math.floor(mins / 60)}h ${mins % 60}m`;
       }
 
-      // Tasks endpoint returns { tasks: [...] }, events may return { events: [...] } or an array
       const tasksList = Array.isArray(tasksRes) ? tasksRes : (tasksRes?.tasks || []);
       const eventsList = Array.isArray(eventsRes) ? eventsRes : (eventsRes?.events || []);
 
@@ -176,12 +172,10 @@ export function TelegramMiniApp() {
         status: statusRes,
         tasks: tasksList,
         usage: usageRes ? {
-          requestCount: usageRes.requestCount || 0,
-          promptTokens: usageRes.promptTokens || 0,
-          completionTokens: usageRes.completionTokens || 0,
-          percentUsed: usageRes.weeklyPercentUsed ?? usageRes.percentUsed ?? 0,
+          weeklyPercentUsed: usageRes.weeklyPercentUsed ?? 0,
+          weeklyUsedUsd: usageRes.weeklyUsedUsd,
+          weeklyCapUsd: usageRes.weeklyCapUsd,
           resetsIn,
-          environment: usageRes.environment,
         } : null,
         events: eventsList,
       }));
@@ -281,10 +275,7 @@ function Dashboard({ data }: { data: DashboardData }) {
     pending: '⏳', in_progress: '🔧', blocked: '🚫', completed: '✅', cancelled: '❌',
   };
 
-  const isStaging = data.usage?.environment === 'staging';
-  const totalTokens = data.usage
-    ? (data.usage.promptTokens + data.usage.completionTokens).toLocaleString()
-    : '0';
+  const hasWeeklyUsd = data.usage?.weeklyUsedUsd !== undefined && data.usage?.weeklyCapUsd !== undefined && data.usage.weeklyCapUsd > 0;
 
   return (
     <div className="min-h-screen pb-6" style={bgStyle()}>
@@ -305,26 +296,23 @@ function Dashboard({ data }: { data: DashboardData }) {
       {/* Usage card */}
       <Card title="Usage" icon="📊">
         {(() => {
-          const pct = data.usage?.percentUsed ?? 0;
+          const pct = data.usage?.weeklyPercentUsed ?? 0;
           const barColor = pct >= 100 ? '#f87171' : pct >= 85 ? '#fbbf24' : pct >= 60 ? '#fbbf24' : '#22d3ee';
           const isLimited = pct >= 100;
+          const valueLabel = hasWeeklyUsd
+            ? `$${(data.usage!.weeklyUsedUsd!).toFixed(2)} / $${(data.usage!.weeklyCapUsd!).toFixed(2)} (${Math.min(pct, 100).toFixed(0)}%)`
+            : `${Math.min(pct, 100).toFixed(0)}%`;
           return (
             <>
-              <div className={`grid gap-3 ${isStaging ? 'grid-cols-3' : 'grid-cols-1'}`}>
-                {isStaging && (
-                  <>
-                    <Stat label="Requests" value={String(data.usage?.requestCount ?? 0)} />
-                    <Stat label="Tokens" value={totalTokens} />
-                  </>
-                )}
+              <div className="grid gap-3 grid-cols-1">
                 <Stat label="Resets in" value={data.usage?.resetsIn ?? '—'} />
               </div>
               {/* Usage progress bar */}
               <div className="mt-3">
                 <div className="flex justify-between items-baseline mb-1">
-                  <span className="text-xs opacity-50">{isLimited ? 'Lite mode' : 'Limit'}</span>
+                  <span className="text-xs opacity-50">{isLimited ? 'Lite mode' : 'Weekly'}</span>
                   <span className="text-xs font-medium" style={{ color: barColor }}>
-                    {Math.min(pct, 100).toFixed(0)}%
+                    {valueLabel}
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>

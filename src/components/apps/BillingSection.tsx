@@ -7,13 +7,9 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   ExternalLink,
   Loader2,
-  AlertTriangle,
-  Twitter,
-  Gift,
   Check,
   X,
 } from 'lucide-react';
-import * as api from '@/services/api';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 
@@ -35,43 +31,15 @@ export function BillingSection() {
     startCheckout,
     switchPlan,
     openPortal,
-    buyTopup,
   } = useBillingStore();
 
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
 
-  // Tweet credits state
-  const [tweetStatus, setTweetStatus] = useState<api.TweetStatus | null>(null);
-  const [tweetUrl, setTweetUrl] = useState('');
-  const [tweetSubmitting, setTweetSubmitting] = useState(false);
-  const [tweetMessage, setTweetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const fetchTweetStatus = useCallback(() => {
-    api.getTweetStatus().then(r => { if (r.success && r.data) setTweetStatus(r.data); });
-  }, []);
-
-  const handleRedeemTweet = useCallback(async () => {
-    if (!tweetUrl.trim()) return;
-    setTweetSubmitting(true);
-    setTweetMessage(null);
-    const result = await api.redeemTweet(tweetUrl.trim());
-    setTweetSubmitting(false);
-    if (result.success && result.data) {
-      setTweetMessage({ type: 'success', text: result.data.message });
-      setTweetUrl('');
-      fetchTweetStatus();
-      fetchSubscription();
-    } else {
-      setTweetMessage({ type: 'error', text: ('error' in result ? result.error : null) || 'Failed to redeem tweet' });
-    }
-  }, [tweetUrl, fetchTweetStatus, fetchSubscription]);
-
   // Fetch data on mount
   useEffect(() => {
     fetchSubscription();
-    fetchTweetStatus();
-  }, [fetchSubscription, fetchTweetStatus]);
+  }, [fetchSubscription]);
 
   const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(true);
@@ -100,13 +68,7 @@ export function BillingSection() {
     setPortalLoading(false);
   }, [openPortal]);
 
-  const handleTopup = useCallback(async (amount: number) => {
-    const url = await buyTopup(amount);
-    if (url) window.location.href = url;
-  }, [buyTopup]);
-
   const currentPlan = subscription?.plan || 'free';
-  const hasActivePlan = currentPlan === 'pro' || currentPlan === 'starter' || currentPlan === 'free';
   const isStaging = subscription?.environment === 'staging';
   const isDevMode = isStaging || !subscription?.dodoSubscriptionId;
 
@@ -145,83 +107,6 @@ export function BillingSection() {
           </div>
         )}
       </InfoCard>
-
-      {/* ── Earn Bonus ── */}
-      {hasActivePlan && tweetStatus && tweetStatus.tweetsRemaining > 0 && (
-        <InfoCard>
-          <div className="px-4 pt-3.5 pb-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Gift className="w-4 h-4 text-[var(--color-text-muted)]" />
-                <span className="text-[13px] font-medium">
-                  {currentPlan === 'starter' ? 'Earn Bonus Messages' : 'Earn Bonus Credits'}
-                </span>
-              </div>
-              <span className="text-[11px] text-[var(--color-text-muted)]">
-                {tweetStatus.tweetsRedeemed}/{tweetStatus.maxTweets} redeemed
-              </span>
-            </div>
-
-            <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              {currentPlan === 'starter'
-                ? <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">{tweetStatus.messagesPerTweet} bonus messages</span> per tweet.</>
-                : <>Tweet about Construct and earn <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span> in bonus credits per tweet.</>
-              }
-            </p>
-
-            {/* Progress dots */}
-            <div className="flex gap-1.5">
-              {Array.from({ length: tweetStatus.maxTweets }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-2 flex-1 rounded-full ${
-                    i < tweetStatus!.tweetsRedeemed ? 'bg-emerald-500' : 'bg-white/[0.08]'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Tweet + Claim */}
-            <div className="space-y-2">
-              <button
-                onClick={() => window.open(tweetStatus!.shareUrl, '_blank', 'width=600,height=400')}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white transition-colors"
-              >
-                <Twitter className="w-3.5 h-3.5" />
-                Tweet about Construct
-              </button>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={tweetUrl}
-                  onChange={(e) => setTweetUrl(e.target.value)}
-                  placeholder="Paste your tweet link..."
-                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] outline-none focus:ring-1 focus:ring-[var(--color-accent)] placeholder:text-[var(--color-text-muted)]/50"
-                />
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={handleRedeemTweet}
-                  disabled={tweetSubmitting || !tweetUrl.trim()}
-                >
-                  {tweetSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
-                </Button>
-              </div>
-            </div>
-
-            {tweetMessage && (
-              <div className={`flex items-start gap-2 px-3 py-2 rounded-lg text-[12px] leading-relaxed ${
-                tweetMessage.type === 'success'
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  : 'bg-red-500/10 text-red-400 border border-red-500/20'
-              }`}>
-                {tweetMessage.type === 'success' ? <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
-                <span>{tweetMessage.text}</span>
-              </div>
-            )}
-          </div>
-        </InfoCard>
-      )}
     </div>
   );
 }

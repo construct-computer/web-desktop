@@ -55,7 +55,8 @@ interface InstalledAppData {
 interface UsageData {
   percentUsed: number;
   resetsIn: string;
-  requestCount: number;
+  usedUsd?: number;
+  capUsd?: number;
 }
 
 interface Props {
@@ -89,7 +90,8 @@ export function HomeScreen({ onNavigate }: Props) {
       setUsage({
         percentUsed: usageRes.weeklyPercentUsed ?? usageRes.percentUsed ?? 0,
         resetsIn: `${Math.floor(mins / 60)}h ${mins % 60}m`,
-        requestCount: usageRes.requestCount || 0,
+        usedUsd: usageRes.weeklyUsedUsd,
+        capUsd: usageRes.weeklyCapUsd,
       });
     }
 
@@ -129,6 +131,7 @@ export function HomeScreen({ onNavigate }: Props) {
   const statusText = !agentConnected ? 'Offline' : agentRunning ? 'Working...' : 'Online';
   const pct = usage?.percentUsed ?? 0;
   const barColor = pct >= 100 ? '#f87171' : pct >= 85 ? '#fbbf24' : '#22d3ee';
+  const hasWeeklyUsd = usage?.usedUsd !== undefined && usage?.capUsd !== undefined && usage.capUsd > 0;
 
   // Add badges to system apps
   const appsWithBadges = SYSTEM_APPS.map(app => {
@@ -223,9 +226,11 @@ export function HomeScreen({ onNavigate }: Props) {
 
         {/* Usage bar */}
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[13px] opacity-60">Usage</span>
+          <span className="text-[13px] opacity-60">{pct >= 100 ? 'Lite mode' : 'Weekly'}</span>
           <span className="text-[13px] font-medium" style={{ color: barColor }}>
-            {pct >= 100 ? 'Lite mode' : `${Math.min(pct, 100).toFixed(0)}%`}
+            {hasWeeklyUsd
+              ? `$${usage!.usedUsd!.toFixed(2)} / $${usage!.capUsd!.toFixed(2)} (${Math.min(pct, 100).toFixed(0)}%)`
+              : `${Math.min(pct, 100).toFixed(0)}%`}
           </span>
         </div>
         <div className="h-1.5 rounded-full overflow-hidden mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
@@ -235,15 +240,9 @@ export function HomeScreen({ onNavigate }: Props) {
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-[12px] opacity-40">Resets in</span>
-            <span className="text-[13px] font-medium ml-1.5">{usage?.resetsIn ?? '—'}</span>
-          </div>
-          <div>
-            <span className="text-[12px] opacity-40">Requests</span>
-            <span className="text-[13px] font-medium ml-1.5">{usage?.requestCount ?? 0}</span>
-          </div>
+        <div className="flex items-center">
+          <span className="text-[12px] opacity-40">Resets in</span>
+          <span className="text-[13px] font-medium ml-1.5">{usage?.resetsIn ?? '—'}</span>
         </div>
       </div>
     </div>
