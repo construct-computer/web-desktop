@@ -34,7 +34,7 @@ interface BillingState {
   fetchSubscription: () => Promise<void>;
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
-  startCheckout: (coupon?: string, plan?: 'starter' | 'pro') => Promise<string | null>;
+  startCheckout: (plan?: 'starter' | 'pro', coupon?: string) => Promise<string | null>;
   switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
   openPortal: () => Promise<string | null>;
   buyTopup: (amount: number) => Promise<string | null>;
@@ -75,8 +75,10 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  startCheckout: async (coupon?: string, plan: 'starter' | 'pro' = 'pro') => {
+  startCheckout: async (plan: 'starter' | 'pro' = 'pro', coupon?: string) => {
+    console.log('[billingStore] startCheckout called with plan:', plan, 'coupon:', coupon);
     const result = await createCheckout(plan, coupon);
+    console.log('[billingStore] createCheckout result:', result);
     if (result.success) {
       return result.data.checkoutUrl;
     }

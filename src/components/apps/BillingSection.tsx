@@ -75,7 +75,8 @@ export function BillingSection() {
 
   const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(true);
-    const url = await startCheckout(undefined, plan);
+    console.log('[BillingSection] handleCheckout called with plan:', plan);
+    const url = await startCheckout(plan);
     if (url) window.location.href = url;
     setCheckoutLoading(false);
   }, [startCheckout]);
