@@ -119,6 +119,12 @@ const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: 'search', label: 'Search & Web' },
 ];
 
+// Free tier Composio tools (must match worker/src/config.ts)
+const FREE_TIER_COMPOSIO_TOOLS: string[] = [
+  'googledrive', 'googlecalendar', 'gmail', 'slack',
+  'notion', 'github', 'linear', 'discord',
+];
+
 const FALLBACK_CURATED: CuratedDef[] = [
   { slug: 'googlecalendar', name: 'Google Calendar', description: 'Manage events and scheduling.', category: 'productivity' },
   { slug: 'notion', name: 'Notion', description: 'Manage pages and databases.', category: 'productivity' },
@@ -236,13 +242,18 @@ function smitheryToUnified(srv: SmitheryServer, installed: boolean, curated?: Cu
   };
 }
 
-function composioToUnified(def: CuratedDef, connected: boolean): UnifiedApp {
+function composioToUnified(def: CuratedDef, connected: boolean, plan: string = 'free'): UnifiedApp {
+  const isFreeTier = FREE_TIER_COMPOSIO_TOOLS.includes(def.slug.toLowerCase());
+  const isPaidPlan = plan === 'starter' || plan === 'pro';
+  const isAvailable = isPaidPlan || isFreeTier;
   return {
     id: `composio-${def.slug}`, name: def.name, description: def.description,
     icon: composioIconUrl(def.slug), category: def.category,
     tags: ['integration'], source: 'composio', tools: [], hasUi: false,
     status: connected ? 'connected' : 'available', composioSlug: def.slug,
     verified: true, sourceUrl: `https://composio.dev/toolkits/${def.slug}`,
+    available: isAvailable,
+    requiresUpgrade: !isAvailable && plan === 'free',
   };
 }
 
@@ -316,6 +327,7 @@ export function AppStoreScreen() {
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [connectedToolkits, setConnectedToolkits] = useState<Set<string>>(new Set());
+  const [userPlan, setUserPlan] = useState<string>('free');
 
   // Loading / errors / detail
   const [loading, setLoading] = useState(true);
@@ -356,10 +368,17 @@ export function AppStoreScreen() {
     if (data?.apps) setRegistryApps(data.apps);
   }, []);
 
+  const fetchSubscription = useCallback(async () => {
+    const data = await apiJSON<any>('/billing/subscription');
+    if (data?.plan) {
+      setUserPlan(data.plan);
+    }
+  }, []);
+
   useEffect(() => {
-    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchConnected()])
+    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchConnected(), fetchSubscription()])
       .finally(() => setLoading(false));
-  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchConnected]);
+  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchConnected, fetchSubscription]);
 
   // ── Search ──
 
@@ -394,11 +413,16 @@ export function AppStoreScreen() {
 
   const isSearching = search.length >= 2;
 
+  // Curated (discover browse)
+  const suggested: UnifiedApp[] = curatedApps
+    .filter(f => category === 'all' || f.category === category)
+    .map(f => composioToUnified(f, connectedToolkits.has(f.slug), userPlan));
+
   // Your Apps (installed tab)
   const yourApps: UnifiedApp[] = [
     ...[...connectedToolkits].map(slug => {
       const known = curatedApps.find(f => f.slug === slug);
-      if (known) return composioToUnified(known, true);
+      if (known) return composioToUnified(known, true, userPlan);
       return { id: `composio-${slug}`, name: slug.charAt(0).toUpperCase() + slug.slice(1),
         description: 'Connected integration', icon: composioIconUrl(slug),
         category: 'productivity' as const, tags: ['integration'],
@@ -408,11 +432,6 @@ export function AppStoreScreen() {
     }),
     ...installedApps.map(installedToUnified),
   ].filter(a => category === 'all' || a.category === category);
-
-  // Curated (discover browse)
-  const suggested: UnifiedApp[] = curatedApps
-    .filter(f => category === 'all' || f.category === category)
-    .map(f => composioToUnified(f, connectedToolkits.has(f.slug)));
 
   const suggestedByCategory = (() => {
     const order = ['productivity', 'communication', 'dev-tools', 'data', 'search'];
