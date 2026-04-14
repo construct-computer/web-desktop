@@ -151,9 +151,9 @@ function SectionPanel({ title, subtitle, children }: { title: string; subtitle?:
 
 // ── Grouped settings card ──
 
-function SettingsCard({ children }: { children: React.ReactNode }) {
+function SettingsCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] overflow-hidden">
+    <div className={`rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] overflow-visible ${className}`}>
       {children}
     </div>
   );
@@ -1044,7 +1044,7 @@ function ConnectionsSection() {
               </p>
             )}
 
-            <SettingsCard>
+            <SettingsCard className="mb-2">
               {showResults ? (
                 filteredSearchResults.slice(0, 10).map((r, i) => {
                   const at = inferAuthType(r.auth_schemes, r.no_auth);
@@ -1334,12 +1334,12 @@ function ConnectionRow({
               {disabled && showTooltip && disabledReason && (
                 <div
                   ref={tooltipRef}
-                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)]/90 backdrop-blur-md border border-[var(--color-border)] shadow-lg"
+                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)]/95 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl"
                 >
                   <p className="text-[11px] text-[var(--color-text)] leading-snug">
                     {disabledReason}
                   </p>
-                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)]/90 border-t border-l border-[var(--color-border)] rotate-45 transform" />
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)]/95 border-t border-l border-[var(--color-border)] rotate-45 transform" />
                 </div>
               )}
             </div>
