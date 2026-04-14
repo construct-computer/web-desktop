@@ -423,6 +423,30 @@ const DEFAULT_COMPOSIO_INTEGRATIONS: ConnectionDef[] = [
  *  so users don't try to connect them via composio's managed OAuth (which doesn't exist). */
 const BUILTIN_COMPOSIO_SLUGS = new Set(['slack', 'telegram']);
 
+/** Free tier allowed Composio toolkits (suggestions + curated essentials).
+ *  Free users can only connect these; paid plans get full access. */
+const FREE_COMPOSIO_TOOLKITS = new Set([
+  // Google Workspace essentials
+  'gmail',
+  'googledrive',
+  'googledocs',
+  'googlesheets',
+  'googlecalendar',
+  // Developer essentials
+  'github',
+  // Communication
+  'discord',
+  // Productivity
+  'notion',
+]);
+
+/** Check if a toolkit is available for the user's plan. */
+function isToolkitAvailableForPlan(slug: string, plan: string): boolean {
+  if (plan === 'pro' || plan === 'starter') return true;
+  // Free tier: only whitelisted toolkits
+  return FREE_COMPOSIO_TOOLKITS.has(slug.toLowerCase());
+}
+
 /** Map raw Composio auth_schemes (and no_auth flag) to a single normalized AuthType. */
 function inferAuthType(schemes?: string[], noAuth?: boolean): AuthType | undefined {
   if (noAuth) return 'no-auth';
@@ -919,9 +943,12 @@ function ConnectionsSection() {
       <div className="flex items-center gap-2 mb-2 px-1">
         <MessageCircle className="w-4 h-4 text-[var(--color-text-muted)]" />
         <span className="text-[13px] font-semibold">Built-in</span>
+        <span className="text-[9px] font-medium px-1.5 py-px rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+          All plans
+        </span>
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
-        Chat with your agent on the messaging platforms you already use.
+        Chat with your agent on the messaging platforms you already use. Available on all plans.
       </p>
       <SettingsCard>
         {/* Slack row */}
@@ -937,7 +964,6 @@ function ConnectionsSection() {
           isConnected={slackConnected}
           isPending={slackConnecting || slackDisconnecting}
           isLoading={slackLoading}
-          disabled={!isSubscribed}
           onConnect={handleSlackConnect}
           onDisconnect={handleSlackDisconnect}
         />
@@ -955,7 +981,6 @@ function ConnectionsSection() {
           isConnected={telegramConnected}
           isPending={telegramGenerating || telegramDisconnecting || telegramLinking}
           isLoading={telegramLoading}
-          disabled={!isSubscribed}
           onConnect={handleTelegramConnect}
           onDisconnect={handleTelegramDisconnect}
           isLast
@@ -981,6 +1006,14 @@ function ConnectionsSection() {
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
         Connect services so your agent can read your email, manage files, and more.
+        {userPlan === 'free' && (
+          <>
+            {' '}
+            <span className="text-amber-400">
+              Free plan: limited to essential integrations. Upgrade for full access.
+            </span>
+          </>
+        )}
       </p>
 
       {/* Search */}
@@ -1020,6 +1053,7 @@ function ConnectionsSection() {
                   const at = inferAuthType(r.auth_schemes, r.no_auth);
                   const isItemExpanded = expandedComposio === r.slug;
                   const isFormActive = connectForm?.slug === r.slug;
+                  const isAvailable = isToolkitAvailableForPlan(r.slug, userPlan || 'free');
                   return (
                     <ConnectionRow
                       key={r.slug}
@@ -1036,7 +1070,8 @@ function ConnectionsSection() {
                       authType={at}
                       isConnected={composioConnected.has(r.slug)}
                       isPending={composioPending === r.slug}
-                      disabled={!isSubscribed}
+                      disabled={!isAvailable}
+                      disabledReason={!isAvailable ? 'Upgrade to Starter or Pro to connect this integration' : undefined}
                       onConnect={() => handleComposioConnect(r.slug, at)}
                       onDisconnect={() => handleComposioDisconnect(r.slug)}
                       isLast={i === Math.min(filteredSearchResults.length, 10) - 1}
@@ -1120,6 +1155,7 @@ function ConnectionsSection() {
                 composioList.map((def, i) => {
                   const isItemExpanded = expandedComposio === def.slug;
                   const isFormActive = connectForm?.slug === def.slug;
+                  const isAvailable = isToolkitAvailableForPlan(def.slug, userPlan || 'free');
                   return (
                     <ConnectionRow
                       key={def.slug}
@@ -1136,7 +1172,8 @@ function ConnectionsSection() {
                       authType={def.authType}
                       isConnected={composioConnected.has(def.slug)}
                       isPending={composioPending === def.slug}
-                      disabled={!isSubscribed}
+                      disabled={!isAvailable}
+                      disabledReason={!isAvailable ? 'Upgrade to Starter or Pro to connect this integration' : undefined}
                       onConnect={() => handleComposioConnect(def.slug, def.authType)}
                       onDisconnect={() => handleComposioDisconnect(def.slug)}
                       isLast={i === composioList.length - 1}
@@ -1225,7 +1262,7 @@ function ConnectionsSection() {
 // ── Shared connection row used by all rows in ConnectionsSection ──
 
 function ConnectionRow({
-  icon, name, description, authType, isConnected, isPending, isLoading, disabled,
+  icon, name, description, authType, isConnected, isPending, isLoading, disabled, disabledReason,
   onConnect, onDisconnect, expanded, isLast, onToggleExpand, isExpanded,
 }: {
   icon: React.ReactNode;
@@ -1236,6 +1273,7 @@ function ConnectionRow({
   isPending: boolean;
   isLoading?: boolean;
   disabled?: boolean;
+  disabledReason?: string;
   onConnect: () => void;
   onDisconnect: () => void;
   expanded?: React.ReactNode;
@@ -1244,6 +1282,8 @@ function ConnectionRow({
   isExpanded?: boolean;
 }) {
   const expandable = onToggleExpand !== undefined;
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   return (
     <div className={!isLast ? 'border-b border-black/[0.06] dark:border-white/[0.06]' : ''}>
       <div className="flex items-center gap-3 px-4 py-3 min-h-[52px]">
@@ -1259,6 +1299,11 @@ function ConnectionRow({
             {isConnected && (
               <span className="text-[9px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 py-px rounded-full uppercase tracking-wide">
                 Connected
+              </span>
+            )}
+            {disabled && (
+              <span className="text-[9px] font-semibold text-amber-400 bg-amber-400/10 px-1.5 py-px rounded-full uppercase tracking-wide border border-amber-400/20">
+                Pro
               </span>
             )}
             {authType && <AuthBadge type={authType} />}
@@ -1278,14 +1323,29 @@ function ConnectionRow({
               Disconnect
             </button>
           ) : (
-            <button
-              onClick={onConnect}
-              disabled={isPending || disabled}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
-            >
-              {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
-              {disabled ? 'Subscribe' : 'Connect'}
-            </button>
+            <div className="relative">
+              <button
+                onClick={disabled ? () => setShowTooltip(!showTooltip) : onConnect}
+                onMouseEnter={() => disabled && setShowTooltip(true)}
+                onMouseLeave={() => disabled && setShowTooltip(false)}
+                disabled={isPending}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent)]/80 disabled:opacity-40 transition-colors"
+              >
+                {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
+                {disabled ? 'Upgrade' : 'Connect'}
+              </button>
+              {disabled && showTooltip && disabledReason && (
+                <div
+                  ref={tooltipRef}
+                  className="absolute right-0 top-full mt-2 z-50 w-[220px] p-3 rounded-lg bg-[var(--color-surface-raised)] border border-[var(--color-border)] shadow-lg"
+                >
+                  <p className="text-[11px] text-[var(--color-text)] leading-snug">
+                    {disabledReason}
+                  </p>
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-[var(--color-surface-raised)] border-t border-l border-[var(--color-border)] rotate-45 transform" />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
