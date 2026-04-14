@@ -858,7 +858,19 @@ export async function disconnectComposio(toolkit: string): Promise<ApiResult<{ s
   return request(`/composio/${encodeURIComponent(toolkit)}/disconnect`, { method: 'DELETE' });
 }
 
-export async function searchComposioToolkits(query: string): Promise<ApiResult<{ toolkits: Array<{ slug: string; name: string; description: string; logo?: string; auth_schemes?: string[]; no_auth?: boolean }> }>> {
+export async function searchComposioToolkits(query: string): Promise<ApiResult<{ 
+  toolkits: Array<{ 
+    slug: string; 
+    name: string; 
+    description: string; 
+    logo?: string; 
+    auth_schemes?: string[]; 
+    no_auth?: boolean;
+    requiresUpgrade?: boolean;
+    available?: boolean;
+  }>;
+  plan?: string;
+}>> {
   return request(`/composio/search?q=${encodeURIComponent(query)}`);
 }
 
