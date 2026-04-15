@@ -170,12 +170,6 @@ export function Launchpad() {
     (app: AppDefinition) => {
       play('click');
 
-      // Unsubscribed users cannot launch apps from Launchpad
-      const userPlan = useAuthStore.getState().user?.plan;
-      if (userPlan !== 'pro' && userPlan !== 'starter') {
-        return;
-      }
-
       // Installed / Composio app — open in an app window
       if (app.category === 'installed' && app.appMetadata) {
         const { appId, ui, composioSlug } = app.appMetadata;

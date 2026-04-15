@@ -28,6 +28,9 @@ import * as api from '@/services/api';
 import { log } from '@/lib/logger';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { injectSdk } from '@/lib/constructSdk';
+import { AuthSchemesPanel } from './AuthSchemesPanel';
+import { AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, PanelLoading } from './AppShared';
+import { formatDate, prettyAuthLabel } from '@/hooks/useAppDiscovery';
 
 const logger = log('AppWindow');
 
@@ -378,10 +381,7 @@ function GenericAppPanel({
   const [appData, setAppData] = useState<InstalledApp | undefined>(initialData);
   const [registryDetail, setRegistryDetail] = useState<RegistryAppDetail | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Connection state
   const [connectionStatus, setConnectionStatus] = useState<api.AppConnectionStatus | null>(null);
-  const [connectionLoading, setConnectionLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -396,67 +396,12 @@ function GenericAppPanel({
       }
       if (registry && registry.success && registry.data) {
         setRegistryDetail(registry.data);
-        // Check if app requires auth
-        if (registry.data.auth) {
-          setConnectionLoading(true);
-          const conn = await api.getAppConnection(appId);
-          if (conn.success && conn.data) {
-            setConnectionStatus(conn.data);
-          }
-          setConnectionLoading(false);
-        }
       }
     } catch { /* ignore */ }
     setRefreshing(false);
   }, [appId]);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  const refreshConnectionStatus = useCallback(async () => {
-    const conn = await api.getAppConnection(appId);
-    if (conn.success && conn.data) setConnectionStatus(conn.data);
-  }, [appId]);
-
-  const handleConnectScheme = async (scheme: api.AppConnectionScheme) => {
-    if (!scheme.available) return;
-    setConnectionLoading(true);
-    try {
-      if (scheme.type === 'oauth2') {
-        const result = await api.connectApp(appId, 'oauth2');
-        if (!result.success || !result.data.authorizationUrl) return;
-        const width = 500, height = 600;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-        const popup = window.open(
-          result.data.authorizationUrl,
-          'app-oauth',
-          `width=${width},height=${height},left=${left},top=${top},popup=1`
-        );
-        if (!popup) return;
-        const checkInterval = setInterval(async () => {
-          if (popup.closed) {
-            clearInterval(checkInterval);
-            await refreshConnectionStatus();
-          }
-        }, 1000);
-      } else {
-        // For credential schemes, direct the user to the App Store detail view
-        // (which hosts the inline form).
-        const evt = new CustomEvent('open-app-registry', { detail: { appId } });
-        window.dispatchEvent(evt);
-      }
-    } catch { /* ignore */ }
-    setConnectionLoading(false);
-  };
-
-  const handleDisconnect = async () => {
-    setConnectionLoading(true);
-    try {
-      await api.disconnectApp(appId);
-      setConnectionStatus(null);
-    } catch { /* ignore */ }
-    setConnectionLoading(false);
-  };
 
   if (!appData) {
     return <PanelLoading label="Loading app..." />;
@@ -528,55 +473,18 @@ function GenericAppPanel({
         )}
       </InfoCard>
 
-      {/* Connection status for apps that require auth */}
       {requiresAuth && (
-        <InfoCard title="Authentication" subtitle={connectionStatus?.connected ? undefined : 'This app requires authentication to use its tools'}>
-          {connectionLoading ? (
-            <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-              <Loader2 className="w-3 h-3 animate-spin" /> Checking...
-            </div>
-          ) : connectionStatus?.connected ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-500">
-                  <Check className="w-3 h-3" /> Connected
-                </span>
-                <span className="text-[10px] text-[var(--color-text-muted)]">
-                  via {connectionStatus.activeScheme || connectionStatus.authType}
-                </span>
-              </div>
-              <button
-                onClick={handleDisconnect}
-                disabled={connectionLoading}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-red-500 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
-              >
-                Disconnect
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {(connectionStatus?.schemes ?? []).map((scheme) => (
-                <div
-                  key={scheme.type}
-                  className="flex items-center justify-between px-2 py-1 rounded-[6px] bg-black/[0.02] dark:bg-white/[0.03]"
-                >
-                  <span className="text-[11px] truncate">{scheme.label}</span>
-                  <button
-                    onClick={() => handleConnectScheme(scheme)}
-                    disabled={connectionLoading || !scheme.available}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-                  >
-                    {scheme.available
-                      ? scheme.type === 'oauth2' ? 'Connect' : 'Use'
-                      : 'Unavailable'}
-                  </button>
-                </div>
-              ))}
-              {(!connectionStatus || connectionStatus.schemes.length === 0) && (
-                <span className="text-[11px] text-amber-500">Not connected</span>
-              )}
-            </div>
-          )}
+        <InfoCard
+          title="Authentication"
+          subtitle={connectionStatus?.connected
+            ? undefined
+            : 'Connect an account to let this app\'s tools run.'}
+        >
+          <AuthSchemesPanel
+            appId={appId}
+            mode="connect"
+            onStatusChange={setConnectionStatus}
+          />
         </InfoCard>
       )}
 
@@ -775,311 +683,6 @@ function ComposioAppPanel({
   );
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] border border-black/[0.06] dark:border-white/[0.06]">
-      {children}
-    </span>
-  );
-}
-
-// ── Shared app-panel primitives ──────────────────────────────────────────
-
-function PanelLoading({ label }: { label: string }) {
-  return (
-    <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
-      <div className="text-center">
-        <Loader2 className="w-6 h-6 mx-auto mb-2 opacity-40 animate-spin" />
-        <p className="text-xs opacity-40">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-function AppShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="w-full h-full flex flex-col bg-[var(--color-bg-secondary)] text-[var(--color-text)] select-none">
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">{children}</div>
-    </div>
-  );
-}
-
-const STATUS_TONE: Record<'emerald' | 'red' | 'amber', { dot: string; text: string; bg: string }> = {
-  emerald: { dot: 'bg-emerald-500', text: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  red:     { dot: 'bg-red-500',     text: 'text-red-500',     bg: 'bg-red-500/10' },
-  amber:   { dot: 'bg-amber-500',   text: 'text-amber-500',   bg: 'bg-amber-500/10' },
-};
-
-function AppHeroHeader({
-  icon, fallbackIcon, name, subtitle, description, status, badges, actions,
-}: {
-  icon?: string;
-  fallbackIcon: React.ReactNode;
-  name: string;
-  subtitle?: string;
-  description?: string;
-  status: { label: string; tone: 'emerald' | 'red' | 'amber' };
-  badges?: string[];
-  actions?: React.ReactNode;
-}) {
-  const tone = STATUS_TONE[status.tone];
-  return (
-    <div className="pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
-      <div className="flex items-start gap-3.5">
-        <div className="w-[56px] h-[56px] rounded-[14px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
-          {icon ? (
-            <img src={icon} alt={name} className="w-[40px] h-[40px] object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-          ) : fallbackIcon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-[17px] font-bold leading-tight truncate">{name}</h2>
-            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-px rounded-full uppercase tracking-wide ${tone.bg} ${tone.text}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
-              {status.label}
-            </span>
-          </div>
-          {subtitle && (
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 truncate">{subtitle}</p>
-          )}
-        </div>
-        {actions && <div className="flex items-center gap-1 flex-shrink-0">{actions}</div>}
-      </div>
-      {description && (
-        <div className="text-[12.5px] text-[var(--color-text)]/75 leading-relaxed mt-3 app-description-md">
-          <Markdown
-            components={{
-              // Inline-style: render paragraphs as plain blocks without browser defaults
-              // since we already set spacing on the wrapper. Links open in new tabs.
-              p: ({ children }) => <p className="m-0 [&+p]:mt-2">{children}</p>,
-              a: ({ children, href }) => (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[var(--color-accent)] hover:underline"
-                >
-                  {children}
-                </a>
-              ),
-              code: ({ children }) => (
-                <code className="text-[11.5px] font-mono px-1 py-px rounded bg-black/[0.06] dark:bg-white/[0.08]">
-                  {children}
-                </code>
-              ),
-              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-              em: ({ children }) => <em className="italic">{children}</em>,
-            }}
-          >
-            {description}
-          </Markdown>
-        </div>
-      )}
-      {badges && badges.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {badges.map((b) => <Badge key={b}>{b}</Badge>)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HeaderIconButton({
-  children, onClick, href, disabled, title,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  href?: string;
-  disabled?: boolean;
-  title?: string;
-}) {
-  const className = "p-1.5 rounded-md text-black/50 dark:text-white/50 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors";
-  if (href) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={className} title={title}>
-        {children}
-      </a>
-    );
-  }
-  return (
-    <button onClick={onClick} disabled={disabled} className={className} title={title}>
-      {children}
-    </button>
-  );
-}
-
-function InfoCard({
-  title, subtitle, children, right,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5 px-0.5">
-        <div className="min-w-0">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{title}</h3>
-          {subtitle && (
-            <p className="text-[10px] text-[var(--color-text-muted)]/70 mt-px">{subtitle}</p>
-          )}
-        </div>
-        {right}
-      </div>
-      <div className="rounded-[10px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 space-y-1">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function InfoRow({
-  icon, label, value, mono, copyable,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  mono?: boolean;
-  copyable?: boolean;
-}) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    }).catch(() => {});
-  };
-  return (
-    <div className="flex items-center gap-2 min-h-[22px]">
-      <span className="text-[var(--color-text-muted)]/60 flex-shrink-0">{icon}</span>
-      <span className="text-[11px] text-[var(--color-text-muted)] min-w-[78px]">{label}</span>
-      <span className={`text-[11.5px] truncate flex-1 ${mono ? 'font-mono' : ''}`} title={value}>{value}</span>
-      {copyable && (
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
-          title="Copy"
-        >
-          {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-50" />}
-        </button>
-      )}
-    </div>
-  );
-}
-
-interface DisplayTool { slug: string; name: string; description?: string }
-
-function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emptyConnected?: boolean }) {
-  const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
-    : tools;
-
-  if (tools.length === 0) {
-    if (emptyConnected) {
-      return (
-        <div className="text-center py-8">
-          <Check className="w-6 h-6 mx-auto mb-2 text-emerald-500/40" />
-          <p className="text-xs opacity-40">Integration is connected. Tools are available to the agent.</p>
-        </div>
-      );
-    }
-    return (
-      <div className="text-center py-8">
-        <Package className="w-6 h-6 mx-auto mb-2 opacity-20" />
-        <p className="text-xs opacity-40">No tools cached. Try refreshing.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2 px-0.5">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-          Tools · {tools.length}
-        </h3>
-      </div>
-      {tools.length > 6 && (
-        <div className="relative mb-2">
-          <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${tools.length} tools...`}
-            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
-          />
-        </div>
-      )}
-      <div className="space-y-1">
-        {filtered.map((tool) => (
-          <ToolCard key={tool.slug} tool={tool} />
-        ))}
-        {filtered.length === 0 && (
-          <div className="text-center py-4">
-            <p className="text-[11px] text-[var(--color-text-muted)]">No matches for &quot;{query}&quot;</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ToolCard({ tool }: { tool: DisplayTool }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(tool.slug).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    }).catch(() => {});
-  };
-  return (
-    <div className="group flex items-start gap-2.5 px-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors">
-      <div className="w-[22px] h-[22px] rounded-[5px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 mt-px">
-        <Wrench className="w-3 h-3 opacity-50" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-semibold truncate">{tool.name}</span>
-          {tool.slug !== tool.name && (
-            <span className="text-[9px] font-mono text-[var(--color-text-muted)]/70 truncate">{tool.slug.toLowerCase()}</span>
-          )}
-        </div>
-        {tool.description && (
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed line-clamp-2">{tool.description}</p>
-        )}
-      </div>
-      <button
-        onClick={handleCopy}
-        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
-        title="Copy tool name"
-      >
-        {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-50" />}
-      </button>
-    </div>
-  );
-}
-
-function formatDate(ts: number): string {
-  try {
-    return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  } catch {
-    return '';
-  }
-}
-
-function prettyAuthLabel(scheme?: string): string | undefined {
-  if (!scheme) return undefined;
-  const s = scheme.toUpperCase();
-  if (s === 'OAUTH2' || s === 'OAUTH1') return 'OAuth';
-  if (s === 'API_KEY') return 'API key';
-  if (s === 'BEARER_TOKEN') return 'Bearer token';
-  if (s === 'BASIC') return 'Basic auth';
-  if (s === 'NO_AUTH') return 'No auth';
-  return scheme;
-}
 
 // ── Bridge method dispatcher ──
 

@@ -18,464 +18,29 @@ import {
 import {
   MiniHeader, Card, Badge, IconBtn, Spinner, SkeletonList, EmptyState,
   ConfirmDialog, SectionLabel, useToast, haptic,
-  api, apiJSON, accent, textColor, bg2,
+  accent, textColor, bg2,
 } from '../ui';
+import * as api from '@/services/api';
 
-// ── Types ──
-
-interface RegistryApp {
-  id: string; name: string; description: string; latest_version: string;
-  author: { name: string; url?: string }; category: string; tags: string[];
-  repo_url: string; icon_url?: string; base_url?: string; has_ui: boolean;
-  tools: Array<{ name: string; description: string }>; install_count: number;
-  featured: boolean; verified?: boolean;
-}
-
-interface SmitheryServer {
-  qualifiedName: string; displayName: string; description: string;
-  iconUrl?: string; useCount: number; verified: boolean; remote: boolean;
-  isDeployed?: boolean;
-}
-
-interface SmitheryServerDetail {
-  qualifiedName: string; displayName: string; description: string;
-  iconUrl: string | null; remote: boolean;
-  connections: Array<{
-    type: 'stdio' | 'http';
-    configSchema?: ConfigSchema;
-    deploymentUrl?: string;
-  }>;
-  tools: Array<{ name: string; description: string | null }> | null;
-  security: { scanPassed: boolean } | null;
-}
-
-interface SmitherySkill {
-  qualifiedName: string; displayName: string; description: string;
-  namespace?: string; gitUrl?: string; categories?: string[];
-  totalActivations?: number; externalStars?: number;
-  verified?: boolean; qualityScore?: number;
-}
-
-interface SmitherySkillDetail extends SmitherySkill {
-  prompt?: string; skillContent?: string;
-}
-
-interface ConfigSchema {
-  type: string; required?: string[];
-  properties?: Record<string, { type: string; description?: string; default?: unknown; enum?: unknown[] }>;
-}
-
-interface InstalledApp {
-  id: string; name: string; description: string;
-  icon_url?: string; has_ui: boolean;
-  tools: Array<{ name: string; description?: string }>;
-  installed_at: number;
-}
-
-interface CuratedDef {
-  slug: string; name: string; description: string;
-  category: Category;
-}
-
-// ── Unified App Model (matches desktop) ──
-
-type Category = 'all' | 'productivity' | 'communication' | 'dev-tools' | 'data' | 'search';
-
-interface UnifiedApp {
-  id: string; name: string; description: string;
-  icon?: string; category: string; tags: string[];
-  source: 'registry' | 'smithery' | 'composio' | 'installed' | 'skill';
-  tools: Array<{ name: string; description?: string | null }>;
-  hasUi: boolean; isSkill?: boolean;
-  status: 'available' | 'installed' | 'connected';
-  featured?: boolean; verified?: boolean;
-  popularity?: number; version?: string;
-  author?: string; authorUrl?: string; sourceUrl?: string;
-  registryApp?: RegistryApp;
-  smitheryServer?: SmitheryServer;
-  smitheryDetail?: SmitheryServerDetail;
-  installedApp?: InstalledApp;
-  composioSlug?: string; composioLogo?: string;
-  configSchema?: ConfigSchema;
-  smitherySkill?: SmitherySkill;
-  smitherySkillDetail?: SmitherySkillDetail;
-  skillContent?: string;
-  authSchemes?: string[];
-  authConfig?: Array<{ mode: string; fields: Array<{ name: string; displayName: string; description?: string; required: boolean }> }>;
-  composioManaged?: boolean;
-  unavailable?: boolean;
-  requiresUpgrade?: boolean;
-  available?: boolean;
-}
-
-// ── Constants ──
-
-const CATEGORIES: Array<{ id: Category; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'productivity', label: 'Productivity' },
-  { id: 'communication', label: 'Communication' },
-  { id: 'dev-tools', label: 'Developer' },
-  { id: 'data', label: 'Data & Files' },
-  { id: 'search', label: 'Search & Web' },
-];
-
-// Free tier Composio tools (must match worker/src/config.ts)
-const FREE_TIER_COMPOSIO_TOOLS: string[] = [
-  'googledrive', 'googlecalendar', 'gmail', 'slack',
-  'notion', 'github', 'linear', 'discord',
-];
-
-const FALLBACK_CURATED: CuratedDef[] = [
-  { slug: 'googlecalendar', name: 'Google Calendar', description: 'Manage events and scheduling.', category: 'productivity' },
-  { slug: 'notion', name: 'Notion', description: 'Manage pages and databases.', category: 'productivity' },
-  { slug: 'todoist', name: 'Todoist', description: 'Create and manage tasks.', category: 'productivity' },
-  { slug: 'trello', name: 'Trello', description: 'Organize boards and cards.', category: 'productivity' },
-  { slug: 'gmail', name: 'Gmail', description: 'Read and manage email.', category: 'communication' },
-  { slug: 'hubspot', name: 'HubSpot', description: 'Manage contacts and CRM.', category: 'communication' },
-  { slug: 'intercom', name: 'Intercom', description: 'Customer conversations.', category: 'communication' },
-  { slug: 'mailchimp', name: 'Mailchimp', description: 'Email campaigns.', category: 'communication' },
-  { slug: 'github', name: 'GitHub', description: 'Repos, issues, and PRs.', category: 'dev-tools' },
-  { slug: 'linear', name: 'Linear', description: 'Track issues and sprints.', category: 'dev-tools' },
-  { slug: 'jira', name: 'Jira', description: 'Project management.', category: 'dev-tools' },
-  { slug: 'sentry', name: 'Sentry', description: 'Monitor errors.', category: 'dev-tools' },
-  { slug: 'googledrive', name: 'Google Drive', description: 'Cloud files.', category: 'data' },
-  { slug: 'googlesheets', name: 'Google Sheets', description: 'Spreadsheets.', category: 'data' },
-  { slug: 'airtable', name: 'Airtable', description: 'Databases and views.', category: 'data' },
-  { slug: 'dropbox', name: 'Dropbox', description: 'Cloud file storage.', category: 'data' },
-];
-
-const HIDDEN_SLUGS = new Set(['slack', 'telegram']);
-const SOURCE_PRIORITY: Record<string, number> = { installed: 0, composio: 1, registry: 2, skill: 3, smithery: 4 };
-const CATEGORY_LABELS: Record<string, string> = {
-  productivity: 'Productivity', communication: 'Communication',
-  'dev-tools': 'Developer Tools', data: 'Data & Files', search: 'Search & Web',
-};
-
-// ── Helpers ──
-
-function composioIconUrl(slug: string, logo?: string): string {
-  return logo || `https://logos.composio.dev/api/${slug}`;
-}
-
-function inferCategory(slug: string, name: string, desc: string, curated?: CuratedDef[]): Category {
-  const known = (curated || FALLBACK_CURATED).find(f => f.slug === slug.toLowerCase());
-  if (known) return known.category;
-  const text = `${slug} ${name} ${desc}`.toLowerCase();
-  if (text.match(/\b(git|code|repo|deploy|dev|build|test|ide|docker|sentry|jira|linear)\b/)) return 'dev-tools';
-  if (text.match(/\b(email|mail|chat|messag|slack|discord|sms|zoom)\b/)) return 'communication';
-  if (text.match(/\b(file|drive|storage|sheet|data|database|csv|pdf|dropbox|airtable|notion)\b/)) return 'data';
-  if (text.match(/\b(search|web|browse|scrape|crawl|seo|google|bing)\b/)) return 'search';
-  return 'productivity';
-}
-
-function mapRegistryCategory(cat?: string): Category {
-  if (!cat) return 'productivity';
-  const l = cat.toLowerCase();
-  if (l.includes('dev') || l.includes('code') || l.includes('git')) return 'dev-tools';
-  if (l.includes('data') || l.includes('file') || l.includes('storage')) return 'data';
-  if (l.includes('search') || l.includes('web') || l.includes('browser')) return 'search';
-  if (l.includes('comm') || l.includes('email') || l.includes('chat')) return 'communication';
-  return 'productivity';
-}
-
-function isSensitiveField(name: string): boolean {
-  const l = name.toLowerCase();
-  return ['key', 'secret', 'token', 'password', 'api_key', 'apikey', 'auth'].some(s => l.includes(s));
-}
-
-function getHostname(url: string): string {
-  try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
-}
-
-function deduplicateApps(apps: UnifiedApp[]): UnifiedApp[] {
-  const normalize = (name: string): string =>
-    name.toLowerCase().replace(/[^a-z0-9]/g, '')
-      .replace(/(mcp|server|integration|tool|api|bot|app|plugin)$/g, '');
-  const seen = new Map<string, { app: UnifiedApp; idx: number }>();
-  const result: UnifiedApp[] = [];
-  for (const app of apps) {
-    const key = normalize(app.name);
-    if (!key) { result.push(app); continue; }
-    const existing = seen.get(key);
-    if (existing) {
-      const ePri = SOURCE_PRIORITY[existing.app.source] ?? 9;
-      const nPri = SOURCE_PRIORITY[app.source] ?? 9;
-      if (nPri < ePri) { result[existing.idx] = app; seen.set(key, { app, idx: existing.idx }); }
-    } else {
-      seen.set(key, { app, idx: result.length });
-      result.push(app);
-    }
-  }
-  return result;
-}
-
-function skillAvatarUrl(ns?: string): string | undefined {
-  return ns ? `https://avatars.githubusercontent.com/${encodeURIComponent(ns)}?s=64` : undefined;
-}
-
-// ── Normalizers ──
-
-function registryToUnified(app: RegistryApp, installed: boolean): UnifiedApp {
-  return {
-    id: `registry-${app.id}`, name: app.name, description: app.description,
-    icon: app.icon_url, category: mapRegistryCategory(app.category),
-    tags: app.tags || [], source: 'registry', tools: app.tools || [],
-    hasUi: app.has_ui, status: installed ? 'installed' : 'available',
-    featured: app.featured, verified: app.verified ?? app.featured,
-    popularity: app.install_count, version: app.latest_version,
-    author: app.author?.name, authorUrl: app.author?.url,
-    sourceUrl: app.repo_url || undefined, registryApp: app,
-  };
-}
-
-function smitheryToUnified(srv: SmitheryServer, installed: boolean, curated?: CuratedDef[]): UnifiedApp {
-  const normalizedId = `smithery-${srv.qualifiedName}`.replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase();
-  return {
-    id: normalizedId, name: srv.displayName || srv.qualifiedName,
-    description: srv.description, icon: srv.iconUrl,
-    category: inferCategory(srv.qualifiedName, srv.displayName, srv.description, curated),
-    tags: ['mcp'], source: 'smithery', tools: [], hasUi: false,
-    status: installed ? 'installed' : 'available',
-    verified: srv.verified, popularity: srv.useCount || 0,
-    sourceUrl: `https://smithery.ai/server/${srv.qualifiedName}`,
-    smitheryServer: srv, unavailable: srv.isDeployed === false || undefined,
-  };
-}
-
-function composioToUnified(def: CuratedDef, connected: boolean, plan: string = 'free'): UnifiedApp {
-  const isFreeTier = FREE_TIER_COMPOSIO_TOOLS.includes(def.slug.toLowerCase());
-  const isPaidPlan = plan === 'starter' || plan === 'pro';
-  const isAvailable = isPaidPlan || isFreeTier;
-  return {
-    id: `composio-${def.slug}`, name: def.name, description: def.description,
-    icon: composioIconUrl(def.slug), category: def.category,
-    tags: ['integration'], source: 'composio', tools: [], hasUi: false,
-    status: connected ? 'connected' : 'available', composioSlug: def.slug,
-    verified: true, sourceUrl: `https://composio.dev/toolkits/${def.slug}`,
-    available: isAvailable,
-    requiresUpgrade: !isAvailable && plan === 'free',
-  };
-}
-
-function composioSearchToUnified(t: { 
-  slug: string; 
-  name: string; 
-  description: string; 
-  logo?: string; 
-  auth_schemes?: string[];
-  requiresUpgrade?: boolean;
-  available?: boolean;
-}, connected: boolean, curated?: CuratedDef[]): UnifiedApp {
-  return {
-    id: `composio-${t.slug}`, name: t.name, description: t.description || t.slug,
-    icon: composioIconUrl(t.slug, t.logo),
-    category: inferCategory(t.slug, t.name, t.description || '', curated),
-    tags: ['integration'], source: 'composio', tools: [], hasUi: false,
-    status: connected ? 'connected' : 'available',
-    composioSlug: t.slug, composioLogo: t.logo, verified: true,
-    authSchemes: Array.isArray(t.auth_schemes) ? t.auth_schemes.map((s: any) => typeof s === 'string' ? s : s?.mode || 'unknown') : [],
-    requiresUpgrade: t.requiresUpgrade,
-    available: t.available,
-  };
-}
-
-function installedToUnified(app: InstalledApp): UnifiedApp {
-  return {
-    id: app.id, name: app.name || app.id, description: app.description || '',
-    icon: app.icon_url, category: 'productivity', tags: ['mcp'],
-    source: 'installed', tools: app.tools || [], hasUi: !!app.has_ui,
-    status: 'installed', installedApp: app,
-  };
-}
-
-function skillToUnified(sk: SmitherySkill, installed: boolean): UnifiedApp {
-  const ns = sk.namespace || sk.qualifiedName?.split('/')[0];
-  return {
-    id: `skill-${sk.qualifiedName}`.replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase(),
-    name: sk.qualifiedName || sk.displayName,
-    description: sk.description || 'Smithery Skill',
-    icon: skillAvatarUrl(ns), category: inferCategory(sk.qualifiedName, sk.displayName, sk.description || ''),
-    tags: sk.categories || ['skill'], source: 'skill', tools: [], hasUi: false,
-    isSkill: true, status: installed ? 'installed' : 'available',
-    author: ns, verified: sk.verified || false,
-    popularity: sk.totalActivations || 0,
-    sourceUrl: `https://smithery.ai/skills/${sk.qualifiedName}`,
-    smitherySkill: sk,
-  };
-}
+import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname, isSensitiveField } from '@/hooks/useAppDiscovery';
+import type { UnifiedApp, Category, Tab } from '@/hooks/useAppDiscovery';
 
 // ── Main Component ──
 
-type Tab = 'discover' | 'installed';
-
 export function AppStoreScreen() {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('discover');
-  const [category, setCategory] = useState<Category>('all');
-  const [search, setSearch] = useState('');
-  const [searching, setSearching] = useState(false);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  
+  const {
+    tab, setTab, category, setCategory, search, handleSearch, searching,
+    loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
+    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected, userPlan
+  } = useAppDiscovery();
 
-  // Source data
-  const [curatedApps, setCuratedApps] = useState<CuratedDef[]>(FALLBACK_CURATED);
-  const [registryApps, setRegistryApps] = useState<RegistryApp[]>([]);
-  const [smitheryResults, setSmitheryResults] = useState<SmitheryServer[]>([]);
-  const [composioResults, setComposioResults] = useState<Array<{ slug: string; name: string; description: string; logo?: string; auth_schemes?: string[] }>>([]);
-  const [skillResults, setSkillResults] = useState<SmitherySkill[]>([]);
-
-  // Installed / connected
-  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
-  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
-  const [connectedToolkits, setConnectedToolkits] = useState<Set<string>>(new Set());
-  const [userPlan, setUserPlan] = useState<string>('free');
-
-  // Loading / errors / detail
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<UnifiedApp | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
-
-  // ── Data fetching ──
-
-  const fetchInstalled = useCallback(async () => {
-    const data = await apiJSON<any>('/apps');
-    const apps = Array.isArray(data) ? data : data?.apps || [];
-    setInstalledApps(apps);
-    setInstalledIds(new Set(apps.map((a: any) => a.id)));
-  }, []);
-
-  const fetchConnected = useCallback(async () => {
-    const data = await apiJSON<any>('/composio/connected');
-    if (data?.connected) {
-      setConnectedToolkits(new Set(data.connected.map((a: any) => a.toolkit)));
-    }
-  }, []);
-
-  const fetchCurated = useCallback(async () => {
-    const data = await apiJSON<any>('/apps/curated');
-    if (data?.apps?.length) {
-      setCuratedApps(data.apps.map((a: any) => ({
-        slug: a.slug, name: a.name, description: a.description,
-        category: (a.category || 'productivity') as Category,
-      })));
-    }
-  }, []);
-
-  const fetchRegistry = useCallback(async () => {
-    const data = await apiJSON<any>('/apps/registry');
-    if (data?.apps) setRegistryApps(data.apps);
-  }, []);
-
-  const fetchSubscription = useCallback(async () => {
-    const data = await apiJSON<any>('/billing/subscription');
-    if (data?.plan) {
-      setUserPlan(data.plan);
-    }
-  }, []);
-
-  useEffect(() => {
-    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchConnected(), fetchSubscription()])
-      .finally(() => setLoading(false));
-  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchConnected, fetchSubscription]);
-
-  // ── Search ──
-
-  const executeSearch = useCallback(async (query: string) => {
-    if (query.length < 2) {
-      setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
-      setSearching(false); return;
-    }
-    setSearching(true);
-    const [smithery, composio, skills] = await Promise.allSettled([
-      apiJSON<any>(`/apps/smithery?q=${encodeURIComponent(query)}`),
-      apiJSON<any>(`/composio/search?q=${encodeURIComponent(query)}`),
-      apiJSON<any>(`/apps/skills/search?q=${encodeURIComponent(query)}`),
-    ]);
-    if (smithery.status === 'fulfilled' && smithery.value) setSmitheryResults(smithery.value.servers || []);
-    if (composio.status === 'fulfilled' && composio.value) setComposioResults(composio.value.toolkits || []);
-    if (skills.status === 'fulfilled' && skills.value) setSkillResults(skills.value.skills || []);
-    setSearching(false);
-  }, []);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearch(query);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (query.length < 2) {
-      setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
-      setSearching(false); return;
-    }
-    searchTimerRef.current = setTimeout(() => executeSearch(query), 400);
-  }, [executeSearch]);
-
-  // ── Computed lists ──
-
-  const isSearching = search.length >= 2;
-
-  // Curated (discover browse)
-  const suggested: UnifiedApp[] = curatedApps
-    .filter(f => category === 'all' || f.category === category)
-    .map(f => composioToUnified(f, connectedToolkits.has(f.slug), userPlan));
-
-  // Your Apps (installed tab)
-  const yourApps: UnifiedApp[] = [
-    ...[...connectedToolkits].map(slug => {
-      const known = curatedApps.find(f => f.slug === slug);
-      if (known) return composioToUnified(known, true, userPlan);
-      return { id: `composio-${slug}`, name: slug.charAt(0).toUpperCase() + slug.slice(1),
-        description: 'Connected integration', icon: composioIconUrl(slug),
-        category: 'productivity' as const, tags: ['integration'],
-        source: 'composio' as const, tools: [], hasUi: false,
-        status: 'connected' as const, composioSlug: slug, verified: true,
-      } satisfies UnifiedApp;
-    }),
-    ...installedApps.map(installedToUnified),
-  ].filter(a => category === 'all' || a.category === category);
-
-  const suggestedByCategory = (() => {
-    const order = ['productivity', 'communication', 'dev-tools', 'data', 'search'];
-    const groups = new Map<string, UnifiedApp[]>();
-    for (const app of suggested) {
-      const cat = app.category as string;
-      if (!groups.has(cat)) groups.set(cat, []);
-      groups.get(cat)!.push(app);
-    }
-    return order.filter(c => groups.has(c)).map(c => [c, groups.get(c)!] as const);
-  })();
-
-  // Registry apps filtered
-  const registryList: UnifiedApp[] = registryApps
-    .filter(a => {
-      if (search) { const q = search.toLowerCase(); return a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q); }
-      return true;
-    })
-    .filter(a => category === 'all' || mapRegistryCategory(a.category) === category)
-    .map(a => registryToUnified(a, installedIds.has(a.id)));
-
-  // Cross-source search results
-  const searchResults: UnifiedApp[] = isSearching ? deduplicateApps([
-    ...composioResults.filter(t => !HIDDEN_SLUGS.has(t.slug.toLowerCase())).map(t => composioSearchToUnified(t, connectedToolkits.has(t.slug), curatedApps)),
-    ...registryList,
-    ...smitheryResults.filter(srv => !srv.remote).filter(srv => !HIDDEN_SLUGS.has((srv.qualifiedName || '').split('/').pop()?.toLowerCase() || '')).map(srv => {
-      const app = smitheryToUnified(srv, false, curatedApps);
-      return { ...app, status: installedIds.has(app.id) ? 'installed' as const : 'available' as const };
-    }),
-    ...[...skillResults].sort((a, b) => (b.totalActivations || 0) - (a.totalActivations || 0)).map(sk => {
-      const app = skillToUnified(sk, false);
-      return { ...app, status: installedIds.has(app.id) ? 'installed' as const : 'available' as const };
-    }),
-  ]).filter(a => !(a.unavailable && !a.verified))
-    .filter(a => category === 'all' || a.category === category)
-    .sort((a, b) => {
-      const q = search.toLowerCase().trim();
-      if (q) { const ae = a.name.toLowerCase() === q ? 1 : 0; const be = b.name.toLowerCase() === q ? 1 : 0; if (ae !== be) return be - ae; }
-      if (a.verified && !b.verified) return -1; if (!a.verified && b.verified) return 1;
-      const aA = a.status !== 'available' ? 1 : 0; const bA = b.status !== 'available' ? 1 : 0;
-      if (aA !== bA) return bA - aA;
-      return (SOURCE_PRIORITY[a.source] ?? 9) - (SOURCE_PRIORITY[b.source] ?? 9);
-    })
-  : [];
 
   // ── Actions ──
 
@@ -493,39 +58,43 @@ export function AppStoreScreen() {
     setDetail(prev => prev ? { ...prev, status: 'installed' } : null);
   };
 
-  const openDetail = useCallback((app: UnifiedApp) => {
+  const openDetail = async (app: UnifiedApp) => {
     setDetail(app); setConfigValues({}); setError(null);
 
     if (app.source === 'smithery' && app.smitheryServer) {
       setDetailLoading(true);
-      apiJSON<any>(`/apps/smithery/detail?name=${encodeURIComponent(app.smitheryServer.qualifiedName)}`).then(d => {
-        if (d) {
-          const conn = d.connections?.find((c: any) => c.type === 'http') || d.connections?.[0];
-          setDetail(prev => prev ? {
-            ...prev, tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
-            smitheryDetail: d, configSchema: conn?.configSchema,
-          } : null);
-          const props = conn?.configSchema?.properties || {};
-          const defaults: Record<string, string> = {};
-          for (const [key, prop] of Object.entries(props)) { if ((prop as any).default !== undefined) defaults[key] = String((prop as any).default); }
-          setConfigValues(defaults);
-        }
-        setDetailLoading(false);
-      }).catch(() => setDetailLoading(false));
+      const res = await api.getSmitheryServerDetail(app.smitheryServer.qualifiedName);
+      if (res.success && res.data) {
+        const d = res.data;
+        const conn = d.connections?.find((c: any) => c.type === 'http') || d.connections?.[0];
+        setDetail(prev => prev ? {
+          ...prev, tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
+          smitheryDetail: d as any, configSchema: conn?.configSchema as any,
+        } : null);
+        const props = conn?.configSchema?.properties || {};
+        const defaults: Record<string, string> = {};
+        for (const [key, prop] of Object.entries(props)) { if ((prop as any).default !== undefined) defaults[key] = String((prop as any).default); }
+        setConfigValues(defaults);
+      }
+      setDetailLoading(false);
     }
 
     if (app.isSkill && app.smitherySkill) {
       setDetailLoading(true);
-      apiJSON<any>(`/apps/skills/detail?name=${encodeURIComponent(app.smitherySkill.qualifiedName)}`).then(d => {
-        if (d) setDetail(prev => prev ? { ...prev, smitherySkillDetail: d, skillContent: d.skillContent || d.prompt, tags: d.categories?.length ? d.categories : prev.tags } : null);
-        setDetailLoading(false);
-      }).catch(() => setDetailLoading(false));
+      const res = await api.getSmitherySkillDetail(app.smitherySkill.qualifiedName);
+      if (res.success && res.data) {
+        const d = res.data;
+        setDetail(prev => prev ? { ...prev, smitherySkillDetail: d as any, skillContent: d.skillContent || d.prompt, tags: d.categories?.length ? d.categories : prev.tags } : null);
+      }
+      setDetailLoading(false);
     }
 
     if (app.source === 'composio' && app.composioSlug) {
       setDetailLoading(true);
-      apiJSON<any>(`/composio/${encodeURIComponent(app.composioSlug)}/detail`).then(d => {
-        if (d) setDetail(prev => prev ? {
+      const res = await api.getComposioToolkitDetail(app.composioSlug);
+      if (res.success && res.data) {
+        const d = res.data;
+        setDetail(prev => prev ? {
           ...prev, description: d.description || prev.description,
           icon: d.logo || prev.icon, composioLogo: d.logo || prev.composioLogo,
           tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
@@ -539,20 +108,19 @@ export function AppStoreScreen() {
           })) : prev.authConfig,
           composioManaged: d.composio_managed ?? prev.composioManaged,
         } : null);
-        setDetailLoading(false);
-      }).catch(() => setDetailLoading(false));
+      }
+      setDetailLoading(false);
     }
-  }, []);
+  };
 
   const handleInstallRegistry = async (app: UnifiedApp) => {
     if (!app.registryApp) return;
     setPendingActions(prev => ({ ...prev, [app.id]: true }));
-    const res = await api('/apps/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appId: app.registryApp.id, name: app.registryApp.name, description: app.registryApp.description, icon_url: app.registryApp.icon_url, base_url: app.registryApp.base_url, has_ui: app.registryApp.has_ui }),
-    });
-    if (res.ok) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
-    else { haptic('error'); setError('Install failed'); }
+    try {
+      const res = await api.installApp(app.registryApp.id, { name: app.registryApp.name, description: app.registryApp.description, icon_url: app.registryApp.icon_url, base_url: app.registryApp.base_url, has_ui: app.registryApp.has_ui });
+      if (res.success) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
+      else { haptic('error'); setError('Install failed: ' + res.error); }
+    } catch (err) { haptic('error'); setError(`Install failed: ${err instanceof Error ? err.message : err}`); }
     setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
   };
 
@@ -561,12 +129,11 @@ export function AppStoreScreen() {
     const required = new Set(app.configSchema?.required || []);
     for (const field of required) { if (!configValues[field]?.trim()) { setError(`Required field "${field}" is empty`); return; } }
     setPendingActions(prev => ({ ...prev, [app.id]: true }));
-    const res = await api('/apps/smithery/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qualifiedName: app.smitheryServer.qualifiedName, config: configValues, displayName: app.name }),
-    });
-    if (res.ok) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
-    else { haptic('error'); setError('Install failed'); }
+    try {
+      const res = await api.installSmitheryServer(app.smitheryServer.qualifiedName, configValues, app.name);
+      if (res.success) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
+      else { haptic('error'); setError('Install failed: ' + res.error); }
+    } catch (err) { haptic('error'); setError(`Install failed: ${err instanceof Error ? err.message : err}`); }
     setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
   };
 
@@ -574,56 +141,52 @@ export function AppStoreScreen() {
     if (!app.smitherySkill) return;
     setPendingActions(prev => ({ ...prev, [app.id]: true }));
     const gitUrl = app.smitherySkillDetail?.gitUrl || app.smitherySkill.gitUrl;
-    const res = await api('/apps/skills/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qualifiedName: app.smitherySkill.qualifiedName, displayName: app.smitherySkill.displayName, description: app.description, gitUrl }),
-    });
-    if (res.ok) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
-    else { haptic('error'); setError('Install failed'); }
+    try {
+      const res = await api.installSmitherySkill(app.smitherySkill.qualifiedName, app.smitherySkill.displayName, app.description, gitUrl);
+      if (res.success) { haptic('success'); toast.show(`${app.name} installed`, 'success'); await refreshAfterInstall(); }
+      else { haptic('error'); setError('Install failed: ' + res.error); }
+    } catch (err) { haptic('error'); setError(`Install failed: ${err instanceof Error ? err.message : err}`); }
     setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
   };
 
   const handleUninstall = async (appId: string, appName: string) => {
     setPendingActions(prev => ({ ...prev, [appId]: true }));
-    const res = await api(`/apps/${encodeURIComponent(appId)}`, { method: 'DELETE' });
-    if (res.ok) { haptic('success'); toast.show(`${appName} uninstalled`, 'success'); await fetchInstalled(); setDetail(null); }
-    else { haptic('error'); setError('Uninstall failed'); }
+    try {
+      const res = await api.uninstallApp(appId);
+      if (res.success) { haptic('success'); toast.show(`${appName} uninstalled`, 'success'); await fetchInstalled(); setDetail(null); }
+      else { haptic('error'); setError('Uninstall failed: ' + res.error); }
+    } catch (err) { haptic('error'); setError(`Uninstall failed: ${err instanceof Error ? err.message : err}`); }
     setPendingActions(prev => { const n = { ...prev }; delete n[appId]; return n; });
   };
 
   const handleConnect = async (toolkit: string) => {
     setPendingActions(prev => ({ ...prev, [`composio-${toolkit}`]: true }));
-    const data = await apiJSON<any>(`/composio/${encodeURIComponent(toolkit)}/auth-url`);
-    if (data?.url) {
-      window.open(data.url, '_blank');
-      toast.show('Complete authorization in the new tab', 'info');
-      // Poll for connection completion
-      const pollInterval = setInterval(async () => {
-        await fetchConnected();
-        setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
-        clearInterval(pollInterval);
-      }, 5000);
-      setTimeout(() => clearInterval(pollInterval), 120_000);
-    } else {
-      haptic('error'); setError('Failed to get auth URL');
-      setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
-    }
+    try {
+      const res = await api.getComposioAuthUrl(toolkit);
+      if (res.success && res.data?.url) {
+        window.open(res.data.url, '_blank');
+        toast.show('Complete authorization in the new tab', 'info');
+        const pollInterval = setInterval(async () => {
+          await fetchConnected();
+          setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
+          clearInterval(pollInterval);
+        }, 5000);
+        setTimeout(() => clearInterval(pollInterval), 120_000);
+      } else { haptic('error'); setError('Failed to get auth URL'); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
+    } catch (err) { haptic('error'); setError(`Connect failed: ${err instanceof Error ? err.message : err}`); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
   };
 
   const handleDisconnect = async (toolkit: string) => {
     setPendingActions(prev => ({ ...prev, [`composio-${toolkit}`]: true }));
-    const res = await api(`/composio/${encodeURIComponent(toolkit)}/disconnect`, { method: 'DELETE' });
-    if (res.ok) {
-      haptic('success'); toast.show('Disconnected', 'success');
-      setConnectedToolkits(prev => { const n = new Set(prev); n.delete(toolkit); return n; });
-      setDetail(prev => prev?.composioSlug === toolkit ? { ...prev, status: 'available' } : prev);
-    } else { haptic('error'); setError('Disconnect failed'); }
+    try {
+      const res = await api.disconnectComposio(toolkit);
+      if (res.success) {
+        haptic('success'); toast.show('Disconnected', 'success');
+        await fetchConnected();
+        setDetail(prev => prev?.composioSlug === toolkit ? { ...prev, status: 'available' } : prev);
+      } else { haptic('error'); setError('Disconnect failed: ' + res.error); }
+    } catch (err) { haptic('error'); setError(`Disconnect failed: ${err instanceof Error ? err.message : err}`); }
     setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
-  };
-
-  const handleRefresh = () => {
-    setLoading(true);
-    Promise.all([fetchRegistry(), fetchInstalled(), fetchConnected()]).finally(() => setLoading(false));
   };
 
   // ── Detail View ──
@@ -920,7 +483,7 @@ export function AppStoreScreen() {
       {/* Tab bar */}
       <div className="flex gap-0 mx-4 mb-2 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button
-          onClick={() => { setTab('discover'); setSearch(''); haptic(); }}
+          onClick={() => { setTab('discover'); handleSearch(''); haptic(); }}
           className="px-4 py-2 text-[12px] font-semibold transition-colors relative"
           style={{ color: tab === 'discover' ? accent() : 'rgba(255,255,255,0.4)' }}
         >
@@ -928,7 +491,7 @@ export function AppStoreScreen() {
           {tab === 'discover' && <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full" style={{ backgroundColor: accent() }} />}
         </button>
         <button
-          onClick={() => { setTab('installed'); setSearch(''); haptic(); }}
+          onClick={() => { setTab('installed'); handleSearch(''); haptic(); }}
           className="px-4 py-2 text-[12px] font-semibold transition-colors relative"
           style={{ color: tab === 'installed' ? accent() : 'rgba(255,255,255,0.4)' }}
         >
@@ -953,7 +516,6 @@ export function AppStoreScreen() {
             placeholder={tab === 'installed' ? 'Filter installed apps...' : 'Search apps and integrations...'}
             value={search}
             onChange={e => handleSearch(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && search.length >= 2) { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); executeSearch(search); } }}
           />
           {search && (
             <button onClick={() => handleSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 opacity-30">
@@ -1038,7 +600,7 @@ export function AppStoreScreen() {
               </section>
             ))}
 
-            {suggested.length === 0 && registryList.length === 0 && (
+            {suggestedByCategory.length === 0 && registryList.length === 0 && (
               <EmptyState icon={Package} message="No apps available" />
             )}
           </div>
