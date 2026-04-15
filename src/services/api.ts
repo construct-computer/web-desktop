@@ -921,15 +921,39 @@ export interface AppConnectionField {
   displayName: string;
   type: 'text' | 'password';
   required: boolean;
+  placeholder?: string;
+  description?: string;
+}
+
+export type AppAuthScheme = 'oauth2' | 'api_key' | 'bearer' | 'basic';
+
+export interface AppConnectionScheme {
+  type: AppAuthScheme;
+  label: string;
+  fields?: AppConnectionField[];
+  instructions?: string;
+  scopes?: string[];
+  available: boolean;
+  unavailableReason?: string;
 }
 
 export interface AppConnectionStatus {
   connected: boolean;
   connectionId?: string;
-  authType?: 'oauth2' | 'api_key' | 'bearer' | 'basic' | 'none';
+  activeScheme?: AppAuthScheme;
+  /** Alias for activeScheme — kept for backwards compatibility. */
+  authType?: AppAuthScheme;
   connectedAt?: number;
+  schemes: AppConnectionScheme[];
+  error?: string;
+}
+
+export interface AppConnectResult {
+  connected: boolean;
+  authType: AppAuthScheme;
   authorizationUrl?: string;
-  fields?: AppConnectionField[];
+  connectionId?: string;
+  connectedAt?: number;
 }
 
 export interface AppConnection {
@@ -943,22 +967,30 @@ export interface AppConnection {
 }
 
 /**
- * Get connection status for an app, or start OAuth flow
+ * Get available auth schemes for an app + current connection status.
  */
 export async function getAppConnection(appId: string): Promise<ApiResult<AppConnectionStatus>> {
-  return request(`/apps/connect/${encodeURIComponent(appId)}`);
+  const res = await request<AppConnectionStatus>(`/apps/connect/${encodeURIComponent(appId)}`);
+  if (res.success && res.data) {
+    // Alias activeScheme → authType for older callers.
+    res.data.authType = res.data.authType ?? res.data.activeScheme;
+  }
+  return res;
 }
 
 /**
- * Submit credentials for API key, Bearer, or Basic auth
+ * Connect to an app with the chosen scheme.
+ *   oauth2 → returns { authorizationUrl } for the caller to open in a popup.
+ *   api_key/bearer/basic → returns { connected: true } once credentials are stored.
  */
-export async function submitAppCredentials(
+export async function connectApp(
   appId: string,
-  credentials: Record<string, string>,
-): Promise<ApiResult<{ success: boolean; connectionId: string; authType: string; connectedAt: number }>> {
+  scheme: AppAuthScheme,
+  fields?: Record<string, string>,
+): Promise<ApiResult<AppConnectResult>> {
   return request(`/apps/connect/${encodeURIComponent(appId)}`, {
     method: 'POST',
-    body: JSON.stringify({ credentials }),
+    body: JSON.stringify({ scheme, fields: fields ?? {} }),
   });
 }
 

@@ -83,7 +83,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   // App connection state (for apps that require auth)
   const [connectionStatus, setConnectionStatus] = useState<api.AppConnectionStatus | null>(null);
   const [connectionLoading, setConnectionLoading] = useState(false);
-  const [showCredentialsForm, setShowCredentialsForm] = useState(false);
+  const [expandedScheme, setExpandedScheme] = useState<api.AppAuthScheme | null>(null);
   const [credentials, setCredentials] = useState<Record<string, string>>({});
 
   // Plan limits
@@ -142,12 +142,6 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
       const result = await api.getAppConnection(appId);
       if (result.success && result.data) {
         setConnectionStatus(result.data);
-        // If auth type requires credentials (not OAuth), initialize empty fields
-        if (result.data.fields) {
-          const initialCreds: Record<string, string> = {};
-          result.data.fields.forEach(f => { initialCreds[f.name] = ''; });
-          setCredentials(initialCreds);
-        }
       }
     } catch { /* ignore */ }
     setConnectionLoading(false);
@@ -158,7 +152,8 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setDetailFull(null);
     setReadme(null);
     setConnectionStatus(null);
-    setShowCredentialsForm(false);
+    setExpandedScheme(null);
+    setCredentials({});
     setDetailLoading(true);
     try {
       const r = await api.getRegistryApp(app.id);
@@ -192,7 +187,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setDetailLoading(false);
     setReadmeLoading(false);
     setConnectionStatus(null);
-    setShowCredentialsForm(false);
+    setExpandedScheme(null);
     setCredentials({});
   }, []);
 
@@ -245,63 +240,77 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
   // ── Connection Actions ──
 
-  const handleConnect = async () => {
+  const handleConnectScheme = async (scheme: api.AppConnectionScheme) => {
     if (!detail) return;
+    if (!scheme.available) {
+      setError(
+        scheme.unavailableReason === 'oauth_not_configured'
+          ? 'OAuth for this app is not yet configured on the Construct platform. Please contact the admin or use a different scheme.'
+          : 'This auth scheme is not available.'
+      );
+      return;
+    }
     setError(null);
+
+    // Credential-based schemes — expand the inline form instead of hitting the API.
+    if (scheme.type !== 'oauth2') {
+      const init: Record<string, string> = {};
+      (scheme.fields ?? []).forEach((f) => { init[f.name] = ''; });
+      setCredentials(init);
+      setExpandedScheme(scheme.type);
+      return;
+    }
+
+    // OAuth: kick off popup flow.
     setConnectionLoading(true);
     try {
-      const result = await api.getAppConnection(detail.id);
+      const result = await api.connectApp(detail.id, 'oauth2');
       if (!result.success) {
-        setError(result.error || 'Failed to initiate connection');
+        setError(result.error || 'Failed to start OAuth');
         return;
       }
-      const status = result.data;
-      if (status.connected) {
-        // Already connected
-        setConnectionStatus(status);
-      } else if (status.authorizationUrl) {
-        // OAuth flow - open popup
-        const width = 500;
-        const height = 600;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-        const popup = window.open(
-          status.authorizationUrl,
-          'app-oauth',
-          `width=${width},height=${height},left=${left},top=${top},popup=1`
-        );
-        if (!popup) {
-          setError('Popup blocked. Please allow popups for this site.');
-          return;
-        }
-        // Poll for completion
-        const checkInterval = setInterval(async () => {
-          if (popup.closed) {
-            clearInterval(checkInterval);
-            // Check connection status again
-            await fetchConnectionStatus(detail.id);
-          }
-        }, 1000);
-      } else if (status.fields) {
-        // Show credentials form
-        setShowCredentialsForm(true);
+      const { authorizationUrl } = result.data;
+      if (!authorizationUrl) {
+        setError('OAuth not available right now.');
+        return;
       }
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        authorizationUrl,
+        'app-oauth',
+        `width=${width},height=${height},left=${left},top=${top},popup=1`
+      );
+      if (!popup) {
+        setError('Popup blocked. Please allow popups for this site.');
+        return;
+      }
+      const checkInterval = setInterval(async () => {
+        if (popup.closed) {
+          clearInterval(checkInterval);
+          await fetchConnectionStatus(detail.id);
+        }
+      }, 1000);
     } catch (err) {
       setError(`Connection failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setConnectionLoading(false);
     }
-    setConnectionLoading(false);
   };
 
   const handleSubmitCredentials = async () => {
-    if (!detail) return;
+    if (!detail || !expandedScheme) return;
     setError(null);
     setConnectionLoading(true);
     try {
-      const result = await api.submitAppCredentials(detail.id, credentials);
+      const result = await api.connectApp(detail.id, expandedScheme, credentials);
       if (!result.success) {
         setError(result.error || 'Failed to submit credentials');
       } else {
-        setShowCredentialsForm(false);
+        setExpandedScheme(null);
+        setCredentials({});
         await fetchConnectionStatus(detail.id);
       }
     } catch (err) {
@@ -579,11 +588,11 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
 
           {/* Authentication — for apps that require auth */}
           {isInstalled && detailFull?.auth && (
-            <DetailSection 
+            <DetailSection
               icon={connectionStatus?.connected ? <Lock className="w-3.5 h-3.5 text-emerald-500" /> : <Unlock className="w-3.5 h-3.5 text-amber-500" />}
               title="Authentication"
             >
-              {connectionLoading ? (
+              {connectionLoading && !connectionStatus ? (
                 <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                   <Loader2 className="w-3 h-3 animate-spin" /> Checking connection...
                 </div>
@@ -594,7 +603,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                       <Check className="w-3 h-3" /> Connected
                     </span>
                     <span className="text-[10px] text-[var(--color-text-muted)]">
-                      via {connectionStatus.authType}
+                      via {connectionStatus.activeScheme || connectionStatus.authType}
                     </span>
                   </div>
                   <button
@@ -605,54 +614,92 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                     {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Disconnect'}
                   </button>
                 </div>
-              ) : showCredentialsForm && connectionStatus?.fields ? (
-                <div className="space-y-3">
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    This app requires {connectionStatus.authType} authentication.
-                  </p>
-                  {connectionStatus.fields.map((field) => (
-                    <div key={field.name}>
-                      <label className="block text-[11px] font-medium mb-1">
-                        {field.displayName}
-                        {field.required && <span className="text-red-500 ml-0.5">*</span>}
-                      </label>
-                      <input
-                        type={field.type === 'password' ? 'password' : 'text'}
-                        value={credentials[field.name] || ''}
-                        onChange={(e) => setCredentials(prev => ({ ...prev, [field.name]: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] outline-none focus:border-[var(--color-accent)] transition-colors"
-                        placeholder={`Enter ${field.displayName.toLowerCase()}`}
-                      />
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleSubmitCredentials}
-                      disabled={connectionLoading || connectionStatus.fields.some(f => f.required && !credentials[f.name])}
-                      className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-                    >
-                      {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Connect'}
-                    </button>
-                    <button
-                      onClick={() => setShowCredentialsForm(false)}
-                      className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    This app requires {Object.keys(detailFull.auth)[0]} authentication to use its tools.
-                  </p>
-                  <button
-                    onClick={handleConnect}
-                    disabled={connectionLoading}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-                  >
-                    {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}
-                  </button>
+                  {(connectionStatus?.schemes?.length ?? 0) > 1 && (
+                    <p className="text-[11px] text-[var(--color-text-muted)]">
+                      Pick how you'd like to connect.
+                    </p>
+                  )}
+                  {(connectionStatus?.schemes ?? []).map((scheme) => {
+                    const isExpanded = expandedScheme === scheme.type;
+                    return (
+                      <div
+                        key={scheme.type}
+                        className="rounded-[8px] border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]"
+                      >
+                        <div className="flex items-center justify-between px-3 py-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {scheme.type === 'oauth2' ? (
+                              <ExternalLink className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
+                            ) : (
+                              <Lock className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
+                            )}
+                            <span className="text-[12px] font-medium truncate">{scheme.label}</span>
+                            {!scheme.available && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+                                unavailable
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleConnectScheme(scheme)}
+                            disabled={connectionLoading || !scheme.available}
+                            className="px-3 py-1 rounded-[6px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
+                          >
+                            {connectionLoading && scheme.type === 'oauth2'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : scheme.type === 'oauth2' ? 'Connect' : isExpanded ? 'Hide' : 'Use'}
+                          </button>
+                        </div>
+                        {isExpanded && scheme.fields && scheme.type !== 'oauth2' && (
+                          <div className="px-3 pb-3 pt-1 border-t border-black/[0.04] dark:border-white/[0.04] space-y-3">
+                            {scheme.instructions && (
+                              <p className="text-[11px] text-[var(--color-text-muted)]">{scheme.instructions}</p>
+                            )}
+                            {scheme.fields.map((field) => (
+                              <div key={field.name}>
+                                <label className="block text-[11px] font-medium mb-1">
+                                  {field.displayName}
+                                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                                </label>
+                                <input
+                                  type={field.type === 'password' ? 'password' : 'text'}
+                                  value={credentials[field.name] || ''}
+                                  onChange={(e) => setCredentials(prev => ({ ...prev, [field.name]: e.target.value }))}
+                                  className="w-full px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] outline-none focus:border-[var(--color-accent)] transition-colors"
+                                  placeholder={field.placeholder || `Enter ${field.displayName.toLowerCase()}`}
+                                />
+                                {field.description && (
+                                  <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">{field.description}</p>
+                                )}
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={handleSubmitCredentials}
+                                disabled={connectionLoading || (scheme.fields || []).some(f => f.required && !credentials[f.name])}
+                                className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                              >
+                                {connectionLoading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Connect'}
+                              </button>
+                              <button
+                                onClick={() => { setExpandedScheme(null); setCredentials({}); }}
+                                className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {connectionStatus && connectionStatus.schemes.length === 0 && (
+                    <p className="text-[11px] text-[var(--color-text-muted)]">
+                      This app declares authentication but no supported schemes. Contact the app author.
+                    </p>
+                  )}
                 </div>
               )}
             </DetailSection>

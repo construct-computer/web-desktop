@@ -412,21 +412,23 @@ function GenericAppPanel({
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleConnect = async () => {
+  const refreshConnectionStatus = useCallback(async () => {
+    const conn = await api.getAppConnection(appId);
+    if (conn.success && conn.data) setConnectionStatus(conn.data);
+  }, [appId]);
+
+  const handleConnectScheme = async (scheme: api.AppConnectionScheme) => {
+    if (!scheme.available) return;
     setConnectionLoading(true);
     try {
-      const result = await api.getAppConnection(appId);
-      if (!result.success) return;
-      const status = result.data;
-      if (status.connected) {
-        setConnectionStatus(status);
-      } else if (status.authorizationUrl) {
-        // OAuth flow
+      if (scheme.type === 'oauth2') {
+        const result = await api.connectApp(appId, 'oauth2');
+        if (!result.success || !result.data.authorizationUrl) return;
         const width = 500, height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
         const popup = window.open(
-          status.authorizationUrl,
+          result.data.authorizationUrl,
           'app-oauth',
           `width=${width},height=${height},left=${left},top=${top},popup=1`
         );
@@ -434,10 +436,14 @@ function GenericAppPanel({
         const checkInterval = setInterval(async () => {
           if (popup.closed) {
             clearInterval(checkInterval);
-            const conn = await api.getAppConnection(appId);
-            if (conn.success && conn.data) setConnectionStatus(conn.data);
+            await refreshConnectionStatus();
           }
         }, 1000);
+      } else {
+        // For credential schemes, direct the user to the App Store detail view
+        // (which hosts the inline form).
+        const evt = new CustomEvent('open-app-registry', { detail: { appId } });
+        window.dispatchEvent(evt);
       }
     } catch { /* ignore */ }
     setConnectionLoading(false);
@@ -536,7 +542,7 @@ function GenericAppPanel({
                   <Check className="w-3 h-3" /> Connected
                 </span>
                 <span className="text-[10px] text-[var(--color-text-muted)]">
-                  via {connectionStatus.authType}
+                  via {connectionStatus.activeScheme || connectionStatus.authType}
                 </span>
               </div>
               <button
@@ -548,15 +554,27 @@ function GenericAppPanel({
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-amber-500">Not connected</span>
-              <button
-                onClick={handleConnect}
-                disabled={connectionLoading}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-              >
-                Connect
-              </button>
+            <div className="space-y-1.5">
+              {(connectionStatus?.schemes ?? []).map((scheme) => (
+                <div
+                  key={scheme.type}
+                  className="flex items-center justify-between px-2 py-1 rounded-[6px] bg-black/[0.02] dark:bg-white/[0.03]"
+                >
+                  <span className="text-[11px] truncate">{scheme.label}</span>
+                  <button
+                    onClick={() => handleConnectScheme(scheme)}
+                    disabled={connectionLoading || !scheme.available}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[10px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    {scheme.available
+                      ? scheme.type === 'oauth2' ? 'Connect' : 'Use'
+                      : 'Unavailable'}
+                  </button>
+                </div>
+              ))}
+              {(!connectionStatus || connectionStatus.schemes.length === 0) && (
+                <span className="text-[11px] text-amber-500">Not connected</span>
+              )}
             </div>
           )}
         </InfoCard>
