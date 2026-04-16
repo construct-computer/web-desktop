@@ -14,7 +14,10 @@ import { useNotificationStore } from '@/stores/notificationStore';
 
 import tourChat from '@/assets/tour/tour-chat.webm';
 import tourEmail from '@/assets/tour/tour-email.webm';
+import tourBrowser from '@/assets/tour/tour-browser.webm';
 import tourNotification from '@/assets/tour/notification.gif';
+
+const DOCK_TOUR_VIDEOS = [tourBrowser, tourEmail];
 
 const TOUR_EVENT = 'construct:start-tour';
 const TOUR_FORCE_EVENT = 'construct:force-tour';
@@ -29,6 +32,75 @@ function gifTag(src: string, alt: string, aspectRatio: string): string {
 /** Build a `<video>` tag for a tour video clip. */
 function videoTag(src: string, aspectRatio: string): string {
   return `<video class="tour-gif" src="${src}" autoplay loop muted playsinline style="aspect-ratio: ${aspectRatio};"></video>`;
+}
+
+/**
+ * Build a container that hosts two stacked `<video>` elements, so playback
+ * can crossfade between clips. The actual srcs are wired up at runtime by
+ * `setupVideoCarousel` — this just emits the DOM skeleton.
+ */
+function videoCarouselTag(aspectRatio: string): string {
+  const slotStyle = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 600ms ease;margin:0;';
+  return `<div class="tour-video-carousel" style="position:relative;aspect-ratio:${aspectRatio};width:100%;overflow:hidden;border-radius:8px;">`
+    + `<video class="tour-gif tour-video-slot" muted playsinline style="${slotStyle}opacity:1;"></video>`
+    + `<video class="tour-gif tour-video-slot" muted playsinline style="${slotStyle}opacity:0;"></video>`
+    + `</div>`;
+}
+
+/**
+ * Wire up a `.tour-video-carousel` container with a shuffled playlist that
+ * crossfades between clips. Safe to call repeatedly — a dataset flag guards
+ * against double-init on popover re-renders.
+ */
+function setupVideoCarousel(container: HTMLElement, srcs: string[]): void {
+  if (container.dataset.carouselStarted === '1') return;
+  if (srcs.length === 0) return;
+  const slots = Array.from(container.querySelectorAll<HTMLVideoElement>('.tour-video-slot'));
+  if (slots.length < 2) return;
+  container.dataset.carouselStarted = '1';
+
+  const order = [...srcs].sort(() => Math.random() - 0.5);
+  const CROSSFADE_MS = 600;
+  let activeSlot = 0;
+  let videoIdx = 0;
+
+  const playInSlot = (slot: number, src: string) => {
+    slots[slot].src = src;
+    slots[slot].load();
+    void slots[slot].play().catch(() => {});
+  };
+
+  if (order.length === 1) {
+    slots[0].loop = true;
+    playInSlot(0, order[0]);
+    return;
+  }
+
+  const scheduleCrossfade = () => {
+    const curr = slots[activeSlot];
+    const handler = () => {
+      if (!curr.duration || isNaN(curr.duration)) return;
+      if (curr.currentTime >= curr.duration - CROSSFADE_MS / 1000) {
+        curr.removeEventListener('timeupdate', handler);
+        crossfadeToNext();
+      }
+    };
+    curr.addEventListener('timeupdate', handler);
+  };
+
+  const crossfadeToNext = () => {
+    const nextSlot = 1 - activeSlot;
+    const nextIdx = (videoIdx + 1) % order.length;
+    playInSlot(nextSlot, order[nextIdx]);
+    slots[activeSlot].style.opacity = '0';
+    slots[nextSlot].style.opacity = '1';
+    activeSlot = nextSlot;
+    videoIdx = nextIdx;
+    scheduleCrossfade();
+  };
+
+  playInSlot(0, order[0]);
+  scheduleCrossfade();
 }
 
 const steps: DriveStep[] = [
@@ -58,7 +130,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="dock"]',
     popover: {
       title: 'Dock & Launchpad',
-      description: `${videoTag(tourEmail, '2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
+      description: `${videoCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
       side: 'top',
       align: 'center',
     },
@@ -238,6 +310,9 @@ export function useDesktopTour() {
         skipLink.href = '#';
         skipLink.onclick = (e) => { e.preventDefault(); skipped = true; driverObj.destroy(); };
         popover.wrapper.prepend(skipLink);
+
+        const carousel = popover.wrapper.querySelector<HTMLElement>('.tour-video-carousel');
+        if (carousel) setupVideoCarousel(carousel, DOCK_TOUR_VIDEOS);
 
         // Replace the Next button text on the setup step (user must save first)
         if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {

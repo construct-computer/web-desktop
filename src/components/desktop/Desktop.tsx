@@ -355,7 +355,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
 
       {/* Agent widgets — only for subscribed users (need agent connection) */}
       {!isMobile && isSubscribed && <AgentGraphWidget />}
-      {!isMobile && isSubscribed && <ClippyWidget />}
+      {isSubscribed && <ClippyWidget />}
       {!isMobile && isSubscribed && (
         <>
           <StatusWidget />
@@ -376,7 +376,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       {!isMobile && <MissionControl />}
 
       {/* Launchpad fullscreen overlay */}
-      {!isMobile && <Launchpad />}
+      <Launchpad />
 
       {/* Spotlight command bar */}
       <Spotlight />

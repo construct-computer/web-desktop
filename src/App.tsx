@@ -5,7 +5,6 @@ import { ReturningUserScreen } from '@/components/screens/ReturningUserScreen';
 // WelcomeScreen merged into LoginScreen — kept for power-on-after-shutdown only
 import { WelcomeScreen } from '@/components/screens/WelcomeScreen';
 import { DuplicateTabScreen } from '@/components/screens/DuplicateTabScreen';
-import { MobileBlockScreen } from '@/components/screens/MobileBlockScreen';
 // SubscriptionGate replaced by SubscribeWindow (app window instead of full-screen overlay)
 import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -13,7 +12,6 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { useIsMobile } from '@/hooks/useIsMobile';
 import { preloadAllSounds, installGlobalClickSound, unlockAudio } from '@/lib/sounds';
 import { preloadAllAssets, preloadDesktopAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -108,8 +106,6 @@ function App() {
 
   const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, checkAuth, handleOAuthReturn } = useAuthStore();
   const { isConnected, forceReconnect } = useWebSocket();
-  const isMobile = useIsMobile();
-
   const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
 
   const computer = useComputerStore((s) => s.computer);
@@ -335,9 +331,6 @@ function App() {
       {showPowerOn && isAuthenticated && (
         <WelcomeScreen onComplete={handlePowerOnComplete} />
       )}
-
-      {/* Layer 4: Mobile block — covers everything on small screens */}
-      {isMobile && <MobileBlockScreen />}
 
       {/* Debug panel — staging only */}
       {window.location.hostname !== 'beta.construct.computer' && <DebugPanel />}

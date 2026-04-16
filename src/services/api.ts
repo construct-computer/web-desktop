@@ -1154,6 +1154,18 @@ export async function disconnectTelegram(): Promise<ApiResult<{ status: string }
   return request('/telegram/disconnect', { method: 'DELETE' });
 }
 
+/**
+ * Link the authenticated user's account to a Telegram user via Mini App initData.
+ * Called after a user signs in (Google/email) from inside the Telegram Mini App.
+ */
+export async function linkTelegramMiniApp(initData: string): Promise<ApiResult<{ status: string }>> {
+  return request('/telegram/mini-link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData }),
+  });
+}
+
 // Legacy stubs — kept so any old frontend code that references these doesn't break at import time.
 export async function connectTelegram(
   _botToken: string,

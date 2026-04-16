@@ -6,9 +6,10 @@ import { MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
 import type { WindowType } from '@/types';
 
 // App icons
-import iconTerminal from '@/icons/terminal.png';
-import iconBrowser from '@/icons/browser.png';
+import iconLaunchpad from '@/icons/launchpad.png';
+import iconAppStore from '@/icons/app-store.png';
 import iconFiles from '@/icons/files.png';
+import iconCalendar from '@/icons/calendar.png';
 import iconEmail from '@/icons/email.png';
 
 interface MobileAppItem {
@@ -18,17 +19,17 @@ interface MobileAppItem {
   windowType: WindowType;
 }
 
-// Chat and Tracker live as MenuBar dropdown panels, not standalone windows.
 const mobileAppItems: MobileAppItem[] = [
-  { id: 'browser', label: 'Browser', icon: iconBrowser, windowType: 'browser' },
-  { id: 'terminal', label: 'Terminal', icon: iconTerminal, windowType: 'terminal' },
+  { id: 'app-registry', label: 'App Store', icon: iconAppStore, windowType: 'app-registry' },
   { id: 'files', label: 'Files', icon: iconFiles, windowType: 'files' },
+  { id: 'calendar', label: 'Calendar', icon: iconCalendar, windowType: 'calendar' },
   { id: 'email', label: 'Email', icon: iconEmail, windowType: 'email' },
 ];
 
 export function MobileAppBar() {
   const { play } = useSound();
   const { windows, focusedWindowId, openWindow, focusWindow, minimizeWindow } = useWindowStore();
+  const toggleLaunchpad = useWindowStore((s) => s.toggleLaunchpad);
   const agentActivity = useComputerStore((s) => s.agentActivity);
   const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
 
@@ -59,12 +60,26 @@ export function MobileAppBar() {
 
   return (
     <div
-      className="absolute bottom-0 left-0 right-0 flex items-center justify-around
-                 bg-white/60 dark:bg-black/40 backdrop-blur-2xl
-                 border-t border-black/8 dark:border-white/8
+      data-tour="dock"
+      className="absolute bottom-0 left-0 right-0 flex items-center
+                 bg-white/70 dark:bg-black/50 backdrop-blur-2xl
+                 border-t border-black/10 dark:border-white/10
                  safe-area-bottom"
       style={{ height: MOBILE_APP_BAR_HEIGHT, zIndex: Z_INDEX.taskbar }}
     >
+      {/* Launchpad button */}
+      <button
+        className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full
+                   active:scale-95 transition-transform"
+        onClick={() => { play('click'); toggleLaunchpad(); }}
+      >
+        <img src={iconLaunchpad} alt="Launchpad" className="w-7 h-7" draggable={false} />
+        <span className="text-[10px] font-medium text-black/80 dark:text-white/80 leading-none">
+          Launchpad
+        </span>
+      </button>
+
+      {/* App items */}
       {mobileAppItems.map((item) => {
         const active = isActive(item.windowType);
         const focused = isFocused(item.windowType);
@@ -77,7 +92,6 @@ export function MobileAppBar() {
             className={cn(
               'flex flex-col items-center justify-center gap-0.5 flex-1 h-full',
               'active:scale-95 transition-transform',
-              focused ? 'opacity-100' : 'opacity-60',
             )}
             onClick={() => handleTap(item)}
           >
@@ -102,16 +116,13 @@ export function MobileAppBar() {
                 </div>
               )}
             </div>
-            <span className="text-[10px] font-medium text-black/70 dark:text-white/70 leading-none">
+            <span className="text-[10px] font-medium text-black/80 dark:text-white/80 leading-none">
               {item.label}
             </span>
             {/* Active indicator */}
-            <div
-              className={cn(
-                'w-1 h-1 rounded-full transition-opacity duration-200',
-                active ? 'opacity-100 bg-[var(--color-accent)]' : 'opacity-0'
-              )}
-            />
+            {active && (
+              <div className="w-1 h-1 rounded-full bg-[var(--color-accent)]" />
+            )}
           </button>
         );
       })}
