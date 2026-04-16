@@ -251,7 +251,7 @@ export function MiniClippy({ size = 160 }: { size?: number }) {
   return (
     <div
       ref={avatarRef}
-      className="relative mx-auto flex items-center justify-center pointer-events-none"
+      className="relative mx-auto flex items-center justify-center"
       style={{ width: size, height: size, willChange: 'transform, filter' }}
     >
       <img

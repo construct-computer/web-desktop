@@ -25,6 +25,9 @@ export type MiniScreen =
   | 'home' | 'files' | 'calendar' | 'email' | 'settings'
   | 'app-registry' | 'memory' | 'access-control' | 'audit-logs';
 
+/** All navigable screens — MiniScreen + mobile-only screens like 'chat'. */
+export type NavigableScreen = MiniScreen | 'chat';
+
 interface AppItem {
   id: MiniScreen;
   label: string;
@@ -51,7 +54,7 @@ interface UsageData {
 }
 
 interface Props {
-  onNavigate: (screen: MiniScreen) => void;
+  onNavigate: (screen: NavigableScreen) => void;
 }
 
 export function HomeScreen({ onNavigate }: Props) {
@@ -231,9 +234,14 @@ export function HomeScreen({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* Center content (Clippy) */}
+      {/* Center content (Clippy) — tap to open chat */}
       <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-        <MiniClippy size={180} />
+        <button
+          onClick={() => { haptic('light'); onNavigate('chat'); }}
+          className="active:scale-95 transition-transform"
+        >
+          <MiniClippy size={180} />
+        </button>
         <div className="flex items-center gap-2 mt-4 px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${agentRunning ? 'animate-pulse' : ''}`}

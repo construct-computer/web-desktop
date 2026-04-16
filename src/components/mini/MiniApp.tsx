@@ -1,30 +1,21 @@
 /**
- * MiniApp — root shell for the Telegram Mini App.
+ * MiniApp — Telegram Mini App entry point.
  *
- * Architecture: Phone-like app experience with home screen grid.
- * The Telegram bot IS the chat — this Mini App provides the desktop
- * companion features: files, calendar, email, settings, app registry.
- *
- * Navigation: Stack-based push/pop with Telegram BackButton integration.
- * Toast system wraps all screens for feedback.
+ * Thin Telegram-specific wrapper around MobileShell:
+ * - Telegram init (ready, expand, theme)
+ * - initData HMAC authentication
+ * - Telegram linking flows (Google OAuth, email)
+ * - Delegates all UI to MobileShell via PlatformProvider
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { agentWS } from '@/services/websocket';
 import { STORAGE_KEYS, API_BASE_URL } from '@/lib/constants';
 import * as api from '@/services/api';
-import { ToastProvider, BackHandlerProvider, bg, textColor } from './ui';
-import { HomeScreen, type MiniScreen } from './screens/HomeScreen';
-import { FilesScreen } from './screens/FilesScreen';
-import { CalendarScreen } from './screens/CalendarScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
-import { EmailScreen } from './screens/EmailScreen';
-
-import { MemoryScreen } from './screens/MemoryScreen';
-import { AppStoreScreen } from './screens/AppStoreScreen';
-import { AccessControlScreen } from './screens/AccessControlScreen';
-import { AuditLogsScreen } from './screens/AuditLogsScreen';
+import { bg, textColor } from './ui';
+import { PlatformProvider, createTelegramPlatform, applyTelegramTheme } from '../mobile/platform';
+import { MobileShell } from '../mobile/MobileShell';
 import { Loader2, Mail, CheckCircle } from 'lucide-react';
 
 /** SessionStorage key for persisting initData across OAuth redirects. */
@@ -44,57 +35,8 @@ export function MiniApp() {
 
   const [state, setState] = useState<AppState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
-  const [screenStack, setScreenStack] = useState<MiniScreen[]>(['home']);
-  const [slideDir, setSlideDir] = useState<'left' | 'right' | null>(null);
-  const screenRef = useRef<HTMLDivElement>(null);
 
-  const currentScreen = screenStack[screenStack.length - 1];
-
-  // ── Navigation helpers with slide animations ──
-  const pushScreen = useCallback((screen: MiniScreen) => {
-    setSlideDir('left');
-    setScreenStack(prev => [...prev, screen]);
-    // Clear animation after it plays
-    setTimeout(() => setSlideDir(null), 220);
-  }, []);
-
-  const popScreen = useCallback(() => {
-    if (screenStack.length <= 1) return;
-    setSlideDir('right');
-    setScreenStack(prev => prev.slice(0, -1));
-    setTimeout(() => setSlideDir(null), 220);
-  }, [screenStack.length]);
-
-  // ── Custom back handler from child screens ──
-  const [customBackHandler, setCustomBackHandler] = useState<(() => void) | null>(null);
-  const setBackHandler = useCallback((handler: (() => void) | null) => {
-    setCustomBackHandler(() => handler);
-  }, []);
-
-  // Combined back action: custom handler takes priority, then popScreen
-  const handleBack = useCallback(() => {
-    if (customBackHandler) {
-      customBackHandler();
-    } else {
-      popScreen();
-    }
-  }, [popScreen, customBackHandler]);
-
-  // ── Telegram BackButton ──
-  useEffect(() => {
-    const tg = window.Telegram?.WebApp as any;
-    if (!tg?.BackButton) return;
-
-    if (screenStack.length > 1 || customBackHandler) {
-      tg.BackButton.show();
-      tg.BackButton.onClick(handleBack);
-      return () => {
-        tg.BackButton.offClick(handleBack);
-      };
-    } else {
-      tg.BackButton.hide();
-    }
-  }, [screenStack, handleBack, customBackHandler]);
+  const platform = useMemo(() => createTelegramPlatform(), []);
 
   // ── 1. Telegram init + theme ──
   useEffect(() => {
@@ -106,20 +48,7 @@ export function MiniApp() {
     }
     tg.ready();
     tg.expand();
-
-    const isDark = tg.colorScheme === 'dark';
-    document.documentElement.classList.toggle('dark', isDark);
-
-    const tp = tg.themeParams;
-    if (tp) {
-      const root = document.documentElement.style;
-      if (tp.bg_color) root.setProperty('--tg-bg', tp.bg_color);
-      if (tp.text_color) root.setProperty('--tg-text', tp.text_color);
-      if (tp.hint_color) root.setProperty('--tg-hint', tp.hint_color);
-      if (tp.link_color) root.setProperty('--tg-link', tp.link_color);
-      if (tp.button_color) root.setProperty('--tg-button', tp.button_color);
-      if (tp.secondary_bg_color) root.setProperty('--tg-bg2', tp.secondary_bg_color);
-    }
+    applyTelegramTheme();
   }, []);
 
   // ── 2. Authentication ──
@@ -290,29 +219,9 @@ export function MiniApp() {
   }
 
   return (
-    <ToastProvider>
-      <BackHandlerProvider value={{ setBackHandler }}>
-        <div className="fixed inset-0 flex flex-col overflow-hidden" style={{ backgroundColor: bgColor, color: txtColor }}>
-          <div
-            ref={screenRef}
-            className="flex-1 flex flex-col overflow-hidden"
-            style={slideDir ? { animation: `mini-slide-${slideDir} 200ms ease-out` } : undefined}
-            key={currentScreen} // re-mount for animation
-          >
-            {currentScreen === 'home' && <HomeScreen onNavigate={pushScreen} />}
-            {currentScreen === 'files' && <FilesScreen />}
-            {currentScreen === 'calendar' && <CalendarScreen />}
-            {currentScreen === 'settings' && <SettingsScreen />}
-            {currentScreen === 'email' && <EmailScreen />}
-
-            {currentScreen === 'app-registry' && <AppStoreScreen />}
-            {currentScreen === 'memory' && <MemoryScreen />}
-            {currentScreen === 'access-control' && <AccessControlScreen />}
-            {currentScreen === 'audit-logs' && <AuditLogsScreen />}
-          </div>
-        </div>
-      </BackHandlerProvider>
-    </ToastProvider>
+    <PlatformProvider value={platform}>
+      <MobileShell />
+    </PlatformProvider>
   );
 }
 

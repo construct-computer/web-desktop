@@ -7,25 +7,33 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext, ty
 import { X, Loader2, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 
 // ── Theme helper ──
+// Read from --mobile-* CSS vars (set by platform shells), falling back to
+// Telegram themeParams, then hardcoded dark defaults.
+
+function cssVar(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return val || undefined;
+}
 
 export function tp() {
   return window.Telegram?.WebApp?.themeParams;
 }
 
 export function accent() {
-  return tp()?.button_color || '#60A5FA';
+  return cssVar('--mobile-accent') || tp()?.button_color || '#60A5FA';
 }
 
 export function bg() {
-  return tp()?.bg_color || '#09090b';
+  return cssVar('--mobile-bg') || tp()?.bg_color || '#09090b';
 }
 
 export function bg2() {
-  return tp()?.secondary_bg_color || 'rgba(255,255,255,0.04)';
+  return cssVar('--mobile-bg2') || tp()?.secondary_bg_color || 'rgba(255,255,255,0.04)';
 }
 
 export function textColor() {
-  return tp()?.text_color || '#fafafa';
+  return cssVar('--mobile-text') || tp()?.text_color || '#fafafa';
 }
 
 export function haptic(type: 'light' | 'medium' | 'success' | 'error' | 'warning' = 'light') {
