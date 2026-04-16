@@ -234,9 +234,6 @@ export function MiniApp() {
     );
   }
 
-  // Screen animation class
-  const animClass = slideDir === 'left' ? 'mini-slide-enter-left' : slideDir === 'right' ? 'mini-slide-enter-right' : '';
-
   return (
     <ToastProvider>
       <BackHandlerProvider value={{ setBackHandler }}>
