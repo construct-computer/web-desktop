@@ -6,7 +6,7 @@
  * the setup wizard but above all windows.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Loader2, ArrowRight, Check, Sparkles,
   Globe, Terminal, Mail, Calendar, HardDrive,
@@ -37,15 +37,30 @@ const PRO_FEATURES = [
 ];
 
 export function SubscriptionOverlay() {
-  const { startCheckout } = useBillingStore();
+  const { startCheckout, switchPlan, subscription, fetchSubscription } = useBillingStore();
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+
+  // Fetch subscription on mount to know the environment
+  useEffect(() => {
+    if (!subscription) fetchSubscription();
+  }, [subscription, fetchSubscription]);
+
+  const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
 
   const handleSubscribe = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(plan);
-    const url = await startCheckout(undefined, plan);
-    setCheckoutLoading(null);
-    if (url) window.location.href = url;
-  }, [startCheckout]);
+    if (isNonProd) {
+      // Local/staging: skip payment gateway, switch plan directly
+      const result = await switchPlan(plan);
+      setCheckoutLoading(null);
+      if (result === true) window.location.reload();
+    } else {
+      // Production: redirect to Dodo Payments checkout
+      const url = await startCheckout(undefined, plan);
+      setCheckoutLoading(null);
+      if (url) window.location.href = url;
+    }
+  }, [isNonProd, startCheckout, switchPlan]);
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center pointer-events-none">

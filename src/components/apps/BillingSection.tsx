@@ -69,8 +69,8 @@ export function BillingSection() {
   }, [openPortal]);
 
   const currentPlan = subscription?.plan || 'free';
-  const isStaging = subscription?.environment === 'staging';
-  const isDevMode = isStaging || !subscription?.dodoSubscriptionId;
+  const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
+  const isDevMode = isNonProd || !subscription?.dodoSubscriptionId;
 
   return (
     <div className="space-y-4">
