@@ -228,36 +228,33 @@ function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; app
 
     (async () => {
       try {
-        // Try multiple paths for the app's HTML entry point
-        let html: string | null = null;
-        for (const path of ['/', '/ui/index.html', '/ui/', '/index.html']) {
-          try {
-            const res = await fetch(`${devUrl}${path}`);
-            if (res.ok && res.headers.get('content-type')?.includes('html')) {
-              html = await res.text();
-              break;
-            }
-          } catch { /* try next */ }
-        }
-        if (cancelled) return;
-        if (!html) { setError('Could not load app UI from dev server'); setLoading(false); return; }
+         // Try multiple paths for the app's HTML entry point
+         let html: string | null = null;
+         for (const path of ['/', '/index.html', '/ui/index.html', '/ui/']) {
+           try {
+             const res = await fetch(`${devUrl}${path}`);
+             if (res.ok && res.headers.get('content-type')?.includes('html')) {
+               html = await res.text();
+               break;
+             }
+           } catch { /* try next */ }
+         }
+         if (cancelled) return;
+         if (!html) { setError('Could not load app UI from dev server'); setLoading(false); return; }
 
-        // Inject Construct SDK and base tag for relative asset resolution
-        const modified = injectSdk(html, `${devUrl}/ui`);
-        const blob = new Blob([modified], { type: 'text/html' });
-        currentBlobUrl = URL.createObjectURL(blob);
-        if (cancelled) { URL.revokeObjectURL(currentBlobUrl); return; }
-        setBlobUrl(currentBlobUrl);
-      } catch (err) {
-        if (!cancelled) { setError(err instanceof Error ? err.message : 'Failed to load app'); setLoading(false); }
-      }
-    })();
+         // Inject Construct SDK and base tag for relative asset resolution
+         const modified = injectSdk(html, `${devUrl}`);
+         const blob = new Blob([modified], { type: 'text/html' });
+         currentBlobUrl = URL.createObjectURL(blob);
+         if (cancelled) { URL.revokeObjectURL(currentBlobUrl); return; }
+         setBlobUrl(currentBlobUrl);
+       } catch (err) {
+         if (!cancelled) { setError(err instanceof Error ? err.message : 'Failed to load app'); setLoading(false); }
+       }
+     })();
+   }, [devUrl]);
 
-    return () => {
-      cancelled = true;
-      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-    };
-  }, [devUrl]);
+
 
   // PostMessage bridge — handles tool calls directly via localhost (no backend round-trip)
   const handleMessage = useCallback(

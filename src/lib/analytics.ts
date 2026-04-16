@@ -23,10 +23,18 @@ let initialized = false;
  * Safe to call multiple times — subsequent calls are no-ops.
  */
 export function initAnalytics(): void {
-  if (initialized || !POSTHOG_KEY) return;
+  if (initialized) return;
+  if (!POSTHOG_KEY || !POSTHOG_HOST) {
+    console.warn(
+      '[analytics] PostHog not initialized: missing ' +
+      [!POSTHOG_KEY && 'VITE_PUBLIC_POSTHOG_KEY', !POSTHOG_HOST && 'VITE_PUBLIC_POSTHOG_HOST'].filter(Boolean).join(', ') +
+      '. Tracking is disabled.'
+    );
+    return;
+  }
 
   posthog.init(POSTHOG_KEY, {
-    api_host: POSTHOG_HOST || 'https://x.construct.computer',
+    api_host: POSTHOG_HOST,
     ui_host: 'https://eu.posthog.com',
     defaults: '2026-01-30',
 
