@@ -787,9 +787,11 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
-      // Preview mode: unsubscribed users can only open whitelisted app types
+      // Preview mode: unsubscribed users can only open whitelisted app types.
+      // Telegram Mini App users are exempt from this UI block since they use the serverless agent.
       const userPlan = useAuthStore.getState().user?.plan;
-      if (userPlan !== 'pro' && userPlan !== 'starter' && userPlan !== 'free' && !PREVIEW_ALLOWED_TYPES.has(type)) {
+      const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
+      if (!isTelegram && userPlan !== 'pro' && userPlan !== 'starter' && userPlan !== 'free' && !PREVIEW_ALLOWED_TYPES.has(type)) {
         return '';
       }
 

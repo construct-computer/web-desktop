@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { agentWS } from '@/services/websocket';
 import { STORAGE_KEYS, API_BASE_URL } from '@/lib/constants';
 import * as api from '@/services/api';
@@ -154,6 +155,7 @@ export function MiniApp() {
       const instanceId = meData.user?.id;
       if (!instanceId) { setErrorMsg('No agent instance found'); setState('error'); return; }
 
+      useAuthStore.setState({ user: meData.user, isAuthenticated: true });
       useComputerStore.setState({ instanceId });
 
       // Connect WebSocket for real-time agent state

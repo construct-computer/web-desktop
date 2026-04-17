@@ -7,6 +7,7 @@ import { MissionControl, MissionControlScrim } from './MissionControl';
 import { Launchpad } from './Launchpad';
 import { Spotlight } from './Spotlight';
 import { StatusWidget } from './StatusWidget';
+import { GreetingWidget } from './GreetingWidget';
 import { AgentGraphWidget } from './AgentGraphWidget';
 import { ClippyWidget } from './ClippyWidget';
 import { TodoListWidget } from './TodoListWidget';
@@ -216,12 +217,13 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   }, []);
 
   const user = useAuthStore((s) => s.user);
+  const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
 
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.
   // Force-start from the menubar always works regardless of flags.
   // Skip for unsubscribed users — they see the subscribe window instead.
-  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
+  const isSubscribed = isTelegram || user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
   const tourTriggered = useRef(false);
   useEffect(() => {
     if (tourTriggered.current || !user || !isSubscribed) return;
@@ -361,6 +363,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       {isSubscribed && <ClippyWidget />}
       {isMobile ? null : (
         <>
+          <GreetingWidget />
           <StatusWidget />
           <div
             data-tour="widgets"

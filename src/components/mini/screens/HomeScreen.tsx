@@ -6,6 +6,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { apiJSON, haptic, bg2, textColor, accent, SectionLabel } from '../ui';
 import { MiniClippy } from '../MiniClippy';
 
@@ -117,7 +118,9 @@ export function HomeScreen({ onNavigate }: Props) {
     return () => clearInterval(iv);
   }, [fetchData]);
 
-  const agentName = computerConfig?.identityName || 'Construct';
+  const user = useAuthStore((s) => s.user);
+  const nameToUse = user?.displayName || user?.username || '';
+  const userName = nameToUse.split(' ')[0] || 'there';
   const statusDot = !agentConnected ? '#f87171' : agentRunning ? '#4ade80' : '#22c55e';
   const statusText = !agentConnected ? 'Offline' : agentRunning ? 'Working...' : 'Online';
   const pct = usage?.percentUsed ?? 0;
@@ -135,7 +138,7 @@ export function HomeScreen({ onNavigate }: Props) {
       <div className="flex items-start justify-between px-6 pt-8 pb-3">
         <div>
           <h1 className="text-2xl font-semibold leading-tight" style={{ color: textColor() }}>
-            Hi <span style={{ color: accent() }}>{agentName}</span><br />
+            Hi <span style={{ color: accent() }}>{userName}</span><br />
             Welcome
           </h1>
         </div>
@@ -156,7 +159,7 @@ export function HomeScreen({ onNavigate }: Props) {
       <div className="px-5 grid grid-cols-2 gap-3 mb-5 z-0 relative">
         <button 
           onClick={() => { haptic('light'); onNavigate('calendar'); }}
-          className="flex flex-col justify-between p-4 rounded-[20px] text-left active:scale-95 transition-transform"
+          className="flex flex-col justify-between p-4 rounded-[20px] text-left active:scale-95 transition-transform backdrop-blur-md"
           style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
         >
           <div>
@@ -172,7 +175,7 @@ export function HomeScreen({ onNavigate }: Props) {
 
         <button 
           onClick={() => { haptic('light'); onNavigate('email'); }}
-          className="flex flex-col p-4 rounded-[20px] text-left active:scale-95 transition-transform"
+          className="flex flex-col p-4 rounded-[20px] text-left active:scale-95 transition-transform backdrop-blur-md"
           style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
         >
           <span className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-2">Inbox</span>

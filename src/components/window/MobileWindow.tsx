@@ -6,7 +6,6 @@ import { useWindowAccessoryStore } from '@/stores/windowAccessoryStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
 import type { WindowConfig } from '@/types';
-import { MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT } from '@/lib/constants';
 
 interface MobileWindowProps {
   config: WindowConfig;
@@ -40,15 +39,12 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       data-window-id={config.id}
       data-window-type={config.type}
       className={cn(
-        'absolute inset-x-0 flex flex-col bg-white dark:bg-black',
+        'absolute inset-0 flex flex-col',
+        'bg-white/70 dark:bg-black/70 backdrop-blur-2xl',
         // Instead of conditionally unmounting, we use z-index and visibility to ensure
         // unfocused windows don't block interactions or render pointlessly, but keep their state.
         isFocused ? 'z-[200] visible' : 'z-[100] invisible'
       )}
-      style={{
-        top: MOBILE_MENUBAR_HEIGHT,
-        bottom: MOBILE_APP_BAR_HEIGHT,
-      }}
     >
       {/* Mobile Title Bar */}
       <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none">
