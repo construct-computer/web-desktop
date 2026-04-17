@@ -46,8 +46,11 @@ type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
  *   8. Duplicate tab: shows lock screen with "already open" message
  */
 function App() {
-  // Telegram Mini App — bypass everything else when on /mini
-  if (window.location.pathname === '/mini') {
+  // Telegram Mini App — bypass everything else if running inside Telegram
+  const tg = window.Telegram?.WebApp;
+  const isTelegram = tg && (tg as any).platform && (tg as any).platform !== 'unknown';
+  
+  if (isTelegram || window.location.pathname === '/mini') {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
         <MiniApp />
