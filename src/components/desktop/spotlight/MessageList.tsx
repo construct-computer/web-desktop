@@ -1,5 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, Globe, Terminal, FileSearch, Reply } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { groupMessages, type MessageGroup } from './utils';
@@ -58,6 +60,7 @@ export function MessageList() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const isMobile = useIsMobile();
 
   const groups = useMemo(() => groupMessages(chatMessages, agentRunning), [chatMessages, agentRunning]);
 
@@ -210,7 +213,10 @@ export function MessageList() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto scroll-smooth scrollbar-none py-3"
+        className={cn(
+          "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
+          isMobile ? "pt-12" : "pt-3"
+        )}
         style={{ overscrollBehavior: 'contain' }}
       >
         {renderGroups.map(({ key, node }) => (
