@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
 import avatarSrc from '@/assets/widget.png';
-import constructVideo from '@/assets/construct/loader.webm';
+import constructGif from '@/assets/construct/loader.gif';
 import eyesGif from '@/assets/construct/eyes.gif';
 
 // Reusing the same animation params as the desktop clippy
@@ -198,20 +198,7 @@ export function MiniClippy({ size = 160 }: { size?: number }) {
   }, [flash, agentConnected, isIdle, stateLabel]);
 
   const avatarRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
   useClippyAnimation(avatarRef, visualState);
-
-  const shouldPlayVideo = visualState === 'thinking' || visualState === 'working';
-  useEffect(() => {
-    const vid = videoRef.current;
-    if (!vid) return;
-    if (shouldPlayVideo) {
-      vid.play().catch(() => {});
-    } else {
-      vid.pause();
-      vid.currentTime = 0;
-    }
-  }, [shouldPlayVideo]);
 
   const [showEyes, setShowEyes] = useState(false);
   const eyesImgRef = useRef<HTMLImageElement>(null);
@@ -269,12 +256,9 @@ export function MiniClippy({ size = 160 }: { size?: number }) {
           height: '38.4%',
         }}
       >
-        <video
-          ref={videoRef}
-          src={constructVideo}
-          muted
-          loop
-          playsInline
+        <img
+          src={constructGif}
+          alt=""
           className="w-full h-full object-cover"
         />
         <img

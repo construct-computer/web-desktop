@@ -201,7 +201,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
       ref={menuRef}
       className="absolute top-0 left-0 right-0 flex items-center select-none
                  bg-white/20 dark:bg-black/30 backdrop-blur-2xl
-                 border-b border-white/5 dark:border-white/5 shadow-[0_1px_10px_rgba(0,0,0,0.05)] safe-area-top"
+                 border-b border-white/5 dark:border-white/5 shadow-[0_1px_10px_rgba(0,0,0,0.05)]"
       style={{ height: barHeight, zIndex: Z_INDEX.taskbar }}
     >
       {/* Logo + app name menu (single button) */}

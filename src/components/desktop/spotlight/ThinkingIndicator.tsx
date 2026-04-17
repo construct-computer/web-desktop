@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import constructVideo from '@/assets/construct/loader.webm';
+import constructGif from '@/assets/construct/loader.gif';
 import { useComputerStore } from '@/stores/agentStore';
 
 function TypingDots() {
@@ -37,7 +37,7 @@ export function ThinkingIndicator() {
 
   return (
     <div className="flex gap-3 px-6 py-2">
-      <video src={constructVideo} autoPlay loop muted playsInline className="w-[27px] h-[27px] shrink-0 mt-0.5 drop-shadow-sm" />
+      <img src={constructGif} alt="" className="w-[27px] h-[27px] shrink-0 mt-0.5 drop-shadow-sm" />
       {!hasText ? (
         <div className="min-w-0 flex items-center" style={{ minHeight: '1.625rem' }}>
           <TypingDots />

@@ -61,20 +61,19 @@ export function MobileAppBar() {
   return (
     <div
       data-tour="dock"
-      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pb-5 pt-3
+      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pb-4 pt-1
                  bg-white/70 dark:bg-black/50 backdrop-blur-2xl
-                 border-t border-black/10 dark:border-white/10
-                 safe-area-bottom"
+                 border-t border-black/10 dark:border-white/10"
       style={{ height: MOBILE_APP_BAR_HEIGHT, zIndex: Z_INDEX.taskbar }}
     >
       {/* Launchpad button */}
       <button
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full
+        className="flex flex-col items-center justify-center gap-1.5 flex-1 h-full
                    active:scale-95 transition-transform"
         onClick={() => { play('click'); toggleLaunchpad(); }}
       >
-        <img src={iconLaunchpad} alt="Launchpad" className="w-7 h-7" draggable={false} />
-        <span className="text-[10px] font-medium text-black/80 dark:text-white/80 leading-none">
+        <img src={iconLaunchpad} alt="Launchpad" className="w-9 h-9" draggable={false} />
+        <span className="text-[11px] font-medium text-black/80 dark:text-white/80 leading-none">
           Launchpad
         </span>
       </button>
@@ -90,7 +89,7 @@ export function MobileAppBar() {
           <button
             key={item.id}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 flex-1 h-full',
+              'flex flex-col items-center justify-center gap-1.5 flex-1 h-full',
               'active:scale-95 transition-transform',
             )}
             onClick={() => handleTap(item)}
@@ -99,7 +98,7 @@ export function MobileAppBar() {
               <img
                 src={item.icon}
                 alt={item.label}
-                className="w-7 h-7"
+                className="w-9 h-9"
                 draggable={false}
               />
               {hasActivity && !badgeCount && (
@@ -110,18 +109,18 @@ export function MobileAppBar() {
               {badgeCount > 0 && (
                 <div className="absolute -top-1 -right-1.5 min-w-[16px] h-[16px] px-0.5
                                 flex items-center justify-center rounded-full
-                                bg-red-500 text-white text-[9px] font-bold leading-none
+                                bg-red-500 text-white text-[10px] font-bold leading-none
                                 shadow-[0_0_4px_rgba(239,68,68,0.5)]">
                   {badgeCount > 99 ? '99+' : badgeCount}
                 </div>
               )}
             </div>
-            <span className="text-[10px] font-medium text-black/80 dark:text-white/80 leading-none">
+            <span className="text-[11px] font-medium text-black/80 dark:text-white/80 leading-none">
               {item.label}
             </span>
             {/* Active indicator */}
             {active && (
-              <div className="w-1 h-1 rounded-full bg-[var(--color-accent)]" />
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] mt-0.5" />
             )}
           </button>
         );

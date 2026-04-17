@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
-import circleAppearVideo from '@/assets/construct/circle-appear.webm';
+import circleAppearGif from '@/assets/construct/circle-appear.gif';
 
 export function LoginScreen() {
   const {
@@ -20,8 +20,6 @@ export function LoginScreen() {
   const { wallpaperId } = useSettingsStore();
   const wallpaperSrc = getWallpaperBlurSrc(wallpaperId);
   const { play } = useSound();
-
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   // ── Phases: power → hello → login ──
   const [poweredOn, setPoweredOn] = useState(false);
@@ -51,13 +49,7 @@ export function LoginScreen() {
 
     // Phase 2: "hello" fades out, login fades in
     t(() => setHelloOut(true), 2200);
-    t(() => {
-      setShowLogin(true);
-      if (videoRef.current) {
-        videoRef.current.currentTime = 0;
-        videoRef.current.play();
-      }
-    }, 2600);
+    t(() => setShowLogin(true), 2600);
 
     return () => timers.forEach(clearTimeout);
   }, [poweredOn]);
@@ -217,16 +209,14 @@ export function LoginScreen() {
         <div className="flex flex-col items-center w-full max-w-[280px] mb-[22vh]">
           {/* Welcome text */}
           <p className="text-[13px] font-medium text-white/50 tracking-wide mb-4">Welcome to Construct</p>
-          {/* Profile Avatar */}
-          <video
-            ref={videoRef}
-            src={circleAppearVideo}
-            preload="auto"
-            muted
-            playsInline
+          {/* Profile Avatar — remounts when login appears so the GIF plays
+              from frame 0 rather than mid-loop. */}
+          <img
+            key={showLogin ? 'on' : 'off'}
+            src={circleAppearGif}
             className="w-24 h-24 mb-5"
             draggable={false}
-            onLoadedData={(e) => { e.currentTarget.currentTime = 0; }}
+            alt=""
           />
 
           {/* Error message */}

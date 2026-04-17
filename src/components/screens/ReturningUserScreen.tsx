@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useSettingsStore, getWallpaperSrc } from '@/stores/settingsStore';
-import constructVideo from '@/assets/construct/loader.webm';
+import constructGif from '@/assets/construct/loader.gif';
 
 const BOOT_STEPS = [
   'Connecting to server...',
@@ -32,15 +32,6 @@ interface ReturningUserScreenProps {
  */
 export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, onRetry }: ReturningUserScreenProps) {
   const isLocked = !!onUnlock;
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const replayVideo = useCallback(() => {
-    const v = videoRef.current;
-    if (v) {
-      v.currentTime = 0;
-      v.play();
-    }
-  }, []);
 
   // macOS lockscreen logic: crisp wallpaper by default, blurred when "wake" happens.
   const [woken, setWoken] = useState(false);
@@ -76,7 +67,6 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
       className="relative min-h-screen flex items-center justify-center overflow-hidden"
       onClick={() => {
         if (!woken) setWoken(true);
-        replayVideo();
         if (isLocked && onUnlock) onUnlock();
       }}
       onMouseMove={() => {
@@ -125,17 +115,11 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
         }}
       >
         {/* Profile Avatar */}
-        <video
-          ref={(el) => {
-            videoRef.current = el;
-            if (el) el.playbackRate = 2;
-          }}
-          src={constructVideo}
-          autoPlay
-          muted
-          playsInline
+        <img
+          src={constructGif}
           className="w-24 h-24 mb-5 drop-shadow-md transition-all duration-500"
           draggable={false}
+          alt=""
         />
 
         {/* Name */}

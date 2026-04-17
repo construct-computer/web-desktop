@@ -4,10 +4,10 @@
  *
  *   0. Fonts (hello cursive, brand, UI)
  *   1. Welcome screen assets (logo)
- *   2. Login screen assets (circle-appear video)
- *   3. Returning user / lock screen assets (loader video, wink, wallpapers)
+ *   2. Login screen assets (circle-appear GIF)
+ *   3. Returning user / lock screen assets (loader, wink, wallpapers)
  *   4. Desktop assets (dock icons, widget images)
- *   5. Tour & extras (tour videos/GIFs, chat bubbles, eyes, remaining icons)
+ *   5. Tour & extras (tour GIFs, chat bubbles, eyes, remaining icons)
  *
  * All loads are fire-and-forget with error suppression — a failed preload
  * just means the asset loads normally when needed (no worse than before).
@@ -46,13 +46,12 @@ import constructImg from '@/assets/construct.png';
 import logoPng from '@/assets/logo.png';
 
 // Phase 2: Login screen
-import circleAppearVideo from '@/assets/construct/circle-appear.webm';
+import circleAppearGif from '@/assets/construct/circle-appear.gif';
 
 // Phase 3: Returning user / lock screen / overlay
-import loaderVideo from '@/assets/construct/loader.webm';
-import winkVideo from '@/assets/construct/wink.webm';
+import loaderGif from '@/assets/construct/loader.gif';
+import winkGif from '@/assets/construct/wink.gif';
 import eyesGif from '@/assets/construct/eyes.gif';
-import eyesWebm from '@/assets/construct/eyes.webm';
 import wpDeathStar from '@/assets/wallpapers/deathstar.jpg';
 import wpDeathStarTiny from '@/assets/wallpapers/deathstar-tiny.jpg';
 import wpCatGalaxy from '@/assets/wallpapers/catgalaxy.jpg';
@@ -89,8 +88,8 @@ import iconConstructDrive from '@/icons/construct-drive.png';
 import iconSetupWizard from '@/icons/setup-wizard.png';
 
 // Phase 5: Tour & extras
-import tourChat from '@/assets/tour/tour-chat.webm';
-import tourEmail from '@/assets/tour/tour-email.webm';
+import tourChat from '@/assets/tour/tour-chat.gif';
+import tourEmail from '@/assets/tour/tour-email.gif';
 import tourNotification from '@/assets/tour/notification.gif';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -104,18 +103,6 @@ function preloadImage(src: string): Promise<void> {
   });
 }
 
-function preloadVideo(src: string): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const video = document.createElement('video');
-    video.preload = 'auto';
-    video.muted = true;
-    video.oncanplaythrough = () => { markLoaded(); resolve(); };
-    video.onerror = () => { markLoaded(); resolve(); };
-    video.src = src;
-    video.load();
-  });
-}
-
 function preloadFont(family: string, testText = 'hello'): Promise<void> {
   if ('fonts' in document) {
     return document.fonts.load(`16px "${family}"`, testText).then(() => { markLoaded(); }).catch(() => { markLoaded(); });
@@ -124,19 +111,14 @@ function preloadFont(family: string, testText = 'hello'): Promise<void> {
   return Promise.resolve();
 }
 
-function preloadGif(src: string): Promise<void> {
-  return preloadImage(src);
-}
-
 // ─── Phased preload ────────────────────────────────────────────────────────
 
 let started = false;
 
 // We need to count total assets before starting. Let's enumerate them.
 function getTotalAssetCount(): number {
-  // 4 fonts + 3 welcome images + 1 login video + 8 lock-screen assets +
-  // 27 desktop icons/images + 8 tour assets = 51
-  return 4 + 3 + 1 + 8 + 27 + 8;
+  // 4 fonts + 3 welcome + 1 login + 7 lock-screen + 27 desktop + 3 tour
+  return 4 + 3 + 1 + 7 + 27 + 3;
 }
 
 /**
@@ -170,16 +152,15 @@ export function preloadAllAssets(): void {
 
   // Phase 2: Login screen (circle-appear animation)
   const loginPhase = welcomePhase.then(() =>
-    Promise.all([preloadVideo(circleAppearVideo)])
+    Promise.all([preloadImage(circleAppearGif)])
   );
 
   // Phase 3: Returning user / lock screen / overlay
   const lockPhase = loginPhase.then(() =>
     Promise.all([
-      preloadVideo(loaderVideo),
-      preloadVideo(winkVideo),
-      preloadGif(eyesGif),
-      preloadVideo(eyesWebm),
+      preloadImage(loaderGif),
+      preloadImage(winkGif),
+      preloadImage(eyesGif),
       preloadImage(wpDeathStar),
       preloadImage(wpDeathStarTiny),
       preloadImage(wpCatGalaxy),
@@ -225,9 +206,9 @@ export function preloadAllAssets(): void {
   // Phase 5: Tour & extras — lowest priority
   desktopPhase.then(() =>
     Promise.all([
-      preloadVideo(tourChat),
-      preloadVideo(tourEmail),
-      preloadGif(tourNotification),
+      preloadImage(tourChat),
+      preloadImage(tourEmail),
+      preloadImage(tourNotification),
     ])
   );
 }

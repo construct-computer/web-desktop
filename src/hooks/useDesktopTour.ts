@@ -12,9 +12,9 @@ import analytics from '@/lib/analytics';
 import { useWindowStore } from '@/stores/windowStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 
-import tourChat from '@/assets/tour/tour-chat.webm';
-import tourEmail from '@/assets/tour/tour-email.webm';
-import tourBrowser from '@/assets/tour/tour-browser.webm';
+import tourChat from '@/assets/tour/tour-chat.gif';
+import tourEmail from '@/assets/tour/tour-email.gif';
+import tourBrowser from '@/assets/tour/tour-browser.gif';
 import tourNotification from '@/assets/tour/notification.gif';
 
 const DOCK_TOUR_VIDEOS = [tourBrowser, tourEmail];
@@ -25,82 +25,54 @@ const TOUR_SEEN_KEY = 'construct:tour-completed';
 const TOUR_SKIPPED_KEY = 'construct:tour-skipped';
 
 /** Build an `<img>` tag for a tour GIF. */
-function gifTag(src: string, alt: string, aspectRatio: string): string {
+function gifTag(src: string, aspectRatio: string, alt = ''): string {
   return `<img class="tour-gif" src="${src}" alt="${alt}" style="aspect-ratio: ${aspectRatio};" />`;
 }
 
-/** Build a `<video>` tag for a tour video clip. */
-function videoTag(src: string, aspectRatio: string): string {
-  return `<video class="tour-gif" src="${src}" autoplay loop muted playsinline style="aspect-ratio: ${aspectRatio};"></video>`;
-}
-
 /**
- * Build a container that hosts two stacked `<video>` elements, so playback
- * can crossfade between clips. The actual srcs are wired up at runtime by
- * `setupVideoCarousel` — this just emits the DOM skeleton.
+ * Build a container with two stacked `<img>` slots that crossfade between
+ * clips. Slots are wired up at runtime by `setupGifCarousel`.
  */
-function videoCarouselTag(aspectRatio: string): string {
+function gifCarouselTag(aspectRatio: string): string {
   const slotStyle = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 600ms ease;margin:0;';
-  return `<div class="tour-video-carousel" style="position:relative;aspect-ratio:${aspectRatio};width:100%;overflow:hidden;border-radius:8px;">`
-    + `<video class="tour-gif tour-video-slot" muted playsinline style="${slotStyle}opacity:1;"></video>`
-    + `<video class="tour-gif tour-video-slot" muted playsinline style="${slotStyle}opacity:0;"></video>`
+  return `<div class="tour-gif-carousel" style="position:relative;aspect-ratio:${aspectRatio};width:100%;overflow:hidden;border-radius:8px;">`
+    + `<img class="tour-gif tour-gif-slot" alt="" style="${slotStyle}opacity:1;" />`
+    + `<img class="tour-gif tour-gif-slot" alt="" style="${slotStyle}opacity:0;" />`
     + `</div>`;
 }
 
 /**
- * Wire up a `.tour-video-carousel` container with a shuffled playlist that
- * crossfades between clips. Safe to call repeatedly — a dataset flag guards
- * against double-init on popover re-renders.
+ * Wire up a `.tour-gif-carousel` container with a shuffled playlist that
+ * crossfades between GIF clips on a fixed interval. GIFs don't expose
+ * duration/progress, so we pick a cycle time matching roughly the clip
+ * length. Safe to call repeatedly — a dataset flag guards against double
+ * init on popover re-renders.
  */
-function setupVideoCarousel(container: HTMLElement, srcs: string[]): void {
+function setupGifCarousel(container: HTMLElement, srcs: string[]): void {
   if (container.dataset.carouselStarted === '1') return;
   if (srcs.length === 0) return;
-  const slots = Array.from(container.querySelectorAll<HTMLVideoElement>('.tour-video-slot'));
-  if (slots.length < 2) return;
   container.dataset.carouselStarted = '1';
 
+  const slots = Array.from(container.querySelectorAll<HTMLImageElement>('img.tour-gif-slot'));
+  if (slots.length < 2) return;
+
   const order = [...srcs].sort(() => Math.random() - 0.5);
-  const CROSSFADE_MS = 600;
+  slots[0].src = order[0];
+  if (order.length === 1) return;
+
   let activeSlot = 0;
-  let videoIdx = 0;
-
-  const playInSlot = (slot: number, src: string) => {
-    slots[slot].src = src;
-    slots[slot].load();
-    void slots[slot].play().catch(() => {});
-  };
-
-  if (order.length === 1) {
-    slots[0].loop = true;
-    playInSlot(0, order[0]);
-    return;
-  }
-
-  const scheduleCrossfade = () => {
-    const curr = slots[activeSlot];
-    const handler = () => {
-      if (!curr.duration || isNaN(curr.duration)) return;
-      if (curr.currentTime >= curr.duration - CROSSFADE_MS / 1000) {
-        curr.removeEventListener('timeupdate', handler);
-        crossfadeToNext();
-      }
-    };
-    curr.addEventListener('timeupdate', handler);
-  };
-
-  const crossfadeToNext = () => {
+  let gifIdx = 0;
+  const GIF_CYCLE_MS = 6000;
+  const cycle = setInterval(() => {
+    if (!document.body.contains(container)) { clearInterval(cycle); return; }
     const nextSlot = 1 - activeSlot;
-    const nextIdx = (videoIdx + 1) % order.length;
-    playInSlot(nextSlot, order[nextIdx]);
+    const nextIdx = (gifIdx + 1) % order.length;
+    slots[nextSlot].src = order[nextIdx];
     slots[activeSlot].style.opacity = '0';
     slots[nextSlot].style.opacity = '1';
     activeSlot = nextSlot;
-    videoIdx = nextIdx;
-    scheduleCrossfade();
-  };
-
-  playInSlot(0, order[0]);
-  scheduleCrossfade();
+    gifIdx = nextIdx;
+  }, GIF_CYCLE_MS);
 }
 
 const steps: DriveStep[] = [
@@ -121,7 +93,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="chat"]',
     popover: {
       title: 'Your Agent',
-      description: `${videoTag(tourChat, '3074/2160')}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
+      description: `${gifTag(tourChat, '3074/2160')}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
       side: 'top',
       align: 'center',
     },
@@ -130,7 +102,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="dock"]',
     popover: {
       title: 'Dock & Launchpad',
-      description: `${videoCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
+      description: `${gifCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
       side: 'top',
       align: 'center',
     },
@@ -139,7 +111,7 @@ const steps: DriveStep[] = [
     element: '#notification-center-drawer',
     popover: {
       title: 'Control Center',
-      description: `${gifTag(tourNotification, 'Notifications demo', '512/361')}View your latest notifications, emails, and active agent processes in the side panel.`,
+      description: `${gifTag(tourNotification, '512/361', 'Notifications demo')}View your latest notifications, emails, and active agent processes in the side panel.`,
       side: 'left',
       align: 'start',
     },
@@ -311,8 +283,8 @@ export function useDesktopTour() {
         skipLink.onclick = (e) => { e.preventDefault(); skipped = true; driverObj.destroy(); };
         popover.wrapper.prepend(skipLink);
 
-        const carousel = popover.wrapper.querySelector<HTMLElement>('.tour-video-carousel');
-        if (carousel) setupVideoCarousel(carousel, DOCK_TOUR_VIDEOS);
+        const carousel = popover.wrapper.querySelector<HTMLElement>('.tour-gif-carousel');
+        if (carousel) setupGifCarousel(carousel, DOCK_TOUR_VIDEOS);
 
         // Replace the Next button text on the setup step (user must save first)
         if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {

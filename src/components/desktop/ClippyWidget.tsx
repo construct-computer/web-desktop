@@ -4,10 +4,10 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
-import { useIsMobile } from '@/hooks/useIsMobile';
-import { Z_INDEX, MOBILE_APP_BAR_HEIGHT } from '@/lib/constants';
+import { Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
-import constructVideo from '@/assets/construct/loader.webm';
+import constructGif from '@/assets/construct/loader.gif';
+import constructStatic from '@/assets/construct/loader-static.png';
 import eyesGif from '@/assets/construct/eyes.gif';
 import chatBubbleSrc from '@/assets/chat-bubble.png';
 import chatBubbleLgSrc from '@/assets/chat-bubble-lg.png';
@@ -319,7 +319,6 @@ export function ClippyWidget() {
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
-  const isMobile = useIsMobile();
 
   useEffect(injectStyles, []);
 
@@ -331,14 +330,13 @@ export function ClippyWidget() {
 
   // When windows open and widget is near center, auto-slide to corner
   useEffect(() => {
-    if (isMobile) return; // on mobile it stays in the corner permanently
     if (userDragged) return; // User manually positioned it — don't override
     if (hasWindows && isNearCenter(pos.rx, pos.ry)) {
       setPos(CORNER_POS);
     } else if (!hasWindows) {
       setPos(CENTER_POS);
     }
-  }, [hasWindows, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasWindows]); // eslint-disable-line react-hooks/exhaustive-deps
   const [winSize, setWinSize] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 1920,
     h: typeof window !== 'undefined' ? window.innerHeight : 1080,
@@ -351,20 +349,11 @@ export function ClippyWidget() {
   }, []);
 
   const px = pos.rx * winSize.w - AVATAR_SIZE / 2;
-  // Make sure it doesn't overlap the mobile app bar at the bottom
-  const safeAreaBottom = isMobile ? MOBILE_APP_BAR_HEIGHT + 32 : 0;
-  const py = Math.min(pos.ry * winSize.h - AVATAR_SIZE / 2, winSize.h - AVATAR_SIZE - safeAreaBottom);
+  const py = Math.min(pos.ry * winSize.h - AVATAR_SIZE / 2, winSize.h - AVATAR_SIZE);
 
   // ── Drag (pointer capture) ──
   const dragRef = useRef<{ startMX: number; startMY: number; startRx: number; startRy: number } | null>(null);
   const wasDragRef = useRef(false);
-
-  // Position is locked to bottom right on mobile, ignoring the window-based positioning
-  useEffect(() => {
-    if (isMobile) {
-      setPos(CORNER_POS);
-    }
-  }, [isMobile]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -458,33 +447,17 @@ export function ClippyWidget() {
   // ── Continuous animation ──
   const avatarRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
   useClippyAnimation(avatarRef, visualState, hoverRef);
-
-  // ── Video play/pause based on agent activity ──
-  const shouldPlayVideo = visualState === 'thinking' || visualState === 'working';
-  useEffect(() => {
-    const vid = videoRef.current;
-    if (!vid) return;
-    if (shouldPlayVideo) {
-      vid.play().catch(() => {});
-    } else {
-      vid.pause();
-      vid.currentTime = 0;
-    }
-  }, [shouldPlayVideo]);
 
   // ── Idle eyes animation (randomly show eyes.gif when idle) ──
   const [showEyes, setShowEyes] = useState(false);
-  const eyesImgRef = useRef<HTMLImageElement>(null);
+  const [eyesKey, setEyesKey] = useState(0);
   const eyesTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Restart the GIF from frame 1 each time it fades in
   useEffect(() => {
-    if (showEyes && eyesImgRef.current) {
-      const img = eyesImgRef.current;
-      img.src = '';
-      img.src = eyesGif;
+    if (showEyes) {
+      setEyesKey(k => k + 1);
     }
   }, [showEyes]);
 
@@ -585,25 +558,30 @@ export function ClippyWidget() {
             height: '38.4%',
           }}
         >
-          <video
-            ref={videoRef}
-            src={constructVideo}
-            muted
-            loop
-            playsInline
+          <img
+            src={visualState === 'idle' ? constructStatic : constructGif}
+            alt=""
             className="w-full h-full object-cover"
+            style={{
+              opacity: showEyes ? 0 : 1,
+              transition: 'opacity 0.8s ease-in-out',
+            }}
           />
           {/* Idle eyes animation — fades in/out randomly when agent is idle */}
-          <img
-            ref={eyesImgRef}
-            src={eyesGif}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
+          <div
+            className="absolute inset-0 w-full h-full"
             style={{
               opacity: showEyes ? 1 : 0,
               transition: 'opacity 0.8s ease-in-out',
             }}
-          />
+          >
+            <img
+              key={eyesKey}
+              src={eyesGif}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          </div>
         </div>
       </div>
 

@@ -5,7 +5,8 @@ import { AskUserCard } from '@/components/ui/AskUserCard';
 import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
-import constructVideo from '@/assets/construct/loader.webm';
+import constructGif from '@/assets/construct/loader.gif';
+import constructStatic from '@/assets/construct/loader-static.png';
 import type { ChatMessage } from '@/stores/agentStore';
 
 const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg)$/i;
@@ -123,7 +124,7 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
           <AlertCircle className="w-4 h-4 text-red-400" />
         </div>
       ) : (
-        <video src={constructVideo} muted playsInline className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
+        <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
       )}
       <div className={`min-w-0 max-w-[90%] text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
         {(() => {

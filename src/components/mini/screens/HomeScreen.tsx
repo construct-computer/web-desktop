@@ -7,6 +7,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { apiJSON, haptic, bg2, textColor, accent, SectionLabel } from '../ui';
+import { MiniClippy } from '../MiniClippy';
 
 // App icons (same as desktop appRegistry)
 import iconLaunchpad from '@/icons/launchpad.png';
@@ -147,17 +148,8 @@ export function HomeScreen({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* Center content (Clippy) — tap to open chat */}
-      <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-        <div className="flex items-center gap-2 mt-4 px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${agentRunning ? 'animate-pulse' : ''}`}
-            style={{ backgroundColor: statusDot }}
-          />
-          <span className="text-[12px] font-medium" style={{ color: statusDot }}>
-            {statusText}
-          </span>
-        </div>
+      {/* Center content — removed */}
+      <div className="flex-1 flex flex-col items-center justify-center -mt-6 z-10">
       </div>
 
       {/* Bottom Widgets */}
@@ -165,7 +157,7 @@ export function HomeScreen({ onNavigate }: Props) {
         <button 
           onClick={() => { haptic('light'); onNavigate('calendar'); }}
           className="flex flex-col justify-between p-4 rounded-[20px] text-left active:scale-95 transition-transform"
-          style={{ backgroundColor: bg2(), minHeight: '110px' }}
+          style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
         >
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: accent() }}>{now.toLocaleString('default', { weekday: 'long' })}</span>
@@ -181,7 +173,7 @@ export function HomeScreen({ onNavigate }: Props) {
         <button 
           onClick={() => { haptic('light'); onNavigate('email'); }}
           className="flex flex-col p-4 rounded-[20px] text-left active:scale-95 transition-transform"
-          style={{ backgroundColor: bg2(), minHeight: '110px' }}
+          style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
         >
           <span className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-2">Inbox</span>
           

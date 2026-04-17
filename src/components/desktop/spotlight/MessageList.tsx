@@ -140,6 +140,7 @@ export function MessageList() {
         const replySlot = !isExternal && msg.content?.trim()
           ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
           : undefined;
+        
         result.push({
           key: `msg-${group.index}`,
           node: (
