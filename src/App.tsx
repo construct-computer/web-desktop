@@ -50,7 +50,7 @@ function App() {
   const tg = window.Telegram?.WebApp;
   const isTelegram = tg && (tg as any).platform && (tg as any).platform !== 'unknown';
   
-  if (isTelegram || window.location.pathname === '/mini') {
+  if (isTelegram /* || window.location.pathname === '/mini' */) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
         <MiniApp />
