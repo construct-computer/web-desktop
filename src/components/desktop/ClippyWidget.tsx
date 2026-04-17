@@ -4,6 +4,7 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructGif from '@/assets/construct/loader.gif';
@@ -319,6 +320,7 @@ export function ClippyWidget() {
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
+  const isMobile = useIsMobile();
 
   useEffect(injectStyles, []);
 
@@ -598,7 +600,7 @@ export function ClippyWidget() {
       )}
 
       {/* Shortcut hint */}
-      {!visibleBubble && (
+      {!visibleBubble && !isMobile && (
         <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap"
           style={{ top: AVATAR_SIZE + 6 }}>
           <span className="text-[10px] font-mono select-none tracking-wide"

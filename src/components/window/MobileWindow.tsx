@@ -39,7 +39,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       data-window-id={config.id}
       data-window-type={config.type}
       className={cn(
-        'absolute inset-0 flex flex-col',
+        'absolute inset-0 flex flex-col pointer-events-auto',
         'bg-white/70 dark:bg-black/70 backdrop-blur-2xl',
         // Instead of conditionally unmounting, we use z-index and visibility to ensure
         // unfocused windows don't block interactions or render pointlessly, but keep their state.

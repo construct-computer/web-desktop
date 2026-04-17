@@ -830,8 +830,9 @@ export function Window({ config, children, missionControlTarget, missionControlI
         transform,
         transformOrigin: '0 0',
         transition,
+        // Ensure windows always receive pointer events (since parent container is pointer-events-none)
+        pointerEvents: 'auto',
         // In MC or stage strip, cursor is pointer for click-to-select
-        pointerEvents: inMC || stageTarget ? 'auto' : undefined,
         cursor: stageTarget ? 'pointer' : undefined,
       }}
       onPointerDown={stageTarget

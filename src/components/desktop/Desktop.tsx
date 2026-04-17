@@ -7,7 +7,6 @@ import { MissionControl, MissionControlScrim } from './MissionControl';
 import { Launchpad } from './Launchpad';
 import { Spotlight } from './Spotlight';
 import { StatusWidget } from './StatusWidget';
-import { GreetingWidget } from './GreetingWidget';
 import { AgentGraphWidget } from './AgentGraphWidget';
 import { ClippyWidget } from './ClippyWidget';
 import { TodoListWidget } from './TodoListWidget';
@@ -324,7 +323,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
            scrim (z=90) so windows are visible and clickable.
            Click on empty space (not a window) closes Workspaces. */}
       <div
-         className="absolute left-0 right-0"
+         className={`absolute left-0 right-0 ${!missionControlActive ? 'pointer-events-none' : ''}`}
         style={{
           top: topBarHeight,
           bottom: isMobile ? MOBILE_APP_BAR_HEIGHT : 0,
@@ -363,7 +362,6 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       {isSubscribed && <ClippyWidget />}
       {isMobile ? null : (
         <>
-          <GreetingWidget />
           <StatusWidget />
           <div
             data-tour="widgets"
