@@ -64,13 +64,10 @@ export function HomeScreen({ onNavigate }: Props) {
   const computerConfig = useComputerStore((s) => s.computer?.config);
 
   const [usage, setUsage] = useState<UsageData | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [installedApps, setInstalledApps] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [connectedApps, setConnectedApps] = useState<any[]>([]);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [events, setEvents] = useState<any[]>([]);
-  const [showLaunchpad, setShowLaunchpad] = useState(false);
+
 
   const fetchData = useCallback(async () => {
     const [usageRes, appsRes, composioRes, eventsRes] = await Promise.all([
@@ -101,20 +98,11 @@ export function HomeScreen({ onNavigate }: Props) {
     }
 
     if (appsRes) {
-      const appsList = appsRes?.apps || (Array.isArray(appsRes) ? appsRes : []);
-      setInstalledApps(appsList.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-        id: a.id,
-        name: a.name,
-        icon_url: a.icon_url,
-      })));
+      // Intentionally removed: no longer handling installed/connected apps in HomeScreen
     }
 
     if (composioRes?.connected) {
-      setConnectedApps(composioRes.connected.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-        toolkit: c.toolkit,
-        name: c.toolkit.charAt(0).toUpperCase() + c.toolkit.slice(1),
-        logo: `https://logos.composio.dev/api/${c.toolkit}`,
-      })));
+      // Intentionally removed: no longer handling composio connected apps in HomeScreen
     }
 
     if (eventsRes?.events) {
@@ -137,83 +125,9 @@ export function HomeScreen({ onNavigate }: Props) {
   
   const now = new Date();
 
-  const appsWithBadges = SYSTEM_APPS.map(app => {
-    if (app.id === 'email' && emailUnreadCount > 0) return { ...app, badge: emailUnreadCount };
-    return app;
-  });
 
-  const systemIds = new Set(SYSTEM_APPS.map(a => a.id));
-  const externalApps = [
-    ...installedApps
-      .filter(a => !systemIds.has(a.id as MiniScreen))
-      .map(a => ({ id: a.id, label: a.name, icon: a.icon_url || iconGeneric })),
-    ...connectedApps
-      .filter(a => !systemIds.has(`composio-${a.toolkit}` as MiniScreen))
-      .map(a => ({ id: `composio-${a.toolkit}`, label: a.name || a.toolkit, icon: a.logo || iconGeneric })),
-  ];
 
-  if (showLaunchpad) {
-    return (
-      <div className="flex-1 overflow-y-auto pb-6 relative z-10" style={{ animation: 'mini-slide-up 200ms ease-out' }}>
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
-          <h1 className="text-xl font-bold" style={{ color: textColor() }}>Launchpad</h1>
-          <button 
-            onClick={() => { haptic('light'); setShowLaunchpad(false); }}
-            className="p-2 rounded-full active:bg-white/5 font-medium text-[13px] opacity-70"
-          >
-            Close
-          </button>
-        </div>
 
-        <div className="px-5 pt-2">
-          <div className="grid grid-cols-4 gap-y-5 gap-x-2">
-            {appsWithBadges.map((app) => (
-              <button
-                key={app.id}
-                onClick={() => { onNavigate(app.id); haptic('light'); }}
-                className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-              >
-                <div className="relative">
-                  <img src={app.icon} alt="" className="w-14 h-14 rounded-[14px]" />
-                  {app.badge != null && app.badge > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-1">
-                      {app.badge > 9 ? '9+' : app.badge}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[11px] font-medium text-center leading-tight opacity-70 line-clamp-1" style={{ color: textColor() }}>
-                  {app.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {externalApps.length > 0 && (
-          <div className="px-5 mt-6">
-            <SectionLabel>Installed</SectionLabel>
-            <div className="grid grid-cols-4 gap-y-5 gap-x-2">
-              {externalApps.map((app) => (
-                <div key={app.id} className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
-                  <div className="w-14 h-14 rounded-[14px] flex items-center justify-center overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                    <img
-                      src={app.icon}
-                      alt=""
-                      className="w-10 h-10 rounded-md object-contain"
-                      onError={(e) => { (e.target as HTMLImageElement).src = iconGeneric; }}
-                    />
-                  </div>
-                  <span className="text-[11px] font-medium text-center leading-tight opacity-70 line-clamp-1" style={{ color: textColor() }}>
-                    {app.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="flex-1 flex flex-col pb-6 relative overflow-hidden h-full">
@@ -290,26 +204,6 @@ export function HomeScreen({ onNavigate }: Props) {
         </button>
       </div>
 
-      {/* Dock container */}
-      <div className="px-5 z-10 relative">
-        <div 
-          className="flex items-center justify-around px-4 py-3 rounded-[24px] backdrop-blur-xl"
-          style={{ backgroundColor: 'rgba(255,255,255,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}
-        >
-          <button onClick={() => { haptic('light'); setShowLaunchpad(true); }} className="active:scale-90 transition-transform">
-            <img src={iconLaunchpad} alt="Launchpad" className="w-[42px] h-[42px]" />
-          </button>
-          <button onClick={() => { haptic('light'); onNavigate('app-registry'); }} className="active:scale-90 transition-transform">
-            <img src={iconAppStore} alt="App Store" className="w-[42px] h-[42px]" />
-          </button>
-          <button onClick={() => { haptic('light'); onNavigate('files'); }} className="active:scale-90 transition-transform">
-            <img src={iconFiles} alt="Files" className="w-[42px] h-[42px]" />
-          </button>
-          <button onClick={() => { haptic('light'); onNavigate('settings'); }} className="active:scale-90 transition-transform">
-            <img src={iconSettings} alt="Settings" className="w-[42px] h-[42px]" />
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

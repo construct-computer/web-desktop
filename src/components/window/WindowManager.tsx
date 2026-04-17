@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { useWindowStore } from '@/stores/windowStore';
 import { Window } from './Window';
+import { MobileWindow } from './MobileWindow';
 import { ErrorBoundary } from '@/components/ui';
 import { log } from '@/lib/logger';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { MENUBAR_HEIGHT, DOCK_HEIGHT, STAGE_STRIP_WIDTH } from '@/lib/constants';
 import { MC_WORKSPACE_BAR_HEIGHT } from '@/components/desktop/MissionControl';
 import type { WindowConfig, WindowType } from '@/types';
@@ -252,6 +254,7 @@ export function WindowManager() {
   // To-workspace windows are positioned one screen-width away so the
   // container's translateX can reveal them during the slide.
   const screenWidth = globalThis.innerWidth || 1920;
+  const isMobile = useIsMobile();
 
   return (
     <>
@@ -261,6 +264,18 @@ export function WindowManager() {
         if (!ContentComponent) {
           logger.warn(`Unknown window type: ${config.type}`);
           return null;
+        }
+
+        if (isMobile) {
+          // On mobile, we only want to show the currently focused window so it takes up the whole screen.
+          // MobileWindow handles hiding unfocused windows via CSS (so they don't lose state)
+          return (
+            <MobileWindow key={config.id} config={config}>
+              <ErrorBoundary inline label={config.title}>
+                <ContentComponent config={config} />
+              </ErrorBoundary>
+            </MobileWindow>
+          );
         }
 
         const mcInfo = mcTargets?.get(config.id) ?? null;

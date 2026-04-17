@@ -18,18 +18,12 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { installGlobalErrorHandlers } from '@/stores/errorStore';
 import { DebugPanel } from '@/components/desktop/DebugPanel';
 import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tabSingleton';
-import { useIsMobile } from '@/hooks/useIsMobile';
 import * as api from '@/services/api';
 import analytics from '@/lib/analytics';
 
 // Telegram Mini App — lazy loaded, only for /mini route
 const MiniApp = lazy(() =>
   import('@/components/mini/MiniApp').then((m) => ({ default: m.MiniApp })),
-);
-
-// Mobile browser shell — lazy loaded, only for mobile viewports
-const BrowserShell = lazy(() =>
-  import('@/components/mobile/BrowserShell').then((m) => ({ default: m.BrowserShell })),
 );
 
 // Device link page — lazy loaded, only for /link route
@@ -112,7 +106,6 @@ function App() {
 
   const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, checkAuth, handleOAuthReturn } = useAuthStore();
   const { isConnected, forceReconnect } = useWebSocket();
-  const isMobile = useIsMobile();
   const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
 
   const computer = useComputerStore((s) => s.computer);
@@ -294,18 +287,12 @@ function App() {
       {/* Layer 1: App shell (bottom) — when authenticated (subscribed with computer, or unsubscribed with subscribe window) */}
       {isAuthenticated && (computer || !isSubscribed) && (
         <div className="fixed inset-0">
-          {isMobile ? (
-            <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
-              <BrowserShell />
-            </Suspense>
-          ) : (
-            <Desktop
-              onLogout={handleLogout}
-              onLockScreen={handleLockScreen}
-              onReconnect={forceReconnect}
-              isConnected={isConnected}
-            />
-          )}
+          <Desktop
+            onLogout={handleLogout}
+            onLockScreen={handleLockScreen}
+            onReconnect={forceReconnect}
+            isConnected={isConnected}
+          />
         </div>
       )}
 

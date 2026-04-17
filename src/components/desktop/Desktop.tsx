@@ -20,6 +20,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
 import { SetupModal } from '@/components/apps/SetupModal';
+import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { getSlackStatus } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
@@ -284,6 +285,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
         >
           {/* Current wallpaper */}
           <Wallpaper />
+          {isMobile && <MobileDesktopBackground />}
           {/* Entering wallpaper — offset to the side, slides into view */}
           {workspaceTransition && (
             <div
@@ -293,6 +295,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
               }}
             >
               <Wallpaper />
+              {isMobile && <MobileDesktopBackground />}
             </div>
           )}
         </div>

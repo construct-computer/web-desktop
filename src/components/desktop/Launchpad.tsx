@@ -264,7 +264,7 @@ export function Launchpad() {
           {/* System apps */}
           {systemApps.length > 0 && (
             <div onClick={(e) => e.stopPropagation()}>
-              <div className="grid grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
                 {systemApps.map((app, i) => (
                   <AppIcon
                     key={app.id}
@@ -289,7 +289,7 @@ export function Launchpad() {
                 </span>
                 <div className="flex-1 h-px bg-white/10" />
               </div>
-              <div className="grid grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
                 {installedApps.map((app, i) => (
                   <AppIcon
                     key={app.id}

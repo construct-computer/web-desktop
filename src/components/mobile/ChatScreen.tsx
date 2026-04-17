@@ -15,7 +15,7 @@ export function ChatScreen() {
   const agentConnected = useComputerStore(s => s.agentConnected);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-black/60 backdrop-blur-xl">
       {/* Header */}
       <div
         className="flex items-center gap-2 px-4 py-3 shrink-0"
