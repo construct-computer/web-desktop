@@ -31,7 +31,8 @@ function isNearCenter(rx: number, ry: number): boolean {
 // ── Constants ───────────────────────────────────────────────────────
 
 type ClippyState = 'idle' | 'thinking' | 'working' | 'success' | 'error';
-const AVATAR_SIZE = 112;
+const DESKTOP_AVATAR_SIZE = 112;
+const MOBILE_AVATAR_SIZE = 64;
 
 // ── Animation system ─────────────────────────────────────────────────
 //
@@ -321,13 +322,13 @@ export function ClippyWidget() {
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
   const isMobile = useIsMobile();
-
-  useEffect(injectStyles, []);
+  const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
   // ── Position (ratio-based, driven by window state) ──
   const windowCount = useWindowStore(s => s.windows.length);
   const hasWindows = windowCount > 0;
-  const [pos, setPos] = useState(() => hasWindows ? CORNER_POS : CENTER_POS);
+  const avatarSize = isMobile ? MOBILE_AVATAR_SIZE : DESKTOP_AVATAR_SIZE;
+  const [pos, setPos] = useState(() => hasWindows ? CORNER_POS : defaultCenter);
   const [userDragged, setUserDragged] = useState(false);
 
   // When windows open and widget is near center, auto-slide to corner
@@ -336,9 +337,9 @@ export function ClippyWidget() {
     if (hasWindows && isNearCenter(pos.rx, pos.ry)) {
       setPos(CORNER_POS);
     } else if (!hasWindows) {
-      setPos(CENTER_POS);
+      setPos(defaultCenter);
     }
-  }, [hasWindows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasWindows, defaultCenter]); // eslint-disable-line react-hooks/exhaustive-deps
   const [winSize, setWinSize] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 1920,
     h: typeof window !== 'undefined' ? window.innerHeight : 1080,
@@ -350,8 +351,8 @@ export function ClippyWidget() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const px = pos.rx * winSize.w - AVATAR_SIZE / 2;
-  const py = Math.min(pos.ry * winSize.h - AVATAR_SIZE / 2, winSize.h - AVATAR_SIZE);
+  const px = pos.rx * winSize.w - avatarSize / 2;
+  const py = Math.min(pos.ry * winSize.h - avatarSize / 2, winSize.h - avatarSize);
 
   // ── Drag (pointer capture) ──
   const dragRef = useRef<{ startMX: number; startMY: number; startRx: number; startRy: number } | null>(null);
@@ -527,7 +528,7 @@ export function ClippyWidget() {
   return (
     <div
       className="fixed select-none"
-      style={{ left: px, top: py, zIndex: Z_INDEX.clippyWidget, width: AVATAR_SIZE, height: AVATAR_SIZE, transition: dragRef.current ? 'none' : 'left 0.6s cubic-bezier(0.4,0,0.2,1), top 0.6s cubic-bezier(0.4,0,0.2,1)' }}
+      style={{ left: px, top: py, zIndex: Z_INDEX.clippyWidget, width: avatarSize, height: avatarSize, transition: dragRef.current ? 'none' : 'left 0.6s cubic-bezier(0.4,0,0.2,1), top 0.6s cubic-bezier(0.4,0,0.2,1)' }}
     >
       {/* ── Avatar ── */}
       <div
@@ -589,11 +590,11 @@ export function ClippyWidget() {
 
       {/* Chat bubble — positioned to the left of the avatar */}
       {visibleBubble && (
-<ComicBubble
+        <ComicBubble
            title={visibleBubble.title}
            detail={visibleBubble.detail}
            variant={visibleBubble.variant}
-           avatarSize={AVATAR_SIZE}
+           avatarSize={avatarSize}
            closing={bubbleClosing}
            onClickBubble={() => toggleSpotlight()}
          />
@@ -602,7 +603,7 @@ export function ClippyWidget() {
       {/* Shortcut hint */}
       {!visibleBubble && !isMobile && (
         <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap"
-          style={{ top: AVATAR_SIZE + 6 }}>
+          style={{ top: avatarSize + 6 }}>
           <span className="text-[10px] font-mono select-none tracking-wide"
             style={{
               color: 'rgba(255,255,255,0.6)',
