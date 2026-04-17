@@ -4,7 +4,8 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
-import { Z_INDEX } from '@/lib/constants';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { Z_INDEX, MOBILE_APP_BAR_HEIGHT } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructVideo from '@/assets/construct/loader.webm';
 import eyesGif from '@/assets/construct/eyes.gif';
@@ -318,6 +319,7 @@ export function ClippyWidget() {
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
+  const isMobile = useIsMobile();
 
   useEffect(injectStyles, []);
 
@@ -329,13 +331,14 @@ export function ClippyWidget() {
 
   // When windows open and widget is near center, auto-slide to corner
   useEffect(() => {
+    if (isMobile) return; // on mobile it stays in the corner permanently
     if (userDragged) return; // User manually positioned it — don't override
     if (hasWindows && isNearCenter(pos.rx, pos.ry)) {
       setPos(CORNER_POS);
     } else if (!hasWindows) {
       setPos(CENTER_POS);
     }
-  }, [hasWindows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasWindows, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [winSize, setWinSize] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 1920,
     h: typeof window !== 'undefined' ? window.innerHeight : 1080,
@@ -348,11 +351,20 @@ export function ClippyWidget() {
   }, []);
 
   const px = pos.rx * winSize.w - AVATAR_SIZE / 2;
-  const py = pos.ry * winSize.h - AVATAR_SIZE / 2;
+  // Make sure it doesn't overlap the mobile app bar at the bottom
+  const safeAreaBottom = isMobile ? MOBILE_APP_BAR_HEIGHT + 32 : 0;
+  const py = Math.min(pos.ry * winSize.h - AVATAR_SIZE / 2, winSize.h - AVATAR_SIZE - safeAreaBottom);
 
   // ── Drag (pointer capture) ──
   const dragRef = useRef<{ startMX: number; startMY: number; startRx: number; startRy: number } | null>(null);
   const wasDragRef = useRef(false);
+
+  // Position is locked to bottom right on mobile, ignoring the window-based positioning
+  useEffect(() => {
+    if (isMobile) {
+      setPos(CORNER_POS);
+    }
+  }, [isMobile]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();

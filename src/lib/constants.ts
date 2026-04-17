@@ -17,7 +17,7 @@ export const MENUBAR_HEIGHT = 40;
 export const MOBILE_MENUBAR_HEIGHT = 44;
 export const DOCK_HEIGHT = 80; // dock bar height including magnification space
 export const STAGE_STRIP_WIDTH = 160; // stage manager left sidebar width
-export const MOBILE_APP_BAR_HEIGHT = 64; // bottom app bar on mobile
+export const MOBILE_APP_BAR_HEIGHT = 80; // bottom app bar on mobile
 
 // Z-index layers
 export const Z_INDEX = {

@@ -7,7 +7,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { apiJSON, haptic, bg2, textColor, accent, SectionLabel } from '../ui';
-import { MiniClippy } from './../MiniClippy';
 
 // App icons (same as desktop appRegistry)
 import iconLaunchpad from '@/icons/launchpad.png';
@@ -150,12 +149,6 @@ export function HomeScreen({ onNavigate }: Props) {
 
       {/* Center content (Clippy) — tap to open chat */}
       <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-        <button
-          onClick={() => { haptic('light'); onNavigate('chat'); }}
-          className="active:scale-95 transition-transform"
-        >
-          <MiniClippy size={180} />
-        </button>
         <div className="flex items-center gap-2 mt-4 px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${agentRunning ? 'animate-pulse' : ''}`}

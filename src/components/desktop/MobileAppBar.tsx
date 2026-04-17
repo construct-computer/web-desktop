@@ -61,7 +61,7 @@ export function MobileAppBar() {
   return (
     <div
       data-tour="dock"
-      className="absolute bottom-0 left-0 right-0 flex items-center
+      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pb-5 pt-3
                  bg-white/70 dark:bg-black/50 backdrop-blur-2xl
                  border-t border-black/10 dark:border-white/10
                  safe-area-bottom"
@@ -69,7 +69,7 @@ export function MobileAppBar() {
     >
       {/* Launchpad button */}
       <button
-        className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full
+        className="flex flex-col items-center justify-center gap-1 flex-1 h-full
                    active:scale-95 transition-transform"
         onClick={() => { play('click'); toggleLaunchpad(); }}
       >
@@ -90,7 +90,7 @@ export function MobileAppBar() {
           <button
             key={item.id}
             className={cn(
-              'flex flex-col items-center justify-center gap-0.5 flex-1 h-full',
+              'flex flex-col items-center justify-center gap-1 flex-1 h-full',
               'active:scale-95 transition-transform',
             )}
             onClick={() => handleTap(item)}
