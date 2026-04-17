@@ -15,7 +15,8 @@ import { STORAGE_KEYS, API_BASE_URL } from '@/lib/constants';
 import * as api from '@/services/api';
 import { bg, textColor } from './ui';
 import { PlatformProvider, createTelegramPlatform, applyTelegramTheme } from '../mobile/platform';
-import { MobileShell } from '../mobile/MobileShell';
+import { Desktop } from '@/components/desktop';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { Loader2, Mail, CheckCircle } from 'lucide-react';
 
 /** SessionStorage key for persisting initData across OAuth redirects. */
@@ -35,6 +36,14 @@ export function MiniApp() {
 
   const [state, setState] = useState<AppState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const { isConnected, forceReconnect } = useWebSocket();
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    api.setToken('');
+    setState('not_linked');
+  }, []);
 
   const platform = useMemo(() => createTelegramPlatform(), []);
 
@@ -220,7 +229,12 @@ export function MiniApp() {
 
   return (
     <PlatformProvider value={platform}>
-      <MobileShell />
+      <Desktop
+        onLogout={handleLogout}
+        onLockScreen={() => {}}
+        onReconnect={forceReconnect}
+        isConnected={isConnected}
+      />
     </PlatformProvider>
   );
 }
