@@ -11,6 +11,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelLeftOpen, Sparkles } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -24,6 +26,7 @@ export function Spotlight() {
   const instanceId = useComputerStore(s => s.instanceId);
   const userPlan = useAuthStore(s => s.user?.plan);
   const isSubscribed = userPlan === 'pro' || userPlan === 'starter' || userPlan === 'free';
+  const isMobile = useIsMobile();
 
   const [animating, setAnimating] = useState(false);
   const [show, setShow] = useState(false);
@@ -97,22 +100,49 @@ export function Spotlight() {
 
       {/* Centering wrapper */}
       <div
-        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+        className={cn(
+          "absolute inset-0 flex pointer-events-none",
+          isMobile ? "items-end justify-center" : "items-center justify-center"
+        )}
         style={{ zIndex: 1310 }}
       >
       <div
-        className={`pointer-events-auto w-[960px] max-w-[calc(100vw-48px)] transition-all duration-200 ease-out ${
-          animating ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.97]'
-        }`}
-        style={{ height: '70vh', maxHeight: 720 }}
+        className={cn(
+          "pointer-events-auto transition-all duration-300 ease-out flex flex-col",
+          isMobile
+            ? "w-full"
+            : "w-[960px] max-w-[calc(100vw-48px)] rounded-2xl",
+          animating 
+            ? (isMobile ? "translate-y-0 opacity-100" : "opacity-100 scale-100")
+            : (isMobile ? "translate-y-full opacity-100" : "opacity-0 scale-[0.97]")
+        )}
+        style={{ 
+          height: isMobile ? 'calc(100dvh - 10px)' : '70vh', 
+          maxHeight: isMobile ? 'none' : 720 
+        }}
       >
         <div
           onDragEnter={onPanelDragEnter}
           onDragOver={onPanelDragOver}
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
-          className="relative h-full flex rounded-2xl overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] border border-white/30 dark:border-white/[0.1] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5"
+          className={cn(
+            "relative h-full flex overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5",
+            isMobile 
+              ? "rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]"
+              : "rounded-2xl border border-white/30 dark:border-white/[0.1]"
+          )}
         >
+          {/* Mobile drag handle */}
+          {isMobile && (
+            <div 
+              className="w-full flex justify-center pt-3 pb-1 shrink-0 absolute top-0 z-50 cursor-pointer"
+              onClick={closeSpotlight}
+            >
+              <div className="w-12 h-1.5 rounded-full bg-black/20 dark:bg-white/20" />
+            </div>
+          )}
+
           {/* Drag overlay */}
           {dragOver && (
             <div className="absolute inset-0 z-50 rounded-2xl bg-white/80 dark:bg-[#111113]/95 backdrop-blur-sm border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none">
