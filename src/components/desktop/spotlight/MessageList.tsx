@@ -213,12 +213,10 @@ export function MessageList() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={cn(
-          "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
-          isMobile ? "pt-12" : "pt-3"
-        )}
+        className="h-full overflow-y-auto scroll-smooth scrollbar-none pb-3"
         style={{ overscrollBehavior: 'contain' }}
       >
+        {isMobile && <div className="h-12 shrink-0" />}
         {renderGroups.map(({ key, node }) => (
           <div key={key}>{node}</div>
         ))}
