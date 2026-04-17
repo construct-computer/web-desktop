@@ -358,7 +358,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
 
       {/* Agent widgets — only for subscribed users (need agent connection) */}
       {!isMobile && isSubscribed && <AgentGraphWidget />}
-      {isSubscribed && <ClippyWidget />}
+      {!isMobile && isSubscribed && <ClippyWidget />}
       {!isMobile && isSubscribed && (
         <>
           <StatusWidget />
