@@ -44,6 +44,8 @@ function clearStaleUserData(newUserId: string): void {
     'construct:tour-completed',
     'construct:tour-skipped',
     'construct:agent-widget-pos',
+    STORAGE_KEYS.promoCode,
+    STORAGE_KEYS.promoSeen,
   ];
   for (const key of keysToRemove) {
     try { localStorage.removeItem(key); } catch { /* */ }

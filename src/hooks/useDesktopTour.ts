@@ -143,6 +143,11 @@ export function useDesktopTour() {
         if (localStorage.getItem(TOUR_SEEN_KEY) === '1') return;
         if (localStorage.getItem(TOUR_SKIPPED_KEY) === '1') return;
       } catch {}
+
+      // Disable auto-tour on mobile devices as the layout is primarily for desktop
+      if (window.innerWidth < 768) {
+        return;
+      }
     }
 
     started.current = true;

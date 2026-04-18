@@ -6,6 +6,7 @@ export { ChatWindow } from './ChatWindow';
 export { SettingsWindow } from './SettingsWindow';
 export { AboutWindow } from './AboutWindow';
 export { SetupModal } from './SetupModal';
+export { PromoCodeModal } from './PromoCodeModal';
 export { CalendarWindow } from './CalendarWindow';
 export { TrackerWindow } from './TrackerWindow';
 export { EmailWindow } from './EmailWindow';

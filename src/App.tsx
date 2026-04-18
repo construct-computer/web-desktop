@@ -67,6 +67,26 @@ function App() {
     );
   }
 
+  // Capture a promo/referral code from the URL (?code=XXX) and stash it in
+  // localStorage so we can offer it to the user once they finish onboarding.
+  // Runs before the OAuth callback block so we can strip the param below.
+  {
+    const params = new URLSearchParams(window.location.search);
+    const rawCode = params.get('code');
+    if (rawCode && /^[A-Za-z0-9_-]{2,32}$/.test(rawCode)) {
+      try {
+        const code = rawCode.toUpperCase();
+        localStorage.setItem('construct:promo_code', code);
+        // New code → clear the "seen" flag so we show the modal again.
+        localStorage.removeItem('construct:promo_seen');
+      } catch { /* storage unavailable */ }
+      // Strip the param from the URL without a reload.
+      params.delete('code');
+      const qs = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
+  }
+
   // OAuth popup auto-close: if this page has callback params, it's an OAuth redirect.
   // Notify the parent window (if any) and close. Works even if window.opener is null
   // (some browsers clear it during multi-page OAuth redirects).

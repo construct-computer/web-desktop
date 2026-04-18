@@ -139,6 +139,10 @@ export const STORAGE_KEYS = {
   tourCompleted: 'construct:tour-completed',
   tourSkipped: 'construct:tour-skipped',
 
+  // Promo codes (referral / partner codes captured via ?code= URL param)
+  promoCode: 'construct:promo_code',
+  promoSeen: 'construct:promo_seen',
+
   // Tracker
   trackerDismissedGoals: 'construct:tracker:dismissedGoals',
   trackerOperations: 'construct:tracker:operations',

@@ -21,6 +21,8 @@ export function LoginScreen() {
   const wallpaperSrc = getWallpaperBlurSrc(wallpaperId);
   const { play } = useSound();
 
+  const hasPromo = window.location.search.includes('YCSUS') || localStorage.getItem('construct:promo_code') === 'YCSUS';
+
   // ── Phases: power → hello → login ──
   const [poweredOn, setPoweredOn] = useState(false);
   const [powerFading, setPowerFading] = useState(false);
@@ -147,6 +149,19 @@ export function LoginScreen() {
               <svg className="w-6 h-6 text-white/50 group-hover:text-white/90 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
             </button>
             <span className="text-[11px] font-medium text-white/30 tracking-widest uppercase mt-2">Power on</span>
+            {hasPromo && (
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[11px] font-semibold tracking-widest uppercase px-4 drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">
+                <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">YCSUS</span>
+                <span className="text-white/80">promo applied</span>
+                <span className="text-white/40">·</span>
+                <span className="text-white/80">1 month pro</span>
+                <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">FREE</span>
+                <span className="text-white/40">·</span>
+                <span className="text-white/50 line-through decoration-white/40">$99</span>
+                <span className="text-white/40">/</span>
+                <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">$0</span>
+              </div>
+            )}
           </div>
         </div>
       )}
