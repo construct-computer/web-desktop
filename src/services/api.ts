@@ -1407,7 +1407,7 @@ export async function getUsageRecords(opts?: {
 export async function createCheckout(plan = 'pro', coupon?: string): Promise<ApiResult<{ checkoutUrl: string }>> {
   return request('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({ plan, ...(coupon ? { coupon } : {}) }),
+    body: JSON.stringify({ plan, ...(coupon ? { discount_code: coupon } : {}) }),
   });
 }
 
