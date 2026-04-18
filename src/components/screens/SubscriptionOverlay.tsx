@@ -56,7 +56,7 @@ export function SubscriptionOverlay() {
       if (result === true) window.location.reload();
     } else {
       // Production: redirect to Dodo Payments checkout
-      const url = await startCheckout(undefined, plan);
+      const url = await startCheckout(plan);
       setCheckoutLoading(null);
       if (url) window.location.href = url;
     }

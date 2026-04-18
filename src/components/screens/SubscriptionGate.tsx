@@ -58,7 +58,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
 
   const handleSubscribe = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(plan);
-    const url = await startCheckout(undefined, plan);
+    const url = await startCheckout(plan);
     setCheckoutLoading(null);
 
     if (url) {

@@ -76,8 +76,15 @@ export const useBillingStore = create<BillingState>((set) => ({
   },
 
   startCheckout: async (plan: 'starter' | 'pro' = 'pro', coupon?: string) => {
-    console.log('[billingStore] startCheckout called with plan:', plan, 'coupon:', coupon);
-    const result = await createCheckout(plan, coupon);
+    let finalCoupon = coupon;
+    if (!finalCoupon) {
+      try {
+        const stored = localStorage.getItem('construct:promo_code');
+        if (stored) finalCoupon = stored;
+      } catch { /* ignore */ }
+    }
+    console.log('[billingStore] startCheckout called with plan:', plan, 'coupon:', finalCoupon);
+    const result = await createCheckout(plan, finalCoupon);
     console.log('[billingStore] createCheckout result:', result);
     if (result.success) {
       return result.data.checkoutUrl;

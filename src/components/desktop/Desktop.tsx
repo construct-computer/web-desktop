@@ -409,8 +409,8 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       {user && !user.setupCompleted && isSubscribed && <SetupModal />}
 
       {/* Promo code modal — shown once after onboarding if the user landed
-          via ?code=XXX and isn't already on Pro. */}
-      {user?.setupCompleted && user.plan !== 'pro' && promoCode && !promoDismissed && (
+          via ?code=XXX and isn't already on Pro. Also shown to unsubscribed users immediately. */}
+      {(user?.setupCompleted || !isSubscribed) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
         <PromoCodeModal code={promoCode} onDismiss={() => setPromoDismissed(true)} />
       )}
     </div>
