@@ -4,10 +4,11 @@
  * to the Pro checkout flow.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Gift, Loader2, X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
+import { useWindowStore } from '@/stores/windowStore';
 import { STORAGE_KEYS } from '@/lib/constants';
 
 interface PromoCodeModalProps {
@@ -17,7 +18,16 @@ interface PromoCodeModalProps {
 
 export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
   const startCheckout = useBillingStore((s) => s.startCheckout);
+  const minimizeAll = useWindowStore((s) => s.minimizeAll);
   const [loading, setLoading] = useState(false);
+
+  // Clear the stage: any previously open windows could visually obscure the
+  // modal (ancestor stacking contexts from workspace transforms + focused
+  // window zIndex drift can defeat a naive z-index). Minimize rather than
+  // close so the user doesn't lose state.
+  useEffect(() => {
+    minimizeAll();
+  }, [minimizeAll]);
 
   const handleUpgrade = useCallback(async () => {
     setLoading(true);
@@ -38,7 +48,10 @@ export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
   }, [onDismiss]);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30">
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/30"
+      style={{ zIndex: 2147483647 }}
+    >
       <div className="relative w-full max-w-md bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150 rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         <button
           onClick={handleDismiss}
