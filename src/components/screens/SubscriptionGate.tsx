@@ -122,7 +122,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
                   <h2 className="text-[14px] text-white font-semibold">Starter</h2>
                 </div>
                 <div className="flex items-baseline gap-1.5 mb-1">
-                  <span className="text-[24px] text-white font-bold">$9</span>
+                  <span className="text-[24px] text-white font-bold">$59</span>
                   <span className="text-white/40 text-sm">/month</span>
                 </div>
                 <p className="text-[11px] text-white/40 mb-1">Managed free AI via Cloudflare AI Gateway</p>
@@ -161,7 +161,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
                   <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-500/20 text-emerald-400 uppercase tracking-wider">Popular</span>
                 </div>
                 <div className="flex items-baseline gap-1.5 mb-1">
-                  <span className="text-[24px] text-white font-bold">$99</span>
+                  <span className="text-[24px] text-white font-bold">$299</span>
                   <span className="text-white/40 text-sm">/month</span>
                 </div>
                 <p className="text-[11px] text-white/40 mb-1">Everything included, unlimited</p>

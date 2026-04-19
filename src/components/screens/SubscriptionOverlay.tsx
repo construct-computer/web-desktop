@@ -85,7 +85,7 @@ export function SubscriptionOverlay() {
             <div className="mb-3">
               <h2 className="text-[15px] text-gray-900 dark:text-white font-semibold mb-0.5">Starter</h2>
               <div className="flex items-baseline gap-1">
-                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$9</span>
+                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$59</span>
                 <span className="text-gray-400 dark:text-white/30 text-sm">/mo</span>
               </div>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400/80 mt-1">1 day free trial</p>
@@ -128,7 +128,7 @@ export function SubscriptionOverlay() {
             <div className="mb-3">
               <h2 className="text-[15px] text-gray-900 dark:text-white font-semibold mb-0.5">Pro</h2>
               <div className="flex items-baseline gap-1">
-                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$99</span>
+                <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">$299</span>
                 <span className="text-gray-400 dark:text-white/30 text-sm">/mo</span>
               </div>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400/80 mt-1">3 days free trial</p>

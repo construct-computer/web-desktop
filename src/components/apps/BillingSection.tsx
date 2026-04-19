@@ -147,8 +147,8 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
 
   const plans: { id: PlanId; name: string; price: string; period: string }[] = [
     { id: 'free', name: 'Free', price: '$0', period: '' },
-    { id: 'starter', name: 'Starter', price: '$9', period: '/mo' },
-    { id: 'pro', name: 'Pro', price: '$99', period: '/mo' },
+    { id: 'starter', name: 'Starter', price: '$59', period: '/mo' },
+    { id: 'pro', name: 'Pro', price: '$299', period: '/mo' },
   ];
 
   return (

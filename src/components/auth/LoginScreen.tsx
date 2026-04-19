@@ -157,7 +157,7 @@ export function LoginScreen() {
                 <span className="text-white/80">1 month pro</span>
                 <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">FREE</span>
                 <span className="text-white/40">·</span>
-                <span className="text-white/50 line-through decoration-white/40">$99</span>
+                <span className="text-white/50 line-through decoration-white/40">$299</span>
                 <span className="text-white/40">/</span>
                 <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">$0</span>
               </div>

@@ -398,7 +398,7 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
               </div>
               {isPro && (
                 <p className="text-[12px] opacity-40 mt-1">
-                  {isCancelling ? '$99/month — cancels at end of period' : '$99/month'}
+                  {isCancelling ? '$299/month — cancels at end of period' : '$299/month'}
                 </p>
               )}
             </Card>
