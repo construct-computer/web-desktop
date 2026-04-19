@@ -124,16 +124,34 @@ type FeatureRow = {
   freeHas: boolean;
   starterHas: boolean;
   proHas: boolean;
+  freeColor?: string;
+  starterColor?: string;
+  proColor?: string;
 };
 
 const PLAN_FEATURES: FeatureRow[] = [
-  { label: 'Usage',             free: '1x',      starter: '3x',    pro: '30x',        freeHas: true,  starterHas: true,  proHas: true },
   { label: 'AI model',          free: 'Basic',   starter: 'Fast',  pro: 'Premium',    freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Storage',           free: '500 MB',  starter: '1 GB',  pro: '2 GB',       freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Integrations',      free: 'Selected', starter: 'More', pro: 'Full',       freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Agent email',       free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
   { label: 'Background agents', free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
 ];
+
+/** Weekly usage caps in USD (mirror of worker/src/config/tiers.ts TIER_LIMITS). */
+const WEEKLY_CAPS: Record<PlanId, number> = { free: 1, starter: 8, pro: 45 };
+
+/** Format a cap ratio as a readable label, e.g. 8 → "8× more", 0.125 → "8× less". */
+function formatMultiplier(ratio: number): string {
+  if (Math.abs(ratio - 1) < 0.01) return '1×';
+  if (ratio > 1) return `${Math.round(ratio)}× more`;
+  return `${Math.round(1 / ratio)}× less`;
+}
+
+/** Green for upgrades, red for downgrades, empty (use default) for the current plan. */
+function multiplierColor(ratio: number): string | undefined {
+  if (Math.abs(ratio - 1) < 0.01) return undefined;
+  return ratio > 1 ? 'text-emerald-400' : 'text-red-400';
+}
 
 function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, onCheckout }: {
   currentPlan: string;
@@ -150,6 +168,24 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
     { id: 'starter', name: 'Starter', price: '$59', period: '/mo' },
     { id: 'pro', name: 'Pro', price: '$299', period: '/mo' },
   ];
+
+  // Usage row is computed relative to the active plan so "1×" always marks
+  // the user's current baseline and the other tiers show how much more (or
+  // less) usage they'd get.
+  const freeRatio    = WEEKLY_CAPS.free    / WEEKLY_CAPS[effective];
+  const starterRatio = WEEKLY_CAPS.starter / WEEKLY_CAPS[effective];
+  const proRatio     = WEEKLY_CAPS.pro     / WEEKLY_CAPS[effective];
+  const usageRow: FeatureRow = {
+    label: 'Usage',
+    free:    formatMultiplier(freeRatio),
+    starter: formatMultiplier(starterRatio),
+    pro:     formatMultiplier(proRatio),
+    freeHas: true, starterHas: true, proHas: true,
+    freeColor:    multiplierColor(freeRatio),
+    starterColor: multiplierColor(starterRatio),
+    proColor:     multiplierColor(proRatio),
+  };
+  const features: FeatureRow[] = [usageRow, ...PLAN_FEATURES];
 
   return (
     <div className="space-y-3">
@@ -202,16 +238,16 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
 
       {/* Feature comparison table */}
       <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.06] overflow-hidden">
-        <div className="grid grid-cols-[1fr_72px_72px_72px] text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
+        <div className="grid grid-cols-[1fr_84px_84px_84px] text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
           <span />
           <span className="text-center">Free</span>
           <span className="text-center">Starter</span>
           <span className="text-center">Pro</span>
         </div>
-        {PLAN_FEATURES.map((f, i) => (
+        {features.map((f, i) => (
           <div
             key={f.label}
-            className={`grid grid-cols-[1fr_72px_72px_72px] items-center px-3 py-1.5 text-[11px] ${
+            className={`grid grid-cols-[1fr_84px_84px_84px] items-center px-3 py-1.5 text-[11px] ${
               i % 2 === 0 ? '' : 'bg-black/[0.015] dark:bg-white/[0.015]'
             }`}
           >
@@ -219,11 +255,15 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
             {(['free', 'starter', 'pro'] as const).map((tier) => {
               const has = f[`${tier}Has`];
               const val = f[tier];
+              const color = f[`${tier}Color`];
+              const valClass = tier === effective
+                ? 'text-[var(--color-text)] font-medium'
+                : color || 'text-[var(--color-text-muted)]';
               return (
                 <span key={tier} className="text-center">
                   {has ? (
                     val ? (
-                      <span className={tier === effective ? 'text-[var(--color-text)] font-medium' : 'text-[var(--color-text-muted)]'}>{val}</span>
+                      <span className={valClass}>{val}</span>
                     ) : (
                       <Check className="w-3 h-3 text-emerald-400 mx-auto" />
                     )
