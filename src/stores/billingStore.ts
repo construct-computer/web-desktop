@@ -77,7 +77,10 @@ export const useBillingStore = create<BillingState>((set) => ({
 
   startCheckout: async (plan: 'starter' | 'pro' = 'pro', coupon?: string) => {
     let finalCoupon = coupon;
-    if (!finalCoupon) {
+    // Auto-attach a stored promo only for Pro checkout. Promos currently in
+    // circulation (e.g. YCSUS) are scoped to the Pro product on Dodo's side,
+    // so applying them to a Starter checkout would 422 the whole request.
+    if (!finalCoupon && plan === 'pro') {
       try {
         const stored = localStorage.getItem('construct:promo_code');
         if (stored) finalCoupon = stored;

@@ -77,7 +77,10 @@ function App() {
       try {
         const code = rawCode.toUpperCase();
         localStorage.setItem('construct:promo_code', code);
-        // New code → clear the "seen" flag so we show the modal again.
+        // New code → clear the "seen" flag so we show the modal again. The
+        // flag now lives in sessionStorage (re-shows on every hard refresh);
+        // we also nuke any legacy localStorage entry from before that move.
+        sessionStorage.removeItem('construct:promo_seen');
         localStorage.removeItem('construct:promo_seen');
       } catch { /* storage unavailable */ }
       // Strip the param from the URL without a reload.

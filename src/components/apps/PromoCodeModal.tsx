@@ -43,7 +43,8 @@ export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
   }, [startCheckout, code]);
 
   const handleDismiss = useCallback(() => {
-    try { localStorage.setItem(STORAGE_KEYS.promoSeen, '1'); } catch { /* */ }
+    // Session-scoped so the modal re-appears on every hard refresh.
+    try { sessionStorage.setItem(STORAGE_KEYS.promoSeen, '1'); } catch { /* */ }
     onDismiss();
   }, [onDismiss]);
 

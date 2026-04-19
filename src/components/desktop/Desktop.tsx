@@ -220,12 +220,13 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
 
   // ── Promo code modal state ──
-  // Read localStorage once on mount; suppressed if user already dismissed
-  // in this session (setPromoDismissed) or has already seen it previously.
+  // Read localStorage once on mount; the "seen" flag is session-scoped so a
+  // hard refresh surfaces the promo again. Within one tab session,
+  // setPromoDismissed suppresses it after the user clicks "Maybe later".
   const [promoCode] = useState<string | null>(() => {
     try {
       const code = localStorage.getItem(STORAGE_KEYS.promoCode);
-      const seen = localStorage.getItem(STORAGE_KEYS.promoSeen) === '1';
+      const seen = sessionStorage.getItem(STORAGE_KEYS.promoSeen) === '1';
       return code && !seen ? code : null;
     } catch { return null; }
   });
