@@ -142,6 +142,10 @@ export const STORAGE_KEYS = {
   // Promo codes (referral / partner codes captured via ?code= URL param)
   promoCode: 'construct:promo_code',
   promoSeen: 'construct:promo_seen',
+  // Note: RECOGNIZED_PROMO_CODES (below) lists codes the LoginScreen banner
+  // highlights. Any 2-32 char alphanumeric code via ?code=XXX is persisted
+  // and offered at checkout regardless of being listed here — the list only
+  // affects which codes get the "promo applied · 1 month free" banner.
 
   // Tracker
   trackerDismissedGoals: 'construct:tracker:dismissedGoals',
@@ -151,6 +155,34 @@ export const STORAGE_KEYS = {
   authConnectCards: 'construct_auth_connect_cards',
   setupWizardProgress: 'setup_wizard_progress',
 } as const;
+
+/**
+ * Promo codes that the login screen banner recognizes and displays as
+ * "1 month free pro". Add a new code here to light up the banner for it;
+ * the code must ALSO be configured on Dodo's side as a valid discount_code
+ * for the Pro product, otherwise checkout will fail. All codes in this list
+ * are treated identically (same benefit, same banner copy).
+ */
+export const RECOGNIZED_PROMO_CODES = ['YCSUS', 'YESMANGO'] as const;
+export type RecognizedPromoCode = (typeof RECOGNIZED_PROMO_CODES)[number];
+
+/**
+ * Detect whether the user arrived with or previously stored a recognized
+ * promo code. Returns the code (for display) or null.
+ */
+export function detectActivePromoCode(): RecognizedPromoCode | null {
+  try {
+    const search = window.location.search.toUpperCase();
+    for (const code of RECOGNIZED_PROMO_CODES) {
+      if (search.includes(code)) return code;
+    }
+    const stored = localStorage.getItem(STORAGE_KEYS.promoCode);
+    if (stored && (RECOGNIZED_PROMO_CODES as readonly string[]).includes(stored)) {
+      return stored as RecognizedPromoCode;
+    }
+  } catch { /* storage unavailable */ }
+  return null;
+}
 
 // ── External Services ──────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
+import { detectActivePromoCode } from '@/lib/constants';
 import circleAppearGif from '@/assets/construct/circle-appear.gif';
 
 export function LoginScreen() {
@@ -21,7 +22,8 @@ export function LoginScreen() {
   const wallpaperSrc = getWallpaperBlurSrc(wallpaperId);
   const { play } = useSound();
 
-  const hasPromo = window.location.search.includes('YCSUS') || localStorage.getItem('construct:promo_code') === 'YCSUS';
+  const activePromoCode = detectActivePromoCode();
+  const hasPromo = activePromoCode !== null;
 
   // ── Phases: power → hello → login ──
   const [poweredOn, setPoweredOn] = useState(false);
@@ -151,7 +153,7 @@ export function LoginScreen() {
             <span className="text-[11px] font-medium text-white/30 tracking-widest uppercase mt-2">Power on</span>
             {hasPromo && (
               <div className="mt-8 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[11px] font-semibold tracking-widest uppercase px-4 drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">
-                <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">YCSUS</span>
+                <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">{activePromoCode}</span>
                 <span className="text-white/80">promo applied</span>
                 <span className="text-white/40">·</span>
                 <span className="text-white/80">1 month pro</span>

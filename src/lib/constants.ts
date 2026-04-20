@@ -6,7 +6,8 @@
  */
 
 // Re-export commonly used values so existing imports still work
-export { API_BASE_URL, STORAGE_KEYS } from './config';
+export { API_BASE_URL, STORAGE_KEYS, RECOGNIZED_PROMO_CODES, detectActivePromoCode } from './config';
+export type { RecognizedPromoCode } from './config';
 
 // Window defaults
 export const DEFAULT_WINDOW_WIDTH = 800;
