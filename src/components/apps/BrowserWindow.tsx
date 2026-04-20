@@ -403,12 +403,68 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     return 'Loading...';
   }, [isLoading]);
 
-  /* ── TinyFish iframe health ─────────────────────────────────────────────── */
-  const iframeLoadCount = useRef(0);
+  /* ── TinyFish iframe health & auto-reconnect ────────────────────────────── */
+  // Reconnect strategy: on iframe error, wait with exponential backoff and
+  // force-remount the iframe by bumping `reloadKey`. After MAX_ATTEMPTS failed
+  // retries, surface the dead state so the user sees the "results will appear
+  // in chat" fallback AND a manual "Reconnect" button. Resets whenever a new
+  // streaming URL arrives (agent moved to a new TinyFish run).
+  const MAX_RECONNECT_ATTEMPTS = 6;
+  const RECONNECT_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000, 30000];
   const [iframeDead, setIframeDead] = useState(false);
-  useEffect(() => { iframeLoadCount.current = 0; setIframeDead(false); }, [activeTinyfishUrl]);
-  const onIframeLoad = useCallback(() => { if (++iframeLoadCount.current > 1) setIframeDead(true); }, []);
-  const onIframeError = useCallback(() => setIframeDead(true), []);
+  const [reloadKey, setReloadKey] = useState(0);
+  const reloadAttempts = useRef(0);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // New streaming URL (new TinyFish run) — reset everything.
+    reloadAttempts.current = 0;
+    setIframeDead(false);
+    setReloadKey(0);
+    if (reloadTimerRef.current !== null) {
+      clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = null;
+    }
+  }, [activeTinyfishUrl]);
+
+  useEffect(() => () => {
+    // Unmount: clear any pending reconnect timer.
+    if (reloadTimerRef.current !== null) clearTimeout(reloadTimerRef.current);
+  }, []);
+
+  const scheduleReconnect = useCallback(() => {
+    if (reloadAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
+      setIframeDead(true);
+      return;
+    }
+    const delay = RECONNECT_BACKOFF_MS[reloadAttempts.current] ?? RECONNECT_BACKOFF_MS[RECONNECT_BACKOFF_MS.length - 1];
+    reloadAttempts.current += 1;
+    if (reloadTimerRef.current !== null) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      setReloadKey((k) => k + 1);
+    }, delay);
+  }, []);
+
+  const onIframeLoad = useCallback(() => {
+    // Successful load after retries → reset the counter so subsequent errors
+    // get a fresh backoff sequence rather than jumping straight to "dead".
+    if (reloadAttempts.current > 0) reloadAttempts.current = 0;
+  }, []);
+
+  const onIframeError = useCallback(() => {
+    scheduleReconnect();
+  }, [scheduleReconnect]);
+
+  const onManualReconnect = useCallback(() => {
+    reloadAttempts.current = 0;
+    setIframeDead(false);
+    if (reloadTimerRef.current !== null) {
+      clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = null;
+    }
+    setReloadKey((k) => k + 1);
+  }, []);
 
   /* ── Canvas + viewport refs ─────────────────────────────────────────────── */
   const canvasRef   = useRef<HTMLCanvasElement>(null);
@@ -800,8 +856,10 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
           <TinyfishOverlay
             streamUrl={activeTinyfishUrl!}
             isDead={iframeDead}
+            reloadKey={reloadKey}
             onLoad={onIframeLoad}
             onError={onIframeError}
+            onManualReconnect={onManualReconnect}
           />
         )}
 
@@ -891,10 +949,18 @@ function ChromeBar() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const TinyfishOverlay = memo(function TinyfishOverlay({
-  streamUrl, isDead, onLoad, onError,
+  streamUrl, isDead, reloadKey, onLoad, onError, onManualReconnect,
 }: {
-  streamUrl: string; isDead: boolean; onLoad: () => void; onError: () => void;
+  streamUrl: string;
+  isDead: boolean;
+  reloadKey: number;
+  onLoad: () => void;
+  onError: () => void;
+  onManualReconnect: () => void;
 }) {
+  const headerLabel = reloadKey > 0 && !isDead
+    ? `TinyFish Web Agent working... (reconnecting, attempt ${reloadKey})`
+    : 'TinyFish Web Agent working...';
   return (
     <div className="absolute inset-0 z-10 flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-3 py-1.5
@@ -904,7 +970,7 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)]" />
         </span>
-        TinyFish Web Agent working...
+        {headerLabel}
       </div>
       {isDead ? (
         <div className="flex-1 flex items-center justify-center bg-[var(--color-surface)]">
@@ -914,11 +980,22 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
             <p className="text-xs mt-1 text-[var(--color-text-subtle)]">
               Live preview disconnected — results will appear in chat
             </p>
+            <button
+              type="button"
+              onClick={onManualReconnect}
+              className="mt-4 px-3 py-1.5 text-xs rounded border border-[var(--color-border)]
+                         bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface)]
+                         text-[var(--color-text)] transition-colors"
+            >
+              Reconnect live preview
+            </button>
           </div>
         </div>
       ) : (
         <div className="flex-1 relative">
           <iframe
+            // reloadKey bump forces iframe re-mount to re-establish the stream.
+            key={reloadKey}
             src={streamUrl}
             className="absolute inset-0 w-full h-full border-none bg-white"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"

@@ -4182,8 +4182,24 @@ export const useComputerStore = create<ComputerStore>()(
                 },
               },
             });
-            // Update the TinyFish window's metadata with the streaming URL
-            const tfWindowId = findWindowForTinyfish(tfSubagentId);
+            // Route the streaming URL into the TinyFish window for this subagent.
+            // If no window exists (either the start event was missed, the window
+            // was previously closed by a completed sibling, or this is a
+            // streaming_url arriving before start), auto-open one now so the
+            // iframe becomes visible instead of silently populating state.
+            let tfWindowId = findWindowForTinyfish(tfSubagentId);
+            if (!tfWindowId) {
+              const isSubagent = tfSubagentId !== 'main';
+              const newWinId = useWindowStore.getState().openWindow('browser', {
+                title: isSubagent ? `TinyFish (sub-agent)` : 'TinyFish',
+                metadata: {
+                  tinyfishSubagentId: tfSubagentId,
+                  tinyfishStreamUrl: streamingUrl,
+                  ...(isSubagent && { subagentId: tfSubagentId }),
+                },
+              });
+              tfWindowId = typeof newWinId === 'string' ? newWinId : findWindowForTinyfish(tfSubagentId);
+            }
             if (tfWindowId) {
               const win = useWindowStore.getState().getWindow(tfWindowId);
               if (win) {
