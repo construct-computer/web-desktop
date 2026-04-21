@@ -27,7 +27,6 @@ import { agentWS } from '@/services/websocket';
 import * as api from '@/services/api';
 import { log } from '@/lib/logger';
 import { useDevAppStore } from '@/stores/devAppStore';
-import { injectSdk } from '@/lib/constructSdk';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, PanelLoading } from './AppShared';
@@ -218,42 +217,23 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
 function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; appId: string; devUrl: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const callToolDirect = useDevAppStore((s) => s.callToolDirect);
 
-  // Fetch HTML from dev server, inject SDK, create blob URL
-  useEffect(() => {
-    let cancelled = false;
-    let currentBlobUrl: string | null = null;
-
-    (async () => {
-      try {
-         // Try multiple paths for the app's HTML entry point
-         let html: string | null = null;
-         for (const path of ['/', '/index.html', '/ui/index.html', '/ui/']) {
-           try {
-             const res = await fetch(`${devUrl}${path}`);
-             if (res.ok && res.headers.get('content-type')?.includes('html')) {
-               html = await res.text();
-               break;
-             }
-           } catch { /* try next */ }
-         }
-         if (cancelled) return;
-         if (!html) { setError('Could not load app UI from dev server'); setLoading(false); return; }
-
-         // Inject Construct SDK and base tag for relative asset resolution
-         const modified = injectSdk(html, `${devUrl}`);
-         const blob = new Blob([modified], { type: 'text/html' });
-         currentBlobUrl = URL.createObjectURL(blob);
-         if (cancelled) { URL.revokeObjectURL(currentBlobUrl); return; }
-         setBlobUrl(currentBlobUrl);
-       } catch (err) {
-         if (!cancelled) { setError(err instanceof Error ? err.message : 'Failed to load app'); setLoading(false); }
-       }
-     })();
-   }, [devUrl]);
+  // Load the iframe directly from the dev server URL instead of fetching
+  // the HTML ourselves, injecting a bridge, and handing the iframe a
+  // blob: URL. The blob-URL approach inherits the *public* address
+  // space from its creator (staging.construct.computer) even though the
+  // iframe's base URL is localhost, so every subresource fetch
+  // (app.js, favicons, CSS) is a public→local cross-address-space
+  // request that trips Chromium's Private Network Access enforcement.
+  // Loading the iframe directly from `http://localhost:<port>/` gives
+  // the iframe a local address space, so same-host subresources stay
+  // local→local and PNA never comes into play. The Construct SDK
+  // (served by the app itself at `/sdk/construct.js`) auto-detects
+  // hosted vs. standalone at init and routes tool calls over the
+  // postMessage bridge when `window !== window.top`, so no injection
+  // is needed here.
 
 
 
@@ -311,17 +291,16 @@ function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; app
           </div>
         </div>
       )}
-      {blobUrl && (
-        <iframe
-          ref={iframeRef}
-          src={blobUrl}
-          className="absolute inset-0 w-full h-full border-none"
-          sandbox="allow-scripts"
-          onLoad={() => setLoading(false)}
-          onError={() => { setLoading(false); setError('Failed to load dev app UI'); }}
-          title={config.title}
-        />
-      )}
+      <iframe
+        ref={iframeRef}
+        src={devUrl}
+        className="absolute inset-0 w-full h-full border-none"
+        sandbox="allow-scripts"
+        onLoad={() => setLoading(false)}
+        onError={() => { setLoading(false); setError('Failed to load dev app UI'); }}
+        title={config.title}
+      />
+
     </div>
   );
 }
