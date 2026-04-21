@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { agentWS } from '@/services/websocket';
+import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 
 export interface DevAppTool {
   name: string;
@@ -37,10 +38,83 @@ interface DevAppState {
 
 const DEV_APP_ID = 'dev-app';
 
-async function mcpRequest(url: string, method: string, params?: Record<string, unknown>): Promise<any> {
+/**
+ * Cached call-token for the dev app. Minted by the construct worker's
+ * `/api/dev/mint-call-token` endpoint against the user's own session.
+ * The token grants the dev app's SDK `ctx.construct.*` access, scoped
+ * to the user who opened the dev app. Cached in memory only — never
+ * persisted, never sent off-origin.
+ */
+interface CallTokenCache {
+  token: string;
+  gatewayUrl: string;
+  expiresAt: number; // ms since epoch
+}
+const tokenCache = new Map<string, CallTokenCache>();
+/** Refresh if we're within this many ms of expiry. */
+const TOKEN_REFRESH_WINDOW_MS = 15_000;
+
+async function fetchCallToken(appId: string): Promise<CallTokenCache | null> {
+  const cached = tokenCache.get(appId);
+  if (cached && cached.expiresAt - Date.now() > TOKEN_REFRESH_WINDOW_MS) {
+    return cached;
+  }
+
+  try {
+    const sessionToken = localStorage.getItem(STORAGE_KEYS.token);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+
+    const res = await fetch(`${API_BASE_URL}/dev/mint-call-token`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({ appId }),
+    });
+    if (!res.ok) {
+      // 503 (gateway_disabled) is expected when CALL_TOKEN_SECRET isn't
+      // set — fall back to calling without headers so the app still
+      // loads; it just won't be able to use ctx.construct.*.
+      console.warn(`[devApp] mint-call-token returned ${res.status}; ctx.construct will be unavailable.`);
+      return null;
+    }
+    const data = (await res.json()) as { token: string; gatewayUrl: string; expiresAt: number };
+    const entry: CallTokenCache = {
+      token: data.token,
+      gatewayUrl: data.gatewayUrl,
+      expiresAt: data.expiresAt,
+    };
+    tokenCache.set(appId, entry);
+    return entry;
+  } catch (err) {
+    console.warn('[devApp] mint-call-token failed:', err);
+    return null;
+  }
+}
+
+async function buildMcpHeaders(appId: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const tok = await fetchCallToken(appId);
+  if (tok) {
+    headers['x-construct-call-token'] = tok.token;
+    headers['x-construct-gateway'] = tok.gatewayUrl;
+  }
+  return headers;
+}
+
+async function mcpRequest(
+  url: string,
+  method: string,
+  params?: Record<string, unknown>,
+  opts?: { attachCallToken?: boolean; appId?: string },
+): Promise<any> {
+  const headers = opts?.attachCallToken
+    ? await buildMcpHeaders(opts.appId ?? DEV_APP_ID)
+    : { 'Content-Type': 'application/json' };
+
   const res = await fetch(`${url}/mcp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -167,15 +241,20 @@ export const useDevAppStore = create<DevAppState>()(
         }
       },
 
-      handleToolCall: (callId, _appId, toolName, args) => {
+      handleToolCall: (callId, appId, toolName, args) => {
         const { devUrl } = get();
         if (!devUrl) {
           agentWS.send({ type: 'dev_app_tool_result', callId, error: 'Dev app not connected' });
           return;
         }
 
-        // Proxy the tool call to localhost (fire and forget — result sent via WS)
-        mcpRequest(devUrl, 'tools/call', { name: toolName, arguments: args })
+        // Proxy the tool call to localhost with a fresh call token so
+        // the dev app's `ctx.construct.*` bridge works. Fire and
+        // forget — result sent via WS.
+        mcpRequest(devUrl, 'tools/call', { name: toolName, arguments: args }, {
+          attachCallToken: true,
+          appId: appId || DEV_APP_ID,
+        })
           .then((rpcData) => {
             if (rpcData.error) {
               agentWS.send({ type: 'dev_app_tool_result', callId, error: rpcData.error.message || 'MCP error' });
@@ -192,7 +271,10 @@ export const useDevAppStore = create<DevAppState>()(
         const { devUrl } = get();
         if (!devUrl) throw new Error('Dev app not connected');
 
-        const rpcData = await mcpRequest(devUrl, 'tools/call', { name: toolName, arguments: args });
+        const rpcData = await mcpRequest(devUrl, 'tools/call', { name: toolName, arguments: args }, {
+          attachCallToken: true,
+          appId: DEV_APP_ID,
+        });
         if (rpcData.error) throw new Error(rpcData.error.message || 'MCP error');
         return rpcData.result;
       },
