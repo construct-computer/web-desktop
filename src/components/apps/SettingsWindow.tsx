@@ -29,9 +29,10 @@ import {
   getSlackConfigured, getSlackInstallUrl, getSlackStatus, disconnectSlack,
   getTelegramStatus, getTelegramLinkUrl, getTelegramBotInfo, telegramLoginWidget, disconnectTelegram,
   getAgentConfig, updateAgentConfig,
-  getComposioConnected, getComposioAuthUrl, composioFinalize, disconnectComposio, searchComposioToolkits,
-  composioConnect, getComposioToolkitDetail,
+  getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
+  getComposioToolkitDetail,
 } from '@/services/api';
+import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { BillingSection } from './BillingSection';
 import { UsageSection } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
@@ -478,50 +479,6 @@ function AuthBadge({ type }: { type: AuthType }) {
   );
 }
 
-const AUTH_TYPE_TO_SCHEME: Record<AuthType, string> = {
-  oauth: 'OAUTH2',
-  'api-key': 'API_KEY',
-  bearer: 'BEARER_TOKEN',
-  basic: 'BASIC',
-  'no-auth': 'NO_AUTH',
-  custom: 'CUSTOM',
-};
-
-interface CredentialField {
-  name: string;
-  displayName: string;
-  description?: string;
-  required: boolean;
-}
-
-function getDefaultFieldsForScheme(scheme: string): CredentialField[] {
-  switch (scheme) {
-    case 'API_KEY':
-      return [{ name: 'generic_api_key', displayName: 'API Key', required: true }];
-    case 'BEARER_TOKEN':
-      return [{ name: 'token', displayName: 'Bearer Token', required: true }];
-    case 'BASIC':
-      return [
-        { name: 'username', displayName: 'Username', required: true },
-        { name: 'password', displayName: 'Password', required: true },
-      ];
-    default:
-      return [];
-  }
-}
-
-/** Surface a friendlier message for known Composio backend errors. */
-function prettifyComposioError(slug: string, raw: string): string {
-  const txt = raw || '';
-  if (/DefaultAuthConfigNotFound|does not have managed credentials/i.test(txt)) {
-    return `${slug} doesn't support one-click connect — it needs your own API credentials. Try a different integration.`;
-  }
-  // Try to extract a JSON message field if backend forwarded a JSON blob
-  const match = txt.match(/"message":"([^"]+)"/);
-  if (match) return match[1];
-  return txt || `Failed to connect ${slug}`;
-}
-
 function composioLogoUrl(slug: string, logo?: string): string {
   return logo || `https://logos.composio.dev/api/${slug}`;
 }
@@ -565,14 +522,8 @@ function ConnectionsSection() {
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Inline credentials form for non-OAuth toolkits.
-  const [connectForm, setConnectForm] = useState<{
-    slug: string;
-    authScheme: string;
-    fields: CredentialField[];
-    values: Record<string, string>;
-    loading: boolean;
-  } | null>(null);
+  // When non-null, the row for this slug is expanded with the auth-scheme picker.
+  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -823,95 +774,18 @@ function ConnectionsSection() {
     searchTimerRef.current = setTimeout(() => runComposioSearch(q), 350);
   };
 
-  const handleComposioConnect = async (slug: string, authType?: AuthType) => {
+  // Clicking "Connect" on a Composio row opens the multi-scheme picker inline.
+  // The picker (ComposioAuthPanel) decides between OAuth, API key, bearer, basic,
+  // or NO_AUTH based on what the toolkit actually supports.
+  const handleComposioConnect = (slug: string) => {
     setError(null);
-    const scheme = authType ? AUTH_TYPE_TO_SCHEME[authType] : 'OAUTH2';
-
-    // OAuth → existing popup flow
-    if (scheme === 'OAUTH2' || scheme === 'OAUTH1') {
-      setComposioPending(slug);
-      try {
-        const r = await getComposioAuthUrl(slug);
-        if (r.success && r.data?.url) {
-          openAuthRedirect(r.data.url);
-          setTimeout(() => setComposioPending((cur) => (cur === slug ? null : cur)), 300_000);
-        } else {
-          const rawMsg = (r.success && r.data?.error) || (!r.success && r.error) || '';
-          setError(prettifyComposioError(slug, typeof rawMsg === 'string' ? rawMsg : ''));
-          setComposioPending(null);
-        }
-      } catch (err) {
-        setError(prettifyComposioError(slug, err instanceof Error ? err.message : ''));
-        setComposioPending(null);
-      }
-      return;
-    }
-
-    // NO_AUTH → connect immediately (no form needed)
-    if (scheme === 'NO_AUTH') {
-      setComposioPending(slug);
-      try {
-        const r = await composioConnect(slug, scheme, {});
-        if (r.success && r.data?.ok) {
-          await refreshComposio();
-        } else {
-          const rawMsg = (r.success && r.data?.error) || (!r.success && r.error) || '';
-          setError(prettifyComposioError(slug, typeof rawMsg === 'string' ? rawMsg : ''));
-        }
-      } catch (err) {
-        setError(prettifyComposioError(slug, err instanceof Error ? err.message : ''));
-      }
-      setComposioPending(null);
-      return;
-    }
-
-    // API_KEY / BEARER_TOKEN / BASIC → expand inline form
-    setConnectForm({
-      slug,
-      authScheme: scheme,
-      fields: getDefaultFieldsForScheme(scheme),
-      values: {},
-      loading: true,
-    });
-    // Fetch detail to get the toolkit-specific field names (Composio knows the exact names).
-    try {
-      const detail = await getComposioToolkitDetail(slug);
-      if (detail.success && detail.data) {
-        const ac = detail.data.auth_config?.find((a) => (a.mode || '').toUpperCase() === scheme);
-        const fields = ac?.fields && ac.fields.length > 0 ? ac.fields : getDefaultFieldsForScheme(scheme);
-        setConnectForm((prev) => (prev?.slug === slug ? { ...prev, fields, loading: false } : prev));
-      } else {
-        setConnectForm((prev) => (prev?.slug === slug ? { ...prev, loading: false } : prev));
-      }
-    } catch {
-      setConnectForm((prev) => (prev?.slug === slug ? { ...prev, loading: false } : prev));
-    }
+    setConnectingSlug(slug);
+    setExpandedComposio(slug);
   };
 
-  const handleSubmitConnectForm = async () => {
-    if (!connectForm) return;
-    // Validate required fields
-    for (const f of connectForm.fields) {
-      if (f.required && !(connectForm.values[f.name] || '').trim()) {
-        setError(`${f.displayName} is required`);
-        return;
-      }
-    }
-    setError(null);
-    setComposioPending(connectForm.slug);
-    try {
-      const r = await composioConnect(connectForm.slug, connectForm.authScheme, connectForm.values);
-      if (r.success && r.data?.ok) {
-        await refreshComposio();
-        setConnectForm(null);
-      } else {
-        const rawMsg = (r.success && r.data?.error) || (!r.success && r.error) || '';
-        setError(prettifyComposioError(connectForm.slug, typeof rawMsg === 'string' ? rawMsg : ''));
-      }
-    } catch (err) {
-      setError(prettifyComposioError(connectForm.slug, err instanceof Error ? err.message : ''));
-    }
-    setComposioPending(null);
+  const handleComposioConnected = async (slug: string) => {
+    setConnectingSlug((cur) => (cur === slug ? null : cur));
+    await refreshComposio();
   };
 
   const handleComposioDisconnect = async (slug: string) => {
@@ -1049,7 +923,7 @@ function ConnectionsSection() {
                 filteredSearchResults.slice(0, 10).map((r, i) => {
                   const at = inferAuthType(r.auth_schemes, r.no_auth);
                   const isItemExpanded = expandedComposio === r.slug;
-                  const isFormActive = connectForm?.slug === r.slug;
+                  const isConnecting = connectingSlug === r.slug && !composioConnected.has(r.slug);
                   const isAvailable = isToolkitAvailableForPlan(r.slug, userPlan || 'free');
                   return (
                     <ConnectionRow
@@ -1069,13 +943,14 @@ function ConnectionsSection() {
                       isPending={composioPending === r.slug}
                       disabled={!isAvailable}
                       disabledReason={!isAvailable ? 'Upgrade to Starter or Pro to connect this integration' : undefined}
-                      onConnect={() => handleComposioConnect(r.slug, at)}
+                      onConnect={() => handleComposioConnect(r.slug)}
                       onDisconnect={() => handleComposioDisconnect(r.slug)}
                       isLast={i === Math.min(filteredSearchResults.length, 10) - 1}
                       onToggleExpand={() => {
                         const willExpand = !isItemExpanded;
                         setExpandedComposio(willExpand ? r.slug : null);
-                        if (willExpand && !composioDetails[r.slug] && !isFormActive) {
+                        if (!willExpand && isConnecting) setConnectingSlug(null);
+                        if (willExpand && !composioDetails[r.slug] && !isConnecting) {
                           setComposioDetails(prev => ({ ...prev, [r.slug]: { ...prev[r.slug], loading: true } }));
                           getComposioToolkitDetail(r.slug).then(res => {
                             if (res.success && res.data) {
@@ -1097,14 +972,10 @@ function ConnectionsSection() {
                       }}
                       isExpanded={isItemExpanded}
                       expanded={
-                        isFormActive ? (
-                          <CredentialsForm
-                            form={connectForm}
-                            submitting={composioPending === r.slug}
-                            onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
-                            onSubmit={handleSubmitConnectForm}
-                            onCancel={() => setConnectForm(null)}
-                          />
+                        isConnecting ? (
+                          <div className="pt-3 pl-[40px]">
+                            <ComposioAuthPanel slug={r.slug} onConnected={() => handleComposioConnected(r.slug)} />
+                          </div>
                         ) : isItemExpanded ? (
                           <div className="pt-3 pl-[40px]">
                             {composioDetails[r.slug]?.loading ? (
@@ -1151,7 +1022,7 @@ function ConnectionsSection() {
               ) : (
                 composioList.map((def, i) => {
                   const isItemExpanded = expandedComposio === def.slug;
-                  const isFormActive = connectForm?.slug === def.slug;
+                  const isConnecting = connectingSlug === def.slug && !composioConnected.has(def.slug);
                   const isAvailable = isToolkitAvailableForPlan(def.slug, userPlan || 'free');
                   return (
                     <ConnectionRow
@@ -1171,14 +1042,15 @@ function ConnectionsSection() {
                       isPending={composioPending === def.slug}
                       disabled={!isAvailable}
                       disabledReason={!isAvailable ? 'Upgrade to Starter or Pro to connect this integration' : undefined}
-                      onConnect={() => handleComposioConnect(def.slug, def.authType)}
+                      onConnect={() => handleComposioConnect(def.slug)}
                       onDisconnect={() => handleComposioDisconnect(def.slug)}
                       isLast={i === composioList.length - 1}
                       onToggleExpand={() => {
                         const willExpand = !isItemExpanded;
                         setExpandedComposio(willExpand ? def.slug : null);
+                        if (!willExpand && isConnecting) setConnectingSlug(null);
                         // Fetch details when expanding
-                        if (willExpand && !composioDetails[def.slug] && !isFormActive) {
+                        if (willExpand && !composioDetails[def.slug] && !isConnecting) {
                           setComposioDetails(prev => ({ ...prev, [def.slug]: { ...prev[def.slug], loading: true } }));
                           getComposioToolkitDetail(def.slug).then(r => {
                             if (r.success && r.data) {
@@ -1200,14 +1072,10 @@ function ConnectionsSection() {
                       }}
                       isExpanded={isItemExpanded}
                       expanded={
-                        isFormActive ? (
-                          <CredentialsForm
-                            form={connectForm}
-                            submitting={composioPending === def.slug}
-                            onChange={(name, value) => setConnectForm((prev) => prev ? { ...prev, values: { ...prev.values, [name]: value } } : null)}
-                            onSubmit={handleSubmitConnectForm}
-                            onCancel={() => setConnectForm(null)}
-                          />
+                        isConnecting ? (
+                          <div className="pt-3 pl-[40px]">
+                            <ComposioAuthPanel slug={def.slug} onConnected={() => handleComposioConnected(def.slug)} />
+                          </div>
                         ) : isItemExpanded ? (
                           <div className="pt-3 pl-[40px]">
                             {composioDetails[def.slug]?.loading ? (
@@ -1420,71 +1288,6 @@ function TelegramExpanded({
   return null;
 }
 
-function CredentialsForm({
-  form, submitting, onChange, onSubmit, onCancel,
-}: {
-  form: { slug: string; authScheme: string; fields: CredentialField[]; values: Record<string, string>; loading: boolean };
-  submitting: boolean;
-  onChange: (name: string, value: string) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-}) {
-  const isPassword = (name: string) =>
-    /key|secret|token|password|api/i.test(name);
-
-  const schemeLabel: Record<string, string> = {
-    API_KEY: 'API key',
-    BEARER_TOKEN: 'bearer token',
-    BASIC: 'username and password',
-  };
-
-  return (
-    <div className="pl-[40px] space-y-2">
-      <p className="text-[10px] text-[var(--color-text-muted)]">
-        Enter your {schemeLabel[form.authScheme] || 'credentials'} to connect.
-      </p>
-      {form.loading ? (
-        <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] py-1">
-          <Loader2 className="w-3 h-3 animate-spin" /> Loading required fields...
-        </div>
-      ) : (
-        form.fields.map((f) => (
-          <div key={f.name}>
-            <label className="block text-[10px] font-medium text-[var(--color-text-muted)] mb-0.5">
-              {f.displayName}{f.required && <span className="text-red-500 ml-0.5">*</span>}
-            </label>
-            <input
-              type={isPassword(f.name) ? 'password' : 'text'}
-              value={form.values[f.name] || ''}
-              onChange={(e) => onChange(f.name, e.target.value)}
-              placeholder={f.description || f.displayName}
-              className="w-full text-[12px] px-2.5 py-1.5 rounded-[6px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-        ))
-      )}
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          onClick={onSubmit}
-          disabled={submitting || form.loading}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-[6px] bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-        >
-          {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
-          Connect
-        </button>
-        <button
-          onClick={onCancel}
-          disabled={submitting}
-          className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
 
 
 // ── Appearance Section ──

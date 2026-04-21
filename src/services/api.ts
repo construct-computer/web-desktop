@@ -826,7 +826,14 @@ export async function getComposioConfigured(): Promise<ApiResult<{ configured: b
   return request('/composio/configured');
 }
 
-export async function getComposioAuthUrl(toolkit: string): Promise<ApiResult<{ url?: string; connected_account_id?: string; error?: string }>> {
+export async function getComposioAuthUrl(toolkit: string): Promise<ApiResult<{
+  url?: string;
+  connected_account_id?: string;
+  error?: string;
+  code?: 'OAUTH_UNAVAILABLE' | 'OAUTH_NOT_MANAGED' | 'PLAN_UPGRADE_REQUIRED' | string;
+  availableSchemes?: string[];
+  managedSchemes?: string[];
+}>> {
   return request(`/composio/${encodeURIComponent(toolkit)}/auth-url`);
 }
 
@@ -907,6 +914,7 @@ export async function getComposioToolkitDetail(toolkit: string): Promise<ApiResu
     fields: Array<{ name: string; displayName: string; description?: string; required: boolean }>;
   }>;
   composio_managed?: boolean;
+  composio_managed_schemes?: string[];
   tools: Array<{ slug: string; name: string; description: string }>;
 }>> {
   return request(`/composio/${encodeURIComponent(toolkit)}/detail`);

@@ -18,6 +18,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import Markdown from 'react-markdown';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
+import { ComposioAuthPanel } from './ComposioAuthPanel';
 import {
   AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, Badge
 } from './AppShared';
@@ -187,22 +188,6 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setPendingActions(prev => { const n = { ...prev }; delete n[appId]; return n; });
   };
 
-  const handleConnect = async (toolkit: string) => {
-    setPendingActions(prev => ({ ...prev, [`composio-${toolkit}`]: true }));
-    try {
-      const res = await api.getComposioAuthUrl(toolkit);
-      if (res.success && res.data?.url) {
-        window.open(res.data.url, '_blank');
-        const pollInterval = setInterval(async () => {
-          await fetchConnected();
-          setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
-          clearInterval(pollInterval);
-        }, 5000);
-        setTimeout(() => clearInterval(pollInterval), 120_000);
-      } else { setError('Failed to get auth URL'); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
-    } catch (err) { setError(`Connect failed: ${err instanceof Error ? err.message : err}`); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
-  };
-
   const handleDisconnect = async (toolkit: string) => {
     setPendingActions(prev => ({ ...prev, [`composio-${toolkit}`]: true }));
     try {
@@ -244,10 +229,12 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     };
     const uninstallTarget = getUninstallTarget();
 
+    // For Composio apps the connect UI lives in the body (ComposioAuthPanel),
+    // so we don't surface a top-level "Connect" button — the panel's per-scheme
+    // buttons handle OAuth / API key / etc.
     const getAction = detail.registryApp ? () => handleInstallRegistry(detail)
       : detail.smitheryServer && (!detail.smitheryDetail || detail.smitheryDetail.connections.length > 0) ? () => handleInstallSmithery(detail)
       : isSkill && detail.smitherySkill ? () => handleInstallSkill(detail)
-      : isComposio && detail.composioSlug && !installed ? () => handleConnect(detail.composioSlug!)
       : null;
 
     const sourceLabel = detail.author || (isComposio ? 'Integration' : isSkill ? 'Skill' : isSmithery ? 'MCP Server' : 'Construct App');
@@ -324,12 +311,12 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                 ) : getAction ? (
                   <button
                     onClick={() => {
-                      if (!detail.verified && !isComposio && confirm(`${detail.name} is from an unverified publisher. Install anyway?`)) getAction();
-                      else if (detail.verified || isComposio) getAction();
+                      if (!detail.verified && confirm(`${detail.name} is from an unverified publisher. Install anyway?`)) getAction();
+                      else if (detail.verified) getAction();
                     }}
                     className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity shadow-sm"
                   >
-                    {isComposio ? 'Connect' : 'Install'}
+                    Install
                   </button>
                 ) : isSmithery && detail.smitheryDetail && detail.smitheryDetail.connections.length === 0 ? (
                   <span className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] shadow-sm">Unavailable</span>
@@ -356,6 +343,15 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                 <p className="text-[11px] text-amber-500/70 mt-0.5">This integration requires a Starter or Pro plan. Upgrade to unlock access.</p>
               </div>
             </div>
+          )}
+
+          {isComposio && detail.composioSlug && !installed && !detail.requiresUpgrade && (
+            <InfoCard title="Connect this integration" subtitle="Choose how you'd like to sign in.">
+              <ComposioAuthPanel
+                slug={detail.composioSlug}
+                onConnected={() => { fetchConnected(); }}
+              />
+            </InfoCard>
           )}
 
           {/* Configuration */}

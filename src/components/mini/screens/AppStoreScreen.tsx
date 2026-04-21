@@ -172,7 +172,12 @@ export function AppStoreScreen() {
           clearInterval(pollInterval);
         }, 5000);
         setTimeout(() => clearInterval(pollInterval), 120_000);
-      } else { haptic('error'); setError('Failed to get auth URL'); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
+      } else {
+        haptic('error');
+        const msg = (res.success && res.data?.error) || (!res.success && res.error) || 'Failed to get auth URL';
+        setError(typeof msg === 'string' ? msg : 'Failed to get auth URL');
+        setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
+      }
     } catch (err) { haptic('error'); setError(`Connect failed: ${err instanceof Error ? err.message : err}`); setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; }); }
   };
 

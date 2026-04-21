@@ -100,11 +100,6 @@ export const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: 'search', label: 'Search & Web' },
 ];
 
-export const FREE_TIER_COMPOSIO_TOOLS: string[] = [
-  'googledrive', 'googlecalendar', 'gmail', 'slack',
-  'notion', 'github', 'linear', 'discord',
-];
-
 export const FALLBACK_CURATED: CuratedDef[] = [
   { slug: 'googlecalendar', name: 'Google Calendar', description: 'Manage events and scheduling.', category: 'productivity' },
   { slug: 'notion', name: 'Notion', description: 'Manage pages and databases.', category: 'productivity' },
@@ -223,18 +218,15 @@ export function smitheryToUnified(srv: SmitheryServer, installed: boolean, curat
   };
 }
 
-export function composioToUnified(def: CuratedDef, connected: boolean, plan: string = 'free'): UnifiedApp {
-  const isFreeTier = FREE_TIER_COMPOSIO_TOOLS.includes(def.slug.toLowerCase());
-  const isPaidPlan = plan === 'starter' || plan === 'pro';
-  const isAvailable = isPaidPlan || isFreeTier;
+export function composioToUnified(def: CuratedDef, connected: boolean, _plan: string = 'free'): UnifiedApp {
   return {
     id: `composio-${def.slug}`, name: def.name, description: def.description,
     icon: composioIconUrl(def.slug), category: def.category,
     tags: ['integration'], source: 'composio', tools: [], hasUi: false,
     status: connected ? 'connected' : 'available', composioSlug: def.slug,
     verified: true, sourceUrl: `https://composio.dev/toolkits/${def.slug}`,
-    available: isAvailable,
-    requiresUpgrade: !isAvailable && plan === 'free',
+    available: true,
+    requiresUpgrade: false,
   };
 }
 

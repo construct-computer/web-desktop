@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, Package, Wrench,
-  ExternalLink, KeyRound, RefreshCw, Check,
+  ExternalLink, RefreshCw, Check,
   Search, Copy, User as UserIcon, Shield, Globe, Unplug, Hash, Calendar, Plug,
   Info,
 } from 'lucide-react';
@@ -29,6 +29,7 @@ import { log } from '@/lib/logger';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { injectSdk } from '@/lib/constructSdk';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
+import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, PanelLoading } from './AppShared';
 import { formatDate, prettyAuthLabel } from '@/hooks/useAppDiscovery';
 
@@ -550,15 +551,6 @@ function ComposioAppPanel({
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleReconnect = async () => {
-    try {
-      const res = await api.getComposioAuthUrl(slug);
-      if (res.success && res.data?.url) {
-        window.open(res.data.url, '_blank', 'width=600,height=700');
-      }
-    } catch { /* ignore */ }
-  };
-
   const handleDisconnect = async () => {
     setDisconnecting(true);
     try {
@@ -614,21 +606,12 @@ function ComposioAppPanel({
       />
 
       {!connected && (
-        <div className="flex items-start gap-2.5 px-3.5 py-2.5 mb-4 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/15 dark:border-amber-500/20">
-          <KeyRound className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Connection lost</p>
-            <p className="text-[11px] text-amber-500/70 dark:text-amber-400/60 mt-0.5 leading-relaxed">
-              Re-authorize to restore access.
-            </p>
-            <button
-              onClick={handleReconnect}
-              className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-            >
-              <ExternalLink className="w-3 h-3" /> Reconnect
-            </button>
-          </div>
-        </div>
+        <InfoCard
+          title="Connect this integration"
+          subtitle="Choose how you'd like to sign in."
+        >
+          <ComposioAuthPanel slug={slug} onConnected={refresh} />
+        </InfoCard>
       )}
 
       {connected && account && account.connected && (
