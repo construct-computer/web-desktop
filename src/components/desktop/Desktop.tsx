@@ -23,7 +23,7 @@ import { SetupModal } from '@/components/apps/SetupModal';
 import { PromoCodeModal } from '@/components/apps/PromoCodeModal';
 import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
-import { getSlackStatus } from '@/services/api';
+import { getSlackStatus, validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, DOCK_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 
@@ -223,14 +223,39 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // Read localStorage once on mount; the "seen" flag is session-scoped so a
   // hard refresh surfaces the promo again. Within one tab session,
   // setPromoDismissed suppresses it after the user clicks "Maybe later".
-  const [promoCode] = useState<string | null>(() => {
-    try {
-      const code = localStorage.getItem(STORAGE_KEYS.promoCode);
-      const seen = sessionStorage.getItem(STORAGE_KEYS.promoSeen) === '1';
-      return code && !seen ? code : null;
-    } catch { return null; }
-  });
+  //
+  // Validate the code against the billing gateway BEFORE surfacing the modal
+  // so we don't show a "promo applied" popup for garbage codes that would
+  // only fail at checkout. `promoCode` is set to the code only after it's
+  // been verified (or we couldn't reach the API — fail open).
+  const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoDismissed, setPromoDismissed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    let storedCode: string | null = null;
+    try {
+      storedCode = localStorage.getItem(STORAGE_KEYS.promoCode);
+      const seen = sessionStorage.getItem(STORAGE_KEYS.promoSeen) === '1';
+      if (seen) storedCode = null;
+    } catch { /* storage unavailable */ }
+
+    if (!storedCode) return;
+
+    validateDiscountCode(storedCode).then((result) => {
+      if (cancelled) return;
+      if (result.success && result.data.valid) {
+        setPromoCode(storedCode);
+        return;
+      }
+      // Invalid code — drop it so we don't keep re-checking on every load
+      // and so it doesn't sneak onto the checkout body later.
+      try { localStorage.removeItem(STORAGE_KEYS.promoCode); } catch { /* */ }
+    });
+
+    return () => { cancelled = true; };
+  }, []);
 
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.

@@ -1419,6 +1419,12 @@ export async function createCheckout(plan = 'pro', coupon?: string): Promise<Api
   });
 }
 
+export async function validateDiscountCode(
+  code: string,
+): Promise<ApiResult<{ valid: boolean; reason?: string; unverified?: boolean }>> {
+  return request(`/billing/discount/validate?code=${encodeURIComponent(code)}`);
+}
+
 export async function switchPlan(plan: 'free' | 'starter' | 'pro'): Promise<ApiResult<{ 
   ok: boolean; 
   plan: string; 
