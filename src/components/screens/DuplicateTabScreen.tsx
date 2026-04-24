@@ -1,7 +1,7 @@
 import { Monitor } from 'lucide-react';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { takeoverLeadership } from '@/lib/tabSingleton';
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 
 /**
  * Shown when another browser tab already has the desktop open.

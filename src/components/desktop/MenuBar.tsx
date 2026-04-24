@@ -19,7 +19,7 @@ import { TrackerWindow } from '@/components/apps/TrackerWindow';
 import type { WindowConfig } from '@/types';
 
 // Assets
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 
 interface MenuBarProps {
   onLogout?: () => void;

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Power } from 'lucide-react';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
-import logoImg from '@/assets/construct-logo.png';
+import logoImg from '@/assets/logo.png';
 
 interface WelcomeScreenProps {
   onComplete: () => void;

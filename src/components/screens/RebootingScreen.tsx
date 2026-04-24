@@ -1,4 +1,4 @@
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 
 interface RebootingScreenProps {
   status: 'stopping' | 'updating' | 'starting' | 'done' | 'error';

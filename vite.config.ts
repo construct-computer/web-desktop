@@ -5,6 +5,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { VitePWA } from "vite-plugin-pwa";
 
 const gitHash = execSync('git rev-parse --short HEAD').toString().trim();
 
@@ -13,7 +14,38 @@ export default defineConfig({
   define: {
     __GIT_HASH__: JSON.stringify(gitHash),
   },
-  plugins: [react(), tailwindcss(), cloudflare()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    cloudflare(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5000000
+      },
+      manifest: {
+        name: 'construct.computer',
+        short_name: 'Construct',
+        description: 'AI Agent Platform - Your AI agents run autonomously 24/7',
+        theme_color: '#000000',
+        background_color: '#000000',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

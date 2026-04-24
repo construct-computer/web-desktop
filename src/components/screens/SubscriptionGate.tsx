@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2, LogOut, Monitor, Bot, Globe, Mail, Code, ArrowRight, Tag, Key, Zap, Check } from 'lucide-react';
 import { useSettingsStore, getWallpaperSrc } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 
 interface SubscriptionGateProps {
   onSubscribed: () => void;

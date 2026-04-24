@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
 import { useSound } from '@/hooks/useSound';
-import logoImg from '@/assets/construct-logo.png';
+import logoImg from '@/assets/logo.png';
 
 interface GoodbyeScreenProps {
   /** Called when the full animation finishes and screen is black */

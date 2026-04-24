@@ -1,4 +1,4 @@
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 import type { WindowConfig } from '@/types';
 
 declare const __GIT_HASH__: string;

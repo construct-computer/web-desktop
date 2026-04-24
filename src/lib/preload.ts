@@ -41,8 +41,8 @@ function markLoaded(): void {
 // ─── Asset imports — grouped by boot phase ──────────────────────────────
 
 // Phase 1: Welcome / Brand
-import logoImg from '@/assets/construct-logo.png';
-import constructImg from '@/assets/construct.png';
+import logoImg from '@/assets/logo.png';
+import constructImg from '@/assets/logo.png';
 import logoPng from '@/assets/logo.png';
 
 // Phase 2: Login screen

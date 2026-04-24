@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, Square, Bot, User, Loader2, Globe, Terminal, FileText, Monitor, Wrench, SquarePen, ChevronDown, ChevronRight, Trash2, MessageSquare, Zap, AlertCircle, CalendarDays, Network, Cog, CheckCircle2, XCircle } from 'lucide-react';
-import constructLogo from '@/assets/construct-logo.png';
+import constructLogo from '@/assets/logo.png';
 import { Button, MarkdownRenderer } from '@/components/ui';
 import { AuthConnectCard, parseAuthMarker } from '@/components/ui/AuthConnectCard';
 import { AskUserCard } from '@/components/ui/AskUserCard';
@@ -613,6 +613,11 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
         )}
 
         {chatMessages.map((msg, index) => {
+          // Skip internal app messages
+          if (msg.role === 'user' && msg.content.startsWith('[App | ')) {
+            return null;
+          }
+
           // ── Operation group cards (delegation / consultation / background) ──
           if (msg.role === 'activity' && msg.operationId && (msg.activityType === 'delegation-group' || msg.activityType === 'consultation-group' || msg.activityType === 'background-group' || msg.activityType === 'orchestration-group')) {
             return (

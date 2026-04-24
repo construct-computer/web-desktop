@@ -54,6 +54,7 @@ export function groupMessages(messages: ChatMessage[], isAgentRunning: boolean):
     else if (msg.role === 'system') { /* skip */ }
     else if (msg.role === 'agent' && !msg.isError && !msg.content.trim()) { /* skip empty */ }
     else if (msg.role === 'agent' && !msg.isError && !msg.isStopped && i !== lastAgentIdx && isLikelyThinkingText(msg.content)) { /* filter thinking */ }
+    else if (msg.role === 'user' && msg.content.startsWith('[App | ')) { /* skip internal app messages */ }
     else { flush(); groups.push({ type: 'message', msg, index: i }); }
   }
   flush();
