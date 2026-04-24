@@ -13,7 +13,8 @@ import { formatTime, formatDate } from '@/lib/utils';
 import { getSlackStatus } from '@/services/api';
 import { useLatency } from '@/hooks/useLatency';
 import { usePWA } from '@/hooks/usePWA';
-import { Download, ExternalLink } from 'lucide-react';
+import { openSettingsToSection } from '@/lib/settingsNav';
+import { Download, ExternalLink, Sparkles } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -329,15 +330,27 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {/* Debug console toggle — staging only */}
         {!isMobile && window.location.hostname !== 'beta.construct.computer' && <DebugPanelToggle />}
 
+        {/* Upgrade Pill */}
+        {!isMobile && (
+          <button
+            onClick={() => openSettingsToSection('subscription')}
+            className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
+            title="Upgrade Plan"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium">Upgrade</span>
+          </button>
+        )}
+
         {/* PWA Install / Open App Pill */}
         {!isStandalone && !isMobile && (
           (deferredPrompt || !isInstalled) ? (
             <button
               onClick={installPWA}
               disabled={!deferredPrompt}
-              className={`flex items-center gap-1.5 px-2 py-1 mr-1 rounded-md transition ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all ${
                 deferredPrompt 
-                  ? 'hover:bg-black/8 dark:hover:bg-white/10 text-black/70 dark:text-white/90 cursor-pointer'
+                  ? 'bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 cursor-pointer'
                   : 'text-black/30 dark:text-white/30 cursor-default'
               }`}
               title="Install App"
@@ -350,7 +363,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
               onClick={() => {
                 alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
               }}
-              className="flex items-center gap-1.5 px-2 py-1 mr-1 rounded-md transition cursor-pointer hover:bg-black/8 dark:hover:bg-white/10 text-black/70 dark:text-white/90"
+              className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400"
               title="Open in App"
             >
               <ExternalLink className="w-3.5 h-3.5" />
