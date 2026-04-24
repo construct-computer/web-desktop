@@ -335,24 +335,26 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             <button
               onClick={installPWA}
               disabled={!deferredPrompt}
-              className={`flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-full border transition-all ${
+              className={`flex items-center gap-1.5 px-2 py-1 mr-1 rounded-md transition ${
                 deferredPrompt 
-                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 cursor-pointer'
-                  : 'bg-black/5 dark:bg-white/5 text-black/40 dark:text-white/40 border-transparent cursor-default'
+                  ? 'hover:bg-black/8 dark:hover:bg-white/10 text-black/70 dark:text-white/90 cursor-pointer'
+                  : 'text-black/30 dark:text-white/30 cursor-default'
               }`}
+              title="Install App"
             >
-              <Download className="w-3 h-3" />
-              <span className="text-xs font-semibold tracking-wide">Install App</span>
+              <Download className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium">Install App</span>
             </button>
           ) : (
             <button
               onClick={() => {
                 alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-2 py-1 mr-1 rounded-md transition cursor-pointer hover:bg-black/8 dark:hover:bg-white/10 text-black/70 dark:text-white/90"
+              title="Open in App"
             >
-              <ExternalLink className="w-3 h-3" />
-              <span className="text-xs font-semibold tracking-wide">Open in App</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium">Open in App</span>
             </button>
           )
         )}
