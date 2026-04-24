@@ -262,24 +262,6 @@ export function StatusWidget() {
         </>
       )}
       </div>
-
-      {/* Get Premium shortcut — free plan only */}
-      {userPlan === 'free' && (
-        <button
-          onClick={() => openSettingsToSection('subscription')}
-          className="flex flex-col items-center gap-1 mt-2 group cursor-pointer self-center"
-        >
-          <img
-            src={buyIcon}
-            alt="Get Premium"
-            className="w-12 h-12 drop-shadow-lg group-hover:scale-110 transition-transform duration-150"
-            draggable={false}
-          />
-          <span className="text-[10px] font-medium drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-            Get Premium
-          </span>
-        </button>
-      )}
     </div>
   );
 }

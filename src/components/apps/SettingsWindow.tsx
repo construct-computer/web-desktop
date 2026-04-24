@@ -440,28 +440,9 @@ const DEFAULT_COMPOSIO_INTEGRATIONS: ConnectionDef[] = [
  *  so users don't try to connect them via composio's managed OAuth (which doesn't exist). */
 const BUILTIN_COMPOSIO_SLUGS = new Set(['slack', 'telegram']);
 
-/** Free tier allowed Composio toolkits (suggestions + curated essentials).
- *  Free users can only connect these; paid plans get full access. */
-const FREE_COMPOSIO_TOOLKITS = new Set([
-  // Google Workspace essentials
-  'gmail',
-  'googledrive',
-  'googledocs',
-  'googlesheets',
-  'googlecalendar',
-  // Developer essentials
-  'github',
-  // Communication
-  'discord',
-  // Productivity
-  'notion',
-]);
-
 /** Check if a toolkit is available for the user's plan. */
-function isToolkitAvailableForPlan(slug: string, plan: string): boolean {
-  if (plan === 'pro' || plan === 'starter') return true;
-  // Free tier: only whitelisted toolkits
-  return FREE_COMPOSIO_TOOLKITS.has(slug.toLowerCase());
+function isToolkitAvailableForPlan(_slug: string, _plan: string): boolean {
+  return true; // All integrations available to all plans
 }
 
 /** Map raw Composio auth_schemes (and no_auth flag) to a single normalized AuthType. */
@@ -893,14 +874,6 @@ function ConnectionsSection() {
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
         Connect services so your agent can read your email, manage files, and more.
-        {userPlan === 'free' && (
-          <>
-            {' '}
-            <span className="text-amber-400/70">
-              Free plan: limited to essential integrations. Upgrade for full access.
-            </span>
-          </>
-        )}
       </p>
 
       {/* Search */}

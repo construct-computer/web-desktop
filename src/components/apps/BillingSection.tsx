@@ -140,7 +140,7 @@ const PLAN_FEATURES: FeatureRow[] = [
   { label: 'Agent Email Address',   tooltip: 'Get a dedicated @agents.construct.computer email address that your agent can autonomously read and reply from.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
   { label: 'Background Execution',  tooltip: 'Allow agents to continue long-running tasks asynchronously even after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
   { label: 'Bring Your Own Keys',   tooltip: 'Use your own LLM API keys (OpenAI, Anthropic, etc.) to completely bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: false, proHas: true },
+  { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
 ];
 
 /** Weekly usage caps in USD (mirror of worker/src/config/tiers.ts TIER_LIMITS). */
