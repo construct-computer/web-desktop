@@ -8,9 +8,9 @@ import {
   ExternalLink,
   Loader2,
   Check,
-  X,
+  Minus,
 } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { Button, Tooltip } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 
 /* ── Reusable card wrapper ── */
@@ -118,6 +118,7 @@ const PLAN_ORDER: PlanId[] = ['free', 'starter', 'pro'];
 
 type FeatureRow = {
   label: string;
+  tooltip: string;
   free: string;
   starter: string;
   pro: string;
@@ -130,11 +131,16 @@ type FeatureRow = {
 };
 
 const PLAN_FEATURES: FeatureRow[] = [
-  { label: 'AI model',          free: 'Basic',   starter: 'Fast',  pro: 'Premium',    freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Storage',           free: '500 MB',  starter: '1 GB',  pro: '2 GB',       freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Integrations',      free: 'Selected', starter: 'More', pro: 'Full',       freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Agent email',       free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
-  { label: 'Background agents', free: '',        starter: '',      pro: '',            freeHas: false, starterHas: false, proHas: true },
+  { label: 'Agent Reasoning Depth', tooltip: 'How deeply the agent thinks before giving up on a task. Higher steps allow it to solve much harder multi-step problems autonomously.', free: '15 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Task Execution Timeout',tooltip: 'Maximum continuous time an agent is allowed to run a single task in the background sandbox.', free: '5 minutes',       starter: '1 hour',        pro: '3 hours',        freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Concurrent Subagents',  tooltip: 'How many separate tasks or workers the agent can parallelize at the exact same time to speed up bulk work.', free: '2 active',        starter: '6 active',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Scheduled Tasks',       tooltip: 'Routines and cron-jobs you can tell your agent to run repeatedly on a schedule (e.g. "Check my email every morning").', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Cloud Storage',         tooltip: 'Space for files, PDFs, images, and documents stored in your virtual workspace.', free: '100 MB',          starter: '1 GB',          pro: '3 GB',           freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Platform Integrations', tooltip: 'Connect external apps (Slack, Gmail, GitHub, Notion, etc.) for your agent to interact with.', free: 'Full Library',    starter: 'Full Library',  pro: 'Full Library',   freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Agent Email Address',   tooltip: 'Get a dedicated @agents.construct.computer email address that your agent can autonomously read and reply from.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
+  { label: 'Background Execution',  tooltip: 'Allow agents to continue long-running tasks asynchronously even after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
+  { label: 'Bring Your Own Keys',   tooltip: 'Use your own LLM API keys (OpenAI, Anthropic, etc.) to completely bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: false, proHas: true },
 ];
 
 /** Weekly usage caps in USD (mirror of worker/src/config/tiers.ts TIER_LIMITS). */
@@ -177,6 +183,7 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
   const proRatio     = WEEKLY_CAPS.pro     / WEEKLY_CAPS[effective];
   const usageRow: FeatureRow = {
     label: 'Usage',
+    tooltip: 'Standard platform LLM usage included relative to your current plan. Heavy tasks burn through this budget. Bring Your Own Keys (BYOK) bypasses this.',
     free:    formatMultiplier(freeRatio),
     starter: formatMultiplier(starterRatio),
     pro:     formatMultiplier(proRatio),
@@ -247,11 +254,21 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
         {features.map((f, i) => (
           <div
             key={f.label}
-            className={`grid grid-cols-[1fr_84px_84px_84px] items-center px-3 py-1.5 text-[11px] ${
+            className={`grid grid-cols-[1fr_84px_84px_84px] items-center px-3 py-2 text-[11px] ${
               i % 2 === 0 ? '' : 'bg-black/[0.015] dark:bg-white/[0.015]'
             }`}
           >
-            <span className="text-[var(--color-text-muted)]">{f.label}</span>
+            <div className="flex items-center">
+              <Tooltip 
+                content={f.tooltip} 
+                followCursor
+                delay={0}
+              >
+                <span className="text-[var(--color-text-muted)] select-none transition-colors">
+                  {f.label}
+                </span>
+              </Tooltip>
+            </div>
             {(['free', 'starter', 'pro'] as const).map((tier) => {
               const has = f[`${tier}Has`];
               const val = f[tier];
@@ -268,7 +285,7 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
                       <Check className="w-3 h-3 text-emerald-400 mx-auto" />
                     )
                   ) : (
-                    <X className="w-3 h-3 text-red-400/60 mx-auto" />
+                    <Minus className="w-3.5 h-3.5 text-[var(--color-text-muted)] opacity-40 mx-auto" />
                   )}
                 </span>
               );
