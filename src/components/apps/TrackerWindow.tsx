@@ -84,13 +84,15 @@ function Elapsed({ startedAt }: { startedAt: number }) {
 // ── Agent Card ───────────────────────────────────────────────────────
 
 function AgentCard({
-  agent, thinking, taskProgress: _taskProgress, onStop, compact,
+  agent, thinking, taskProgress: _taskProgress, onStop, compact, operations, onCancelChild
 }: {
   agent: PlatformAgentState;
   thinking?: string | null;
   taskProgress?: { step: number; maxSteps: number } | null;
   onStop?: () => void;
   compact?: boolean;
+  operations?: TrackedOperation[];
+  onCancelChild?: (childId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -172,40 +174,73 @@ function AgentCard({
       {expanded && hasContent && (
         <div className="border-t border-[var(--color-border)]/50">
           <div className="px-3 py-2 max-h-[250px] overflow-y-auto space-y-0.5">
-            {[...(agent.chatMessages ?? [])].filter(msg => msg.content || msg.role !== 'system').reverse().map((msg, i) => (
-              <div key={i} className="flex items-start gap-2 py-0.5 text-[10px]">
-                {/* Timestamp */}
-                <span className="text-[9px] text-[var(--color-text-muted)] opacity-50 tabular-nums shrink-0 mt-px w-[52px]">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                </span>
-                {/* Content by role */}
-                {msg.role === 'user' ? (
-                  <div className="flex-1 min-w-0">
-                    <span className="text-blue-400 font-medium">User </span>
-                    <span className="text-[var(--color-text)] break-words">{msg.content}</span>
+            {(() => {
+              const msgs = [...(agent.chatMessages ?? [])].filter(msg => msg.content || msg.role !== 'system').reverse();
+              const usedOpIds = new Set<string>();
+              
+              const feed = msgs.map((msg, i) => {
+                let opNode = null;
+                if (msg.operationId && operations) {
+                  const op = operations.find(o => o.id === msg.operationId);
+                  if (op) {
+                    usedOpIds.add(op.id);
+                    opNode = (
+                      <div className="flex-1 min-w-0 mt-1 mb-2">
+                        <OperationCard operation={op} onCancelChild={onCancelChild} />
+                      </div>
+                    );
+                  }
+                }
+
+                return (
+                  <div key={i} className="flex items-start gap-2 py-0.5 text-[10px]">
+                    {/* Timestamp */}
+                    <span className="text-[9px] text-[var(--color-text-muted)] opacity-50 tabular-nums shrink-0 mt-px w-[52px]">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    {/* Content by role */}
+                    {opNode ? opNode : msg.role === 'user' ? (
+                      <div className="flex-1 min-w-0">
+                        <span className="text-blue-400 font-medium">User </span>
+                        <span className="text-[var(--color-text)] break-words">{msg.content}</span>
+                      </div>
+                    ) : msg.role === 'agent' ? (
+                      <div className="flex-1 min-w-0">
+                        <span className="text-emerald-400 font-medium">Agent </span>
+                        <span className="text-[var(--color-text)] break-words">{msg.content}</span>
+                      </div>
+                    ) : msg.role === 'activity' ? (
+                      <div className="flex-1 min-w-0 flex items-start gap-1 text-[var(--color-text-muted)]">
+                        <Wrench className="w-2.5 h-2.5 shrink-0 mt-px opacity-40" />
+                        {msg.tool && <span className="font-mono text-[var(--color-accent)] shrink-0">{msg.tool}</span>}
+                        <span className="break-words">{msg.content}</span>
+                      </div>
+                    ) : msg.isError || msg.isStopped ? (
+                      <div className="flex-1 min-w-0">
+                        <span className={`break-words ${msg.isStopped ? 'text-[var(--color-text-muted)]' : 'text-red-400'}`}>{msg.content}</span>
+                      </div>
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[var(--color-text-muted)] break-words">{msg.content}</span>
+                      </div>
+                    )}
                   </div>
-                ) : msg.role === 'agent' ? (
-                  <div className="flex-1 min-w-0">
-                    <span className="text-emerald-400 font-medium">Agent </span>
-                    <span className="text-[var(--color-text)] break-words">{msg.content}</span>
-                  </div>
-                ) : msg.role === 'activity' ? (
-                  <div className="flex-1 min-w-0 flex items-start gap-1 text-[var(--color-text-muted)]">
-                    <Wrench className="w-2.5 h-2.5 shrink-0 mt-px opacity-40" />
-                    {msg.tool && <span className="font-mono text-[var(--color-accent)] shrink-0">{msg.tool}</span>}
-                    <span className="break-words">{msg.content}</span>
-                  </div>
-                ) : msg.isError || msg.isStopped ? (
-                  <div className="flex-1 min-w-0">
-                    <span className={`break-words ${msg.isStopped ? 'text-[var(--color-text-muted)]' : 'text-red-400'}`}>{msg.content}</span>
-                  </div>
-                ) : (
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[var(--color-text-muted)] break-words">{msg.content}</span>
-                  </div>
-                )}
-              </div>
-            ))}
+                );
+              });
+              
+              const orphanedOps = operations?.filter(o => !usedOpIds.has(o.id)) || [];
+              
+              return (
+                <>
+                  {orphanedOps.length > 0 && (
+                    <div className="mb-2 space-y-1.5">
+                      {orphanedOps.map(op => <OperationCard key={op.id} operation={op} onCancelChild={onCancelChild} />)}
+                    </div>
+                  )}
+                  {feed}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -482,21 +517,24 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
         {hasSwarmInProgress && (
           <section>
             <SwarmSectionHeader hosts={swarm.hosts} workers={swarm.workers} />
-            {active.length > 0 && (
-              <div className="space-y-2.5">
-                {active.map(op => (
-                  <OperationCard key={op.id} operation={op} onStop={stopChatSession} onCancelChild={handleCancelChild} />
-                ))}
-              </div>
-            )}
+            {(() => {
+              const orphanedActive = active.filter(op => !runningAgents.some(a => a.agent.platform === op.platform || (op.sessionKey && a.agent.sessionKey === op.sessionKey)));
+              return orphanedActive.length > 0 && (
+                <div className="space-y-2.5 mb-4">
+                  {orphanedActive.map(op => (
+                    <OperationCard key={op.id} operation={op} onStop={stopChatSession} onCancelChild={handleCancelChild} />
+                  ))}
+                </div>
+              );
+            })()}
             {runningAgents.length > 0 && (
-              <div className={`space-y-2 ${active.length > 0 ? 'mt-4' : ''}`}>
-                {active.length > 0 && (
-                  <p className="text-[9px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-1.5">Host</p>
-                )}
-                {runningAgents.map(e => (
-                  <AgentCard key={e.agent.platform} agent={e.agent} thinking={e.thinking} taskProgress={e.progress} onStop={e.onStop} />
-                ))}
+              <div className="space-y-2">
+                {runningAgents.map(e => {
+                  const agentOps = active.filter(op => op.platform === e.agent.platform || (op.sessionKey && op.sessionKey === e.agent.sessionKey));
+                  return (
+                    <AgentCard key={e.agent.platform} agent={e.agent} thinking={e.thinking} taskProgress={e.progress} onStop={e.onStop} operations={agentOps} onCancelChild={handleCancelChild} />
+                  );
+                })}
               </div>
             )}
           </section>
@@ -514,31 +552,37 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
             </button>
             {showAgentHistory && (
               <div className="space-y-2">
-                {completedAgents.sort((a, b) => (b.agent.completedAt || 0) - (a.agent.completedAt || 0)).map(e => (
-                  <AgentCard key={`h-${e.agent.platform}-${e.agent.completedAt}`} agent={e.agent} compact />
-                ))}
+                {completedAgents.sort((a, b) => (b.agent.completedAt || 0) - (a.agent.completedAt || 0)).map(e => {
+                  const agentOps = history.filter(op => op.platform === e.agent.platform || (op.sessionKey && op.sessionKey === e.agent.sessionKey));
+                  return (
+                    <AgentCard key={`h-${e.agent.platform}-${e.agent.completedAt}`} agent={e.agent} compact operations={agentOps} />
+                  );
+                })}
               </div>
             )}
           </section>
         )}
 
         {/* Operation History */}
-        {history.length > 0 && (
-          <section>
-            <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1 mb-2 group w-full">
-              {showHistory ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors">
-                Operation History ({history.length})
-              </span>
-              <div className="flex-1 h-px bg-[var(--color-border)]/50" />
-            </button>
-            {showHistory && (
-              <div className="space-y-2">
-                {history.map(op => <OperationCard key={op.id} operation={op} />)}
-              </div>
-            )}
-          </section>
-        )}
+        {(() => {
+          const orphanedHistory = history.filter(op => !completedAgents.some(a => a.agent.platform === op.platform || (op.sessionKey && a.agent.sessionKey === op.sessionKey)));
+          return orphanedHistory.length > 0 && (
+            <section>
+              <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1 mb-2 group w-full">
+                {showHistory ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors">
+                  Operation History ({orphanedHistory.length})
+                </span>
+                <div className="flex-1 h-px bg-[var(--color-border)]/50" />
+              </button>
+              {showHistory && (
+                <div className="space-y-2">
+                  {orphanedHistory.map(op => <OperationCard key={op.id} operation={op} />)}
+                </div>
+              )}
+            </section>
+          );
+        })()}
 
         {/* Empty state */}
         {!hasAnything && (

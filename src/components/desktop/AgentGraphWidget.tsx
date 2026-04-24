@@ -198,7 +198,7 @@ function tickSimulation(
   }
 
   // Spring forces along edges (per-edge rest length)
-  const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
   for (const edge of edges) {
     const a = nodeById.get(edge.source);
     const b = nodeById.get(edge.target);
@@ -214,12 +214,23 @@ function tickSimulation(
     if (!b.pinned) { b.vx -= fx; b.vy -= fy; }
   }
 
-  // Per-cluster gravity (each cluster pulled toward its own center)
+  const parentMap = new Map<string, AgentNode>();
+  for (const edge of edges) {
+    const parent = nodeById.get(edge.source);
+    if (parent) parentMap.set(edge.target, parent);
+  }
+
+  // Per-cluster gravity (each cluster pulled toward its own center, children pulled to parents)
   for (const node of nodes) {
     if (node.pinned) continue;
     const cc = clusterCenters.get(node.cluster) || gravityCenter;
+    const parent = parentMap.get(node.id);
+    
+    // Pull x towards parent if it exists, otherwise cluster center
+    const targetX = parent ? parent.x : cc.x;
+    
     const depthTargetY = cc.y + (node.depth - 0.5) * DEPTH_Y_BIAS;
-    node.vx += (cc.x - node.x) * CENTER_GRAVITY * alpha;
+    node.vx += (targetX - node.x) * CENTER_GRAVITY * alpha;
     node.vy += (depthTargetY - node.y) * CENTER_GRAVITY * 1.8 * alpha;
     node.vx *= DAMPING;
     node.vy *= DAMPING;
@@ -254,6 +265,7 @@ export function AgentGraphWidget() {
 
   // Hover: full label + sub-lines (canvas labels stay short)
   const [graphTip, setGraphTip] = useState<null | { x: number; y: number; label: string; sub?: string; status: string; depth: number }>(null);
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 
   // 1-second tick for timers & fade recalc
   const [, setTick] = useState(0);
@@ -466,6 +478,15 @@ export function AgentGraphWidget() {
       ...allSpecs,
     ];
   }
+
+  const isHidden = (parentId?: string): boolean => {
+    if (!parentId) return false;
+    if (collapsedNodes.has(parentId)) return true;
+    const parentNode = allSpecs.find(s => s.id === parentId);
+    return parentNode ? isHidden((parentNode as any).parentId) : false;
+  };
+
+  allSpecs = allSpecs.filter(s => !isHidden((s as any).parentId));
 
   // More parallel sub-agents → wider cluster spread so fan-out is readable
   clusterSpreadRef.current = Math.min(
@@ -897,8 +918,18 @@ export function AgentGraphWidget() {
           // Reheat to migrate cluster
           alphaRef.current = Math.max(alphaRef.current, 0.8);
         } else {
-          // Click — open tracker
-          openTrackerAndSwitch(drag.sessionKey);
+          // Click — toggle collapse if depth 0 or 1, else open tracker
+          if (drag.depth === 0 || drag.depth === 1) {
+            setCollapsedNodes(prev => {
+              const next = new Set(prev);
+              if (next.has(drag.id)) next.delete(drag.id);
+              else next.add(drag.id);
+              return next;
+            });
+            alphaRef.current = Math.max(alphaRef.current, 0.5); // Reheat
+          } else {
+            openTrackerAndSwitch(drag.sessionKey);
+          }
         }
         dragNodeRef.current = null;
         dragStartRef.current = null;
