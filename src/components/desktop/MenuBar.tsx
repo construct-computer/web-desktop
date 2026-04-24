@@ -15,7 +15,7 @@ import { useLatency } from '@/hooks/useLatency';
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { useAuthStore } from '@/stores/authStore';
-import { Download, ExternalLink, Sparkles } from 'lucide-react';
+import { Download, ExternalLink, ArrowUpCircle } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -339,7 +339,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
             title="Upgrade Plan"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <ArrowUpCircle className="w-3.5 h-3.5" />
             <span className="text-xs font-medium">Upgrade</span>
           </button>
         )}
