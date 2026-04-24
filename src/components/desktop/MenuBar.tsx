@@ -336,10 +336,10 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {!isMobile && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
-            className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
+            className="flex items-center justify-center gap-1 h-6 pl-1.5 pr-2.5 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
             title="Upgrade Plan"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
             <span className="text-xs font-medium">Upgrade</span>
           </button>
         )}
@@ -350,7 +350,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             <button
               onClick={installPWA}
               disabled={!deferredPrompt}
-              className={`flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all ${
+              className={`flex items-center justify-center gap-1.5 h-6 pl-2 pr-2.5 mr-1 rounded-md transition-all ${
                 deferredPrompt 
                   ? 'bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 cursor-pointer'
                   : 'text-black/30 dark:text-white/30 cursor-default'
@@ -365,7 +365,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
               onClick={() => {
                 alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400"
+              className="flex items-center justify-center gap-1.5 h-6 pl-2 pr-2.5 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400"
               title="Open in App"
             >
               <ExternalLink className="w-3.5 h-3.5" />
