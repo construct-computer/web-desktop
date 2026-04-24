@@ -12,6 +12,8 @@ import { DebugPanelToggle } from './DebugPanel';
 import { formatTime, formatDate } from '@/lib/utils';
 import { getSlackStatus } from '@/services/api';
 import { useLatency } from '@/hooks/useLatency';
+import { usePWA } from '@/hooks/usePWA';
+import { Download, ExternalLink } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -58,6 +60,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const [wifiHover, setWifiHover] = useState(false);
   const wifiRef = useRef<HTMLDivElement>(null);
   const latency = useLatency(wifiHover);
+  const { isStandalone, isInstalled, deferredPrompt, installPWA } = usePWA();
   const { theme, soundEnabled, toggleTheme, toggleSound } = useSettingsStore();
   const { windows, focusedWindowId, openWindow } = useWindowStore();
   const workspaces = useWindowStore((s) => s.workspaces);
@@ -325,6 +328,34 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
 
         {/* Debug console toggle — staging only */}
         {!isMobile && window.location.hostname !== 'beta.construct.computer' && <DebugPanelToggle />}
+
+        {/* PWA Install / Open App Pill */}
+        {!isStandalone && !isMobile && (
+          (deferredPrompt || !isInstalled) ? (
+            <button
+              onClick={installPWA}
+              disabled={!deferredPrompt}
+              className={`flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-full border transition-all ${
+                deferredPrompt 
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 cursor-pointer'
+                  : 'bg-black/5 dark:bg-white/5 text-black/40 dark:text-white/40 border-transparent cursor-default'
+              }`}
+            >
+              <Download className="w-3 h-3" />
+              <span className="text-xs font-semibold tracking-wide">Install App</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all cursor-pointer"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span className="text-xs font-semibold tracking-wide">Open in App</span>
+            </button>
+          )
+        )}
 
         {/* Connection — clickable when disconnected to trigger manual reconnect */}
         {isConnected ? (
