@@ -14,6 +14,7 @@ import { getSlackStatus } from '@/services/api';
 import { useLatency } from '@/hooks/useLatency';
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { useAuthStore } from '@/stores/authStore';
 import { Download, ExternalLink, Sparkles } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
@@ -76,6 +77,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer);
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount)();
+  const userPlan = useAuthStore((s) => s.user?.plan);
   // pendingApprovalCount available via Access Control dropdown item if needed
 
   // Slack connection state (for conditional menu items)
@@ -331,7 +333,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {!isMobile && window.location.hostname !== 'beta.construct.computer' && <DebugPanelToggle />}
 
         {/* Upgrade Pill */}
-        {!isMobile && (
+        {!isMobile && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
             className="flex items-center gap-1.5 px-2.5 py-1 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
