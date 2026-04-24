@@ -1735,7 +1735,9 @@ export const useComputerStore = create<ComputerStore>()(
             getActiveAgentSessions().then((res) => {
               if (!res.success || !res.data) return;
               const hydrated: Record<string, ActiveSessionStatus> = {};
+              const liveSessionKeys = new Set<string>();
               for (const s of res.data.sessions) {
+                liveSessionKeys.add(s.sessionKey);
                 hydrated[s.sessionKey] = {
                   sessionKey: s.sessionKey,
                   status: s.idleMs > 120_000 ? 'stuck' : 'thinking',
@@ -1748,7 +1750,32 @@ export const useComputerStore = create<ComputerStore>()(
                   pendingInjectionCount: s.pendingInjectionCount,
                 };
               }
-              set({ activeSessions: hydrated });
+              
+              set({ 
+                activeSessions: hydrated,
+                runningSessions: liveSessionKeys,
+                agentRunning: liveSessionKeys.has(get().activeSessionKey),
+              });
+
+              // Clean up zombie operations in tracker
+              const tracker = useAgentTrackerStore.getState();
+              let hasLegacyZombies = false;
+              for (const op of Object.values(tracker.operations)) {
+                if (op.status === 'running' || op.status === 'aggregating') {
+                  if (op.sessionKey && !liveSessionKeys.has(op.sessionKey)) {
+                    tracker.failOperationsForSession(op.sessionKey, false);
+                  } else if (!op.sessionKey) {
+                    hasLegacyZombies = true;
+                  }
+                }
+              }
+              // Legacy ops have no sessionKey, fail them if there are no live sessions
+              // (If there are live sessions, a legacy op *might* belong to one of them, 
+              // but it's safer to just fail them if they are from a previous load. 
+              // Let's always fail them on connection reset to prevent perma-zombies).
+              if (hasLegacyZombies) {
+                tracker.failOperationsForSession('__legacy__', true);
+              }
             }).catch(() => { /* best-effort hydration */ });
           }).catch(() => { /* */ });
         }
