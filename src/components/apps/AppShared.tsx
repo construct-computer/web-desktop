@@ -54,14 +54,14 @@ export function AppHeroHeader({
   const tone = status ? STATUS_TONE[status.tone] : null;
   return (
     <div className="pb-5 border-b border-black/[0.06] dark:border-white/[0.08]">
-      <div className="flex items-start gap-4">
+      <div className="flex flex-col sm:flex-row items-start gap-4">
         <div className="w-[72px] h-[72px] rounded-[16px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm">
           {icon ? (
             <img src={icon} alt={name} className="w-[52px] h-[52px] object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
           ) : fallbackIcon}
         </div>
-        <div className="flex-1 min-w-0 pt-0.5">
-          <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0 pt-0.5 w-full">
+          <div className="flex flex-col sm:flex-row items-start sm:justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-[20px] font-bold leading-tight truncate text-[var(--color-text)]">{name}</h2>
@@ -82,7 +82,7 @@ export function AppHeroHeader({
               )}
             </div>
             {(actions || primaryAction) && (
-               <div className="flex items-center gap-2 flex-shrink-0">
+               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                  {actions}
                  {primaryAction}
                </div>

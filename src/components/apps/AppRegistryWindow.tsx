@@ -24,6 +24,7 @@ import {
 } from './AppShared';
 import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hooks/useAppDiscovery';
 import type { UnifiedApp, Category } from '@/hooks/useAppDiscovery';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
@@ -31,6 +32,7 @@ const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
 export function AppRegistryWindow({ config: _config }: { config: WindowConfig }) {
   const openWindow = useWindowStore((s) => s.openWindow);
+  const isMobile = useIsMobile();
   
   // Use the unified app discovery hook
   const {

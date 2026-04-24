@@ -4,6 +4,7 @@ import type { editor } from 'monaco-editor';
 import { Loader2, AlertCircle } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import { useEditorStore } from '@/stores/editorStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface EditorWindowProps {
   config: WindowConfig;
@@ -107,6 +108,7 @@ function getMonacoLanguage(filename: string): string {
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export function EditorWindow({ config }: EditorWindowProps) {
+  const isMobile = useIsMobile();
   const windowId = config.id;
   const file = useEditorStore((s) => s.files[windowId]);
   const updateContent = useEditorStore((s) => s.updateContent);
@@ -200,7 +202,7 @@ export function EditorWindow({ config }: EditorWindowProps) {
           lineNumbers: 'on',
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
-          wordWrap: 'off',
+          wordWrap: isMobile ? 'on' : 'off',
           tabSize: 2,
           insertSpaces: true,
           automaticLayout: true,

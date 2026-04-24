@@ -29,6 +29,7 @@ import {
   type AgentCalendarEvent,
 } from '@/services/api';
 import type { WindowConfig } from '@/types';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // ── Helpers ──
 
@@ -383,6 +384,7 @@ interface CalendarWindowProps {
 }
 
 export function CalendarWindow({ config: _config }: CalendarWindowProps) {
+  const isMobile = useIsMobile();
   const [events, setEvents] = useState<AgentCalendarEvent[]>([]);
   const rawEventsRef = useRef<AgentCalendarEvent[]>([]); // unexpanded originals
   const [loading, setLoading] = useState(true);
@@ -697,9 +699,9 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
         </div>
       ) : view === 'month' ? (
-        <div className="flex flex-1 overflow-hidden">
+        <div className={`flex ${isMobile ? 'flex-col' : ''} flex-1 overflow-hidden`}>
           {/* Month grid */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className={`flex-1 flex flex-col min-w-0 ${isMobile ? 'max-h-[60%]' : ''} overflow-y-auto`}>
             <MonthGrid
               currentMonth={currentMonth}
               selectedDate={selectedDate}
@@ -710,7 +712,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           </div>
 
           {/* Day detail sidebar */}
-          <div className="w-[220px] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
+          <div className={`${isMobile ? 'w-full border-t flex-1' : 'w-[220px] border-l'} border-[var(--color-border)] flex flex-col min-h-0 overflow-hidden`}>
             <div className="px-3 py-2 border-b border-[var(--color-border)]">
               <div className="text-xs text-[var(--color-text-muted)]">
                 {selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}

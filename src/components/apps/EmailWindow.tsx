@@ -40,6 +40,7 @@ import {
   type ParsedAddress,
 } from '@/services/emailMailbox';
 import { useComputerStore } from '@/stores/agentStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailSetupPane } from './EmailSetupPane';
 import { EmailHtmlBody } from './email/EmailHtmlBody';
 
@@ -138,6 +139,7 @@ function markThreadReadLocally(thread: EmailThreadDetail): EmailThreadDetail {
 }
 
 export function EmailWindow({ config: _config }: { config: WindowConfig }) {
+  const isMobile = useIsMobile();
   const [inboxEmail, setInboxEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
@@ -429,7 +431,8 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 bg-[var(--color-surface)] text-sm overflow-hidden">
-      <div className="w-[380px] shrink-0 min-h-0 border-r border-[var(--color-border)] flex flex-col overflow-hidden">
+      {(!isMobile || !selectedThread) && (
+      <div className={`${isMobile ? 'w-full' : 'w-[380px] border-r'} shrink-0 min-h-0 border-[var(--color-border)] flex flex-col overflow-hidden`}>
         <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-titlebar)] px-3 py-2 space-y-2">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
@@ -630,7 +633,9 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           )}
         </div>
       </div>
+      )}
 
+      {(!isMobile || selectedThread) && (
       <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--color-surface)]">
         {threadLoading ? (
           <div className="flex-1 flex items-center justify-center">
@@ -653,6 +658,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } fr
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsNav, type SettingsSection } from '@/lib/settingsNav';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 import { openAuthRedirect } from '@/lib/utils';
 import {
@@ -87,6 +88,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── Main Component ──
 
 export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
+  const isMobile = useIsMobile();
   const pendingSection = useSettingsNav((s) => s.pendingSection);
   const setPendingSection = useSettingsNav((s) => s.setPendingSection);
   const [localSection, setLocalSection] = useState<Section>('user');
@@ -98,17 +100,19 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
   };
 
   return (
-    <div className="flex h-full text-[var(--color-text)] select-none">
-      {/* Sidebar */}
-      <div className="w-[180px] flex-shrink-0 border-r border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] overflow-y-auto py-2 px-2">
-        <div className="space-y-0.5">
+    <div className={`flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
+      {/* Sidebar / Topnav */}
+      <div className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]`}>
+        <div className={`${isMobile ? 'flex gap-1.5' : 'space-y-0.5'}`}>
           {SECTIONS.map((s) => {
                 const active = section === s.id;
                 return (
                   <button
                     key={s.id}
                     onClick={() => setSection(s.id)}
-                    className={`w-full flex items-center gap-2 px-2.5 py-[5px] rounded-md text-[13px] transition-all duration-100 ${
+                    className={`flex items-center gap-2 px-2.5 py-[5px] rounded-md text-[13px] transition-all duration-100 ${
+                      !isMobile ? 'w-full' : ''
+                    } ${
                       active
                         ? 'bg-[var(--color-accent)] text-white'
                         : 'text-black/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'

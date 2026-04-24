@@ -1115,18 +1115,25 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           onDrop={handleDrop}
         >
           {/* Column headers (shared) */}
-          <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[11px] text-[var(--color-text-muted)] font-medium">
-            <div className="flex-1 min-w-0">Name</div>
-            <div className="w-20 text-right flex-shrink-0">Size</div>
-            <div className="w-32 text-right flex-shrink-0">Modified</div>
-          </div>
+          {(!isMobile || !previewFile) && (
+            <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[11px] text-[var(--color-text-muted)] font-medium">
+              <div className="flex-1 min-w-0">Name</div>
+              {!isMobile && (
+                <>
+                  <div className="w-20 text-right flex-shrink-0">Size</div>
+                  <div className="w-32 text-right flex-shrink-0">Modified</div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* File list + preview split area */}
-          <div className={`flex-1 flex min-h-0 ${previewFile ? '' : 'flex-col'}`}>
+          <div className={`flex-1 flex min-h-0 ${previewFile && !isMobile ? '' : 'flex-col'}`}>
             {/* File list panel */}
-            {activeTab === 'local' ? (
-              <div
-                className={`${previewFile ? 'w-1/2 border-r border-[var(--color-border)]' : 'flex-1'} overflow-y-auto`}
+            {(!isMobile || !previewFile) && (
+              activeTab === 'local' ? (
+                <div
+                  className={`${previewFile && !isMobile ? 'w-1/2 border-r border-[var(--color-border)]' : 'flex-1'} overflow-y-auto`}
                 onClick={() => {
                   setSelectedName(null);
                   setContextMenu(null);
@@ -1203,20 +1210,24 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                               <span className="truncate text-xs">{entry.name}</span>
                             )}
                           </div>
-                          <div
-                            className={`w-20 text-right text-[11px] flex-shrink-0 ${
-                              isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
-                            }`}
-                          >
-                            {entry.size > 0 ? formatSize(entry.size) : '--'}
-                          </div>
-                          <div
-                            className={`w-32 text-right text-[11px] flex-shrink-0 ${
-                              isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
-                            }`}
-                          >
-                            {formatDate(entry.modified)}
-                          </div>
+                          {!isMobile && (
+                            <>
+                              <div
+                                className={`w-20 text-right text-[11px] flex-shrink-0 ${
+                                  isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
+                                }`}
+                              >
+                                {entry.size > 0 ? formatSize(entry.size) : '--'}
+                              </div>
+                              <div
+                                className={`w-32 text-right text-[11px] flex-shrink-0 ${
+                                  isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
+                                }`}
+                              >
+                                {formatDate(entry.modified)}
+                              </div>
+                            </>
+                          )}
                         </div>
                       );
                     })}
@@ -1236,8 +1247,12 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                             onCancel={() => setCreatingType(null)}
                           />
                         </div>
-                        <div className="w-20 flex-shrink-0" />
-                        <div className="w-32 flex-shrink-0" />
+                        {!isMobile && (
+                          <>
+                            <div className="w-20 flex-shrink-0" />
+                            <div className="w-32 flex-shrink-0" />
+                          </>
+                        )}
                       </div>
                     )}
                   </>
@@ -1311,30 +1326,34 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                           />
                           <span className="truncate text-xs">{file.name}</span>
                         </div>
-                        <div
-                          className={`w-20 text-right text-[11px] flex-shrink-0 ${
-                            isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
-                          }`}
-                        >
-                          {file.size > 0 ? driveFiles.formatSize(file.size) : '--'}
-                        </div>
-                        <div
-                          className={`w-32 text-right text-[11px] flex-shrink-0 ${
-                            isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
-                          }`}
-                        >
-                          {file.modified ? formatDate(file.modified) : '--'}
-                        </div>
+                        {!isMobile && (
+                          <>
+                            <div
+                              className={`w-20 text-right text-[11px] flex-shrink-0 ${
+                                isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
+                              }`}
+                            >
+                              {file.size > 0 ? driveFiles.formatSize(file.size) : '--'}
+                            </div>
+                            <div
+                              className={`w-32 text-right text-[11px] flex-shrink-0 ${
+                                isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
+                              }`}
+                            >
+                              {file.modified ? formatDate(file.modified) : '--'}
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   })
                 )}
               </div>
-            )}
+            ))}
 
             {/* Preview panel (shared — renders for both local and cloud tabs) */}
             {previewFile && (
-              <div className="w-1/2 flex flex-col bg-[var(--color-surface)] overflow-hidden">
+              <div className={`${isMobile ? 'flex-1' : 'w-1/2'} flex flex-col bg-[var(--color-surface)] overflow-hidden`}>
                 {/* Preview header */}
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)]">
                   <span className="text-xs truncate text-[var(--color-text-muted)]">{previewFile.name}</span>
