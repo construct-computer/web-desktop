@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Loader2, Check, Sparkles, AlertCircle, Lock, Mail,
+  Loader2, Check, Sparkles, AlertCircle, Lock, Mail, ArrowRight,
 } from 'lucide-react';
 import { Button, Input, Label } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
@@ -52,8 +52,14 @@ export function SetupModal() {
   const instanceId = useComputerStore((s) => s.instanceId);
   const subscription = useBillingStore((s) => s.subscription);
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const startCheckout = useBillingStore((s) => s.startCheckout);
+  const switchPlan = useBillingStore((s) => s.switchPlan);
   useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
-  const isPro = subscription?.plan === 'pro';
+  const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
+  const isNonProdEnv = subscription?.environment === 'staging' || subscription?.environment === 'local';
+
+  // Upgrade-in-place state.
+  const [upgrading, setUpgrading] = useState<'starter' | 'pro' | null>(null);
 
   // Profile fields
   const [ownerName, setOwnerName] = useState(user?.displayName || '');
@@ -132,18 +138,45 @@ export function SetupModal() {
     }
   }, [emailUsername, emailAvailable, emailLocked, emailChecking, instanceId, checkEmail]);
 
+  // Refetch subscription on window focus while still free — catches the case
+  // where the user upgraded in another tab/popup and returned to the modal.
+  useEffect(() => {
+    if (isPaid) return;
+    const onFocus = () => { fetchSubscription(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isPaid, fetchSubscription]);
+
+  // Inline upgrade CTA — stays inside the setup modal, returns here post-checkout.
+  const handleUpgrade = async (plan: 'starter' | 'pro') => {
+    setUpgrading(plan);
+    analytics.setupStepCompleted('upgrade_clicked', { plan, from: 'setup_modal_email' });
+    if (isNonProdEnv) {
+      await switchPlan(plan);
+      await fetchSubscription();
+      setUpgrading(null);
+    } else {
+      const url = await startCheckout(plan);
+      if (url) {
+        window.location.href = url;
+      } else {
+        setUpgrading(null);
+      }
+    }
+  };
+
   // Save and complete setup
   const handleSave = async () => {
     const trimmedName = ownerName.trim();
     if (!trimmedName) { setNameError('Please enter your name'); return; }
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
-    if (!emailLocked && isPro) {
+    if (!emailLocked && isPaid) {
       if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
       if (emailAvailable === false) return;
     }
 
     const trimmedAgentName = agentName.trim() || 'Construct Agent';
-    const emailChanged = !emailLocked && isPro;
+    const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
 
     setIsSaving(true);
     try {
@@ -172,7 +205,7 @@ export function SetupModal() {
   };
 
   const canSave = ownerName.trim().length > 0
-    && (emailLocked || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
+    && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/25">
@@ -251,14 +284,10 @@ export function SetupModal() {
               <Mail className="w-3.5 h-3.5" />
               Agent Email Address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
-              {!emailLocked && !isPro && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Pro</span>}
+              {!emailLocked && !isPaid && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Paid</span>}
             </Label>
-            {!isPro && !emailLocked ? (
-              <div className="rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3">
-                <p className="text-[12px] text-[var(--color-text-muted)]">
-                  Upgrade to Starter to give your agent its own <span className="font-medium">@agents.construct.computer</span> email.
-                </p>
-              </div>
+            {!isPaid && !emailLocked ? (
+              <SetupModalUpgradeCard upgrading={upgrading} onUpgrade={handleUpgrade} />
             ) : (
             <>
             <div className="flex items-stretch rounded-lg overflow-hidden border border-[var(--color-border)]">
@@ -334,6 +363,62 @@ export function SetupModal() {
             {isSaving ? 'Saving...' : 'Save & Get Started'}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Inline email-upgrade CTA (compact variant for the modal) ─── */
+
+function SetupModalUpgradeCard({
+  upgrading,
+  onUpgrade,
+}: {
+  upgrading: 'starter' | 'pro' | null;
+  onUpgrade: (plan: 'starter' | 'pro') => void;
+}) {
+  return (
+    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5">
+      <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+        Give your agent a <span className="font-medium text-[var(--color-text)]">@agents.construct.computer</span> inbox — available on any paid plan.
+      </p>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={() => onUpgrade('starter')}
+          disabled={!!upgrading}
+          className="group flex items-center justify-between gap-1 rounded-md border border-black/10 dark:border-white/10
+            bg-white/70 dark:bg-black/30 hover:bg-white dark:hover:bg-black/40
+            px-2.5 py-1.5 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold text-[var(--color-text)]">Starter</div>
+            <div className="text-[10px] text-[var(--color-text-muted)]">$59/mo</div>
+          </div>
+          {upgrading === 'starter'
+            ? <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
+            : <ArrowRight className="w-3 h-3 text-[var(--color-text-muted)] group-hover:translate-x-0.5 transition-transform" />
+          }
+        </button>
+        <button
+          type="button"
+          onClick={() => onUpgrade('pro')}
+          disabled={!!upgrading}
+          className="group flex items-center justify-between gap-1 rounded-md border border-emerald-500/30
+            bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14]
+            px-2.5 py-1.5 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold text-[var(--color-text)] flex items-center gap-1">
+              Pro <Sparkles className="w-2.5 h-2.5 text-emerald-500 dark:text-emerald-400" />
+            </div>
+            <div className="text-[10px] text-[var(--color-text-muted)]">$299/mo</div>
+          </div>
+          {upgrading === 'pro'
+            ? <Loader2 className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
+            : <ArrowRight className="w-3 h-3 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+          }
+        </button>
       </div>
     </div>
   );

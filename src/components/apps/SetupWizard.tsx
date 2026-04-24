@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ChevronRight,
   ArrowLeft,
+  ArrowRight,
   Unplug,
   Send,
   Lock,
@@ -90,6 +91,24 @@ function clearStep1Done() {
   try { localStorage.removeItem(STEP1_DONE_KEY); } catch { /* */ }
 }
 
+// ── Pending-upgrade intent (survives the checkout redirect) ──────────────
+// Set right before sending the user to Dodo checkout so that, on return,
+// we can force them back to step 1 with their draft username preserved —
+// even if STEP1_DONE_KEY was previously set.
+const PENDING_EMAIL_KEY = 'setup_wizard_pending_email';
+
+function markEmailUpgradePending(username: string) {
+  try { localStorage.setItem(PENDING_EMAIL_KEY, username || '1'); } catch { /* */ }
+}
+
+function getPendingEmailUsername(): string | null {
+  try { return localStorage.getItem(PENDING_EMAIL_KEY); } catch { return null; }
+}
+
+function clearPendingEmail() {
+  try { localStorage.removeItem(PENDING_EMAIL_KEY); } catch { /* */ }
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type Screen = 'grid' | 'slack' | 'telegram';
@@ -109,16 +128,30 @@ export function SetupWizard({ config }: SetupWizardProps) {
   const instanceId = useComputerStore((s) => s.instanceId);
   const subscription = useBillingStore((s) => s.subscription);
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const startCheckout = useBillingStore((s) => s.startCheckout);
+  const switchPlan = useBillingStore((s) => s.switchPlan);
   useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
-  const isPro = subscription?.plan === 'pro';
+  const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
+  const isNonProdEnv = subscription?.environment === 'staging' || subscription?.environment === 'local';
 
   // Restore saved progress
   const saved = useRef(loadProgress());
 
-  // Use localStorage flag for instant step-1-done detection (no async wait)
-  const step1AlreadyDone = useRef(isStep1Done());
-  const [step, setStep] = useState<1 | 2>(saved.current?.step || (step1AlreadyDone.current ? 2 : 1));
+  // Pending-email upgrade intent (set when user clicked Upgrade before this mount).
+  // If present, always land on step 1 — even if STEP1_DONE_KEY was previously set —
+  // so the user can finish configuring their email post-upgrade.
+  const pendingEmail = useRef(getPendingEmailUsername());
+
+  // Use localStorage flag for instant step-1-done detection (no async wait).
+  // A pending upgrade intent overrides it: we want the user back on step 1.
+  const step1AlreadyDone = useRef(isStep1Done() && !pendingEmail.current);
+  const [step, setStep] = useState<1 | 2>(
+    pendingEmail.current ? 1 : (saved.current?.step || (step1AlreadyDone.current ? 2 : 1))
+  );
   const [screen, setScreen] = useState<Screen>(saved.current?.screen || 'grid');
+
+  // State for the upgrade button (separate from profile save state).
+  const [upgrading, setUpgrading] = useState<'starter' | 'pro' | null>(null);
 
   // ── Profile state ──
   const [ownerName, setOwnerName] = useState(saved.current?.ownerName || user?.displayName || '');
@@ -127,13 +160,18 @@ export function SetupWizard({ config }: SetupWizardProps) {
   const [nameError, setNameError] = useState('');
 
   // ── Email state ──
-  const [emailUsername, setEmailUsername] = useState(saved.current?.emailUsername || '');
+  // Restore priority: (1) a pending-upgrade draft (real username, not the
+  // "1" sentinel), (2) saved session progress, (3) empty.
+  const restoredUsername = (pendingEmail.current && pendingEmail.current !== '1')
+    ? pendingEmail.current
+    : (saved.current?.emailUsername || '');
+  const [emailUsername, setEmailUsername] = useState(restoredUsername);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailError, setEmailError] = useState('');
   const [emailSuggestion, setEmailSuggestion] = useState('');
   const emailCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const emailInitialized = useRef(!!(saved.current?.emailUsername));
+  const emailInitialized = useRef(!!restoredUsername);
   const [emailLocked, setEmailLocked] = useState(false);
 
   // ── Integration state ──
@@ -167,17 +205,36 @@ export function SetupWizard({ config }: SetupWizardProps) {
         setEmailUsername(username);
         setEmailLocked(true);
         emailInitialized.current = true;
+        // Inbox is live — any pending-upgrade intent is fulfilled.
+        clearPendingEmail();
         // Persist the flag so future opens are instant
         markStep1Done();
         // If we haven't already jumped (e.g. fresh session, no localStorage),
-        // move to step 2 now
-        if (!step1AlreadyDone.current && (!saved.current?.step || saved.current.step === 1)) {
+        // move to step 2 now. A pending-email intent keeps us on step 1 so the
+        // user can confirm the freshly-created inbox before continuing.
+        if (
+          !pendingEmail.current
+          && !step1AlreadyDone.current
+          && (!saved.current?.step || saved.current.step === 1)
+        ) {
           setStep(2);
           setScreen('grid');
         }
       }
     });
   }, []);
+
+  // ── Refetch subscription on window focus while the user is still free ──
+  // Handles two flows:
+  //   (a) user upgraded in a side tab/popup and returned to the wizard;
+  //   (b) Dodo checkout redirected back here — subscription may have been
+  //       updated by the webhook but our local snapshot is stale.
+  useEffect(() => {
+    if (isPaid) return;
+    const onFocus = () => { fetchSubscription(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isPaid, fetchSubscription]);
 
   // ── Check integration status on mount ──
   useEffect(() => {
@@ -255,14 +312,15 @@ export function SetupWizard({ config }: SetupWizardProps) {
     const trimmedName = ownerName.trim();
     if (!trimmedName) { setNameError('Please enter your name'); return; }
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
-    if (!emailLocked && isPro) {
+    if (!emailLocked && isPaid) {
       if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
       if (emailAvailable === false) return;
     }
 
     const trimmedAgentName = agentName.trim() || 'Construct Agent';
     const nameChanged = trimmedName !== (user?.displayName || '');
-    const emailChanged = !emailLocked;
+    // Only attempt to create an inbox when we have a paid plan AND no inbox exists yet.
+    const willConfigureEmail = !emailLocked && isPaid && !!emailUsername.trim();
 
     setIsSaving(true);
     try {
@@ -274,23 +332,66 @@ export function SetupWizard({ config }: SetupWizardProps) {
       await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
-        ...(emailChanged && isPro && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
+        ...(willConfigureEmail && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
       });
       // Move to step 2 and persist
-      analytics.setupStepCompleted('profile_email', { emailChanged });
+      analytics.setupStepCompleted('profile_email', { emailChanged: willConfigureEmail, isPaid });
       setStep(2);
       setScreen('grid');
       persistProgress('grid', 2);
-      markStep1Done();
 
-      // Notify the email window to refresh (inbox was just configured)
-      if (emailChanged) {
+      // Only short-circuit future opens if step 1 is truly "done" — either the
+      // inbox was just configured, the user is free (nothing more to do here),
+      // or an inbox already existed. Do NOT mark done if there's a pending
+      // upgrade intent — we want the user back on step 1 after they return.
+      const step1TrulyDone = emailLocked || willConfigureEmail || !isPaid;
+      if (step1TrulyDone && !pendingEmail.current) {
+        markStep1Done();
+      }
+
+      // Pending intent was about configuring email; if we just did it, clear it.
+      if (willConfigureEmail) {
+        clearPendingEmail();
         window.dispatchEvent(new CustomEvent('agent-email-configured'));
       }
     } catch (err) {
       logger.error('Failed to save:', err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // ── Inline upgrade flow (stay-in-wizard conversion) ──
+  // Persists draft state and the pending-email intent BEFORE any redirect so
+  // the user lands back here with their draft intact post-checkout.
+  const handleUpgrade = async (plan: 'starter' | 'pro') => {
+    setUpgrading(plan);
+    analytics.setupStepCompleted('upgrade_clicked', { plan, from: 'setup_wizard_email' });
+
+    // Snapshot wizard state so nothing is lost across a full-page redirect.
+    persistProgress('grid', 1);
+    markEmailUpgradePending(emailUsername.trim() || '1');
+
+    if (isNonProdEnv) {
+      // Staging/local: skip the payment gateway, flip the plan, refetch.
+      const result = await switchPlan(plan);
+      await fetchSubscription();
+      setUpgrading(null);
+      // If switchPlan succeeded we're now paid — the email field re-renders
+      // unlocked in place. Keep the pending flag until email is configured.
+      if (result !== true) {
+        // No-op; error surfaced via billing store state if needed.
+      }
+    } else {
+      const url = await startCheckout(plan);
+      if (url) {
+        // Full redirect — on return, pendingEmail.current forces step 1.
+        window.location.href = url;
+      } else {
+        // Checkout creation failed — surface a generic error and reset.
+        setUpgrading(null);
+        clearPendingEmail();
+      }
     }
   };
 
@@ -336,9 +437,12 @@ export function SetupWizard({ config }: SetupWizardProps) {
           emailError={emailError}
           emailSuggestion={emailSuggestion}
           emailLocked={emailLocked}
-          isPro={!!isPro}
+          isPaid={isPaid}
+          pendingEmailUpgrade={!!pendingEmail.current}
           onUseSuggestion={(s) => { const base = extractBaseUsername(s); setEmailUsername(base); checkEmailAvailability(base); }}
           onContinue={handleContinue}
+          onUpgrade={handleUpgrade}
+          upgrading={upgrading}
           isSaving={isSaving}
         />
       </div>
@@ -404,6 +508,97 @@ function formatSuggestionDisplay(suggestion: string): string {
   return `${base}@agents.construct.computer`;
 }
 
+/* ─── Inline email-upgrade CTA (shown on step 1 for free users) ─── */
+
+function EmailUpgradeCard({
+  pendingEmailUpgrade,
+  upgrading,
+  onUpgrade,
+}: {
+  pendingEmailUpgrade: boolean;
+  upgrading: 'starter' | 'pro' | null;
+  onUpgrade: (plan: 'starter' | 'pro') => void;
+}) {
+  return (
+    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3.5 space-y-3">
+      <div className="flex items-start gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0 mt-0.5">
+          <Mail className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12.5px] font-medium text-black dark:text-white leading-snug">
+            Give your agent its own email inbox
+          </p>
+          <p className="text-[11px] text-black/50 dark:text-white/40 leading-snug mt-0.5">
+            Pick a <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span>{' '}
+            address your agent can send and receive mail from. Available on any paid plan.
+          </p>
+        </div>
+      </div>
+
+      {pendingEmailUpgrade && (
+        <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400 ml-10">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Finishing upgrade… your username is saved.
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onUpgrade('starter')}
+          disabled={!!upgrading}
+          className="group flex flex-col items-start gap-0.5 rounded-lg border border-black/10 dark:border-white/10
+            bg-white/60 dark:bg-black/30 hover:bg-white/80 dark:hover:bg-black/40
+            px-3 py-2.5 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-[11px] font-semibold text-black dark:text-white">Starter</span>
+            {upgrading === 'starter'
+              ? <Loader2 className="w-3 h-3 animate-spin text-black/50 dark:text-white/50" />
+              : <ArrowRight className="w-3 h-3 text-black/30 dark:text-white/30 group-hover:translate-x-0.5 transition-transform" />
+            }
+          </div>
+          <div className="flex items-baseline gap-0.5">
+            <span className="text-[14px] font-bold text-black dark:text-white tracking-tight">$59</span>
+            <span className="text-[10px] text-black/40 dark:text-white/40">/mo</span>
+          </div>
+          <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400/80 font-medium">1-day free trial</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onUpgrade('pro')}
+          disabled={!!upgrading}
+          className="group relative flex flex-col items-start gap-0.5 rounded-lg border border-emerald-500/30
+            bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14]
+            px-3 py-2.5 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-[11px] font-semibold text-black dark:text-white flex items-center gap-1">
+              Pro
+              <Sparkles className="w-2.5 h-2.5 text-emerald-500 dark:text-emerald-400" />
+            </span>
+            {upgrading === 'pro'
+              ? <Loader2 className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
+              : <ArrowRight className="w-3 h-3 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+            }
+          </div>
+          <div className="flex items-baseline gap-0.5">
+            <span className="text-[14px] font-bold text-black dark:text-white tracking-tight">$299</span>
+            <span className="text-[10px] text-black/40 dark:text-white/40">/mo</span>
+          </div>
+          <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400/80 font-medium">3-day free trial</span>
+        </button>
+      </div>
+
+      <p className="text-[10px] text-black/40 dark:text-white/40 ml-10 leading-snug">
+        You can also skip for now and set this up later from Settings.
+      </p>
+    </div>
+  );
+}
+
 /* ─── Step 1: Profile + Email ───────────────────────────────── */
 
 function Step1Screen({
@@ -413,9 +608,13 @@ function Step1Screen({
   agentName, setAgentName,
   emailUsername, setEmailUsername,
   emailChecking, emailAvailable, emailError, emailSuggestion, emailLocked,
-  isPro,
+  isPaid,
+  pendingEmailUpgrade,
   onUseSuggestion,
-  onContinue, isSaving,
+  onContinue,
+  onUpgrade,
+  upgrading,
+  isSaving,
 }: {
   user: { displayName?: string | null; avatarUrl?: string | null; email?: string | null; username?: string | null } | null;
   ownerName: string; setOwnerName: (v: string) => void; nameError: string;
@@ -424,13 +623,16 @@ function Step1Screen({
   emailUsername: string; setEmailUsername: (v: string) => void;
   emailChecking: boolean; emailAvailable: boolean | null;
   emailError: string; emailSuggestion: string; emailLocked: boolean;
-  isPro: boolean;
+  isPaid: boolean;
+  pendingEmailUpgrade: boolean;
   onUseSuggestion: (s: string) => void;
   onContinue: () => void;
+  onUpgrade: (plan: 'starter' | 'pro') => void;
+  upgrading: 'starter' | 'pro' | null;
   isSaving: boolean;
 }) {
   const canContinue = ownerName.trim().length > 0
-    && (emailLocked || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
+    && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
 
   return (
     <>
@@ -518,14 +720,14 @@ function Step1Screen({
               <Mail className="w-3.5 h-3.5" />
               Agent Email Address
               {emailLocked && <Lock className="w-3 h-3 text-black/30 dark:text-white/30" />}
-              {!emailLocked && !isPro && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Pro</span>}
+              {!emailLocked && !isPaid && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Paid</span>}
             </Label>
-            {!isPro && !emailLocked ? (
-              <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/30 dark:bg-black/10 px-5 py-4">
-                <p className="text-[12px] text-black/50 dark:text-white/40">
-                  Upgrade to Starter to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span> email address.
-                </p>
-              </div>
+            {!isPaid && !emailLocked ? (
+              <EmailUpgradeCard
+                pendingEmailUpgrade={pendingEmailUpgrade}
+                upgrading={upgrading}
+                onUpgrade={onUpgrade}
+              />
             ) : (
             <>
             <div className="flex items-stretch rounded-xl overflow-hidden border border-black/5 dark:border-white/10 shadow-inner bg-white/50 dark:bg-black/20 transition-all">

@@ -187,8 +187,9 @@ function UserSection() {
   const { computer, updateComputer, isLoading: computerLoading } = useComputerStore();
   const subscription = useBillingStore((s) => s.subscription);
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const setPendingSection = useSettingsNav((s) => s.setPendingSection);
   useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
-  const isPro = subscription?.plan === 'pro';
+  const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [agentName, setAgentName] = useState('');
@@ -251,8 +252,9 @@ function UserSection() {
         agentName: agentName.trim() || 'Construct Agent',
       };
 
-      // Include email username if not already set
-      if (!emailLocked && emailUsername.trim()) {
+      // Include email username only if not already set and user is on a paid plan.
+      // (Backend also enforces this — belt-and-suspenders to avoid a 403 round-trip.)
+      if (!emailLocked && isPaid && emailUsername.trim()) {
         updateData.agentmailInboxUsername = emailUsername.trim();
       }
 
@@ -334,10 +336,19 @@ function UserSection() {
               <span className="text-[13px] text-[var(--color-text)]">{existingEmail}</span>
               <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />
             </div>
-          ) : !isPro ? (
+          ) : !isPaid ? (
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[var(--color-text-muted)]">Available on Pro plan</span>
-              <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase">Pro</span>
+              <span className="text-[12px] text-[var(--color-text-muted)]">Available on paid plans</span>
+              <button
+                type="button"
+                onClick={() => setPendingSection('subscription')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full
+                  bg-emerald-500/15 text-emerald-600 dark:text-emerald-400
+                  hover:bg-emerald-500/25 transition-colors"
+              >
+                Upgrade
+                <ChevronRight className="w-3 h-3" />
+              </button>
             </div>
           ) : (
             <div className="flex items-center gap-0 rounded-lg overflow-hidden border border-[var(--color-border)]">
