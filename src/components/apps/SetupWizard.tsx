@@ -523,7 +523,7 @@ function Step1Screen({
             {!isPro && !emailLocked ? (
               <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/30 dark:bg-black/10 px-5 py-4">
                 <p className="text-[12px] text-black/50 dark:text-white/40">
-                  Upgrade to Pro to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span> email address.
+                  Upgrade to Starter to give your agent its own <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span> email address.
                 </p>
               </div>
             ) : (

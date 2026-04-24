@@ -256,7 +256,7 @@ export function SetupModal() {
             {!isPro && !emailLocked ? (
               <div className="rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3">
                 <p className="text-[12px] text-[var(--color-text-muted)]">
-                  Upgrade to Pro to give your agent its own <span className="font-medium">@agents.construct.computer</span> email.
+                  Upgrade to Starter to give your agent its own <span className="font-medium">@agents.construct.computer</span> email.
                 </p>
               </div>
             ) : (
