@@ -140,13 +140,28 @@ export function UsageSection() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-medium">AI Usage</span>
-                {usingBonus && (
-                  <span className="flex items-center gap-1 text-[11px] text-emerald-400">
-                    <Zap className="w-3 h-3" />
-                    Bonus active
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {usage.byokActive && (
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                      <Zap className="w-3 h-3" />
+                      Using your key
+                    </span>
+                  )}
+                  {usingBonus && (
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                      <Zap className="w-3 h-3" />
+                      Bonus active
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {usage.byokFallback && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Using your OpenRouter key — platform caps exhausted.</span>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[12px]">

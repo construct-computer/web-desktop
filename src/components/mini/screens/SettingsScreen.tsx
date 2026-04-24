@@ -540,9 +540,121 @@ function SubscriptionSection({ onBack }: { onBack: () => void }) {
                 </Card>
               </>
             )}
+
+            {/* BYOK — compact mobile view. Full management (save key, weekly cap, model picker) lives on desktop. */}
+            <SectionLabel>Your OpenRouter Key</SectionLabel>
+            <ByokMobileCard
+              byok={subscription?.byokSettings}
+              usage={usage}
+              onChanged={async () => {
+                const sub = await apiJSON<any>('/billing/subscription');
+                setSubscription(sub);
+              }}
+            />
           </>
         )}
       </div>
     </div>
+  );
+}
+
+// ── BYOK mobile summary ─────────────────────────────────────────────────
+
+function ByokMobileCard({
+  byok,
+  usage,
+  onChanged,
+}: {
+  byok?: { hasKey: boolean; mode: 'off' | 'auto' | 'exclusive'; model: string | null; weeklyLimitUsd: number | null; keyPreview: string | null } | null;
+  usage?: { byokActive?: boolean; byokFallback?: boolean } | null;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  if (!byok) {
+    return (
+      <Card>
+        <p className="text-[12px] opacity-40">Loading BYOK settings…</p>
+      </Card>
+    );
+  }
+
+  const modeLabel = byok.mode === 'off' ? 'Disabled' : byok.mode === 'auto' ? 'Auto-fallback' : 'Exclusive';
+
+  const setMode = async (next: 'off' | 'auto' | 'exclusive') => {
+    if (next !== 'off' && !byok.hasKey) return;
+    setBusy(true);
+    haptic();
+    try {
+      await api('/billing/byok/settings', { method: 'PUT', body: JSON.stringify({ mode: next }) });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="space-y-2.5">
+        {byok.hasKey ? (
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] opacity-50">Key</span>
+            <span className="text-[12px] font-mono">{byok.keyPreview || '••••'}</span>
+          </div>
+        ) : (
+          <p className="text-[12px] opacity-40">No key saved. Add one from the desktop app.</p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] opacity-50">Mode</span>
+          <span className="text-[13px] font-medium">{modeLabel}</span>
+        </div>
+
+        {byok.hasKey && (
+          <div className="grid grid-cols-3 gap-1.5 pt-1">
+            {(['off', 'auto', 'exclusive'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                disabled={busy}
+                onClick={() => setMode(m)}
+                className="text-[11px] py-1.5 rounded-md"
+                style={{
+                  backgroundColor: byok.mode === m ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
+                  color: byok.mode === m ? '#22c55e' : 'inherit',
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                {m === 'off' ? 'Off' : m === 'auto' ? 'Auto' : 'Exclusive'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {byok.model && (
+          <div className="flex items-center justify-between pt-1 border-t border-white/5">
+            <span className="text-[12px] opacity-50">Model</span>
+            <span className="text-[11px] font-mono opacity-70 max-w-[60%] truncate text-right">{byok.model}</span>
+          </div>
+        )}
+
+        {byok.weeklyLimitUsd != null && byok.weeklyLimitUsd > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] opacity-50">Weekly cap</span>
+            <span className="text-[12px] font-mono">${byok.weeklyLimitUsd.toFixed(2)}</span>
+          </div>
+        )}
+
+        {usage?.byokFallback && (
+          <div
+            className="flex items-center gap-2 p-2 rounded-lg text-[12px] mt-1"
+            style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}
+          >
+            <Zap size={13} className="shrink-0" />
+            Using your OpenRouter key — platform limits exhausted.
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

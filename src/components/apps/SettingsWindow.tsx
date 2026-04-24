@@ -34,6 +34,7 @@ import {
 } from '@/services/api';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { BillingSection } from './BillingSection';
+import { ByokSection } from './ByokSection';
 import { UsageSection } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
@@ -1451,6 +1452,15 @@ function SubscriptionSection() {
   return (
     <SectionPanel title="Subscription" subtitle="Manage your plan and earn bonus credits.">
       <BillingSection />
+      <div className="mt-6 pt-5 border-t border-black/[0.06] dark:border-white/[0.06]">
+        <div className="mb-3">
+          <h3 className="text-[14px] font-semibold">Bring your own OpenRouter key</h3>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+            Power fall-back inference — or replace the platform AI entirely — with your own OpenRouter key.
+          </p>
+        </div>
+        <ByokSection />
+      </div>
     </SectionPanel>
   );
 }

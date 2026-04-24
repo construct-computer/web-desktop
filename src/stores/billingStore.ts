@@ -12,10 +12,20 @@ import {
   switchPlan as switchPlanApi,
   createPortalSession,
   createTopupCheckout,
+  getByokSettings,
+  saveByokKey,
+  deleteByokKey,
+  updateByokSettings,
+  listByokModels,
   type SubscriptionInfo,
   type WindowUsage,
   type UsageHistorySummary,
+  type ByokSettings,
+  type ByokMode,
+  type ByokModel,
 } from '@/services/api';
+
+const BYOK_MODELS_CACHE_MS = 5 * 60 * 1000;
 
 interface BillingState {
   // Subscription
@@ -30,6 +40,14 @@ interface BillingState {
   // Usage history
   history: UsageHistorySummary | null;
 
+  // BYOK
+  byok: ByokSettings | null;
+  byokLoading: boolean;
+  byokError: string | null;
+  byokModels: { recommended: ByokModel[]; models: ByokModel[] } | null;
+  byokModelsFetchedAt: number | null;
+  byokModelsLoading: boolean;
+
   // Actions
   fetchSubscription: () => Promise<void>;
   fetchUsage: () => Promise<void>;
@@ -38,15 +56,30 @@ interface BillingState {
   switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
   openPortal: () => Promise<string | null>;
   buyTopup: (amount: number) => Promise<string | null>;
+
+  // BYOK actions
+  fetchByok: () => Promise<void>;
+  saveByokKey: (apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteByokKey: () => Promise<void>;
+  setByokMode: (mode: ByokMode) => Promise<{ ok: boolean; error?: string }>;
+  setByokModel: (model: string | null) => Promise<{ ok: boolean; error?: string }>;
+  setByokWeeklyLimit: (weeklyLimitUsd: number | null) => Promise<{ ok: boolean; error?: string }>;
+  fetchByokModels: (force?: boolean) => Promise<void>;
 }
 
-export const useBillingStore = create<BillingState>((set) => ({
+export const useBillingStore = create<BillingState>((set, get) => ({
   subscription: null,
   subscriptionLoading: false,
   subscriptionError: null,
   usage: null,
   usageLoading: false,
   history: null,
+  byok: null,
+  byokLoading: false,
+  byokError: null,
+  byokModels: null,
+  byokModelsFetchedAt: null,
+  byokModelsLoading: false,
 
   fetchSubscription: async () => {
     set({ subscriptionLoading: true, subscriptionError: null });
@@ -131,5 +164,77 @@ export const useBillingStore = create<BillingState>((set) => ({
       return result.data.checkoutUrl;
     }
     return null;
+  },
+
+  // ── BYOK ───────────────────────────────────────────────────────────────
+
+  fetchByok: async () => {
+    set({ byokLoading: true, byokError: null });
+    const res = await getByokSettings();
+    if (res.success) {
+      set({ byok: res.data, byokLoading: false });
+    } else {
+      set({ byokError: res.error, byokLoading: false });
+    }
+  },
+
+  saveByokKey: async (apiKey: string) => {
+    const res = await saveByokKey(apiKey);
+    if (res.success) {
+      set({ byok: res.data });
+      return { ok: true };
+    }
+    return { ok: false, error: res.error };
+  },
+
+  deleteByokKey: async () => {
+    await deleteByokKey();
+    // Re-fetch to get server-canonical state (mode reset to 'off', keyPreview null, etc).
+    await get().fetchByok();
+  },
+
+  setByokMode: async (mode: ByokMode) => {
+    const res = await updateByokSettings({ mode });
+    if (res.success) {
+      set({ byok: res.data });
+      return { ok: true };
+    }
+    return { ok: false, error: res.error };
+  },
+
+  setByokModel: async (model: string | null) => {
+    const res = await updateByokSettings({ model });
+    if (res.success) {
+      set({ byok: res.data });
+      return { ok: true };
+    }
+    return { ok: false, error: res.error };
+  },
+
+  setByokWeeklyLimit: async (weeklyLimitUsd: number | null) => {
+    const res = await updateByokSettings({ weeklyLimitUsd });
+    if (res.success) {
+      set({ byok: res.data });
+      return { ok: true };
+    }
+    return { ok: false, error: res.error };
+  },
+
+  fetchByokModels: async (force = false) => {
+    const { byokModels, byokModelsFetchedAt } = get();
+    if (!force && byokModels && byokModelsFetchedAt && Date.now() - byokModelsFetchedAt < BYOK_MODELS_CACHE_MS) {
+      return;
+    }
+    set({ byokModelsLoading: true });
+    const res = await listByokModels();
+    if (res.success) {
+      set({
+        byokModels: res.data,
+        byokModelsFetchedAt: Date.now(),
+        byokModelsLoading: false,
+      });
+    } else {
+      set({ byokModelsLoading: false });
+    }
   },
 }));

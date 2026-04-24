@@ -12,6 +12,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelLeftOpen, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Tooltip } from '@/components/ui';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -133,10 +134,10 @@ export function Spotlight() {
               : "rounded-2xl border border-white/30 dark:border-white/[0.1]"
           )}
         >
-          {/* Mobile drag handle */}
+          {/* Mobile drag handle — reserves space in flex flow so it never overlaps messages */}
           {isMobile && (
-            <div 
-              className="w-full flex justify-center pt-3 pb-1 shrink-0 absolute top-0 z-50 cursor-pointer"
+            <div
+              className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 cursor-pointer"
               onClick={closeSpotlight}
             >
               <div className="w-12 h-1.5 rounded-full bg-black/20 dark:bg-white/20" />
@@ -164,15 +165,17 @@ export function Spotlight() {
           <div className="flex-1 flex flex-col min-w-0 h-full relative">
             {isSubscribed ? (
               <>
-                {/* Floating sidebar toggle when collapsed */}
+                {/* Floating sidebar toggle — aligned 1:1 with the sidebar's collapse button so
+                    nothing visually shifts when toggling open/closed. */}
                 {!sidebarOpen && (
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg text-[var(--color-text-muted)]/30 hover:text-[var(--color-text)] hover:bg-white/[0.08] transition-colors"
-                    title="Show sidebar"
-                  >
-                    <PanelLeftOpen className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip content="Show sidebar" side="bottom">
+                    <button
+                      onClick={() => setSidebarOpen(true)}
+                      className="absolute top-4 left-3 z-20 p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] bg-white/[0.03] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-95"
+                    >
+                      <PanelLeftOpen className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
                 )}
                 <MessageList />
                 <SpotlightInput />

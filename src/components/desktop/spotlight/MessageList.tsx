@@ -213,15 +213,20 @@ export function MessageList() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto scroll-smooth scrollbar-none pb-3"
+        className={cn(
+          "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
+          isMobile ? "pt-8" : "pt-4"
+        )}
         style={{ overscrollBehavior: 'contain' }}
       >
-        {isMobile && <div className="h-12 shrink-0" />}
         {renderGroups.map(({ key, node }) => (
           <div key={key}>{node}</div>
         ))}
         <ThinkingIndicator />
       </div>
+
+      {/* Top scroll-fade mask so messages don't collide with the rounded corner / floating toggle */}
+      <div className="pointer-events-none absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-white/60 dark:from-[#111113]/80 to-transparent z-[5]" />
 
       {showScrollBtn && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">

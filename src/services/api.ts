@@ -1313,6 +1313,7 @@ export interface SubscriptionInfo {
   byok?: boolean;
   hasOpenRouterKey?: boolean;
   selectedModel?: string;
+  byokSettings?: ByokSettings;
   planLimits?: {
     weeklyCapUsd: number;
     windowCapUsd: number;
@@ -1347,6 +1348,10 @@ export interface WindowUsage {
   shouldDowngrade: boolean;
   usingBonus?: boolean;
   hasBonusCredits?: boolean;
+  /** True when the user's BYOK key is currently serving their traffic. */
+  byokActive?: boolean;
+  /** True when platform caps are exhausted and BYOK auto-fallback is active. */
+  byokFallback?: boolean;
   environment?: string;
   /** Staging only */
   windowUsedUsd?: number;
@@ -1450,21 +1455,93 @@ export async function createTopupCheckout(amount: number): Promise<ApiResult<{ c
   });
 }
 
-// ── OpenRouter Key & Model Management ──
+// ── BYOK (Bring Your Own Key) Management ──
 
-export async function saveOpenRouterKey(apiKey: string): Promise<ApiResult<{ ok: boolean }>> {
-  return request('/billing/openrouter-key', {
+/**
+ * BYOK modes mirror the backend:
+ *   off        — stored key is ignored
+ *   auto       — platform first, fall back to BYOK when platform caps hit
+ *   exclusive  — always use BYOK; platform caps are skipped
+ */
+export type ByokMode = 'off' | 'auto' | 'exclusive';
+
+export interface ByokSettings {
+  hasKey: boolean;
+  mode: ByokMode;
+  model: string | null;
+  weeklyLimitUsd: number | null;
+  keyPreview: string | null;
+  credits?: {
+    usage?: number;
+    limit?: number | null;
+    is_free_tier?: boolean;
+  } | null;
+}
+
+export interface ByokModel {
+  id: string;
+  label: string;
+}
+
+/** Fetch current BYOK settings + OpenRouter credits (if key is saved). */
+export async function getByokSettings(): Promise<ApiResult<ByokSettings>> {
+  return request('/billing/byok');
+}
+
+/**
+ * Save a new OpenRouter API key. The backend validates it against
+ * `https://openrouter.ai/api/v1/auth/key` before storing (encrypted).
+ */
+export async function saveByokKey(apiKey: string): Promise<ApiResult<ByokSettings>> {
+  return request('/billing/byok/key', {
     method: 'POST',
     body: JSON.stringify({ apiKey }),
   });
 }
 
+/** Remove the stored BYOK key and reset mode to 'off'. */
+export async function deleteByokKey(): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/billing/byok/key', { method: 'DELETE' });
+}
+
+/** Patch BYOK settings (mode/model/weekly limit). */
+export async function updateByokSettings(patch: {
+  mode?: ByokMode;
+  model?: string | null;
+  weeklyLimitUsd?: number | null;
+}): Promise<ApiResult<ByokSettings>> {
+  return request('/billing/byok/settings', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
+
+/**
+ * List OpenRouter models. Returns a `recommended` curated subset + the full
+ * catalogue from https://openrouter.ai/api/v1/models (CF-cached for 1h).
+ */
+export async function listByokModels(): Promise<ApiResult<{ recommended: ByokModel[]; models: ByokModel[] }>> {
+  return request('/billing/byok/models');
+}
+
+// ── Legacy OpenRouter Key compat shims (deprecated) ──
+// Older UI code imports these names. Keep them as thin wrappers around
+// the BYOK endpoints so existing callers continue to work.
+
+export async function saveOpenRouterKey(apiKey: string): Promise<ApiResult<{ ok: boolean }>> {
+  const res = await saveByokKey(apiKey);
+  if (res.success) return { success: true, data: { ok: true } };
+  return { success: false, error: res.error };
+}
+
 export async function removeOpenRouterKey(): Promise<ApiResult<{ ok: boolean }>> {
-  return request('/billing/openrouter-key', { method: 'DELETE' });
+  return deleteByokKey();
 }
 
 export async function getOpenRouterKeyStatus(): Promise<ApiResult<{ hasKey: boolean }>> {
-  return request('/billing/openrouter-key/status');
+  const res = await getByokSettings();
+  if (res.success) return { success: true, data: { hasKey: res.data.hasKey } };
+  return { success: false, error: res.error };
 }
 
 
