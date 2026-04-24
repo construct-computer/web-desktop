@@ -414,18 +414,37 @@ export interface OperationMeta {
   maxTurns?: number;
 }
 
+export interface SessionEventRow {
+  id: number;
+  session_key: string;
+  event_type: string;
+  /** Raw JSON of the original broadcast message (includes sessionKey,
+   *  subagentId, and the event-specific payload). */
+  payload_json: string;
+  subagent_id?: string | null;
+  created_at: number;
+}
+
 export async function getAgentHistory(_instanceId: string, sessionKey = 'ws_default'): Promise<ApiResult<{
   session_key: string;
   messages: Array<{
     role: string;
     content: string | null;
     created_at: number;
+    tool_name?: string | null;
+    tool_call_id?: string | null;
+    /** Legacy OpenAI-style parsed tool_calls (client-side reconstruction). */
     tool_calls?: Array<{
       type: string;
       function: { name: string; arguments: string };
     }>;
+    /** Raw JSON string as stored by the DO for role='tool_call' rows. */
+    tool_calls_json?: string | null;
     metadata?: string | Record<string, unknown>;
   }>;
+  /** Durable event log for reconstructing ephemeral UI cards (child
+   *  spawn/complete, orchestration, research checkpoints, etc.). */
+  events?: SessionEventRow[];
   operation_metadata?: OperationMeta[];
 }>> {
   return request(`/agent/history?session_key=${encodeURIComponent(sessionKey)}`);
@@ -446,6 +465,34 @@ export async function getAgentSessions(_instanceId: string): Promise<ApiResult<{
   active_key: string;
 }>> {
   return request(`/agent/sessions`);
+}
+
+/** Shape of one entry in the DO's live session snapshot (mirrors
+ *  `SessionLiveStatus` in worker). Used by the frontend to hydrate
+ *  `activeSessions` on mount so sidebar dots reflect running state
+ *  even after a page reload. */
+export interface ActiveSessionSnapshot {
+  sessionKey: string;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  lastIteration: number;
+  lastToolName: string | null;
+  interruptRequested: boolean;
+  pendingInjectionCount: number;
+  elapsedMs: number;
+  idleMs: number;
+}
+
+/**
+ * Fetch the live in-memory session state from the DO. Unlike
+ * `getAgentSessions` (which returns the persisted sessions table), this
+ * returns the transient execution snapshot — only sessions with a loop
+ * currently running will appear.
+ */
+export async function getActiveAgentSessions(): Promise<ApiResult<{
+  sessions: ActiveSessionSnapshot[];
+}>> {
+  return request(`/agent/active-sessions`);
 }
 
 /**

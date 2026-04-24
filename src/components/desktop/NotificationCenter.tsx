@@ -4,6 +4,7 @@ import { X, CheckCircle2, AlertCircle, Info, Trash2, Activity } from 'lucide-rea
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
+import { getSwarmMetrics } from '@/lib/agentSwarm';
 import { TrackerWindow } from '@/components/apps/TrackerWindow';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
@@ -196,11 +197,9 @@ export function NotificationCenter() {
         {/* Tabs */}
         {(() => {
           const unreadCount = useNotificationStore.getState().unreadCount();
-          const agentRunning = useComputerStore.getState().agentRunning;
+          const { agentRunning, platformAgents } = useComputerStore.getState();
           const ops = useAgentTrackerStore.getState().operations;
-          const activeAgentCount = Object.values(ops).filter(o => o.status === 'running' || o.status === 'aggregating')
-            .reduce((sum, o) => sum + o.subAgents.filter(a => a.status === 'running').length, 0)
-            + (agentRunning ? 1 : 0);
+          const { total: activeAgentCount } = getSwarmMetrics(platformAgents, agentRunning, ops);
 
           return (
             <div className="flex items-center px-3 pt-3 pb-1 gap-1 flex-shrink-0">

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle } from 'lucide-react';
+import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Zap } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -12,6 +12,39 @@ import { VoiceButton } from '@/components/ui/VoiceButton';
 import { useSlashCommands } from './hooks';
 
 const DRAFT_KEY = 'construct:spotlight-draft';
+const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
+const MAX_INPUT_HISTORY = 200;
+
+function inputHistoryKey(sessionKey: string | undefined) {
+  return `${INPUT_HISTORY_PREFIX}${sessionKey || 'default'}`;
+}
+
+function loadInputHistory(sessionKey: string | undefined): string[] {
+  try {
+    const raw = localStorage.getItem(inputHistoryKey(sessionKey));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.every((x) => typeof x === 'string') ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveInputHistory(sessionKey: string | undefined, entries: string[]) {
+  try {
+    const trimmed = entries.slice(-MAX_INPUT_HISTORY);
+    localStorage.setItem(inputHistoryKey(sessionKey), JSON.stringify(trimmed));
+  } catch { /* */ }
+}
+
+function appendToInputHistory(sessionKey: string | undefined, line: string) {
+  const t = line.trim();
+  if (!t) return;
+  const prev = loadInputHistory(sessionKey);
+  if (prev[prev.length - 1] === t) return;
+  saveInputHistory(sessionKey, [...prev, t]);
+}
+
 type FileSuggestion = { id: string; display: string; isDir: boolean };
 const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 const IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/i;
@@ -24,14 +57,23 @@ function isExternalSession(key: string): boolean {
 export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
   const stopChatSession = useComputerStore(s => s.stopChatSession);
+  const interruptSession = useComputerStore(s => s.interruptSession);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
   const instanceId = useComputerStore(s => s.instanceId);
   const pendingImages = useComputerStore(s => s.pendingImageData);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
   const isExternal = isExternalSession(activeSessionKey || '');
   const replyingTo = useComputerStore(s => s.replyingTo);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
+  /**
+   * Running here means "there is a loop actively working this session". We
+   * combine the legacy `agentRunning` flag (desktop-lane compat) with the
+   * per-session `activeSessions` map so the Stop/Interrupt controls also show
+   * up for non-desktop platform chats (Slack, Telegram, email, etc.).
+   */
+  const sessionRunning = agentRunning || Boolean(activeSessionStatus && activeSessionStatus.status !== 'idle');
 
   const voiceEnabled = useSettingsStore(s => s.voiceEnabled);
   const voiceAutoSend = useSettingsStore(s => s.voiceAutoSend);
@@ -51,6 +93,10 @@ export function SpotlightInput() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const slashCommands = useSlashCommands();
 
+  /** -1 = editing live draft; 0..n-1 = browsing stored history (0 = oldest, n-1 = newest) */
+  const [historyNavIndex, setHistoryNavIndex] = useState(-1);
+  const historyStashRef = useRef('');
+
   const [message, setMessageRaw] = useState(() => {
     try { return localStorage.getItem(DRAFT_KEY) || ''; } catch { return ''; }
   });
@@ -63,6 +109,11 @@ export function SpotlightInput() {
   const showSlash = message.startsWith('/') && !message.includes(' ');
   const filteredCommands = showSlash ? slashCommands.filter(c => c.name.startsWith(message.toLowerCase())) : [];
   useEffect(() => { setSlashSelected(0); }, [message]);
+
+  useEffect(() => {
+    setHistoryNavIndex(-1);
+    historyStashRef.current = '';
+  }, [activeSessionKey]);
 
   const autoResize = useCallback(() => {
     const el = inputRef.current;
@@ -269,6 +320,8 @@ export function SpotlightInput() {
   // ── Send / Commands ──────────────────────────────────────────────────
   const clearDraft = useCallback(() => {
     setMessageRaw('');
+    setHistoryNavIndex(-1);
+    historyStashRef.current = '';
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
     requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
   }, []);
@@ -302,13 +355,15 @@ export function SpotlightInput() {
     }
 
     play('click');
+    if (text) appendToInputHistory(activeSessionKey, text);
+    else if (allPaths.length > 0) appendToInputHistory(activeSessionKey, `📎 ${allPaths.length} attachment(s)`);
     sendChatMessage(fullText, allPaths.length > 0 ? allPaths : undefined);
     clearDraft();
     setAttachments([]);
     atMentionedFilesRef.current.clear();
     setUploadError(null);
     setFsOpen(false);
-  }, [message, isConnected, sendChatMessage, play, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo]);
+  }, [message, isConnected, sendChatMessage, play, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo, activeSessionKey]);
 
   const billingUsage = useBillingStore(s => s.usage);
   const fetchUsage = useBillingStore(s => s.fetchUsage);
@@ -342,6 +397,7 @@ export function SpotlightInput() {
 
     if (voiceAutoSend && text) {
       play('click');
+      appendToInputHistory(activeSessionKey, text);
       sendChatMessage(text);
       clearDraft();
     } else if (text) {
@@ -349,7 +405,7 @@ export function SpotlightInput() {
       requestAnimationFrame(autoResize);
       inputRef.current?.focus();
     }
-  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, setMessage, autoResize, voiceReset, clearDraft]);
+  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, setMessage, autoResize, voiceReset, clearDraft, activeSessionKey]);
 
   // Cancel voice recording on Escape
   useEffect(() => {
@@ -503,6 +559,7 @@ export function SpotlightInput() {
               ref={inputRef}
               value={message}
               onChange={(e) => {
+                setHistoryNavIndex(-1);
                 const val = e.target.value;
                 setMessage(val);
                 requestAnimationFrame(autoResize);
@@ -525,6 +582,54 @@ export function SpotlightInput() {
                     return;
                   }
                   if (e.key === 'Escape') { e.preventDefault(); setFsOpen(false); return; }
+                }
+                if (
+                  !message.includes('\n') &&
+                  (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+                  !e.metaKey &&
+                  !e.ctrlKey &&
+                  !e.altKey &&
+                  !(showSlash && filteredCommands.length > 0)
+                ) {
+                  const h = loadInputHistory(activeSessionKey);
+                  if (e.key === 'ArrowUp' && h.length > 0) {
+                    e.preventDefault();
+                    if (historyNavIndex < 0) {
+                      historyStashRef.current = message;
+                      setMessage(h[h.length - 1]!);
+                      setHistoryNavIndex(h.length - 1);
+                    } else if (historyNavIndex > 0) {
+                      const nextI = historyNavIndex - 1;
+                      setMessage(h[nextI]!);
+                      setHistoryNavIndex(nextI);
+                    }
+                    requestAnimationFrame(() => {
+                      const el = inputRef.current;
+                      if (el) {
+                        const end = el.value.length;
+                        el.setSelectionRange(end, end);
+                        autoResize();
+                      }
+                    });
+                  } else if (e.key === 'ArrowDown' && historyNavIndex >= 0) {
+                    e.preventDefault();
+                    if (historyNavIndex < h.length - 1) {
+                      const nextI = historyNavIndex + 1;
+                      setMessage(h[nextI]!);
+                      setHistoryNavIndex(nextI);
+                    } else {
+                      setMessage(historyStashRef.current);
+                      setHistoryNavIndex(-1);
+                    }
+                    requestAnimationFrame(() => {
+                      const el = inputRef.current;
+                      if (el) {
+                        const end = el.value.length;
+                        el.setSelectionRange(end, end);
+                        autoResize();
+                      }
+                    });
+                  }
                 }
                 if (e.key === 'Enter' && !e.shiftKey && !isExternal) { e.preventDefault(); handleSend(); }
                 if (showSlash && filteredCommands.length > 0) {
@@ -562,12 +667,60 @@ export function SpotlightInput() {
                 {uploading ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Paperclip className="w-4.5 h-4.5" />}
               </button>
             </Tooltip>
-            {agentRunning ? (
-              <Tooltip content="Stop" side="top">
-                <button onClick={stopChatSession} className="p-1.5 rounded-md hover:bg-red-500/15 text-red-500/70 hover:text-red-500 transition-colors">
-                  <Square className="w-4.5 h-4.5" />
-                </button>
-              </Tooltip>
+            {sessionRunning ? (
+              <>
+                {/* Always-visible Stop = hard-abort this session, no re-queue. */}
+                <Tooltip content="Stop this session" side="top">
+                  <button
+                    onClick={stopChatSession}
+                    className="p-1.5 rounded-md hover:bg-red-500/15 text-red-500/70 hover:text-red-500 transition-colors"
+                  >
+                    <Square className="w-4.5 h-4.5" />
+                  </button>
+                </Tooltip>
+                {/*
+                  When there's text in the box while the session is running we
+                  surface a 2-mode control:
+                    Send (inject)   → soft-inject into the running turn
+                    Send + interrupt → hard-abort and replace the current turn
+                  We render the inject path as the primary action because that
+                  matches the user-controlled default.
+                */}
+                {(message.trim() || attachments.length > 0) && !isExternal && (
+                  <>
+                    <Tooltip content="Send as context (soft-inject)" side="top">
+                      <button
+                        onClick={handleSend}
+                        disabled={!isConnected || isExternal}
+                        className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                      >
+                        <Send className="w-4.5 h-4.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Interrupt + send (hard-abort current turn)" side="top">
+                      <button
+                        onClick={() => {
+                          const text = message.trim();
+                          if (!text && attachments.length === 0) return;
+                          if (!activeSessionKey) return;
+                          play('click');
+                          if (text) appendToInputHistory(activeSessionKey, text);
+                          else if (attachments.length > 0) appendToInputHistory(activeSessionKey, `📎 ${attachments.length} attachment(s)`);
+                          interruptSession(activeSessionKey, text || 'See attached files');
+                          clearDraft();
+                          setAttachments([]);
+                          atMentionedFilesRef.current.clear();
+                          setUploadError(null);
+                        }}
+                        disabled={!isConnected || isExternal}
+                        className="p-1.5 rounded-md hover:bg-amber-500/15 text-amber-500/80 hover:text-amber-400 disabled:opacity-20 transition-colors"
+                      >
+                        <Zap className="w-4.5 h-4.5" />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+              </>
             ) : (message.trim() || attachments.length > 0) && !isExternal ? (
               <Tooltip content="Send" side="top">
                 <button onClick={handleSend} disabled={!isConnected || isExternal} className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors">

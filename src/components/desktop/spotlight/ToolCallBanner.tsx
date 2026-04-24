@@ -162,7 +162,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
 
 /* ── Sub-agent entry (expandable with nested activities) ── */
 
-function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
+export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = agent.status === 'running' || agent.status === 'pending';
   const isFailed = agent.status === 'failed';

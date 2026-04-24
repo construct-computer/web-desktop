@@ -574,7 +574,7 @@ class AgentWSClient {
   }
 
   /**
-   * Abort running agent lanes.
+   * Abort running agent lanes. Hard-stops the session loop with no restart.
    * - No options: abort ALL running lanes
    * - sessionKey: abort a specific session lane
    * - platform: abort all lanes for a platform
@@ -582,6 +582,22 @@ class AgentWSClient {
   sendAbort(options?: { sessionKey?: string; platform?: string }) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'abort', ...options }));
+    }
+  }
+
+  /**
+   * Interrupt a running session loop and optionally restart it with a new
+   * message. Unlike `sendAbort`, the session re-enters the run queue after
+   * the current turn is cooperatively cancelled. Used by the Spotlight
+   * "Interrupt" button.
+   */
+  sendInterrupt(options: { sessionKey: string; message?: string }) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'interrupt',
+        sessionKey: options.sessionKey,
+        ...(options.message ? { message: options.message } : {}),
+      }));
     }
   }
 

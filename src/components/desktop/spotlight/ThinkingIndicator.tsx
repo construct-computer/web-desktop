@@ -28,7 +28,14 @@ function TypingDots() {
 
 export function ThinkingIndicator() {
   const stream = useComputerStore(s => s.agentThinkingStream);
-  const running = useComputerStore(s => s.agentRunning);
+  const agentRunning = useComputerStore(s => s.agentRunning);
+  const activeKey = useComputerStore(s => s.activeSessionKey);
+  const runningSet = useComputerStore(s => s.runningSessions);
+  const live = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
+  const running =
+    agentRunning
+    || (activeKey ? runningSet.has(activeKey) : false)
+    || Boolean(live && live.status !== 'idle');
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = stream !== null || running;
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [stream]);

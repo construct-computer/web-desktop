@@ -36,12 +36,12 @@ function posToPixel(rx: number, ry: number, w: number, h: number) {
   return { x: rx * w, y: ry * h };
 }
 
-// Node radii per depth: 0=platform, 1=operation, 2=subagent
-const DEPTH_R = [8, 6, 4];
-// Font per depth
-const DEPTH_FONT = ['600 9px monospace', '8px monospace', '7px monospace'];
-// Label truncation per depth
-const DEPTH_TRUNC = [20, 16, 14];
+// Node radii per depth: 0=platform, 1=operation, 2=subagent (slightly larger for touch/hover)
+const DEPTH_R = [10, 8, 6];
+// Font per depth (system UI — more readable at small sizes than mono for goals)
+const DEPTH_FONT = ['600 10px system-ui, sans-serif', '9px system-ui, sans-serif', '8.5px system-ui, sans-serif'];
+// Label truncation per depth (on-canvas; full text in hover panel)
+const DEPTH_TRUNC = [32, 44, 48];
 
 // Force simulation
 const REPULSION = 1400;
@@ -50,11 +50,13 @@ const CENTER_GRAVITY = 0.022;
 const DAMPING = 0.82;
 
 // Per-level spring rest lengths (platform→op, op→subagent)
-const SPRING_LEN_L0 = 52; // platform → operation
-const SPRING_LEN_L1 = 40; // operation → subagent
+const SPRING_LEN_L0 = 58; // platform → operation
+const SPRING_LEN_L1 = 48; // operation → subagent
 
 // Depth gravity offset: each level is pulled further down (top-level at top)
-const DEPTH_Y_BIAS = 28;
+const DEPTH_Y_BIAS = 32;
+// Default; dynamic spread is computed from parallel sub-agent count
+const CLUSTER_SPREAD_BASE = 150;
 
 // ── Status-based palette ─────────────────────────────────────────────
 
@@ -153,9 +155,6 @@ interface AgentEdge {
 // ── Force simulation (same algorithm as MemoryWindow, extended with
 //    per-edge spring length and depth-biased gravity) ─────────────────
 
-// Cluster separation distance — horizontal offset between cluster centers
-const CLUSTER_SPREAD = 160;
-
 function tickSimulation(
   nodes: AgentNode[],
   edges: AgentEdge[],
@@ -163,6 +162,8 @@ function tickSimulation(
   h: number,
   alpha: number,
   gravityCenter: { x: number; y: number },
+  /** Wider when many parallel sub-agents need horizontal room */
+  clusterSpread: number,
 ) {
   // Compute per-cluster gravity offsets (spread horizontally around gravityCenter)
   const clusterIds = [...new Set(nodes.map(n => n.cluster))];
@@ -170,7 +171,7 @@ function tickSimulation(
   const clusterCenters = new Map<string, { x: number; y: number }>();
   clusterIds.forEach((cid, i) => {
     // Spread clusters horizontally, centered on gravityCenter
-    const offset = (i - (clusterCount - 1) / 2) * CLUSTER_SPREAD;
+    const offset = (i - (clusterCount - 1) / 2) * clusterSpread;
     clusterCenters.set(cid, {
       x: Math.max(BOUND_PAD + 40, Math.min(w - BOUND_PAD - 40, gravityCenter.x + offset)),
       y: gravityCenter.y,
@@ -245,9 +246,14 @@ export function AgentGraphWidget() {
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const hoveredRef = useRef<string | null>(null);
   const prevIdsRef = useRef('');
+  const clusterSpreadRef = useRef(180);
+  const lastTipNodeIdRef = useRef<string | null>(null);
 
   // Free gravity position (stored as ratios 0-1, persisted in localStorage)
   const gravityPosRef = useRef(loadPos());
+
+  // Hover: full label + sub-lines (canvas labels stay short)
+  const [graphTip, setGraphTip] = useState<null | { x: number; y: number; label: string; sub?: string; status: string; depth: number }>(null);
 
   // 1-second tick for timers & fade recalc
   const [, setTick] = useState(0);
@@ -277,6 +283,7 @@ export function AgentGraphWidget() {
     currentTool?: string;
     sessionKey?: string;
     platform?: string;
+    /** Set on operation nodes (orchestration, delegation, …) for graph + tooltip */
     opType?: OperationType;
     /** Cluster ID — which platform agent tree this belongs to */
     cluster: string;
@@ -425,7 +432,7 @@ export function AgentGraphWidget() {
         terminal: 'Running command', web_search: 'Searching web', remote_browser: 'Browsing',
         read_file: 'Reading file', write_file: 'Writing file', email: 'Email',
         slack: 'Slack', telegram: 'Telegram', memory_recall: 'Recalling', memory_store: 'Remembering',
-        spawn_agent: 'Spawning agent', composio: 'Integration', app: 'Using app',
+        spawn_agent: 'Spawning agent', spawn_agents: 'Parallel agent swarm', composio: 'Integration', app: 'Using app',
         view_image: 'Viewing image', agent_calendar: 'Calendar',
       };
       activitySpecs.push({
@@ -443,13 +450,34 @@ export function AgentGraphWidget() {
 
   // ── Merge all specs ──
 
-  const allSpecs: NodeSpec[] = [...platformSpecs, ...opSpecs, ...activitySpecs, ...subSpecs];
-  const nActive = allSpecs.filter(n => n.status === 'running' || n.status === 'aggregating').length;
-  const totalCount = allSpecs.length;
+  let allSpecs: NodeSpec[] = [...platformSpecs, ...opSpecs, ...activitySpecs, ...subSpecs];
+  const hasDesktopNode = platformSpecs.some(p => p.id === '__desktop__');
+  if (!hasDesktopNode && opSpecs.some(o => o.parentId === '__desktop__')) {
+    allSpecs = [
+      {
+        id: '__desktop__',
+        label: 'Desktop',
+        status: 'running',
+        depth: 0,
+        alpha: 1,
+        platform: 'desktop',
+        cluster: '__desktop__',
+      },
+      ...allSpecs,
+    ];
+  }
 
-  // Show the graph whenever any agent is running — gives visibility into all work.
-  // Even a single desktop agent shows as: [Desktop] → [current tool/task]
-  const visible = platformSpecs.length > 0;
+  // More parallel sub-agents → wider cluster spread so fan-out is readable
+  clusterSpreadRef.current = Math.min(
+    360,
+    CLUSTER_SPREAD_BASE
+      + subSpecs.length * 24
+      + opSpecs.length * 10
+      + Math.max(0, platformSpecs.length - 1) * 14,
+  );
+
+  // Show the graph for any node (ops + subs can exist while host row is only implied)
+  const visible = allSpecs.length > 0;
 
   // ══════════════════════════════════════════════════════════════════
   //  Sync specs → persistent physics nodes (preserve positions)
@@ -568,7 +596,7 @@ export function AgentGraphWidget() {
 
       if (alphaRef.current > 0.001) {
         const gc = posToPixel(gravityPosRef.current.rx, gravityPosRef.current.ry, w, h);
-        tickSimulation(nodes, curEdges, w, h, alphaRef.current, gc);
+        tickSimulation(nodes, curEdges, w, h, alphaRef.current, gc, clusterSpreadRef.current);
         alphaRef.current *= 0.995;
       }
 
@@ -740,7 +768,7 @@ export function AgentGraphWidget() {
 
         // Label
         const maxLen = DEPTH_TRUNC[node.depth] ?? 14;
-        const displayLabel = trunc(node.label, isHovered ? 40 : maxLen);
+        const displayLabel = trunc(node.label, isHovered ? 90 : maxLen);
         if (displayLabel) {
           haloText(displayLabel, node.x, node.y + r + 4,
             DEPTH_FONT[node.depth] ?? '7px monospace',
@@ -784,7 +812,8 @@ export function AgentGraphWidget() {
       const dx = node.x - mx;
       const dy = node.y - my;
       const r = DEPTH_R[node.depth] ?? 4;
-      if (dx * dx + dy * dy < (r + 10) * (r + 10)) return node;
+      const hitPad = 14 + (2 - node.depth) * 3;
+      if (dx * dx + dy * dy < (r + hitPad) * (r + hitPad)) return node;
     }
     return null;
   }, []);
@@ -817,10 +846,34 @@ export function AgentGraphWidget() {
         drag.y = e.clientY - rect.top;
         alphaRef.current = Math.max(alphaRef.current, 0.1);
       } else {
-        // Update hover cursor
+        // Update hover cursor + graph tooltip
         const node = hitTestAt(e.clientX, e.clientY);
         hoveredRef.current = node?.id ?? null;
         document.body.style.cursor = node ? 'pointer' : '';
+        const nid = node?.id ?? null;
+        if (nid !== lastTipNodeIdRef.current) {
+          lastTipNodeIdRef.current = nid;
+          if (node) {
+            const parts: string[] = [];
+            if (node.depth === 1 && node.opType) parts.push(`Type: ${node.opType}`);
+            if (node.currentTool) parts.push(String(node.currentTool));
+            if (node.status && node.status !== 'running' && node.status !== 'aggregating' && node.status !== 'pending') {
+              parts.push(String(node.status));
+            }
+            setGraphTip({
+              x: e.clientX,
+              y: e.clientY,
+              label: node.label,
+              sub: parts.length > 0 ? parts.join(' · ') : undefined,
+              status: node.status,
+              depth: node.depth,
+            });
+          } else {
+            setGraphTip(null);
+          }
+        } else if (node) {
+          setGraphTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : t);
+        }
       }
     };
 
@@ -828,6 +881,8 @@ export function AgentGraphWidget() {
       const drag = dragNodeRef.current;
       if (drag) {
         drag.pinned = false;
+        setGraphTip(null);
+        lastTipNodeIdRef.current = null;
         const wasDrag = dragStartRef.current &&
           ((drag.x - dragStartRef.current.x) ** 2 + (drag.y - dragStartRef.current.y) ** 2) >= 25;
 
@@ -868,11 +923,29 @@ export function AgentGraphWidget() {
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none select-none font-mono"
+      className="absolute inset-0 pointer-events-none select-none"
       style={{ top: MENUBAR_HEIGHT, zIndex: Z_INDEX.desktopWidget }}
     >
-      {/* Full-desktop canvas — pointer-events-none, interaction via document listeners */}
       <canvas ref={canvasRef} className="w-full h-full" />
+      {graphTip && (
+        <div
+          className="fixed max-w-sm rounded-lg border border-white/10 bg-black/80 px-3 py-2 text-left shadow-lg backdrop-blur-md pointer-events-none"
+          style={{
+            left: graphTip.x + 12,
+            top: graphTip.y + 14,
+            zIndex: Z_INDEX.desktopWidget + 2,
+            maxWidth: 'min(22rem, calc(100vw - 1.5rem))',
+          }}
+        >
+          <p className="text-[12px] font-medium leading-snug text-white/95 break-words">{graphTip.label}</p>
+          {graphTip.sub && (
+            <p className="mt-1.5 text-[10px] font-mono text-sky-300/90 leading-relaxed break-words">{graphTip.sub}</p>
+          )}
+          {graphTip.depth === 2 && (graphTip.status === 'running' || graphTip.status === 'aggregating' || graphTip.status === 'pending') && (
+            <p className="mt-1 text-[9px] uppercase tracking-wide text-white/40">Parallel worker</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

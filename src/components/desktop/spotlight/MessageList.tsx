@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, Globe, Terminal, FileSearch, Reply } from 'lucide-react';
+import { ArrowDown, Globe, Terminal, FileSearch, Reply, AlertTriangle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
@@ -8,6 +8,7 @@ import { groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
 import { ToolCallBanner } from './ToolCallBanner';
+import { OperationCard } from './OperationCard';
 import { UserMessage } from './UserMessage';
 import { AgentMessage } from './AgentMessage';
 
@@ -56,6 +57,12 @@ export function MessageList() {
   const thinkingStream = useComputerStore(s => s.agentThinkingStream);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
   const activeKey = useComputerStore(s => s.activeSessionKey);
+  const overseerAlerts = useComputerStore(s => s.overseerAlerts);
+  /** Watchdog / system alerts that apply to this chat (or are global when no sessionKey). */
+  const alertsForThisChat = useMemo(
+    () => overseerAlerts.filter(a => a.sessionKey === activeKey),
+    [overseerAlerts, activeKey],
+  );
   const isExternal = activeKey?.startsWith('telegram_') || activeKey?.startsWith('slack_') || activeKey?.startsWith('email_');
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -77,11 +84,53 @@ export function MessageList() {
   useEffect(() => { scrollToBottom(); }, [chatMessages, agentRunning, thinkingStream, scrollToBottom]);
   useEffect(() => { const t = setTimeout(scrollToBottom, 200); return () => clearTimeout(t); }, [scrollToBottom]);
 
-  // Build enhanced groups: merge consecutive activities before an agent message into a ToolCallBanner
+  // Build enhanced groups: operations always render (as ToolCallBanner if
+  // activities follow, or as a standalone OperationCard otherwise). Activities
+  // before an agent message render as ToolCallBanner (3+) or ActivityGroup.
   const renderGroups = useMemo(() => {
+    type ActivitiesGroup = Extract<MessageGroup, { type: 'activities' }>;
+    type OperationGroup = Extract<MessageGroup, { type: 'operation' }>;
+
     const result: Array<{ key: string; node: React.ReactNode }> = [];
-    let pendingActivities: MessageGroup | null = null;
-    let pendingOperation: MessageGroup | null = null;
+    let pendingActivities: ActivitiesGroup | null = null;
+    let pendingOperation: OperationGroup | null = null;
+
+    const flushActivitiesAndOperation = (
+      keyPrefix: string,
+      opts: { isActive?: boolean } = {},
+    ) => {
+      const acts = pendingActivities?.msgs ?? [];
+      const opId = pendingOperation?.msg.operationId;
+      const hasActs = acts.length > 0;
+      const hasOp = !!opId;
+
+      if (hasActs) {
+        if (acts.length >= 3 || hasOp) {
+          result.push({
+            key: `${keyPrefix}-tcb`,
+            node: <ToolCallBanner
+              activities={acts}
+              operationId={opId}
+              isActive={opts.isActive}
+            />,
+          });
+        } else {
+          result.push({
+            key: `${keyPrefix}-ag`,
+            node: <ActivityGroup activities={acts} />,
+          });
+        }
+      } else if (hasOp) {
+        const label = pendingOperation!.msg.content || 'Orchestration';
+        result.push({
+          key: `${keyPrefix}-op-${opId}`,
+          node: <OperationCard operationId={opId!} label={label} />,
+        });
+      }
+
+      pendingActivities = null;
+      pendingOperation = null;
+    };
 
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi];
@@ -92,40 +141,12 @@ export function MessageList() {
       }
 
       if (group.type === 'operation') {
-        // Don't flush activities or render separately — merge into next ToolCallBanner
         pendingOperation = group;
         continue;
       }
 
-      // It's a message group
       const { msg } = group;
-
-      // If there are pending activities before an agent message, render as ToolCallBanner (3+) or ActivityGroup (fewer)
-      if (pendingActivities && msg.role === 'agent' && !msg.isError && !msg.isStopped) {
-        if (pendingActivities.msgs.length >= 3) {
-          result.push({
-            key: `tcb-${gi}`,
-            node: <ToolCallBanner
-              activities={pendingActivities.msgs}
-              operationId={pendingOperation?.msg.operationId}
-            />,
-          });
-        } else {
-          result.push({
-            key: `ag-${gi}`,
-            node: <ActivityGroup activities={pendingActivities.msgs} />,
-          });
-        }
-        pendingActivities = null;
-        pendingOperation = null;
-      } else if (pendingActivities) {
-        // Activities before a user message — render as regular ActivityGroup
-        result.push({
-          key: `ag-${gi}`,
-          node: <ActivityGroup activities={pendingActivities.msgs} />,
-        });
-        pendingActivities = null;
-      }
+      flushActivitiesAndOperation(`flush-${gi}`);
 
       if (msg.role === 'user') {
         const replySlot = !isExternal && msg.content?.trim()
@@ -143,7 +164,7 @@ export function MessageList() {
         const replySlot = !isExternal && msg.content?.trim()
           ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
           : undefined;
-        
+
         result.push({
           key: `msg-${group.index}`,
           node: (
@@ -155,24 +176,18 @@ export function MessageList() {
       }
     }
 
-    // Flush remaining activities (agent still working)
-    if (pendingActivities) {
-      result.push({
-        key: pendingActivities.msgs.length >= 3 ? `tcb-end` : `ag-end`,
-        node: pendingActivities.msgs.length >= 3
-          ? <ToolCallBanner
-              activities={pendingActivities.msgs}
-              operationId={pendingOperation?.msg.operationId}
-              isActive={agentRunning}
-            />
-          : <ActivityGroup activities={pendingActivities.msgs} />,
-      });
-    }
+    flushActivitiesAndOperation(`flush-end`, { isActive: agentRunning });
 
     return result;
   }, [groups, isExternal, setReplyingTo, agentRunning]);
 
-  const hasContent = groups.length > 0 || agentRunning;
+  const runningSessions = useComputerStore(s => s.runningSessions);
+  const activeSessionMeta = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
+  const sessionRunning =
+    agentRunning ||
+    (activeKey ? runningSessions.has(activeKey) : false) ||
+    Boolean(activeSessionMeta && activeSessionMeta.status !== 'idle');
+  const hasContent = groups.length > 0 || sessionRunning;
   const sessionSwitching = useComputerStore(s => s.sessionSwitching);
 
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
@@ -219,6 +234,42 @@ export function MessageList() {
         )}
         style={{ overscrollBehavior: 'contain' }}
       >
+        {alertsForThisChat.length > 0 && (
+          <div className="px-4 pt-2 pb-3 flex flex-col gap-1.5">
+            {alertsForThisChat.slice().reverse().map(alert => {
+              const icon = alert.severity === 'error'
+                ? <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                : alert.severity === 'warn'
+                  ? <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  : <AlertCircle className="w-3.5 h-3.5 text-[var(--color-text-muted)]/50 shrink-0" />;
+              const bg = alert.severity === 'error'
+                ? 'bg-red-500/5 border-red-500/15'
+                : alert.severity === 'warn'
+                  ? 'bg-amber-500/5 border-amber-500/15'
+                  : 'bg-white/[0.03] border-white/[0.08]';
+              const when = new Date(alert.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              return (
+                <div
+                  key={alert.id}
+                  className={cn(
+                    'flex items-start gap-2 px-3 py-2 rounded-lg border text-[12px] text-[var(--color-text-muted)]',
+                    bg,
+                  )}
+                >
+                  <div className="pt-0.5">{icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]/50 mb-0.5">
+                      <span>Status</span>
+                      {alert.sessionKey && <span>· {alert.sessionKey}</span>}
+                      <span className="ml-auto">{when}</span>
+                    </div>
+                    <p className="leading-snug whitespace-pre-wrap break-words">{alert.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {renderGroups.map(({ key, node }) => (
           <div key={key}>{node}</div>
         ))}

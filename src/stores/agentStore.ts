@@ -690,6 +690,38 @@ interface BrowserState {
 
 
 /** State of a per-platform agent execution lane. */
+/**
+ * Live view of a single agent session running inside the backend DO. Mirrors
+ * the DO's `SessionLiveStatus` + a UI-only `status` enum we derive from the
+ * stream of `status_change` events (the backend sends granular statuses like
+ * "thinking", "executing", "compacting"; the sidebar dots only need the
+ * simplified 3-state below).
+ */
+export interface ActiveSessionStatus {
+  sessionKey: string;
+  /** UI classification used to pick a dot colour. */
+  status: 'thinking' | 'idle' | 'stuck';
+  /** Raw backend status string (thinking / executing / compacting / …). */
+  rawStatus?: string;
+  lastToolName?: string | null;
+  startedAt?: number;
+  lastHeartbeatAt?: number;
+  idleMs?: number;
+  lastIteration?: number;
+  pendingInjectionCount?: number;
+}
+
+/** One overseer alert event — broadcast by the DO when supervising peers. */
+export interface OverseerAlert {
+  id: number;
+  timestamp: number;
+  severity: 'info' | 'warn' | 'error';
+  text: string;
+  /** The session this alert refers to (if any). */
+  sessionKey?: string;
+  origin?: string;
+}
+
 export interface PlatformAgentState {
   platform: string;
   running: boolean;
@@ -754,6 +786,18 @@ interface ComputerStore {
   agentStatusLabel: string | null;
   /** Set of session keys with active agent loops (for multi-session typing indicators) */
   runningSessions: Set<string>;
+  /**
+   * Per-session live status keyed by sessionKey. Populated from
+   * `status_change`, `overseer_alert`, and an initial `/active-sessions` hydration
+   * on WS connect. Backs the sidebar dots and the Stop/Interrupt controls.
+   */
+  activeSessions: Record<string, ActiveSessionStatus>;
+  /**
+   * Rolling log of background health / status alerts (most recent last).
+   * Capped at 20 entries; shown in the relevant session’s chat, not a
+   * separate channel.
+   */
+  overseerAlerts: OverseerAlert[];
   agentConnected: boolean;
   /** True when usage cap exceeded and agent is on the lite fallback model. */
   isOnLiteModel: boolean;
@@ -813,6 +857,18 @@ interface ComputerStore {
   stopPlatformAgent: (platform: string) => void;
   /** Stop the current desktop chat session lane only. */
   stopChatSession: () => void;
+  /**
+   * Hard-abort a specific session by its sessionKey (no re-queue). Used by the
+   * per-session Stop button in the sidebar. Fires over the WS and synchronously
+   * clears the session from `activeSessions`.
+   */
+  stopSession: (sessionKey: string) => void;
+  /**
+   * Interrupt a specific session: abort the current turn and optionally queue a
+   * new instruction that replaces whatever it was doing. Used by the
+   * "Send + interrupt" mode of the composer.
+   */
+  interruptSession: (sessionKey: string, message?: string) => void;
   /** Clear all chat history and start fresh. */
   clearChatHistory: () => void;
 
@@ -863,9 +919,115 @@ function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[]
   const next = [...messages, msg];
   return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
 }
+
+const INFLIGHT_ASSISTANT_STORAGE_PREFIX = 'construct:inflight-assistant:';
+
+function inflightAssistantStorageKey(instanceId: string, sessionKey: string) {
+  return `${INFLIGHT_ASSISTANT_STORAGE_PREFIX}${instanceId}:${sessionKey}`;
+}
+
+function clearInflightAssistantStorage(instanceId: string, sessionKey: string) {
+  try {
+    sessionStorage.removeItem(inflightAssistantStorageKey(instanceId, sessionKey));
+  } catch { /* */ }
+}
+
+function readInflightAssistantFromStorage(instanceId: string, sessionKey: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(inflightAssistantStorageKey(instanceId, sessionKey));
+    if (!raw) return null;
+    const { text, ts } = JSON.parse(raw) as { text?: string; ts?: number };
+    if (typeof text !== 'string' || !text) return null;
+    if (typeof ts === 'number' && Date.now() - ts > 6 * 60_000) {
+      sessionStorage.removeItem(inflightAssistantStorageKey(instanceId, sessionKey));
+      return null;
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Assistant text is streamed over WS but only persisted to SQL when the turn
+ * finishes. Reconstruct the in-flight bubble so loadChatHistory does not replace
+ * the UI with a server snapshot that lags behind the stream (session switch,
+ * or page reload via sessionStorage backup).
+ */
+function mergeInflightAssistantIntoHistory(
+  history: ChatMessage[],
+  opts: {
+    requestedSessionKey: string;
+    instanceId: string;
+    currentMessages: ChatMessage[];
+    runningSessions: Set<string>;
+    platformAgents: Record<string, PlatformAgentState>;
+  },
+): void {
+  const { requestedSessionKey, instanceId, currentMessages, runningSessions, platformAgents } = opts;
+
+  const pa = platformAgents['desktop'];
+  const fromPlatform =
+    pa?.sessionKey === requestedSessionKey && Array.isArray(pa?.chatMessages) && pa.chatMessages.length
+      ? pa.chatMessages
+      : null;
+  const fromSingleton = fromPlatform ?? currentMessages;
+
+  let lastLiveAgent: ChatMessage | undefined;
+  for (let i = fromSingleton.length - 1; i >= 0; i--) {
+    const m = fromSingleton[i];
+    if (m.role === 'agent' && !m.isError) {
+      lastLiveAgent = m;
+      break;
+    }
+  }
+
+  let cur = lastLiveAgent ? String(lastLiveAgent.content) : '';
+  const stored = readInflightAssistantFromStorage(instanceId, requestedSessionKey);
+  if (stored && (!cur || stored.length > cur.length)) {
+    cur = stored;
+  }
+  if (!cur) return;
+
+  // Without a live session or a reload backup, platform state may be stale.
+  if (!runningSessions.has(requestedSessionKey) && !stored) return;
+
+  let lastHistAgentIdx = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'agent' && !history[i].isError) {
+      lastHistAgentIdx = i;
+      break;
+    }
+  }
+
+  if (lastHistAgentIdx === -1) {
+    history.push({
+      role: 'agent',
+      content: cur,
+      timestamp: lastLiveAgent?.timestamp ?? new Date(),
+    });
+    return;
+  }
+
+  const histA = history[lastHistAgentIdx];
+  const histC = String(histA.content);
+  if (cur.length > histC.length && cur.startsWith(histC)) {
+    history[lastHistAgentIdx] = { ...histA, content: cur };
+    return;
+  }
+
+  // New turn: server has the latest user row but not the in-progress assistant row.
+  if (history[history.length - 1]?.role === 'user') {
+    history.push({
+      role: 'agent',
+      content: cur,
+      timestamp: lastLiveAgent?.timestamp ?? new Date(),
+    });
+  }
+}
+
 let agentRunningTimer: ReturnType<typeof setTimeout> | null = null;
-/** Guard: true while loadChatHistory is in-flight. Used to suppress
- *  text_delta events that would otherwise create duplicate message bubbles. */
+/** Guard: true while loadChatHistory is in-flight (concurrent fetch coalescing). */
 let chatHistoryLoading = false;
 /** In-memory cache of chat messages per session for instant switching. */
 const sessionMessageCache = new Map<string, ChatMessage[]>();
@@ -989,6 +1151,8 @@ export const useComputerStore = create<ComputerStore>()(
     agentRunning: false,
     agentStatusLabel: null,
     runningSessions: new Set<string>(),
+    activeSessions: {},
+    overseerAlerts: [],
     agentConnected: false,
     isOnLiteModel: false,
     agentActivity: {},
@@ -1566,6 +1730,28 @@ export const useComputerStore = create<ComputerStore>()(
 
       agentWS.onConnection((connected) => {
         set({ agentConnected: connected });
+        if (connected) {
+          import('@/services/api').then(({ getActiveAgentSessions }) => {
+            getActiveAgentSessions().then((res) => {
+              if (!res.success || !res.data) return;
+              const hydrated: Record<string, ActiveSessionStatus> = {};
+              for (const s of res.data.sessions) {
+                hydrated[s.sessionKey] = {
+                  sessionKey: s.sessionKey,
+                  status: s.idleMs > 120_000 ? 'stuck' : 'thinking',
+                  rawStatus: 'running',
+                  lastToolName: s.lastToolName,
+                  startedAt: s.startedAt,
+                  lastHeartbeatAt: s.lastHeartbeatAt,
+                  idleMs: s.idleMs,
+                  lastIteration: s.lastIteration,
+                  pendingInjectionCount: s.pendingInjectionCount,
+                };
+              }
+              set({ activeSessions: hydrated });
+            }).catch(() => { /* best-effort hydration */ });
+          }).catch(() => { /* */ });
+        }
       });
     },
 
@@ -1631,8 +1817,17 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
 
-        const { messages, operation_metadata } = result.data;
-        if (!messages || messages.length === 0) return;
+        const { messages, operation_metadata, events } = result.data;
+        // Do not return without updating the UI: an empty table must still
+        // clear any stale in-memory view from a previous session (otherwise
+        // the user thinks an empty tab has another chat’s messages).
+        if (!messages || messages.length === 0) {
+          if (get().activeSessionKey === requestedSessionKey) {
+            set({ chatMessages: [] });
+            sessionMessageCache.set(requestedSessionKey, []);
+          }
+          return;
+        }
 
         // ── Build operation metadata maps from BOTH sources:
         // 1. operation_metadata from the /history response (scans ALL messages,
@@ -1749,12 +1944,21 @@ export const useComputerStore = create<ComputerStore>()(
               else if (requestedSessionKey.startsWith('email_')) source = 'email';
             }
             history.push({ role: 'user', content, timestamp: new Date(msg.created_at), source });
-          } else if (msg.role === 'assistant') {
-            // Emit activity entries for each tool_call before the text content
-            const toolCalls = msg.tool_calls as Array<{
+          } else if (msg.role === 'assistant' || msg.role === 'tool_call') {
+            // Emit activity entries for each tool_call before the text content.
+            // The DO writes tool invocations to role='tool_call' rows with the
+            // raw array in `tool_calls_json`. Older rows / alternate codepaths
+            // may put the parsed array on `tool_calls` directly; handle both.
+            let toolCalls = msg.tool_calls as Array<{
               type: string;
               function: { name: string; arguments: string };
             }> | undefined;
+            if (!toolCalls && (msg as { tool_calls_json?: string | null }).tool_calls_json) {
+              try {
+                const parsed = JSON.parse((msg as { tool_calls_json: string }).tool_calls_json);
+                if (Array.isArray(parsed)) toolCalls = parsed;
+              } catch { /* malformed — ignore */ }
+            }
             if (toolCalls && Array.isArray(toolCalls)) {
               for (const tc of toolCalls) {
                 const tool = tc.function?.name || 'tool';
@@ -1786,7 +1990,7 @@ export const useComputerStore = create<ComputerStore>()(
 
                   if (!existingOp) {
                     // Create the operation in the tracker
-                    tracker.startOperation(operationId, 'delegation', goal, count);
+                    tracker.startOperation(operationId, 'delegation', goal, count, undefined, requestedSessionKey);
                     // Reconstruct subagent rows from metadata so the tracker
                     // shows expandable subagent details even after page refresh.
                     if (meta?.subagents) {
@@ -1831,7 +2035,7 @@ export const useComputerStore = create<ComputerStore>()(
 
                   if (!existingOp) {
                     const advisorCount = meta?.advisors?.length || 0;
-                    tracker.startOperation(operationId, 'consultation', question, advisorCount);
+                    tracker.startOperation(operationId, 'consultation', question, advisorCount, undefined, requestedSessionKey);
                     // Reconstruct advisor rows from metadata
                     if (meta?.advisors) {
                       for (let ai = 0; ai < meta.advisors.length; ai++) {
@@ -1871,7 +2075,7 @@ export const useComputerStore = create<ComputerStore>()(
                   const operationId = existingOp?.id || (bgMeta?.taskId ? `bg_${bgMeta.taskId}` : `hist_bg_${history.length}`);
 
                   if (!existingOp) {
-                    tracker.startOperation(operationId, 'background', goal, 1);
+                    tracker.startOperation(operationId, 'background', goal, 1, undefined, requestedSessionKey);
                     tracker.updateOperationStatus(operationId, 'complete');
                   }
                   history.push({
@@ -1901,7 +2105,113 @@ export const useComputerStore = create<ComputerStore>()(
           }
         }
 
-        if (history.length === 0) return;
+        // ── Replay durable session_events so child spawn / orchestration /
+        // research-checkpoint cards survive a session switch or page reload.
+        // Messages above cover assistant/tool_call/tool_result; events cover
+        // the broadcast-only lifecycle signals that used to be lost.
+        if (events && events.length > 0) {
+          const tracker = useAgentTrackerStore.getState();
+          // Children the tracker has already registered for this session, so
+          // we don't duplicate rows when the live event path and the replay
+          // path both fire during a reconnect.
+          const liveChildIds = new Set<string>();
+          for (const op of Object.values(tracker.operations)) {
+            for (const child of op.subAgents || []) {
+              if (child.id) liveChildIds.add(child.id);
+            }
+          }
+
+          for (const ev of events) {
+            let payload: Record<string, unknown>;
+            try {
+              payload = JSON.parse(ev.payload_json) as Record<string, unknown>;
+            } catch { continue; }
+            const eventTs = typeof ev.created_at === 'number' ? ev.created_at : Date.now();
+            switch (ev.event_type) {
+              case 'orchestration:started': {
+                const operationId = (payload.operationId as string) || `replay_orch_${ev.id}`;
+                const goal = (payload.goal as string) || (payload.task as string) || 'Orchestration';
+                const count = (payload.expectedChildren as number) || (payload.count as number) || 1;
+                if (!tracker.operations[operationId]) {
+                  tracker.startOperation(operationId, 'orchestration', goal, count, undefined, requestedSessionKey);
+                }
+                history.push({
+                  role: 'activity',
+                  content: `Orchestration: ${goal.length > 60 ? goal.slice(0, 60) + '...' : goal}`,
+                  timestamp: new Date(eventTs),
+                  activityType: 'orchestration-group',
+                  operationId,
+                });
+                break;
+              }
+              case 'orchestration:complete': {
+                const operationId = payload.operationId as string | undefined;
+                if (operationId && tracker.operations[operationId]) {
+                  tracker.updateOperationStatus(operationId, 'complete', payload.durationMs as number | undefined);
+                }
+                break;
+              }
+              case 'child:spawned': {
+                const childId = payload.childId as string | undefined;
+                const operationId = payload.operationId as string | undefined;
+                if (!childId || !operationId || liveChildIds.has(childId)) break;
+                if (!tracker.operations[operationId]) {
+                  const goal = (payload.task as string) || (payload.goal as string) || 'Subagent';
+                  tracker.startOperation(operationId, 'orchestration', goal, 1, undefined, requestedSessionKey);
+                }
+                tracker.addSubAgent(operationId, {
+                  id: childId,
+                  type: 'subagent',
+                  label: (payload.agentType as string) || (payload.label as string) || 'Subagent',
+                  goal: (payload.task as string) || (payload.goal as string) || '',
+                  status: 'running',
+                  startedAt: eventTs,
+                  activities: [],
+                });
+                break;
+              }
+              case 'child:complete':
+              case 'child:failed':
+              case 'child:cancelled': {
+                const childId = payload.childId as string | undefined;
+                const operationId = payload.operationId as string | undefined;
+                if (!childId || !operationId) break;
+                const op = tracker.operations[operationId];
+                if (!op) break;
+                const status = ev.event_type === 'child:complete' ? 'complete'
+                  : ev.event_type === 'child:failed' ? 'failed' : 'cancelled';
+                const updates: Record<string, unknown> = {
+                  status,
+                  completedAt: eventTs,
+                };
+                if (typeof payload.durationMs === 'number') updates.durationMs = payload.durationMs;
+                if (typeof payload.resultPreview === 'string') updates.result = payload.resultPreview;
+                if (typeof payload.error === 'string') updates.error = payload.error;
+                tracker.updateSubAgent?.(operationId, childId, updates);
+                break;
+              }
+              case 'research:checkpoint':
+              case 'research:hard_ceiling': {
+                const reason = (payload.reason as string) || 'checkpoint';
+                history.push({
+                  role: 'activity',
+                  content: ev.event_type === 'research:hard_ceiling'
+                    ? `Research ceiling reached (${reason})`
+                    : `Research checkpoint (${reason})`,
+                  timestamp: new Date(eventTs),
+                  activityType: 'tool',
+                });
+                break;
+              }
+              default:
+                // Unknown/future event — ignore rather than fail.
+                break;
+            }
+          }
+
+          // Re-sort so replayed events interleave with messages in real order.
+          history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        }
 
         // Before replacing, check if event replay (which runs before this
         // fetch completes) created live delegation/consultation/background
@@ -1924,6 +2234,14 @@ export const useComputerStore = create<ComputerStore>()(
           }
         }
 
+        mergeInflightAssistantIntoHistory(history, {
+          requestedSessionKey,
+          instanceId,
+          currentMessages,
+          runningSessions: get().runningSessions,
+          platformAgents: get().platformAgents,
+        });
+
         // Replace chat with server history (plus any preserved live operations).
         // Re-inject any pending auth_connect cards that were persisted to sessionStorage.
         const pendingCards = loadAuthCards();
@@ -1936,15 +2254,29 @@ export const useComputerStore = create<ComputerStore>()(
           });
         }
 
+        if (get().activeSessionKey !== requestedSessionKey) {
+          return;
+        }
+
         set({ chatMessages: history });
-        // Update session cache for instant switching later
-        const currentKey = get().activeSessionKey;
-        if (currentKey) sessionMessageCache.set(currentKey, history);
+        sessionMessageCache.set(requestedSessionKey, history);
         logger.info(`Loaded ${history.length} messages from chat history`);
       } catch (err) {
         logger.warn('Error loading chat history:', err);
       } finally {
         chatHistoryLoading = false;
+        // A direct call to `loadChatHistory` while a fetch was in flight returns
+        // early (see guard above). If the user switched sessions during that
+        // request, the new tab never had a turn to run — re-run for whichever
+        // session is now visible.
+        if (get().activeSessionKey !== requestedSessionKey) {
+          const targetKey = get().activeSessionKey;
+          queueMicrotask(() => {
+            if (get().activeSessionKey === targetKey) {
+              get().loadChatHistory();
+            }
+          });
+        }
       }
     },
 
@@ -2103,18 +2435,7 @@ export const useComputerStore = create<ComputerStore>()(
         };
       });
 
-      // Mark all running orchestration operations & their subagents as cancelled
-      const tracker = useAgentTrackerStore.getState();
-      for (const [id, op] of Object.entries(tracker.operations)) {
-        if (op.status === 'running' || op.status === 'aggregating') {
-          tracker.updateOperationStatus(id, 'failed');
-          for (const sub of op.subAgents) {
-            if (sub.status === 'running' || sub.status === 'pending') {
-              tracker.updateSubAgent(id, sub.id, { status: 'cancelled' });
-            }
-          }
-        }
-      }
+      useAgentTrackerStore.getState().failAllRunningOperations();
 
       // Send the abort command — aborts ALL running lanes
       agentWS.sendAbort();
@@ -2151,21 +2472,64 @@ export const useComputerStore = create<ComputerStore>()(
         taskProgress: null,
       }));
 
-      // Mark all running orchestration operations as failed
-      const tracker = useAgentTrackerStore.getState();
-      for (const [id, op] of Object.entries(tracker.operations)) {
-        if (op.status === 'running' || op.status === 'aggregating') {
-          tracker.updateOperationStatus(id, 'failed');
-          for (const sub of op.subAgents) {
-            if (sub.status === 'running' || sub.status === 'pending') {
-              tracker.updateSubAgent(id, sub.id, { status: 'cancelled' });
-            }
-          }
-        }
-      }
+      useAgentTrackerStore.getState().failOperationsForSession(activeSessionKey, true);
 
       // Targeted abort: stop only the current desktop chat session lane
       agentWS.sendAbort({ sessionKey: activeSessionKey });
+    },
+
+    stopSession: (sessionKey: string) => {
+      if (!sessionKey) return;
+      const prev = get().activeSessions;
+      if (prev[sessionKey]) {
+        const next = { ...prev };
+        delete next[sessionKey];
+        set({ activeSessions: next });
+      }
+      const nextRunning = new Set(get().runningSessions);
+      nextRunning.delete(sessionKey);
+      set({ runningSessions: nextRunning });
+
+      useAgentTrackerStore.getState().failOperationsForSession(sessionKey, false);
+
+      if (sessionKey === get().activeSessionKey) {
+        clearAgentRunningTimer();
+        set(state => ({
+          chatMessages: appendMessage(state.chatMessages, {
+            role: 'agent',
+            content: 'Stopped by user',
+            timestamp: new Date(),
+            isError: true,
+            isStopped: true,
+          }),
+          agentThinking: null,
+          agentThinkingStream: null,
+          agentRunning: false,
+          agentActivity: {},
+          queuedMessageCount: 0,
+          taskProgress: null,
+        }));
+      }
+
+      agentWS.sendAbort({ sessionKey });
+    },
+
+    interruptSession: (sessionKey: string, message?: string) => {
+      if (!sessionKey) return;
+      const prev = get().activeSessions;
+      if (prev[sessionKey]) {
+        set({
+          activeSessions: {
+            ...prev,
+            [sessionKey]: {
+              ...prev[sessionKey],
+              rawStatus: 'interrupting',
+              status: 'thinking',
+            },
+          },
+        });
+      }
+      agentWS.sendInterrupt({ sessionKey, message });
     },
 
     setReplyingTo: (msg: ChatMessage | null) => { set({ replyingTo: msg }); },
@@ -2196,18 +2560,9 @@ export const useComputerStore = create<ComputerStore>()(
         }
         return { platformAgents: updated };
       });
-      // Clear tracker operations — mark everything as cancelled
+      // Clear tracker (running ops + persisted snapshot)
       const tracker = useAgentTrackerStore.getState();
-      for (const [id, op] of Object.entries(tracker.operations)) {
-        if (op.status === 'running' || op.status === 'aggregating') {
-          tracker.updateOperationStatus(id, 'failed');
-          for (const sub of op.subAgents) {
-            if (sub.status === 'running' || sub.status === 'pending') {
-              tracker.updateSubAgent(id, sub.id, { status: 'cancelled' });
-            }
-          }
-        }
-      }
+      tracker.failAllRunningOperations();
       tracker.resetAll();
       // Tell the agent to clear its memory for this session
       agentWS.send({ type: 'clear_history', session_key: currentKey || 'default' });
@@ -2222,12 +2577,18 @@ export const useComputerStore = create<ComputerStore>()(
       const { instanceId } = get();
       if (!instanceId) return;
 
+      const RESERVED = 'overseer';
       try {
         const result = await api.getAgentSessions(instanceId);
         if (result.success) {
+          const raw = result.data.sessions.filter(s => s.key !== RESERVED);
+          let activeKey = result.data.active_key;
+          if (activeKey === RESERVED) {
+            activeKey = raw[0]?.key || 'default';
+          }
           set({
-            chatSessions: result.data.sessions,
-            activeSessionKey: result.data.active_key,
+            chatSessions: raw,
+            activeSessionKey: activeKey,
           });
         }
       } catch (err) {
@@ -2283,6 +2644,7 @@ export const useComputerStore = create<ComputerStore>()(
     },
 
     switchSession: async (key: string) => {
+      if (key === 'overseer') return;
       const { instanceId, activeSessionKey, chatMessages } = get();
       if (!instanceId || key === activeSessionKey) return;
 
@@ -2656,7 +3018,11 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
-      /** Append a ChatMessage to the correct agent's per-agent chat feed. */
+      /** Append a ChatMessage to the correct agent's per-agent chat feed.
+       *  For background sessions (events arriving for a sessionKey that is
+       *  NOT the one the user is currently viewing), also append to that
+       *  session's in-memory cache so switching to it shows the live state
+       *  immediately — without having to wait for a server history fetch. */
       const appendToAgentChat = (msg: ChatMessage) => {
         set(state => {
           const pa = getOrCreateAgent(state);
@@ -2670,9 +3036,13 @@ export const useComputerStore = create<ComputerStore>()(
               },
             },
           };
-          // Also update the desktop singleton for backward compat
           if (isActiveSession) {
             updates.chatMessages = appendMessage(state.chatMessages, msg);
+          } else if (isDesktop && eventSessionKey && eventSessionKey !== 'default') {
+            // Background session — buffer into its per-session cache so
+            // tool-call / activity bubbles don't vanish on switch-back.
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, appendMessage(cached, msg));
           }
           return updates;
         });
@@ -2793,8 +3163,10 @@ export const useComputerStore = create<ComputerStore>()(
               },
             };
 
-            // Desktop singleton: keep backward compat for ChatWindow
-            if (isActiveSession && !chatHistoryLoading) {
+            // Desktop singleton: keep backward compat for ChatWindow.
+            // Do not gate on chatHistoryLoading — the fetch can overlap streaming;
+            // loadChatHistory merges the in-flight assistant row back in.
+            if (isActiveSession) {
               const lastMsg = state.chatMessages[state.chatMessages.length - 1];
               if (lastMsg && lastMsg.role === 'agent' && !lastMsg.isError) {
                 const updatedMessages = [...state.chatMessages];
@@ -2814,6 +3186,26 @@ export const useComputerStore = create<ComputerStore>()(
 
             return updates;
           });
+          {
+            const iid = get().instanceId;
+            if (iid && isDesktop) {
+              queueMicrotask(() => {
+                const st = get();
+                if (!st.runningSessions.has(eventSessionKey)) return;
+                const pa2 = st.platformAgents['desktop'];
+                const msgs = pa2?.chatMessages || [];
+                const lastAg = [...msgs].reverse().find(m => m.role === 'agent' && !m.isError);
+                if (lastAg?.content) {
+                  try {
+                    sessionStorage.setItem(
+                      inflightAssistantStorageKey(iid, eventSessionKey),
+                      JSON.stringify({ text: String(lastAg.content), ts: Date.now() }),
+                    );
+                  } catch { /* quota */ }
+                }
+              });
+            }
+          }
           break;
         }
 
@@ -2859,8 +3251,9 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'thinking_start': {
-          // Ignore stale events after agent was stopped
-          if (!get().agentRunning) break;
+          const thinkSessionKey = (event.data?.sessionKey as string) || 'default';
+          if (thinkSessionKey !== get().activeSessionKey) break;
+          if (!get().runningSessions.has(thinkSessionKey)) break;
           // Ignore child subagent thinking — only show main/orchestrator thinking
           const thinkSub = event.data?.subagentId as string | undefined;
           if (thinkSub && thinkSub !== 'orchestrator') break;
@@ -2870,8 +3263,9 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'thinking_delta': {
-          // Ignore stale events after agent was stopped
-          if (!get().agentRunning) break;
+          const thinkSessionKey2 = (event.data?.sessionKey as string) || 'default';
+          if (thinkSessionKey2 !== get().activeSessionKey) break;
+          if (!get().runningSessions.has(thinkSessionKey2)) break;
           // Ignore child subagent thinking — only show main/orchestrator thinking
           const thinkDeltaSub = event.data?.subagentId as string | undefined;
           if (thinkDeltaSub && thinkDeltaSub !== 'orchestrator') break;
@@ -2884,6 +3278,8 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'thinking_end': {
+          const thinkSessionKey3 = (event.data?.sessionKey as string) || 'default';
+          if (thinkSessionKey3 !== get().activeSessionKey) break;
           // Ignore child subagent thinking — only show main/orchestrator thinking
           const thinkEndSub = event.data?.subagentId as string | undefined;
           if (thinkEndSub && thinkEndSub !== 'orchestrator') break;
@@ -2893,8 +3289,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'tool_call': {
-          // Ignore stale events after agent was stopped
-          if (!get().agentRunning) break;
+          if (!get().runningSessions.has(eventSessionKey)) break;
           const tool = event.data?.tool as string || event.data?.name as string || 'tool';
           const params = (event.data?.params ?? event.data?.args ?? event.data?.input) as Record<string, unknown> | undefined;
           const toolSubagentId = event.data?.subagentId as string | undefined;
@@ -2968,7 +3363,6 @@ export const useComputerStore = create<ComputerStore>()(
           // Use sessionKey from the event to resolve the correct workspace.
           // This works for desktop ('default' → 'main'), platform agents
           // (telegram_123 → telegram workspace), and subagent workspaces.
-          const eventSessionKey = event.data?.sessionKey as string | undefined;
           const targetWsId = toolWorkspaceId ||
             'main';
           const isNonDesktopPlatform = toolPlatform && toolPlatform !== 'desktop';
@@ -3130,98 +3524,192 @@ export const useComputerStore = create<ComputerStore>()(
         case 'status_change': {
           const status = event.data?.status as string;
           const statusPlatform = event.data?.platform as string | undefined;
-          // Skip non-desktop status changes — they are handled by the
-          // platform_agent:idle event and should not reset desktop agentRunning.
-          if (statusPlatform && statusPlatform !== 'desktop') break;
-          // For non-active sessions going idle, just clean up runningSessions tracking
-          if (status === 'idle' && !isActiveSession) {
-            const nextRunning = new Set(get().runningSessions);
-            nextRunning.delete(eventSessionKey);
-            set({ runningSessions: nextRunning });
-            break;
-          }
-          // Non-idle status → mark agent as running (catches app notifications
-          // and other server-initiated agent loops that didn't start from chat)
-          if (status !== 'idle' && isActiveSession) {
-            if (!get().agentRunning) {
-              resetAgentRunningTimer(get, set);
-              const nextRunning = new Set(get().runningSessions);
-              nextRunning.add(eventSessionKey);
-              set({ agentRunning: true, runningSessions: nextRunning });
-            }
-            set({ agentStatusLabel: status });
-          }
+          const statusToolName = event.data?.lastToolName as string | undefined;
+          const statusStartedAt = event.data?.startedAt as number | undefined;
+          const statusIteration = event.data?.iteration as number | undefined;
 
           if (status === 'idle') {
-            // Agent loop is fully done — clear everything including TinyFish state
-            clearAgentRunningTimer();
-            // Auto-close all tool-opened windows after a short delay
-            closeAllAutoOpened(2000);
-            // Notify user that agent finished (only if it was running and tab is hidden)
-            if (get().agentRunning && document.hidden) {
-              useNotificationStore.getState().addNotification({
-                title: 'Agent finished',
-                body: 'Your request has been completed.',
-                source: 'agent',
-                variant: 'success',
-              }, 3000);
-            }
-            const { browserState: bs } = get();
+            const iid = get().instanceId;
+            if (iid) clearInflightAssistantStorage(iid, eventSessionKey);
+          }
 
-            // Close all TinyFish browser windows
-            const wStore = useWindowStore.getState();
-            const tfWindows = wStore.windows.filter(w =>
-              w.type === 'browser' && w.metadata?.tinyfishSubagentId
+          {
+            const prev = get().activeSessions;
+            const next = { ...prev };
+            if (status === 'idle') {
+              delete next[eventSessionKey];
+            } else {
+              const existing = prev[eventSessionKey];
+              next[eventSessionKey] = {
+                sessionKey: eventSessionKey,
+                status: status === 'stuck' ? 'stuck' : 'thinking',
+                rawStatus: status,
+                lastToolName: statusToolName ?? existing?.lastToolName ?? null,
+                startedAt: existing?.startedAt ?? statusStartedAt ?? Date.now(),
+                lastHeartbeatAt: Date.now(),
+                lastIteration: statusIteration ?? existing?.lastIteration,
+                pendingInjectionCount: existing?.pendingInjectionCount,
+              };
+            }
+            set({ activeSessions: next });
+          }
+
+          if (statusPlatform && statusPlatform !== 'desktop') break;
+
+          // Maintain an accurate per-session set so concurrent chats (and the
+          // thinking indicator / empty state) reflect the session the user
+          // is looking at, not just whichever last broadcast happened.
+          const nextRunning = new Set(get().runningSessions);
+          if (status === 'idle') {
+            nextRunning.delete(eventSessionKey);
+          } else {
+            nextRunning.add(eventSessionKey);
+          }
+          if (status === 'idle') {
+            useAgentTrackerStore.getState().completeOperationsForSessionIdle(
+              eventSessionKey,
+              nextRunning.size > 0,
             );
-            for (const tfWin of tfWindows) {
-              _frameRenderers.delete(tfWin.id);
-              _canvasClearFns.delete(tfWin.id);
-              wStore.closeWindow(tfWin.id);
-            }
+          }
+          const activeViewKey = get().activeSessionKey;
+          const agentRunningForActiveView = nextRunning.has(activeViewKey);
+          const idleAffectsViewedChat = eventSessionKey === activeViewKey;
 
-            // Clean up any lingering tracker operations/subagents — catches
-            // cases where child:complete/failed events were lost or delayed.
-            {
-              const tracker = useAgentTrackerStore.getState();
-              for (const [id, op] of Object.entries(tracker.operations)) {
-                if (op.status === 'running' || op.status === 'aggregating') {
-                  // Mark as complete (not failed) since the orchestrator finished normally
-                  tracker.updateOperationStatus(id, 'complete');
-                  for (const sub of op.subAgents) {
-                    if (sub.status === 'running' || sub.status === 'pending') {
-                      tracker.updateSubAgent(id, sub.id, { status: 'complete', completedAt: Date.now() });
-                    }
-                  }
-                }
+          if (status === 'idle' && !idleAffectsViewedChat) {
+            set({
+              runningSessions: nextRunning,
+              agentRunning: agentRunningForActiveView,
+            });
+            break;
+          }
+
+          if (status !== 'idle') {
+            if (isActiveSession) {
+              if (!get().agentRunning) {
+                resetAgentRunningTimer(get, set);
+              }
+              set({ agentStatusLabel: status });
+            }
+            set({
+              runningSessions: nextRunning,
+              agentRunning: agentRunningForActiveView,
+            });
+            break;
+          }
+
+          if (status === 'idle' && idleAffectsViewedChat) {
+            // This chat session’s loop just ended. If other sessions are still
+            // running, only reset local “this chat is thinking” state — do not
+            // clear tracker / TinyFish / windows that belong to other lanes.
+            clearAgentRunningTimer();
+            const anyOtherSessionRunning = nextRunning.size > 0;
+            if (!anyOtherSessionRunning) {
+              closeAllAutoOpened(2000);
+              if (get().agentRunning && document.hidden) {
+                useNotificationStore.getState().addNotification({
+                  title: 'Agent finished',
+                  body: 'Your request has been completed.',
+                  source: 'agent',
+                  variant: 'success',
+                }, 3000);
               }
             }
 
-            // Reset the desktop platform agent to not-running
-            const currentPlatformAgents = get().platformAgents;
-            const updatedPlatformAgents = { ...currentPlatformAgents };
-            if (updatedPlatformAgents.desktop) {
-              updatedPlatformAgents.desktop = { ...updatedPlatformAgents.desktop, running: false, currentTool: undefined, thinking: null, completedAt: Date.now() };
+            const { browserState: bs } = get();
+            if (!anyOtherSessionRunning) {
+              const wStore = useWindowStore.getState();
+              const tfWindows = wStore.windows.filter(w =>
+                w.type === 'browser' && w.metadata?.tinyfishSubagentId
+              );
+              for (const tfWin of tfWindows) {
+                _frameRenderers.delete(tfWin.id);
+                _canvasClearFns.delete(tfWin.id);
+                wStore.closeWindow(tfWin.id);
+              }
             }
 
-            const nextRunning = new Set(get().runningSessions);
-            nextRunning.delete(eventSessionKey);
+            const currentPlatformAgents = get().platformAgents;
+            const updatedPlatformAgents = { ...currentPlatformAgents };
+            if (!anyOtherSessionRunning && updatedPlatformAgents.desktop) {
+              updatedPlatformAgents.desktop = { ...updatedPlatformAgents.desktop, running: false, currentTool: undefined, thinking: null, completedAt: Date.now() };
+            }
 
             set({
               agentThinking: null,
               agentThinkingStream: null,
-              agentRunning: false,
               agentStatusLabel: null,
+              agentRunning: agentRunningForActiveView,
               runningSessions: nextRunning,
-              agentActivity: {},
+              agentActivity: anyOtherSessionRunning ? get().agentActivity : {},
               queuedMessageCount: 0,
               taskProgress: null,
-              platformAgents: updatedPlatformAgents,
-              browserState: {
-                ...bs,
-                tinyfishStreams: {},
+              ...(!anyOtherSessionRunning
+                ? {
+                    platformAgents: updatedPlatformAgents,
+                    browserState: { ...bs, tinyfishStreams: {} },
+                  }
+                : {}),
+            });
+          }
+          break;
+        }
+
+        case 'overseer_alert': {
+          const text = (event.data?.text as string | undefined) ?? '';
+          const severity = ((event.data?.severity as string | undefined) ?? 'info') as OverseerAlert['severity'];
+          const relatedSession = (event.data?.relatedSession ?? event.data?.sessionKey) as string | undefined;
+          const origin = event.data?.origin as string | undefined;
+          if (!text) break;
+          const prevAlerts = get().overseerAlerts;
+          const alert: OverseerAlert = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            timestamp: Date.now(),
+            severity,
+            text,
+            sessionKey: relatedSession,
+            origin,
+          };
+          const nextAlerts = [...prevAlerts, alert].slice(-20);
+          set({ overseerAlerts: nextAlerts });
+          // In-chat banners carry warn/info; toast only on hard failures so the
+          // watchdog stays quiet by default.
+          if (severity === 'error') {
+            useNotificationStore.getState().addNotification({
+              title: 'Agent status',
+              body: text,
+              source: 'agent',
+              variant: 'error',
+            }, 5000);
+          }
+          break;
+        }
+
+        case 'injection_acknowledged': {
+          const count = (event.data?.count as number | undefined) ?? 0;
+          const prev = get().activeSessions;
+          const existing = prev[eventSessionKey];
+          if (existing) {
+            set({
+              activeSessions: {
+                ...prev,
+                [eventSessionKey]: {
+                  ...existing,
+                  pendingInjectionCount: Math.max(0, (existing.pendingInjectionCount ?? count) - count),
+                },
               },
             });
           }
+          break;
+        }
+
+        case 'session_queued': {
+          const reason = (event.data?.reason as string | undefined) ?? 'Session queued — another session is running';
+          useNotificationStore.getState().addNotification({
+            title: 'Session queued',
+            body: reason,
+            source: 'agent',
+            variant: 'info',
+          }, 3500);
           break;
         }
 
@@ -3843,7 +4331,7 @@ export const useComputerStore = create<ComputerStore>()(
           const opId = event.data?.operationId as string || '';
           const goal = event.data?.goal as string || 'Task';
           const tracker = useAgentTrackerStore.getState();
-          tracker.startOperation(opId, 'orchestration', goal, undefined, eventPlatform);
+          tracker.startOperation(opId, 'orchestration', goal, undefined, eventPlatform, eventSessionKey);
           // Create the grouped OperationCard in chat
           appendToAgentChat({
             role: 'activity',
@@ -4037,19 +4525,7 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Always clean up tracker — catches cases where stopAgent() wasn't called
           // (e.g. abort from another source, or race with child:complete events)
-          {
-            const tracker = useAgentTrackerStore.getState();
-            for (const [id, op] of Object.entries(tracker.operations)) {
-              if (op.status === 'running' || op.status === 'aggregating') {
-                tracker.updateOperationStatus(id, 'failed');
-                for (const sub of op.subAgents) {
-                  if (sub.status === 'running' || sub.status === 'pending') {
-                    tracker.updateSubAgent(id, sub.id, { status: 'cancelled' });
-                  }
-                }
-              }
-            }
-          }
+          useAgentTrackerStore.getState().failAllRunningOperations();
 
           if (!get().agentRunning) {
             // Already stopped optimistically — no duplicate message needed.

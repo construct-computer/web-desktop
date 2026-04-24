@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, PanelLeftClose } from 'lucide-react';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
 import { formatRelativeTime } from './utils';
 
 function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
@@ -10,10 +10,39 @@ function getSessionPlatform(key: string): { platform: string; icon: typeof Send;
   return null;
 }
 
+/**
+ * Small coloured dot rendered in the sidebar to indicate live per-session
+ * activity. Green = thinking/executing, red = stuck (no heartbeat for
+ * STUCK_THRESHOLD_MS), absent when the session is idle.
+ */
+function SessionStatusDot({ status }: { status: ActiveSessionStatus | undefined }) {
+  if (!status) return null;
+  const colour =
+    status.status === 'stuck'
+      ? 'bg-red-400'
+      : status.status === 'thinking'
+        ? 'bg-emerald-400'
+        : 'bg-white/30';
+  const pulse = status.status === 'thinking' ? 'animate-pulse' : '';
+  const title =
+    status.status === 'stuck'
+      ? 'Session may be stuck (no recent progress heartbeat)'
+      : status.rawStatus
+        ? `Running: ${status.rawStatus}${status.lastToolName ? ` (${status.lastToolName})` : ''}`
+        : 'Running';
+  return (
+    <span
+      title={title}
+      className={`inline-block w-2 h-2 rounded-full shrink-0 ${colour} ${pulse}`}
+    />
+  );
+}
+
 function SessionItem({
   session,
   isActive,
   hasUnread,
+  sessionStatus,
   onSwitch,
   onRename,
   onDelete,
@@ -21,6 +50,7 @@ function SessionItem({
   session: { key: string; title: string; lastActivity: number };
   isActive: boolean;
   hasUnread: boolean;
+  sessionStatus?: ActiveSessionStatus;
   onSwitch: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -75,7 +105,7 @@ function SessionItem({
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-1 ring-[#111113]" />
           )}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           {editing ? (
             <input
               ref={editRef}
@@ -90,9 +120,12 @@ function SessionItem({
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className={`text-[13px] truncate block ${hasUnread && !isActive ? 'font-semibold' : ''}`}>
-              {session.title || 'New Chat'}
-            </span>
+            <>
+              <span className={`text-[13px] truncate ${hasUnread && !isActive ? 'font-semibold' : ''}`}>
+                {session.title || 'New Chat'}
+              </span>
+              <SessionStatusDot status={sessionStatus} />
+            </>
           )}
         </div>
         {!editing && (
@@ -154,6 +187,7 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
   const renameSession = useComputerStore(s => s.renameSession);
   const loadSessions = useComputerStore(s => s.loadSessions);
   const chatMessages = useComputerStore(s => s.chatMessages);
+  const activeSessions = useComputerStore(s => s.activeSessions);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
@@ -243,6 +277,7 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
               session={session}
               isActive={session.key === activeKey}
               hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
+              sessionStatus={activeSessions[session.key]}
               onSwitch={() => switchSession(session.key)}
               onRename={(title) => renameSession(session.key, title)}
               onDelete={() => deleteSession(session.key)}

@@ -44,6 +44,11 @@ export interface TrackedOperation {
   totalExpected?: number;
   /** Which platform spawned this operation (desktop, telegram, slack, email). */
   platform?: string;
+  /**
+   * Top-level user session (Spotlight / Slack / …) that owns this operation.
+   * Older persisted rows may omit this — they only flush on global or legacy paths.
+   */
+  sessionKey?: string;
 }
 
 // ── Store ────────────────────────────────────────────────────────────
@@ -57,8 +62,20 @@ interface AgentTrackerStore {
   dismissedGoals: Set<string>;
 
   // Operation lifecycle
-  startOperation: (id: string, type: OperationType, goal: string, totalExpected?: number, platform?: string) => void;
+  startOperation: (id: string, type: OperationType, goal: string, totalExpected?: number, platform?: string, sessionKey?: string) => void;
   updateOperationStatus: (id: string, status: OperationStatus, durationMs?: number) => void;
+  /**
+   * When a session’s agent loop goes idle, complete in-flight ops for that
+   * session. Legacy rows without `sessionKey` complete only when no other
+   * session is still running (`anyOtherSessionRunning` is false).
+   */
+  completeOperationsForSessionIdle: (sessionKey: string, anyOtherSessionRunning: boolean) => void;
+  /**
+   * Mark running/aggregating ops failed for a session. `includeLegacy`
+   * also fails ops with no `sessionKey` (for “stop this chat” while ambiguous).
+   */
+  failOperationsForSession: (sessionKey: string, includeLegacy: boolean) => void;
+  failAllRunningOperations: () => void;
 
   // SubAgent lifecycle
   addSubAgent: (operationId: string, agent: TrackedSubAgent) => void;
@@ -136,7 +153,7 @@ export const useAgentTrackerStore = create<AgentTrackerStore>()((set, get) => ({
   subagentIndex: persistedIndex,
   dismissedGoals: loadDismissedGoals(),
 
-  startOperation: (id, type, goal, totalExpected, platform) =>
+  startOperation: (id, type, goal, totalExpected, platform, sessionKey) =>
     set((state) => {
       // Don't resurrect operations the user previously dismissed
       if (state.dismissedGoals.has(goal)) return state;
@@ -152,9 +169,84 @@ export const useAgentTrackerStore = create<AgentTrackerStore>()((set, get) => ({
             startedAt: Date.now(),
             totalExpected,
             platform,
+            ...(sessionKey ? { sessionKey } : {}),
           },
         },
       };
+    }),
+
+  completeOperationsForSessionIdle: (sessionKey, anyOtherSessionRunning) =>
+    set((state) => {
+      let changed = false;
+      const operations = { ...state.operations };
+      for (const [id, op] of Object.entries(operations)) {
+        if (op.status !== 'running' && op.status !== 'aggregating') continue;
+        const legacy = !op.sessionKey;
+        const match = op.sessionKey === sessionKey;
+        if (!match && !(legacy && !anyOtherSessionRunning)) continue;
+        changed = true;
+        const subAgents = op.subAgents.map((s) =>
+          s.status === 'running' || s.status === 'pending'
+            ? { ...s, status: 'complete' as const, completedAt: Date.now() }
+            : s,
+        );
+        operations[id] = {
+          ...op,
+          status: 'complete',
+          completedAt: Date.now(),
+          subAgents,
+        };
+      }
+      if (!changed) return state;
+      return { operations };
+    }),
+
+  failOperationsForSession: (sessionKey, includeLegacy) =>
+    set((state) => {
+      let changed = false;
+      const operations = { ...state.operations };
+      for (const [id, op] of Object.entries(operations)) {
+        if (op.status !== 'running' && op.status !== 'aggregating') continue;
+        const legacy = !op.sessionKey;
+        if (op.sessionKey !== sessionKey && !(legacy && includeLegacy)) continue;
+        changed = true;
+        const subAgents = op.subAgents.map((s) =>
+          s.status === 'running' || s.status === 'pending'
+            ? { ...s, status: 'cancelled' as const, completedAt: Date.now() }
+            : s,
+        );
+        operations[id] = {
+          ...op,
+          status: 'failed',
+          completedAt: Date.now(),
+          subAgents,
+        };
+      }
+      if (!changed) return state;
+      return { operations };
+    }),
+
+  failAllRunningOperations: () =>
+    set((state) => {
+      let changed = false;
+      const operations = { ...state.operations };
+      for (const [id, op] of Object.entries(operations)) {
+        if (op.status !== 'running' && op.status !== 'aggregating') continue;
+        changed = true;
+        const subAgents = op.subAgents.map((s) =>
+          s.status === 'running' || s.status === 'pending'
+            ? { ...s, status: 'cancelled' as const, completedAt: Date.now() }
+            : s,
+        );
+        operations[id] = {
+          ...op,
+          status: 'failed',
+          completedAt: Date.now(),
+          subAgents,
+        };
+      }
+      if (!changed) return state;
+      return { operations };
     }),
 
   updateOperationStatus: (id, status, durationMs) =>

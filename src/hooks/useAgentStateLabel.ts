@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
-import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
+import { useAgentTrackerStore, type TrackedOperation } from '@/stores/agentTrackerStore';
 
 /**
  * Derive a short human-readable state label from agent activity.
@@ -14,12 +14,25 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
   const agentStatusLabel = useComputerStore(s => s.agentStatusLabel);
   const platformAgents = useComputerStore(s => s.platformAgents);
   const taskProgress = useComputerStore(s => s.taskProgress);
+  const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const operations = useAgentTrackerStore(s => s.operations);
 
-  const hasActiveOps = Object.values(operations).some(op => op.status === 'running' || op.status === 'aggregating');
-  const isActive = agentRunning || hasActiveOps || Object.values(platformAgents).some(p => p.running);
+  const isRunningOp = (op: TrackedOperation) =>
+    op.status === 'running' || op.status === 'aggregating';
+  const matchesViewSession = (op: TrackedOperation) =>
+    !op.sessionKey || op.sessionKey === activeSessionKey;
+
+  const hasActiveOpsGlobal = Object.values(operations).some(isRunningOp);
+  const isActive =
+    agentRunning || hasActiveOpsGlobal || Object.values(platformAgents).some((p) => p.running);
 
   return useMemo(() => {
+    const runningInView = Object.values(operations).filter(
+      (op) => isRunningOp(op) && matchesViewSession(op),
+    );
+    const runningAny = Object.values(operations).filter(isRunningOp);
+    const runningOps = runningInView.length > 0 ? runningInView : runningAny;
+
     // Get current tool from taskProgress or platform agent
     const currentTool = taskProgress?.currentTool
       || Object.values(platformAgents).find(p => p.running)?.currentTool;
@@ -80,13 +93,15 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
         todo_list: 'Updating todos',
       };
       stateLabel = toolLabels[currentTool] || `Using ${currentTool}`;
-    } else if (hasActiveOps) {
-      const runningOps = Object.values(operations).filter(op => op.status === 'running');
+    } else if (hasActiveOpsGlobal) {
       if (runningOps.length > 0) {
         const op = runningOps[0];
         const running = op.subAgents.filter(s => s.status === 'running').length;
         const total = op.subAgents.length;
-        stateLabel = total > 0 ? `Orchestrating (${running}/${total})` : 'Orchestrating…';
+        const suffix =
+          runningInView.length === 0 && runningAny.length > 0 ? ' (other chat)' : '';
+        stateLabel =
+          (total > 0 ? `Orchestrating (${running}/${total})` : 'Orchestrating…') + suffix;
       }
     }
 
@@ -107,7 +122,6 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
       scrollText = agentThinking;
     } else {
       // Show operation goal or platform agent thinking
-      const runningOps = Object.values(operations).filter(op => op.status === 'running');
       if (runningOps.length > 0) {
         scrollText = runningOps[0].goal;
       } else {
@@ -127,5 +141,15 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
       isActive,
       isIdle,
     };
-  }, [agentThinkingStream, agentThinking, agentStatusLabel, taskProgress, platformAgents, operations, hasActiveOps, isActive]);
+  }, [
+    agentThinkingStream,
+    agentThinking,
+    agentStatusLabel,
+    taskProgress,
+    platformAgents,
+    operations,
+    activeSessionKey,
+    hasActiveOpsGlobal,
+    isActive,
+  ]);
 }

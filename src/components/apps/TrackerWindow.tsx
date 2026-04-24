@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useComputerStore, type PlatformAgentState } from '@/stores/agentStore';
+import { getSwarmMetrics } from '@/lib/agentSwarm';
 import { useWindowStore } from '@/stores/windowStore';
 import {
   useAgentTrackerStore,
@@ -227,8 +228,8 @@ function SubAgentRow({ agent, onCancel }: { agent: TrackedSubAgent; onCancel?: (
         onClick={() => hasDetails && setExpanded(!expanded)}
       >
         <StatusDot status={agent.status} />
-        <span className="truncate min-w-0 flex-1 text-[var(--color-text-secondary)]">
-          {agent.goal ? (agent.goal.length > 50 ? agent.goal.slice(0, 50) + '...' : agent.goal) : agent.label}
+        <span className="min-w-0 flex-1 text-[var(--color-text-secondary)] line-clamp-3 break-words text-[11px] leading-snug">
+          {agent.goal || agent.label}
         </span>
         
         {isActive && agent.currentActivity && (
@@ -294,6 +295,20 @@ function OpIcon({ type, className }: { type: OperationType; className?: string }
   }
 }
 
+const OP_BORDER: Record<OperationType, string> = {
+  delegation: 'border-blue-500/25',
+  consultation: 'border-purple-500/25',
+  background: 'border-amber-500/25',
+  orchestration: 'border-emerald-500/30',
+};
+
+const OP_BAR: Record<OperationType, string> = {
+  delegation: 'bg-blue-400',
+  consultation: 'bg-purple-400',
+  background: 'bg-amber-400',
+  orchestration: 'bg-emerald-400',
+};
+
 function OperationCard({ operation, onStop, onCancelChild }: { operation: TrackedOperation; onStop?: () => void; onCancelChild?: (childId: string) => void }) {
   const [expanded, setExpanded] = useState(operation.status === 'running' || operation.status === 'aggregating');
   const isActive = operation.status === 'running' || operation.status === 'aggregating';
@@ -301,27 +316,29 @@ function OperationCard({ operation, onStop, onCancelChild }: { operation: Tracke
   const failed = operation.subAgents.filter(a => a.status === 'failed').length;
   const total = operation.subAgents.length;
 
-  const accent = operation.type === 'delegation' ? 'blue' : operation.type === 'consultation' ? 'purple' : operation.type === 'orchestration' ? 'emerald' : 'amber';
+  const b = OP_BORDER[operation.type];
+  const bar = OP_BAR[operation.type];
 
   return (
-    <div className={`rounded-xl border border-${accent}-500/20 bg-[var(--color-surface)] overflow-hidden ${isActive ? '' : 'opacity-75'}`}>
+    <div className={`rounded-xl border ${b} bg-[var(--color-surface)] overflow-hidden ${isActive ? '' : 'opacity-80'}`}>
       {/* Header */}
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[var(--color-surface-hover)]/50 transition-colors">
-        {expanded ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)] shrink-0" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)] shrink-0" />}
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-start gap-2 px-3 py-2.5 hover:bg-[var(--color-surface-hover)]/50 transition-colors text-left">
+        {expanded ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)] shrink-0 mt-0.5" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)] shrink-0 mt-0.5" />}
         <OpIcon type={operation.type} />
-        <div className="flex-1 min-w-0 text-left">
-          <p className="text-xs text-[var(--color-text)] truncate">{operation.goal}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-[9px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-0.5">{opLabel(operation.type)}</p>
+          <p className="text-xs text-[var(--color-text)] line-clamp-4 break-words leading-snug">{operation.goal}</p>
         </div>
-        
+
         {total > 0 && (
-          <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 tabular-nums">{done}/{total}</span>
+          <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 tabular-nums pt-0.5">{done}/{total}</span>
         )}
-        <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">
+        <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 tabular-nums pt-0.5">
           {isActive ? <Elapsed startedAt={operation.startedAt} /> : operation.durationMs != null ? fmtDur(operation.durationMs) : null}
         </span>
         {isActive && onStop && (
           <button onClick={(e) => { e.stopPropagation(); onStop(); }}
-            className="p-0.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors" title="Stop all">
+            className="p-0.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors shrink-0 mt-0.5" title="Stop all">
             <Square className="w-3 h-3 fill-current" />
           </button>
         )}
@@ -331,7 +348,7 @@ function OperationCard({ operation, onStop, onCancelChild }: { operation: Tracke
       {isActive && total > 0 && (
         <div className="mx-3 mb-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
           <div
-            className={`h-full rounded-full bg-${accent}-400 transition-all duration-500`}
+            className={`h-full rounded-full ${bar} transition-all duration-500`}
             style={{ width: `${Math.round(((done + failed) / total) * 100)}%` }}
           />
         </div>
@@ -358,6 +375,23 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function SwarmSectionHeader({ hosts, workers }: { hosts: number; workers: number }) {
+  if (hosts === 0 && workers === 0) return null;
+  return (
+    <div className="mb-3 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Agent swarm</span>
+        <div className="flex-1 h-px bg-[var(--color-border)]/50" />
+      </div>
+      <p className="text-[10px] text-[var(--color-text-secondary)] pl-0.5">
+        {hosts > 0 && <span>{hosts} host{hosts === 1 ? '' : 's'}</span>}
+        {hosts > 0 && workers > 0 && <span> · </span>}
+        {workers > 0 && <span>{workers} parallel worker{workers === 1 ? '' : 's'}</span>}
+      </p>
+    </div>
+  );
+}
+
 // ── Main Component ───────────────────────────────────────────────────
 
 export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
@@ -371,8 +405,12 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
   const stopChatSession = useComputerStore(s => s.stopChatSession);
   const stopPlatformAgent = useComputerStore(s => s.stopPlatformAgent);
   const sessionTokens = useComputerStore(s => s.sessionTokens);
+  const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const operations = useAgentTrackerStore(s => s.operations);
   const resetAll = useAgentTrackerStore(s => s.resetAll);
+
+  const opInActiveChat = (o: TrackedOperation) =>
+    !o.sessionKey || o.sessionKey === activeSessionKey;
 
   // Per-child cancel: send cancel_child message via WebSocket
   const handleCancelChild = useCallback((childId: string) => {
@@ -385,13 +423,18 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
     if (opId) tracker.updateSubAgent(opId, childId, { status: 'cancelled' });
   }, []);
 
-  const allOps = Object.values(operations);
+  const allOps = Object.values(operations).filter(opInActiveChat);
   const active = allOps.filter(o => o.status === 'running' || o.status === 'aggregating');
   const history = allOps.filter(o => o.status !== 'running' && o.status !== 'aggregating');
 
   // ── Build unified agent lists ──
   const runningAgents: Array<{ agent: PlatformAgentState; thinking?: string | null; progress?: { step: number; maxSteps: number } | null; onStop?: () => void }> = [];
   const completedAgents: Array<{ agent: PlatformAgentState }> = [];
+
+  const swarm = useMemo(
+    () => getSwarmMetrics(platformAgents, agentRunning, operations),
+    [platformAgents, agentRunning, operations],
+  );
 
   for (const pa of Object.values(platformAgents)) {
     // Skip 'chat' platform — it's a ghost from old child agent events, treated as desktop
@@ -419,8 +462,8 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
     });
   }
 
-  const totalActive = runningAgents.length + active.reduce((s, o) => s + o.subAgents.filter(a => a.status === 'running').length, 0);
   const hasAnything = runningAgents.length > 0 || active.length > 0 || completedAgents.length > 0 || history.length > 0;
+  const hasSwarmInProgress = runningAgents.length > 0 || active.length > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -435,25 +478,27 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
 
       {/* ── Content ── */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-        {/* Running Agents */}
-        {runningAgents.length > 0 && (
+        {/* Orchestrations + platform hosts: one “swarm” view (ops first — main visibility for parallel work) */}
+        {hasSwarmInProgress && (
           <section>
-            <SectionLabel>Agents ({runningAgents.length})</SectionLabel>
-            <div className="space-y-2">
-              {runningAgents.map(e => (
-                <AgentCard key={e.agent.platform} agent={e.agent} thinking={e.thinking} taskProgress={e.progress} onStop={e.onStop} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Active Operations */}
-        {active.length > 0 && (
-          <section>
-            <SectionLabel>Operations ({active.length})</SectionLabel>
-            <div className="space-y-2">
-              {active.map(op => <OperationCard key={op.id} operation={op} onStop={stopChatSession} onCancelChild={handleCancelChild} />)}
-            </div>
+            <SwarmSectionHeader hosts={swarm.hosts} workers={swarm.workers} />
+            {active.length > 0 && (
+              <div className="space-y-2.5">
+                {active.map(op => (
+                  <OperationCard key={op.id} operation={op} onStop={stopChatSession} onCancelChild={handleCancelChild} />
+                ))}
+              </div>
+            )}
+            {runningAgents.length > 0 && (
+              <div className={`space-y-2 ${active.length > 0 ? 'mt-4' : ''}`}>
+                {active.length > 0 && (
+                  <p className="text-[9px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-1.5">Host</p>
+                )}
+                {runningAgents.map(e => (
+                  <AgentCard key={e.agent.platform} agent={e.agent} thinking={e.thinking} taskProgress={e.progress} onStop={e.onStop} />
+                ))}
+              </div>
+            )}
           </section>
         )}
 
