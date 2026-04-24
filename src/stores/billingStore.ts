@@ -27,6 +27,18 @@ import {
 
 const BYOK_MODELS_CACHE_MS = 5 * 60 * 1000;
 
+export type EffectiveProvider =
+  | { kind: 'platform'; model?: string }
+  | { kind: 'byok-exclusive'; model?: string }
+  | { kind: 'byok-fallback'; model?: string; weeklyResetsAt?: string }
+  | { kind: 'blocked-no-key'; weeklyResetsAt?: string }
+  | { kind: 'blocked-byok-cap'; weeklyResetsAt?: string };
+
+export interface ProviderBlock {
+  kind: 'no-key' | 'byok-cap';
+  weeklyResetsAt?: string;
+}
+
 interface BillingState {
   // Subscription
   subscription: SubscriptionInfo | null;
@@ -48,6 +60,13 @@ interface BillingState {
   byokModelsFetchedAt: number | null;
   byokModelsLoading: boolean;
 
+  // Provider state driven by SSE events (trumps polled usage until cleared)
+  lastBlock: ProviderBlock | null;
+  /** Model reported by the worker's most recent provider_state event. */
+  liveModel: string | null;
+  /** True if the worker's last provider_state was byok-fallback or byok-exclusive. */
+  liveByokActive: boolean;
+
   // Actions
   fetchSubscription: () => Promise<void>;
   fetchUsage: () => Promise<void>;
@@ -65,6 +84,14 @@ interface BillingState {
   setByokModel: (model: string | null) => Promise<{ ok: boolean; error?: string }>;
   setByokWeeklyLimit: (weeklyLimitUsd: number | null) => Promise<{ ok: boolean; error?: string }>;
   fetchByokModels: (force?: boolean) => Promise<void>;
+
+  // Provider-state actions
+  setProviderBlock: (block: ProviderBlock | null) => void;
+  setLiveProvider: (state: {
+    active: boolean;
+    model?: string;
+  }) => void;
+  getEffectiveProvider: () => EffectiveProvider;
 }
 
 export const useBillingStore = create<BillingState>((set, get) => ({
@@ -80,6 +107,9 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   byokModels: null,
   byokModelsFetchedAt: null,
   byokModelsLoading: false,
+  lastBlock: null,
+  liveModel: null,
+  liveByokActive: false,
 
   fetchSubscription: async () => {
     set({ subscriptionLoading: true, subscriptionError: null });
@@ -95,7 +125,16 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     set({ usageLoading: true });
     const result = await getCurrentUsage();
     if (result.success) {
-      set({ usage: result.data, usageLoading: false });
+      // A fresh poll after a weekly reset should clear any stale block marker
+      // left by a previous blocked-no-key / blocked-byok-cap SSE event.
+      const { lastBlock } = get();
+      const clearBlock =
+        lastBlock && result.data.weeklyPercentUsed !== undefined && result.data.weeklyPercentUsed < 100;
+      set({
+        usage: result.data,
+        usageLoading: false,
+        ...(clearBlock ? { lastBlock: null } : {}),
+      });
     } else {
       set({ usageLoading: false });
     }
@@ -236,5 +275,42 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     } else {
       set({ byokModelsLoading: false });
     }
+  },
+
+  setProviderBlock: (block) => {
+    set({ lastBlock: block });
+  },
+
+  setLiveProvider: ({ active, model }) => {
+    set({
+      liveByokActive: active,
+      liveModel: model ?? null,
+      // Any successful provider_state event means the user isn't blocked right now.
+      lastBlock: null,
+    });
+  },
+
+  getEffectiveProvider: (): EffectiveProvider => {
+    const { usage, byok, lastBlock, liveByokActive, liveModel } = get();
+
+    if (lastBlock?.kind === 'no-key') {
+      return { kind: 'blocked-no-key', weeklyResetsAt: lastBlock.weeklyResetsAt };
+    }
+    if (lastBlock?.kind === 'byok-cap') {
+      return { kind: 'blocked-byok-cap', weeklyResetsAt: lastBlock.weeklyResetsAt };
+    }
+
+    // Prefer live SSE signal; fall back to polled flags.
+    const model = liveModel ?? byok?.model ?? undefined;
+    const byokActive = liveByokActive || !!usage?.byokActive;
+    const byokFallback = !!usage?.byokFallback;
+
+    if (byokFallback) {
+      return { kind: 'byok-fallback', model, weeklyResetsAt: usage?.weeklyResetsAt };
+    }
+    if (byokActive || byok?.mode === 'exclusive') {
+      return { kind: 'byok-exclusive', model };
+    }
+    return { kind: 'platform', model };
   },
 }));

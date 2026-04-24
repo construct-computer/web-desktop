@@ -10,6 +10,8 @@ import { uploadAttachment } from '@/lib/uploadAttachment';
 import { listFiles, downloadContainerFile } from '@/services/api';
 import { VoiceButton } from '@/components/ui/VoiceButton';
 import { useSlashCommands } from './hooks';
+import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
+import { openSettingsToSection } from '@/lib/settingsNav';
 
 const DRAFT_KEY = 'construct:spotlight-draft';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -365,12 +367,16 @@ export function SpotlightInput() {
     setFsOpen(false);
   }, [message, isConnected, sendChatMessage, play, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo, activeSessionKey]);
 
-  const billingUsage = useBillingStore(s => s.usage);
   const fetchUsage = useBillingStore(s => s.fetchUsage);
-  const isOnLiteModel = useComputerStore(s => s.isOnLiteModel) || billingUsage?.shouldDowngrade === true;
+  const fetchByok = useBillingStore(s => s.fetchByok);
+  const providerState = useBillingStore(s => s.getEffectiveProvider());
+  const providerCopyData = providerCopy(providerState);
 
-  // Fetch usage on mount so the lite model indicator works
-  useEffect(() => { fetchUsage(); }, [fetchUsage]);
+  // Fetch usage + byok on mount so the provider-state strip is accurate
+  useEffect(() => {
+    fetchUsage();
+    fetchByok();
+  }, [fetchUsage, fetchByok]);
 
   const isVoiceActive = sttState === 'recording' || sttState === 'processing';
 
@@ -722,8 +728,12 @@ export function SpotlightInput() {
                 )}
               </>
             ) : (message.trim() || attachments.length > 0) && !isExternal ? (
-              <Tooltip content="Send" side="top">
-                <button onClick={handleSend} disabled={!isConnected || isExternal} className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors">
+              <Tooltip content={providerCopyData.inputDisabled ? (providerCopyData.badge ?? 'Limit reached') : 'Send'} side="top">
+                <button
+                  onClick={handleSend}
+                  disabled={!isConnected || isExternal || providerCopyData.inputDisabled}
+                  className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                >
                   <Send className="w-4.5 h-4.5" />
                 </button>
               </Tooltip>
@@ -731,11 +741,36 @@ export function SpotlightInput() {
           </div>
         </div>
       </div>
-      {/* Lite model indicator — below input, like a disclaimer */}
-      {isOnLiteModel && (
+      {/* Provider-state indicator — below input, like a disclaimer.
+          Shows BYOK-in-use, lite-model, or blocked-state CTA as one strip. */}
+      {providerCopyData.badge && (
         <div className="flex items-center justify-center gap-1.5 py-1.5">
-          <div className="w-1 h-1 rounded-full bg-amber-500/40" />
-          <span className="text-[10px] text-amber-500/40">Lite model — limited functionality</span>
+          <div
+            className="w-1 h-1 rounded-full"
+            style={{ background: `${TONE_HEX[providerCopyData.tone]}66` }}
+          />
+          {providerCopyData.cta ? (
+            <button
+              type="button"
+              onClick={() => openSettingsToSection('subscription')}
+              className="text-[10px] underline-offset-2 hover:underline"
+              style={{ color: `${TONE_HEX[providerCopyData.tone]}cc` }}
+            >
+              {providerCopyData.badge}
+            </button>
+          ) : (
+            <span
+              className="text-[10px]"
+              style={{
+                color:
+                  providerCopyData.tone === 'cyan-subtle'
+                    ? `${TONE_HEX[providerCopyData.tone]}66`
+                    : `${TONE_HEX[providerCopyData.tone]}99`,
+              }}
+            >
+              {providerCopyData.badge}
+            </span>
+          )}
         </div>
       )}
     </div>

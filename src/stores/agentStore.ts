@@ -8,6 +8,9 @@ import { useWindowStore } from './windowStore';
 import { useEditorStore } from './editorStore';
 import { openDocumentViewer } from './documentViewerStore';
 import { useNotificationStore } from './notificationStore';
+import { useBillingStore } from './billingStore';
+import { openSettingsToSection } from '@/lib/settingsNav';
+import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import { useAppStore, localAppIframeRefs } from './appStore';
 import { log } from '@/lib/logger';
@@ -40,7 +43,7 @@ export interface AskUserData {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'agent' | 'activity' | 'system';
+  role: 'user' | 'agent' | 'activity' | 'system' | 'notice';
   content: string;
   timestamp: Date;
   /** For activity messages: which tool triggered it */
@@ -4318,23 +4321,118 @@ export const useComputerStore = create<ComputerStore>()(
           // Legacy event — no longer emitted, ignore
           break;
 
+        case 'provider_state': {
+          const state = event.data?.state as string | undefined;
+          const model = event.data?.model as string | undefined;
+          const weeklyResetsAt = event.data?.weeklyResetsAt as string | undefined;
+          const billing = useBillingStore.getState();
+          const prevKind = billing.getEffectiveProvider().kind;
+
+          const fireNotice = (content: string) => {
+            appendToAgentChat({ role: 'notice', content, timestamp: new Date() });
+          };
+          const fireTransitionToast = (
+            nextKind: import('./billingStore').EffectiveProvider['kind'],
+            copy: ReturnType<typeof providerCopy>,
+          ) => {
+            if (prevKind === nextKind) return;
+            if (!copy.toastTitle || !copy.toastVariant) return;
+            useNotificationStore.getState().addNotification({
+              title: copy.toastTitle,
+              body: copy.toastBody ?? undefined,
+              source: 'Usage',
+              variant: copy.toastVariant,
+              onClick: copy.cta ? () => openSettingsToSection('subscription') : undefined,
+            });
+          };
+
+          switch (state) {
+            case 'platform': {
+              billing.setLiveProvider({ active: false, model });
+              // Transition back to platform after being on BYOK-fallback or
+              // blocked → success toast.
+              if (prevKind === 'byok-fallback' || prevKind.startsWith('blocked')) {
+                useNotificationStore.getState().addNotification({
+                  title: 'Back on platform',
+                  body: 'Platform cap reset — you are back on the platform model.',
+                  source: 'Usage',
+                  variant: 'success',
+                });
+                fireNotice('Platform cap reset — back on platform.');
+              }
+              break;
+            }
+            case 'byok-exclusive':
+              billing.setLiveProvider({ active: true, model });
+              break;
+            case 'byok-fallback': {
+              billing.setLiveProvider({ active: true, model });
+              const copy = providerCopy({ kind: 'byok-fallback', model, weeklyResetsAt });
+              if (prevKind !== 'byok-fallback' && copy.noticeText) fireNotice(copy.noticeText);
+              fireTransitionToast('byok-fallback', copy);
+              break;
+            }
+            case 'blocked-no-key': {
+              billing.setProviderBlock({ kind: 'no-key', weeklyResetsAt });
+              const copy = providerCopy({ kind: 'blocked-no-key', weeklyResetsAt });
+              if (prevKind !== 'blocked-no-key' && copy.noticeText) fireNotice(copy.noticeText);
+              fireTransitionToast('blocked-no-key', copy);
+              break;
+            }
+            case 'blocked-byok-cap': {
+              billing.setProviderBlock({ kind: 'byok-cap', weeklyResetsAt });
+              const copy = providerCopy({ kind: 'blocked-byok-cap', weeklyResetsAt });
+              if (prevKind !== 'blocked-byok-cap' && copy.noticeText) fireNotice(copy.noticeText);
+              fireTransitionToast('blocked-byok-cap', copy);
+              break;
+            }
+          }
+          // Refresh polled usage so billingStore.usage catches up promptly.
+          void billing.fetchUsage();
+          break;
+        }
+
+        case 'byok_fallback_notice': {
+          // Back-compat: treat as provider_state: byok-fallback.
+          const billing = useBillingStore.getState();
+          billing.setLiveProvider({ active: true });
+          void billing.fetchUsage();
+          break;
+        }
+
         case 'usage_warning': {
           const threshold = event.data?.threshold as number || 100;
           const resetsAt = event.data?.resetsAt as string | undefined;
-          if (threshold >= 100) set({ isOnLiteModel: true });
+          const byok = useBillingStore.getState().byok;
+          const byokWillFallback =
+            !!byok?.hasKey && (byok.mode === 'auto' || byok.mode === 'exclusive');
+
           const resetStr = resetsAt
             ? new Date(resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
             : 'soon';
 
-          const message = threshold >= 100
-            ? `Usage limit reached. Resets at ${resetStr}. Consider adding credits in Settings > Subscription.`
-            : `Usage at ${threshold}% for this period. Resets at ${resetStr}.`;
-
-          appendToAgentChat({
-            role: 'system',
-            content: message,
-            timestamp: new Date(),
-          });
+          // Under 100%: info toast (non-blocking warning).
+          // At/over 100%: let the provider_state event drive the UX; emit a
+          //   contextual toast here that mentions whether BYOK will take over.
+          if (threshold >= 100) {
+            useNotificationStore.getState().addNotification({
+              title: 'Usage limit reached',
+              body: byokWillFallback
+                ? `Switching to your OpenRouter key. Platform resets at ${resetStr}.`
+                : `Add an OpenRouter key to keep working, or wait until ${resetStr}.`,
+              source: 'Usage',
+              variant: byokWillFallback ? 'info' : 'error',
+            });
+          } else {
+            useNotificationStore.getState().addNotification({
+              title: `${threshold}% of weekly limit`,
+              body: byokWillFallback
+                ? `Your OpenRouter key will take over at 100%. Resets at ${resetStr}.`
+                : `Resets at ${resetStr}.`,
+              source: 'Usage',
+              variant: 'info',
+            });
+          }
           break;
         }
 
@@ -4531,17 +4629,44 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Track errors for ALL agents using the defensive helper
           updateAgent(() => ({ error: message }));
-          appendToAgentChat({ role: 'agent', content: `Error: ${message}`, timestamp: new Date(), isError: true });
+
+          // Usage-block errors are already surfaced by the provider_state
+          // handler (structured banner + toast). Skip the generic red "Error:"
+          // chat message and the duplicate toast in that case.
+          const blocked = useBillingStore.getState().lastBlock;
+          const isUsageBlock = !!blocked;
+          if (!isUsageBlock) {
+            appendToAgentChat({ role: 'agent', content: `Error: ${message}`, timestamp: new Date(), isError: true });
+          }
           if (isDesktop) {
             set({ agentThinking: null, agentThinkingStream: null });
           }
-          // Notify user about agent error
-          useNotificationStore.getState().addNotification({
-            title: 'Agent error',
-            body: message,
-            source: 'agent',
-            variant: 'error',
-          }, 8000);
+          if (!isUsageBlock) {
+            useNotificationStore.getState().addNotification({
+              title: 'Agent error',
+              body: message,
+              source: 'agent',
+              variant: 'error',
+            }, 8000);
+          } else {
+            // Fire the structured provider-block toast once.
+            const copy = providerCopy(
+              blocked!.kind === 'byok-cap'
+                ? { kind: 'blocked-byok-cap', weeklyResetsAt: blocked!.weeklyResetsAt }
+                : { kind: 'blocked-no-key', weeklyResetsAt: blocked!.weeklyResetsAt }
+            );
+            if (copy.toastTitle && copy.toastVariant) {
+              useNotificationStore.getState().addNotification({
+                title: copy.toastTitle,
+                body: copy.toastBody ?? undefined,
+                source: 'Usage',
+                variant: copy.toastVariant,
+                onClick: copy.cta
+                  ? () => openSettingsToSection('subscription')
+                  : undefined,
+              }, 8000);
+            }
+          }
           break;
         }
 

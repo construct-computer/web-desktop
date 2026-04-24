@@ -7,10 +7,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useBillingStore } from '@/stores/billingStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import * as api from '@/services/api';
 import { USAGE_POLL_INTERVAL_MS } from '@/lib/config';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import buyIcon from '@/icons/buy.png';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,16 +107,22 @@ export function StatusWidget() {
   const [usage, setUsage] = useState<UsageWindow | null>(null);
   const [storage, setStorage] = useState<{ bytesUsed: number; maxBytes: number } | null>(null);
 
+  const fetchBillingUsage = useBillingStore(s => s.fetchUsage);
+  const fetchByok = useBillingStore(s => s.fetchByok);
+
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       const r = await api.getCurrentUsage();
       if (!cancelled && r.success && r.data) setUsage(r.data as unknown as UsageWindow);
+      // Keep billingStore in sync so other surfaces read the same data.
+      void fetchBillingUsage();
     };
     poll();
+    void fetchByok();
     const iv = setInterval(poll, USAGE_POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(iv); };
-  }, []);
+  }, [fetchBillingUsage, fetchByok]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,9 +139,31 @@ export function StatusWidget() {
   const windowPct = usage?.windowPercentUsed ?? 0;
   const resetsIn = usage?.weeklyResetsAt ? fmtTime(new Date(usage.weeklyResetsAt).getTime() - Date.now()) : null;
   const windowResetsIn = usage?.windowResetsAt ? fmtTime(new Date(usage.windowResetsAt).getTime() - Date.now()) : null;
-  const accent = pct < 60 ? '#22d3ee' : pct < 85 ? '#fbbf24' : '#f87171';
   const hasWeeklyUsd = usage?.weeklyUsedUsd !== undefined && usage?.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0;
   const hasWindowUsd = usage?.windowUsedUsd !== undefined && usage?.windowCapUsd !== undefined && usage.windowCapUsd > 0;
+
+  // Provider-state drives the label + accent colors + CTA below.
+  const provider = useBillingStore(s => s.getEffectiveProvider());
+  const byokSettings = useBillingStore(s => s.byok);
+  const copy = providerCopy(provider);
+  const providerAccent = copy.tone === 'neutral'
+    ? (pct < 60 ? '#22d3ee' : pct < 85 ? '#fbbf24' : '#f87171')
+    : TONE_HEX[copy.tone];
+  const accent = providerAccent;
+
+  const isByok = provider.kind === 'byok-fallback' || provider.kind === 'byok-exclusive';
+  const isBlocked = provider.kind === 'blocked-no-key' || provider.kind === 'blocked-byok-cap';
+
+  // Use BYOK cap as the primary metric when on BYOK — platform weekly bar
+  // would read 100% (that's why we fell back) which is visually misleading.
+  const byokCap = byokSettings?.weeklyLimitUsd ?? null;
+  const byokUsed = usage?.weeklyUsedUsd ?? 0; // backend reports combined; close enough for a widget glance.
+  const byokPct = byokCap && byokCap > 0 ? Math.min(100, (byokUsed / byokCap) * 100) : 0;
+
+  const openCtaTarget = () => {
+    if (!copy.cta) return;
+    openSettingsToSection('subscription');
+  };
 
   return (
     <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
@@ -185,32 +215,62 @@ export function StatusWidget() {
       {/* ── Divider ── */}
       <div className="my-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
 
-      {/* ── Weekly usage bar ── */}
+      {/* ── Primary usage bar (platform weekly OR BYOK cap OR block CTA) ── */}
       {usage && (
         <>
           <div className="flex items-baseline justify-between gap-2 mt-2">
-            <span className="text-[11px] font-semibold tracking-wide shrink-0" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.35)' }}>
-              {pct >= 100 ? 'Limit reached' : 'Weekly'}
+            <span
+              className="text-[11px] font-semibold tracking-wide shrink-0"
+              style={{ color: (isBlocked || isByok) ? accent : (pct >= 100 ? accent : 'rgba(255,255,255,0.35)') }}
+            >
+              {copy.widgetLabel}
             </span>
-            <span className="text-[12px] font-medium tabular-nums whitespace-nowrap" style={{ color: pct >= 100 ? accent : 'rgba(255,255,255,0.6)' }}>
-              {hasWeeklyUsd
-                ? `${fmtCost(usage!.weeklyUsedUsd!)} / ${fmtCost(usage!.weeklyCapUsd!)}`
-                : `${Math.min(pct, 100).toFixed(0)}%`}
+            <span
+              className="text-[12px] font-medium tabular-nums whitespace-nowrap"
+              style={{ color: (isBlocked || isByok) ? accent : (pct >= 100 ? accent : 'rgba(255,255,255,0.6)') }}
+            >
+              {isByok && byokCap
+                ? `${fmtCost(byokUsed)} / ${fmtCost(byokCap)}`
+                : isByok
+                  ? 'no cap'
+                  : hasWeeklyUsd
+                    ? `${fmtCost(usage!.weeklyUsedUsd!)} / ${fmtCost(usage!.weeklyCapUsd!)}`
+                    : `${Math.min(pct, 100).toFixed(0)}%`}
             </span>
           </div>
           <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.06)' }}>
             <div
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${pct >= 100 ? 'animate-pulse' : ''}`}
-              style={{ width: `${Math.max(1, Math.min(100, pct))}%`, background: accent, boxShadow: `0 0 6px ${accent}66` }}
+              className={`h-full rounded-full transition-all duration-1000 ease-out ${(isBlocked || pct >= 100) ? 'animate-pulse' : ''}`}
+              style={{
+                width: `${Math.max(1, Math.min(100, isByok && byokCap ? byokPct : (isBlocked ? 100 : pct)))}%`,
+                background: accent,
+                boxShadow: `0 0 6px ${accent}66`,
+              }}
             />
           </div>
-          {resetsIn && pct > 0 && (
+
+          {/* Contextual subline: resets, BYOK note, or blocked CTA. */}
+          {isBlocked ? (
+            <button
+              type="button"
+              onClick={openCtaTarget}
+              className="mt-1 w-full text-left text-[10px] rounded px-1 py-0.5 transition-colors"
+              style={{ color: accent, background: 'rgba(248,113,113,0.08)' }}
+            >
+              {copy.cta?.label ?? 'Open settings'} →
+            </button>
+          ) : isByok ? (
+            <div className="text-[10px] mt-0.5" style={{ color: accent }}>
+              {provider.kind === 'byok-fallback' ? `platform resets ${resetsIn ?? 'soon'}` : 'your key'}
+            </div>
+          ) : resetsIn && pct > 0 ? (
             <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
               resets {resetsIn}
             </div>
-          )}
+          ) : null}
 
-          {windowPct > 0 && (
+          {/* 4h window bar — hidden when on BYOK (platform window irrelevant) or blocked. */}
+          {!isByok && !isBlocked && windowPct > 0 && (
             <>
               <div className="flex items-baseline justify-between gap-2 mt-1.5">
                 <span className="text-[10px] tracking-wide shrink-0" style={{ color: 'rgba(255,255,255,0.25)' }}>

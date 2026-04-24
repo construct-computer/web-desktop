@@ -157,9 +157,20 @@ export function UsageSection() {
               </div>
 
               {usage.byokFallback && (
-                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                   <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Using your OpenRouter key — platform caps exhausted.</span>
+                  <span>Switched to your OpenRouter key — platform weekly cap reached. Platform access returns on the next weekly reset.</span>
+                </div>
+              )}
+              {usage.byokActive && !usage.byokFallback && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/5 text-cyan-400/80 border border-cyan-500/15">
+                  <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Using your OpenRouter key (exclusive mode).</span>
+                </div>
+              )}
+              {!usage.allowed && !usage.byokActive && !usage.byokFallback && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-red-500/10 text-red-400 border border-red-500/20">
+                  <span>Usage limit reached. Add an OpenRouter key below or upgrade your plan to keep working.</span>
                 </div>
               )}
 

@@ -7,6 +7,9 @@ import { AuthConnectCard, parseAuthMarker } from '@/components/ui/AuthConnectCar
 import { AskUserCard } from '@/components/ui/AskUserCard';
 import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
+import { useBillingStore } from '@/stores/billingStore';
+import { providerCopy, TONE_CLASSES } from '@/lib/providerCopy';
+import { openSettingsToSection } from '@/lib/settingsNav';
 import { agentWS } from '@/services/websocket';
 import { useSound } from '@/hooks/useSound';
 import analytics from '@/lib/analytics';
@@ -454,6 +457,14 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
   const createSession = useComputerStore((s) => s.createSession);
   const taskProgress = useComputerStore((s) => s.taskProgress);
 
+  // Provider state drives the sticky usage banner + per-message notice styling.
+  const providerState = useBillingStore(s => s.getEffectiveProvider());
+  const providerCopyData = providerCopy(providerState);
+  const showBanner =
+    providerState.kind === 'byok-fallback' ||
+    providerState.kind === 'blocked-no-key' ||
+    providerState.kind === 'blocked-byok-cap';
+
   const isConnected = computer && computer.status === 'running';
   const activeSession = chatSessions.find(s => s.key === activeSessionKey);
   const needsSetup = !hasApiKey;
@@ -598,6 +609,29 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
 
       {/* Messages */}
       <div className="flex-1 overflow-auto p-3 space-y-3">
+        {showBanner && providerCopyData.bannerTitle && (
+          <div
+            className={`rounded-md border px-3 py-2 ${TONE_CLASSES[providerCopyData.tone].bg} ${TONE_CLASSES[providerCopyData.tone].border}`}
+          >
+            <div className={`text-xs font-semibold ${TONE_CLASSES[providerCopyData.tone].text}`}>
+              {providerCopyData.bannerTitle}
+            </div>
+            {providerCopyData.bannerBody && (
+              <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                {providerCopyData.bannerBody}
+              </div>
+            )}
+            {providerCopyData.cta && (
+              <button
+                type="button"
+                onClick={() => openSettingsToSection('subscription')}
+                className={`mt-1.5 text-xs underline underline-offset-2 ${TONE_CLASSES[providerCopyData.tone].text}`}
+              >
+                {providerCopyData.cta.label}
+              </button>
+            )}
+          </div>
+        )}
         {chatMessages.length === 0 && !agentThinking && (
           <div className="text-center text-[var(--color-text-muted)] py-8">
                 <img src={constructLogo} alt="" className="w-12 h-12 mx-auto mb-2 opacity-30" />
@@ -658,6 +692,17 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
           // Skip system sentinel messages (used as message boundary markers)
           if (msg.role === 'system') {
             return null;
+          }
+
+          // Render provider-transition notices as subtle muted inline text.
+          if (msg.role === 'notice') {
+            return (
+              <div key={index} className="flex justify-center py-1">
+                <span className="text-[11px] text-[var(--color-text-muted)] italic">
+                  {msg.content}
+                </span>
+              </div>
+            );
           }
 
           const isError = msg.role === 'agent' && msg.isError;

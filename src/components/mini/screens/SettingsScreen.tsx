@@ -579,10 +579,15 @@ function ByokMobileCard({
     );
   }
 
-  const modeLabel = byok.mode === 'off' ? 'Disabled' : byok.mode === 'auto' ? 'Auto-fallback' : 'Exclusive';
+  const modeLabel =
+    !byok.hasKey
+      ? '—'
+      : byok.mode === 'off' || byok.mode === 'auto'
+        ? 'Auto-fallback'
+        : 'Exclusive';
 
-  const setMode = async (next: 'off' | 'auto' | 'exclusive') => {
-    if (next !== 'off' && !byok.hasKey) return;
+  const setMode = async (next: 'auto' | 'exclusive') => {
+    if (!byok.hasKey) return;
     setBusy(true);
     haptic();
     try {
@@ -611,8 +616,8 @@ function ByokMobileCard({
         </div>
 
         {byok.hasKey && (
-          <div className="grid grid-cols-3 gap-1.5 pt-1">
-            {(['off', 'auto', 'exclusive'] as const).map((m) => (
+          <div className="grid grid-cols-2 gap-1.5 pt-1">
+            {(['auto', 'exclusive'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -620,12 +625,18 @@ function ByokMobileCard({
                 onClick={() => setMode(m)}
                 className="text-[11px] py-1.5 rounded-md"
                 style={{
-                  backgroundColor: byok.mode === m ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
-                  color: byok.mode === m ? '#22c55e' : 'inherit',
+                  backgroundColor:
+                    (m === 'auto' ? byok.mode === 'off' || byok.mode === 'auto' : byok.mode === m)
+                      ? 'rgba(34,197,94,0.15)'
+                      : 'rgba(255,255,255,0.04)',
+                  color:
+                    (m === 'auto' ? byok.mode === 'off' || byok.mode === 'auto' : byok.mode === m)
+                      ? '#22c55e'
+                      : 'inherit',
                   opacity: busy ? 0.6 : 1,
                 }}
               >
-                {m === 'off' ? 'Off' : m === 'auto' ? 'Auto' : 'Exclusive'}
+                {m === 'auto' ? 'Auto-fallback' : 'Exclusive'}
               </button>
             ))}
           </div>
@@ -648,10 +659,19 @@ function ByokMobileCard({
         {usage?.byokFallback && (
           <div
             className="flex items-center gap-2 p-2 rounded-lg text-[12px] mt-1"
-            style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}
+            style={{ backgroundColor: 'rgba(34,211,238,0.1)', color: '#22d3ee' }}
           >
             <Zap size={13} className="shrink-0" />
-            Using your OpenRouter key — platform limits exhausted.
+            Switched to your OpenRouter key — platform weekly cap reached.
+          </div>
+        )}
+        {usage?.byokActive && !usage?.byokFallback && (
+          <div
+            className="flex items-center gap-2 p-2 rounded-lg text-[12px] mt-1"
+            style={{ backgroundColor: 'rgba(34,211,238,0.06)', color: 'rgba(34,211,238,0.7)' }}
+          >
+            <Zap size={13} className="shrink-0" />
+            Using your OpenRouter key.
           </div>
         )}
       </div>

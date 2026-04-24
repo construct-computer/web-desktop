@@ -3,7 +3,7 @@
  *
  * Lets users:
  *  - paste + validate their OpenRouter API key (server validates against /auth/key)
- *  - pick a mode (off / auto-fallback / exclusive)
+ *  - pick a mode (auto-fallback / exclusive) once a key is saved
  *  - choose a model (curated list + searchable combobox + custom override)
  *  - set a self-imposed weekly USD cap
  *
@@ -24,8 +24,7 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   );
 }
 
-const MODES: Array<{ id: ByokMode; label: string; hint: string }> = [
-  { id: 'off', label: 'Off', hint: 'Ignore my key. Use platform AI only.' },
+const MODES: Array<{ id: 'auto' | 'exclusive'; label: string; hint: string }> = [
   { id: 'auto', label: 'Auto-fallback', hint: 'Platform first. When limits hit, use my key.' },
   { id: 'exclusive', label: 'Exclusive', hint: 'Always use my key. Skip platform AI.' },
 ];
@@ -79,8 +78,11 @@ export function ByokSection() {
   const catalogue = byokModels?.models || [];
   const catalogueIds = useMemo(() => new Set(catalogue.map((m) => m.id)), [catalogue]);
 
+  const providerState = useBillingStore((s) => s.getEffectiveProvider());
+  const isByokCapBlocked = providerState.kind === 'blocked-byok-cap';
+
   const hasKey = !!byok?.hasKey;
-  const mode: ByokMode = byok?.mode || 'off';
+  const mode: ByokMode = hasKey ? (byok?.mode === 'off' || !byok?.mode ? 'auto' : byok.mode) : 'off';
   const selectedModel = byok?.model || '';
   const isCustom = selectedModel && !recommendedIds.has(selectedModel);
 
@@ -130,13 +132,13 @@ export function ByokSection() {
   }, [keyInput, saveByokKey]);
 
   const onDeleteKey = useCallback(async () => {
-    if (!confirm('Remove your OpenRouter API key? BYOK mode will reset to Off.')) return;
+    if (!confirm('Remove your OpenRouter API key? You will use the platform AI until you add a key again.')) return;
     setKeyBusy(true);
     await deleteByokKey();
     setKeyBusy(false);
   }, [deleteByokKey]);
 
-  const onModeChange = useCallback(async (next: ByokMode) => {
+  const onModeChange = useCallback(async (next: 'auto' | 'exclusive') => {
     if (next === mode) return;
     setModeError(null);
     const res = await setByokMode(next);
@@ -199,7 +201,9 @@ export function ByokSection() {
     );
   }
 
-  const modeHint = MODES.find((m) => m.id === mode)?.hint;
+  const modeHint = hasKey
+    ? MODES.find((m) => m.id === (mode === 'exclusive' ? 'exclusive' : 'auto'))?.hint
+    : undefined;
 
   return (
     <div className="space-y-3">
@@ -286,44 +290,44 @@ export function ByokSection() {
         </div>
       </Card>
 
-      {/* Mode selector */}
-      <Card>
-        <div className="px-4 pt-3.5 pb-4 space-y-3">
-          <div>
-            <Label className="text-[13px] font-semibold">How should we use your key?</Label>
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{modeHint}</p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-1.5">
-            {MODES.map((m) => {
-              const isActive = mode === m.id;
-              const isDisabled = !hasKey && m.id !== 'off';
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => onModeChange(m.id)}
-                  className={`px-3 py-2 rounded-md text-[12px] font-medium border transition-colors ${
-                    isActive
-                      ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/[0.08] text-[var(--color-text)]'
-                      : 'border-black/[0.06] dark:border-white/[0.08] text-[var(--color-text-muted)] hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'
-                  } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  title={isDisabled ? 'Save a key first to enable this mode.' : m.hint}
-                >
-                  {m.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {modeError && (
-            <div className="flex items-center gap-1.5 text-[12px] text-red-500">
-              <AlertCircle className="w-3 h-3" /> {modeError}
+      {/* Mode selector (only when a key is saved) */}
+      {hasKey && (
+        <Card>
+          <div className="px-4 pt-3.5 pb-4 space-y-3">
+            <div>
+              <Label className="text-[13px] font-semibold">How should we use your key?</Label>
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{modeHint}</p>
             </div>
-          )}
-        </div>
-      </Card>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {MODES.map((m) => {
+                const isActive = mode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onModeChange(m.id)}
+                    className={`px-3 py-2 rounded-md text-[12px] font-medium border transition-colors ${
+                      isActive
+                        ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/[0.08] text-[var(--color-text)]'
+                        : 'border-black/[0.06] dark:border-white/[0.08] text-[var(--color-text-muted)] hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'
+                    }`}
+                    title={m.hint}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {modeError && (
+              <div className="flex items-center gap-1.5 text-[12px] text-red-500">
+                <AlertCircle className="w-3 h-3" /> {modeError}
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Model selector */}
       <Card>
@@ -390,6 +394,12 @@ export function ByokSection() {
           <p className="text-[11px] text-[var(--color-text-muted)]">
             Only counts traffic that hits your OpenRouter key. Leave blank for no limit. Resets Monday 00:00 UTC.
           </p>
+          {isByokCapBlocked && (
+            <div className="flex items-center gap-1.5 text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
+              <AlertCircle className="w-3 h-3 flex-shrink-0" />
+              You've hit this cap this week — raise it or wait until Monday.
+            </div>
+          )}
           <div className="flex gap-2">
             <Input
               type="number"
@@ -401,6 +411,7 @@ export function ByokSection() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !limitBusy) onLimitSave();
               }}
+              className={isByokCapBlocked ? 'border-red-500/40' : undefined}
             />
             <Button onClick={onLimitSave} disabled={limitBusy}>
               {limitBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
