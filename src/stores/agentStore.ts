@@ -21,7 +21,13 @@ import analytics from '@/lib/analytics';
 // Types remain defined inline here (canonical source) for build compatibility.
 export { authConnectNotifIds, pendingAuthCards, clearAuthCard, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from './agentStoreUtils';
 
-import { authConnectNotifIds, pendingAuthCards, saveAuthCards, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns, findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent } from './agentStoreUtils';
+import {
+  authConnectNotifIds, pendingAuthCards, saveAuthCards, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns,
+  findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent,
+  describeToolCall,
+  composioDisplayTool,
+} from './agentStoreUtils';
+import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 
 // Auth card persistence moved to agentStoreUtils.ts
 
@@ -64,438 +70,6 @@ export interface ChatMessage {
   source?: 'telegram' | 'slack' | 'email';
 }
 
-/** Build a human-readable activity description from a tool_call event */
-function describeToolCall(tool: string, params?: Record<string, unknown>): { text: string; activityType: ChatMessage['activityType'] } {
-  const p = params || {};
-
-  // Browser tools
-  if (tool === 'local_browser' || tool === 'browser' || tool.startsWith('browser_')) {
-    const action = (p.action as string) || tool.replace('browser_', '');
-    const url = p.url as string | undefined;
-    const text = p.text as string | undefined;
-    const selector = p.selector as string | undefined;
-    const ref = p.ref as string | undefined;
-
-    switch (action) {
-      case 'navigate':
-      case 'browser_navigate':
-        return { text: `Navigating to ${url || 'page'}`, activityType: 'browser' };
-      case 'click':
-      case 'browser_click':
-        return { text: `Clicking ${text ? `"${text}"` : selector || ref || 'element'}`, activityType: 'browser' };
-      case 'type':
-      case 'browser_type':
-        return { text: `Typing "${(p.text as string || '').slice(0, 50)}${(p.text as string || '').length > 50 ? '...' : ''}"`, activityType: 'browser' };
-      case 'scroll':
-      case 'browser_scroll':
-        return { text: `Scrolling ${(p.direction as string) || 'page'}`, activityType: 'browser' };
-      case 'snapshot':
-      case 'browser_snapshot':
-        return { text: 'Reading page content', activityType: 'browser' };
-      case 'screenshot':
-      case 'browser_screenshot':
-        return { text: 'Taking screenshot', activityType: 'browser' };
-      case 'window_new':
-      case 'browser_window_new':
-      case 'tab_new':
-      case 'browser_tab_new':
-        return { text: `Opening new browser window${url ? `: ${url}` : ''}`, activityType: 'browser' };
-      case 'window_close':
-      case 'browser_window_close':
-      case 'tab_close':
-      case 'browser_tab_close':
-        return { text: 'Closing browser window', activityType: 'browser' };
-      case 'window_focus':
-      case 'browser_window_focus':
-      case 'tab_switch':
-      case 'browser_tab_switch':
-        return { text: `Focusing browser window`, activityType: 'browser' };
-      default:
-        return { text: `Browser: ${action}`, activityType: 'browser' };
-    }
-  }
-
-  // Terminal / exec / sandbox
-  if (tool === 'exec' || tool === 'terminal') {
-    const cmd = (p.command as string) || '';
-    const display = cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd;
-    return { text: `Running \`${display}\``, activityType: 'terminal' };
-  }
-  if (tool === 'sandbox_write_file') {
-    return { text: `Writing ${p.path || 'file'} to sandbox`, activityType: 'terminal' };
-  }
-  if (tool === 'sandbox_read_file') {
-    return { text: `Reading ${p.path || 'file'} from sandbox`, activityType: 'terminal' };
-  }
-  if (tool === 'save_to_workspace') {
-    return { text: `Saving ${p.workspace_path || 'file'} to workspace`, activityType: 'file' };
-  }
-  if (tool === 'load_from_workspace') {
-    return { text: `Loading ${p.workspace_path || 'file'} into sandbox`, activityType: 'file' };
-  }
-  if (tool === 'view_image') {
-    return { text: `Viewing image ${p.path || ''}`, activityType: 'tool' };
-  }
-  if (tool === 'document_guide') {
-    return { text: `Loading ${p.format || 'document'} guide`, activityType: 'tool' };
-  }
-
-  // Workspace file tools
-  if (tool === 'read_file') {
-    return { text: `Reading ${p.path || 'file'}`, activityType: 'file' };
-  }
-  if (tool === 'write_file') {
-    return { text: `Writing ${p.path || 'file'}`, activityType: 'file' };
-  }
-  if (tool === 'list_directory') {
-    return { text: `Listing ${p.path || '/'}`, activityType: 'file' };
-  }
-  if (tool === 'search_files') {
-    return { text: `Searching for ${p.query || 'files'}`, activityType: 'file' };
-  }
-  if (tool === 'delete_file') {
-    return { text: `Deleting ${p.path || 'file'}`, activityType: 'file' };
-  }
-
-  // Memory tool — storing is automatic and never surfaces here.
-  if (tool === 'memory') {
-    const action = p.action as string | undefined;
-    switch (action) {
-      case 'recall': return { text: 'Recalling memories', activityType: 'tool' };
-      case 'list': return { text: 'Listing memories', activityType: 'tool' };
-      case 'forget': return { text: 'Forgetting memory', activityType: 'tool' };
-      default: return { text: `Memory: ${action || 'operation'}`, activityType: 'tool' };
-    }
-  }
-
-  // Legacy file tools
-  if (tool === 'read' || tool === 'file_read') {
-    return { text: `Reading ${p.path || p.file || 'file'}`, activityType: 'file' };
-  }
-  if (tool === 'write' || tool === 'file_write') {
-    return { text: `Writing ${p.path || p.file || 'file'}`, activityType: 'file' };
-  }
-  if (tool === 'edit' || tool === 'file_edit') {
-    return { text: `Editing ${p.path || p.file || 'file'}`, activityType: 'file' };
-  }
-  if (tool === 'list') {
-    return { text: `Listing ${p.path || p.directory || '.'}`, activityType: 'file' };
-  }
-
-  // Desktop tool
-  if (tool === 'desktop') {
-    const action = p.action as string | undefined;
-    return { text: `Desktop: ${action || 'action'}`, activityType: 'desktop' };
-  }
-
-  // Web search — fast search or Browsing (backward compat)
-  if (tool === 'web_search') {
-    const query = p.query as string | undefined;
-    const url = p.url as string | undefined;
-    const goal = p.goal as string | undefined;
-    // If url+goal present, it's a Web Agent scrape (backward compat)
-    if (url && goal) {
-      const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `Web: ${shortGoal}`, activityType: 'web' };
-    }
-    const shortQuery = query && query.length > 50 ? query.slice(0, 50) + '...' : query;
-    return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'tool' };
-  }
-  // Remote browser (Browser automation) (backward compat for web_scrape)
-  if (tool === 'remote_browser' || tool === 'web_scrape') {
-    const url = p.url as string | undefined;
-    const goal = p.goal as string | undefined;
-    if (url && goal) {
-      const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `Scraping: ${shortGoal}`, activityType: 'web' };
-    }
-    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'web' };
-  }
-
-  // Notify tool
-  if (tool === 'notify') {
-    return { text: `Notification: ${p.title || 'alert'}`, activityType: 'desktop' };
-  }
-
-  // Google Drive tool
-  if (tool === 'google_drive') {
-    const action = p.action as string | undefined;
-    const filePath = p.file_path as string | undefined;
-    const query = p.query as string | undefined;
-    switch (action) {
-      case 'status':
-        return { text: 'Checking Google Drive status', activityType: 'file' };
-      case 'list':
-        return { text: 'Listing Google Drive files', activityType: 'file' };
-      case 'upload': {
-        const name = filePath ? filePath.split('/').pop() : 'file';
-        return { text: `Uploading ${name} to Google Drive`, activityType: 'file' };
-      }
-      case 'download':
-        return { text: `Downloading file from Google Drive`, activityType: 'file' };
-      case 'search':
-        return { text: `Searching Drive for "${query || '...'}"`, activityType: 'file' };
-      default:
-        return { text: `Google Drive: ${action || 'operation'}`, activityType: 'file' };
-    }
-  }
-
-  // Email tool
-  if (tool === 'email') {
-    const action = p.action as string | undefined;
-    const to = p.to as string | undefined;
-    const subject = p.subject as string | undefined;
-    const query = p.query as string | undefined;
-    switch (action) {
-      case 'status':
-        return { text: 'Checking email status', activityType: 'tool' };
-      case 'send': {
-        const shortSubject = subject ? (subject.length > 40 ? subject.slice(0, 40) + '...' : subject) : '';
-        return { text: `Sending email${to ? ` to ${to}` : ''}${shortSubject ? `: "${shortSubject}"` : ''}`, activityType: 'tool' };
-      }
-      case 'reply':
-        return { text: 'Replying to email', activityType: 'tool' };
-      case 'inbox':
-        return { text: 'Checking inbox', activityType: 'tool' };
-      case 'thread':
-        return { text: 'Reading email thread', activityType: 'tool' };
-      case 'search':
-        return { text: `Searching emails for "${query || '...'}"`, activityType: 'tool' };
-      default:
-        return { text: `Email: ${action || 'operation'}`, activityType: 'tool' };
-    }
-  }
-
-  // Agent's local calendar (task scheduler)
-  if (tool === 'calendar') {
-    const action = p.action as string | undefined;
-    const summary = p.summary as string | undefined;
-    const shortSummary = summary ? (summary.length > 40 ? summary.slice(0, 40) + '...' : summary) : '';
-
-    switch (action) {
-      case 'list_events':
-        return { text: 'Checking task schedule', activityType: 'calendar' as const };
-      case 'get_event':
-        return { text: 'Reading scheduled task', activityType: 'calendar' as const };
-      case 'create_event':
-        return { text: `Scheduling task${shortSummary ? `: "${shortSummary}"` : ''}`, activityType: 'calendar' as const };
-      case 'update_event':
-        return { text: `Updating task${shortSummary ? `: "${shortSummary}"` : ''}`, activityType: 'calendar' as const };
-      case 'delete_event':
-        return { text: 'Removing scheduled task', activityType: 'calendar' as const };
-      case 'quick_add':
-        return { text: 'Quick-scheduling task', activityType: 'calendar' as const };
-      default:
-        return { text: `Task schedule: ${action || 'operation'}`, activityType: 'calendar' as const };
-    }
-  }
-
-  // User's Google Calendar
-  if (tool === 'google_calendar') {
-    const action = p.action as string | undefined;
-    const summary = p.summary as string | undefined;
-    const shortSummary = summary ? (summary.length > 40 ? summary.slice(0, 40) + '...' : summary) : '';
-
-    switch (action) {
-      case 'status':
-        return { text: 'Checking Google Calendar connection', activityType: 'calendar' as const };
-      case 'list_events':
-        return { text: 'Checking Google Calendar', activityType: 'calendar' as const };
-      case 'get_event':
-        return { text: 'Reading Google Calendar event', activityType: 'calendar' as const };
-      case 'create_event':
-        return { text: `Adding to Google Calendar${shortSummary ? `: "${shortSummary}"` : ''}`, activityType: 'calendar' as const };
-      case 'update_event':
-        return { text: `Updating Google Calendar event${shortSummary ? `: "${shortSummary}"` : ''}`, activityType: 'calendar' as const };
-      case 'delete_event':
-        return { text: 'Removing Google Calendar event', activityType: 'calendar' as const };
-      case 'quick_add':
-        return { text: 'Quick-adding to Google Calendar', activityType: 'calendar' as const };
-      case 'list_calendars':
-        return { text: 'Listing Google calendars', activityType: 'calendar' as const };
-      default:
-        return { text: `Google Calendar: ${action || 'operation'}`, activityType: 'calendar' as const };
-    }
-  }
-
-  // Telegram tool
-  if (tool === 'telegram') {
-    const action = p.action as string | undefined;
-    const username = p.username as string | undefined;
-    switch (action) {
-      case 'status':
-        return { text: 'Checking Telegram status', activityType: 'tool' };
-      case 'send_message':
-        return { text: `Sending Telegram message${username ? ` to @${username}` : ''}`, activityType: 'tool' };
-      case 'send_notification':
-        return { text: 'Sending Telegram notification', activityType: 'tool' };
-      default:
-        return { text: `Telegram: ${action || 'operation'}`, activityType: 'tool' };
-    }
-  }
-
-  // Audit log tool
-  if (tool === 'audit_log') {
-    const action = p.action as string | undefined;
-    const query = p.query as string | undefined;
-    switch (action) {
-      case 'list':
-        return { text: `Reviewing activity history${query ? ` for "${query}"` : ''}`, activityType: 'tool' };
-      case 'stats':
-        return { text: 'Checking activity stats', activityType: 'tool' };
-      default:
-        return { text: `Audit log: ${action || 'query'}`, activityType: 'tool' };
-    }
-  }
-
-  // Delegate task (delegation orchestration)
-  if (tool === 'delegate_task') {
-    const goal = p.goal as string | undefined;
-    const subtasks = p.subtasks;
-    const count = Array.isArray(subtasks) ? subtasks.length : '?';
-    const shortGoal = goal ? (goal.length > 50 ? goal.slice(0, 50) + '...' : goal) : 'complex task';
-    return { text: `Delegating: ${shortGoal} (${count} subagents)`, activityType: 'delegation' };
-  }
-
-  // Consult advisors (Consultation)
-  if (tool === 'consult_experts') {
-    const question = p.question as string | undefined;
-    const shortQ = question ? (question.length > 50 ? question.slice(0, 50) + '...' : question) : 'question';
-    return { text: `Consulting advisors: ${shortQ}`, activityType: 'delegation' };
-  }
-
-  // Background task
-  if (tool === 'background_task') {
-    const action = p.action as string | undefined;
-    const goal = p.goal as string | undefined;
-    switch (action) {
-      case 'spawn': {
-        const shortGoal = goal ? (goal.length > 50 ? goal.slice(0, 50) + '...' : goal) : 'task';
-        return { text: `Launching background task: ${shortGoal}`, activityType: 'background' };
-      }
-      case 'status':
-        return { text: 'Checking background task status', activityType: 'background' };
-      case 'cancel':
-        return { text: 'Cancelling background task', activityType: 'background' };
-      case 'list':
-        return { text: 'Listing background tasks', activityType: 'background' };
-      default:
-        return { text: `Background task: ${action || 'operation'}`, activityType: 'background' };
-    }
-  }
-
-  // ── Orchestrator tools ──
-  if (tool === 'spawn_agent') {
-    const goal = p.goal as string | undefined;
-    const shortGoal = goal ? (goal.length > 60 ? goal.slice(0, 60) + '...' : goal) : 'task';
-    return { text: `Spawning agent: ${shortGoal}`, activityType: 'delegation' };
-  }
-  if (tool === 'wait_for_agents') {
-    const ids = p.agent_ids as string[] | undefined;
-    return { text: `Waiting for ${ids?.length || ''} agent${ids?.length === 1 ? '' : 's'} to complete`, activityType: 'delegation' };
-  }
-  if (tool === 'check_agent_status') {
-    return { text: `Checking agent status`, activityType: 'delegation' };
-  }
-  if (tool === 'cancel_agent') {
-    return { text: `Cancelling agent`, activityType: 'delegation' };
-  }
-  if (tool === 'list_active_agents') {
-    return { text: `Listing active agents`, activityType: 'delegation' };
-  }
-  if (tool === 'update_plan') {
-    const action = p.action as string | undefined;
-    if (action === 'create') {
-      const goal = p.goal as string | undefined;
-      return { text: `Planning: ${goal?.slice(0, 50) || 'task'}`, activityType: 'tool' };
-    }
-    return { text: `Updating plan`, activityType: 'tool' };
-  }
-  if (tool === 'add_observation') {
-    return { text: `Recording observation`, activityType: 'tool' };
-  }
-  // respond_directly should not show as a tool bubble — it's handled via text_delta
-  if (tool === 'respond_directly' || tool === 'respond_to_user') {
-    return { text: '', activityType: 'tool' };
-  }
-  // ask_user — interactive question
-  if (tool === 'ask_user') {
-    const question = p.question as string | undefined;
-    const short = question && question.length > 50 ? question.slice(0, 50) + '...' : question;
-    return { text: `Asking: ${short || 'question'}`, activityType: 'tool' };
-  }
-
-  // Composio tool — show the actual toolkit/action instead of "Using composio"
-  if (tool === 'composio') {
-    const action = p.action as string | undefined;
-    const toolSlug = p.tool_slug as string | undefined;
-    const query = p.query as string | undefined;
-    const toolkit = p.toolkit as string | undefined;
-
-    switch (action) {
-      case 'execute': {
-        if (toolSlug) {
-          return { text: formatComposioSlug(toolSlug), activityType: 'tool' };
-        }
-        return { text: 'Executing Composio tool', activityType: 'tool' };
-      }
-      case 'search': {
-        const shortQuery = query && query.length > 40 ? query.slice(0, 40) + '...' : query;
-        return { text: `Searching apps${shortQuery ? `: "${shortQuery}"` : ''}`, activityType: 'tool' };
-      }
-      case 'status': {
-        const name = toolkit ? titleCaseToolkit(toolkit) : 'app';
-        return { text: `Checking ${name} connection`, activityType: 'tool' };
-      }
-      default:
-        return { text: `Composio: ${action || 'operation'}`, activityType: 'tool' };
-    }
-  }
-
-  // Generic fallback
-  return { text: `Using ${tool}`, activityType: 'tool' };
-}
-
-/** Convert a Composio slug like NOTION_CREATE_A_NEW_PAGE → "Notion: create a new page" */
-function formatComposioSlug(slug: string): string {
-  const idx = slug.indexOf('_');
-  if (idx === -1) return slug;
-  const toolkitRaw = slug.slice(0, idx).toLowerCase();
-  const actionRaw = slug.slice(idx + 1).toLowerCase().replace(/_/g, ' ');
-  return `${titleCaseToolkit(toolkitRaw)}: ${actionRaw}`;
-}
-
-/** Extract a display-friendly tool name from composio params for badges/pills.
- *  e.g. { tool_slug: "NOTION_CREATE_A_NEW_PAGE" } → "notion"
- *       { toolkit: "jira" } → "jira"
- *       { query: "..." } → "composio" */
-function composioDisplayTool(params?: Record<string, unknown>): string {
-  if (!params) return 'composio';
-  const slug = params.tool_slug as string | undefined;
-  if (slug) {
-    const idx = slug.indexOf('_');
-    return idx > 0 ? slug.slice(0, idx).toLowerCase() : slug.toLowerCase();
-  }
-  const toolkit = params.toolkit as string | undefined;
-  if (toolkit) return toolkit.toLowerCase();
-  return 'composio';
-}
-
-/** Title-case a toolkit name with known brand casing */
-function titleCaseToolkit(name: string): string {
-  const lower = name.toLowerCase();
-  const brands: Record<string, string> = {
-    github: 'GitHub', hubspot: 'HubSpot', linkedin: 'LinkedIn',
-    clickup: 'ClickUp', googlecalendar: 'Google Calendar',
-    googledrive: 'Google Drive', googlesheets: 'Google Sheets',
-    googledocs: 'Google Docs', mongodb: 'MongoDB', postgresql: 'PostgreSQL',
-    youtube: 'YouTube', bitbucket: 'Bitbucket', gmail: 'Gmail',
-    microsoft_teams: 'Microsoft Teams', dropbox: 'Dropbox',
-  };
-  return brands[lower] || (lower.charAt(0).toUpperCase() + lower.slice(1));
-}
-
-import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 
 // ── Auto-close infrastructure ─────────────────────────────────────
 // Windows auto-opened by agent tool calls close after a grace period
@@ -1954,6 +1528,17 @@ export const useComputerStore = create<ComputerStore>()(
             if (content === '[Screenshot of the current browser page]') continue;
             // Skip system-injected messages (nudges, auto-continue prompts, error recovery)
             if (content.startsWith('[System]') || content.startsWith('[System:') || content.startsWith('[System —')) continue;
+            // Legacy rows: research checkpoints were stored as role=user before internal role existed
+            if (
+              content.startsWith('[Research checkpoint —')
+              || content.startsWith('[Research budget exhausted')
+              || content.startsWith('[Research time budget exhausted')
+            ) continue;
+            if (content === 'Continue from where you left off.') continue;
+            if (
+              content.startsWith('Respond directly to the user.')
+              && content.includes('internal reasoning')
+            ) continue;
             // Skip tool result messages injected as user role (text-based tool calling)
             if (content.startsWith('[Tool result for ')) continue;
             // Skip injected multimodal messages (screenshot + text pairs)
@@ -4758,9 +4343,21 @@ export const useComputerStore = create<ComputerStore>()(
               ...(tfWorkspaceId && { workspaceId: tfWorkspaceId }),
               metadata: {
                 browserSubagentId: tfSubagentId,
+                browserRunPhase: 'live',
                 ...(isSubagentBrowser && { subagentId: tfSubagentId }),
               },
             });
+          } else {
+            const win = useWindowStore.getState().getWindow(existingTfWindow);
+            if (win) {
+              useWindowStore.getState().updateWindow(existingTfWindow, {
+                metadata: {
+                  ...win.metadata,
+                  browserRunPhase: 'live',
+                  browserRunErrorDetail: '',
+                },
+              });
+            }
           }
 
           set(state => ({
@@ -4823,6 +4420,7 @@ export const useComputerStore = create<ComputerStore>()(
                 metadata: {
                   browserSubagentId: tfSubagentId,
                   browserStreamUrl: streamingUrl,
+                  browserRunPhase: 'live',
                   ...(isSubagent && { subagentId: tfSubagentId }),
                 },
               });
@@ -4832,7 +4430,12 @@ export const useComputerStore = create<ComputerStore>()(
               const win = useWindowStore.getState().getWindow(tfWindowId);
               if (win) {
                 useWindowStore.getState().updateWindow(tfWindowId, {
-                  metadata: { ...win.metadata, browserStreamUrl: streamingUrl },
+                  metadata: {
+                    ...win.metadata,
+                    browserStreamUrl: streamingUrl,
+                    browserRunPhase: 'live',
+                    browserRunErrorDetail: '',
+                  },
                 });
               }
             }
@@ -4874,15 +4477,25 @@ export const useComputerStore = create<ComputerStore>()(
         case 'browser:complete': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const { browserState: bs } = get();
-          // Remove this subagent's stream URL
+          const lastStreamUrl = bs.browserStreams[tfSubagentId];
+          // Remove global stream handle so new runs can replace; keep window open
+          // with last URL on window metadata so the user can see the final iframe state.
           const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.browserStreams;
 
-          // Close the Web Agent browser window
           const tfWindowId = findWindowForBrowser(tfSubagentId);
           if (tfWindowId) {
-            _frameRenderers.delete(tfWindowId);
-            _canvasClearFns.delete(tfWindowId);
-            useWindowStore.getState().closeWindow(tfWindowId);
+            const win = useWindowStore.getState().getWindow(tfWindowId);
+            if (win) {
+              const preservedUrl = lastStreamUrl || (win.metadata?.browserStreamUrl as string | undefined);
+              useWindowStore.getState().updateWindow(tfWindowId, {
+                metadata: {
+                  ...win.metadata,
+                  ...(preservedUrl ? { browserStreamUrl: preservedUrl } : {}),
+                  browserRunPhase: 'complete',
+                  browserRunErrorDetail: '',
+                },
+              });
+            }
           }
 
           set({
@@ -4902,15 +4515,25 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'browser:error': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
+          const errText = (event.data?.error as string) || 'Browser session error';
           const { browserState: bs } = get();
+          const lastStreamUrl = bs.browserStreams[tfSubagentId];
           const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.browserStreams;
 
-          // Close the Web Agent browser window
           const tfWindowId = findWindowForBrowser(tfSubagentId);
           if (tfWindowId) {
-            _frameRenderers.delete(tfWindowId);
-            _canvasClearFns.delete(tfWindowId);
-            useWindowStore.getState().closeWindow(tfWindowId);
+            const win = useWindowStore.getState().getWindow(tfWindowId);
+            if (win) {
+              const preservedUrl = lastStreamUrl || (win.metadata?.browserStreamUrl as string | undefined);
+              useWindowStore.getState().updateWindow(tfWindowId, {
+                metadata: {
+                  ...win.metadata,
+                  ...(preservedUrl ? { browserStreamUrl: preservedUrl } : {}),
+                  browserRunPhase: 'error',
+                  browserRunErrorDetail: errText.slice(0, 500),
+                },
+              });
+            }
           }
 
           set({

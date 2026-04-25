@@ -134,6 +134,80 @@ export function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMe
 
 // ── Tool description mapping ───────────────────────────────────────────────
 
+function truncateActivityText(s: string, max = 58): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+function formatActivityUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname === '/' ? '' : u.pathname;
+    return truncateActivityText(`${u.hostname}${path}`, 72);
+  } catch {
+    return truncateActivityText(url, 72);
+  }
+}
+
+/** Pull a human-readable snippet from typical tool args (used for generic tools). */
+function summarizeCommonToolParams(p: Record<string, unknown>): string | null {
+  const keys = ['query', 'goal', 'prompt', 'title', 'subject', 'text', 'task', 'question', 'url', 'path', 'workspace_path', 'channel', 'session_key', 'tool_name', 'id', 'name', 'description'];
+  for (const key of keys) {
+    const v = p[key];
+    if (typeof v === 'string' && v.trim()) {
+      if (key === 'url') return formatActivityUrl(v);
+      return truncateActivityText(v, 56);
+    }
+  }
+  if (typeof p.action === 'string' && p.action.trim()) {
+    const { action: _a, ...rest } = p;
+    const sub = summarizeCommonToolParams(rest);
+    return sub ? `${p.action}: ${sub}` : String(p.action);
+  }
+  return null;
+}
+
+function humanizeToolIdForActivity(tool: string): string {
+  return tool.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Short verb for tools without a dedicated branch — better than "Using tool_name". */
+const TOOL_ACTIVITY_VERB: Record<string, string> = {
+  web_fetch: 'Fetching',
+  tool_search: 'Finding tools',
+  read_agent_output: 'Reading stored output',
+  schedule_task: 'Scheduling',
+  task_create: 'Creating task',
+  task_update: 'Updating task',
+  task_list: 'Listing tasks',
+  task_get: 'Reading task',
+  slack: 'Slack',
+  github: 'GitHub',
+  youtube: 'Transcript',
+  arxiv: 'arXiv search',
+  domain_intel: 'Domain intel',
+  app: 'Apps',
+  remote_browser_session: 'Browser session',
+  cancel_agents: 'Cancelling agents',
+  coding_guide: 'Loading guide',
+  local_app_guide: 'Loading guide',
+  web_design_guide: 'Loading guide',
+  list_active_sessions: 'Listing active sessions',
+  get_session_progress: 'Session progress',
+  send_to_session: 'Messaging session',
+  stop_session: 'Stopping session',
+  interrupt_session: 'Interrupting session',
+  notify_user: 'Notifying user',
+};
+
+function defaultToolActivity(tool: string, p: Record<string, unknown>): { text: string; activityType: ChatMessage['activityType'] } {
+  const verb = TOOL_ACTIVITY_VERB[tool] || humanizeToolIdForActivity(tool);
+  const detail = summarizeCommonToolParams(p);
+  if (detail) return { text: `${verb}: ${detail}`, activityType: 'tool' };
+  return { text: verb, activityType: 'tool' };
+}
+
 /** Build a human-readable activity description from a tool_call event */
 export function describeToolCall(tool: string, params?: Record<string, unknown>): { text: string; activityType: ChatMessage['activityType'] } {
   const p = params || {};
@@ -185,10 +259,63 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     }
   }
 
-  if (tool === 'exec') {
+  if (tool === 'exec' || tool === 'terminal') {
     const cmd = (p.command as string) || '';
     const display = cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd;
     return { text: `Running \`${display}\``, activityType: 'terminal' };
+  }
+  if (tool === 'sandbox_write_file') {
+    return { text: `Writing ${p.path || 'file'} to sandbox`, activityType: 'terminal' };
+  }
+  if (tool === 'sandbox_read_file') {
+    return { text: `Reading ${p.path || 'file'} from sandbox`, activityType: 'terminal' };
+  }
+  if (tool === 'save_to_workspace') {
+    return { text: `Saving ${p.workspace_path || 'file'} to workspace`, activityType: 'file' };
+  }
+  if (tool === 'load_from_workspace') {
+    return { text: `Loading ${p.workspace_path || 'file'} into sandbox`, activityType: 'file' };
+  }
+  if (tool === 'view_image') {
+    return { text: `Viewing image ${p.path || ''}`, activityType: 'tool' };
+  }
+  if (tool === 'document_guide') {
+    return { text: `Loading ${p.format || 'document'} guide`, activityType: 'tool' };
+  }
+  if (tool === 'coding_guide') {
+    return { text: 'Loading coding guide', activityType: 'tool' };
+  }
+  if (tool === 'local_app_guide') {
+    return { text: 'Loading local app guide', activityType: 'tool' };
+  }
+  if (tool === 'web_design_guide') {
+    return { text: 'Loading web design guide', activityType: 'tool' };
+  }
+
+  if (tool === 'read_file') {
+    return { text: `Reading ${p.path || 'file'}`, activityType: 'file' };
+  }
+  if (tool === 'write_file') {
+    return { text: `Writing ${p.path || 'file'}`, activityType: 'file' };
+  }
+  if (tool === 'list_directory') {
+    return { text: `Listing ${p.path || '/'}`, activityType: 'file' };
+  }
+  if (tool === 'search_files') {
+    return { text: `Searching for ${p.query || 'files'}`, activityType: 'file' };
+  }
+  if (tool === 'delete_file') {
+    return { text: `Deleting ${p.path || 'file'}`, activityType: 'file' };
+  }
+
+  if (tool === 'memory') {
+    const action = p.action as string | undefined;
+    switch (action) {
+      case 'recall': return { text: 'Recalling memories', activityType: 'tool' };
+      case 'list': return { text: 'Listing memories', activityType: 'tool' };
+      case 'forget': return { text: 'Forgetting memory', activityType: 'tool' };
+      default: return { text: `Memory: ${action || 'operation'}`, activityType: 'tool' };
+    }
   }
 
   if (tool === 'read' || tool === 'file_read') return { text: `Reading ${p.path || p.file || 'file'}`, activityType: 'file' };
@@ -210,14 +337,27 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'tool' };
   }
 
+  if (tool === 'web_fetch') {
+    const url = p.url as string | undefined;
+    const selector = typeof p.selector === 'string' ? p.selector.trim() : '';
+    const loc = url ? formatActivityUrl(url) : 'page';
+    return { text: selector ? `Fetching: ${loc} (${selector})` : `Fetching: ${loc}`, activityType: 'tool' };
+  }
+
   if (tool === 'remote_browser' || tool === 'web_scrape') {
     const url = p.url as string | undefined;
     const goal = p.goal as string | undefined;
-    if (url && goal) {
-      const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `Scraping: ${shortGoal}`, activityType: 'web' };
+    if (goal) {
+      const shortGoal = goal.length > 55 ? `${goal.slice(0, 54)}…` : goal;
+      return { text: `Browsing: ${shortGoal}`, activityType: 'web' };
     }
-    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'web' };
+    if (url) return { text: `Browsing: ${formatActivityUrl(url)}`, activityType: 'web' };
+    return { text: 'Browsing the web', activityType: 'web' };
+  }
+
+  if (tool === 'remote_browser_session') {
+    const country = typeof p.proxy_country === 'string' && p.proxy_country ? p.proxy_country : '';
+    return { text: country ? `Browser session (${country})` : 'Opening browser session', activityType: 'web' };
   }
 
   if (tool === 'notify') return { text: `Notification: ${p.title || 'alert'}`, activityType: 'desktop' };
@@ -252,7 +392,106 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     }
   }
 
-  if (tool === 'calendar') {
+  if (tool === 'slack') {
+    const action = p.action as string | undefined;
+    const channel = p.channel as string | undefined;
+    const text = p.text as string | undefined;
+    const query = p.query as string | undefined;
+    switch (action) {
+      case 'status':
+        return { text: 'Checking Slack connection', activityType: 'tool' };
+      case 'send_message': {
+        const preview = text ? truncateActivityText(text, 52) : '';
+        return { text: `Slack: sending${channel ? ` to ${channel}` : ''}${preview ? ` — ${preview}` : ''}`, activityType: 'tool' };
+      }
+      case 'list_channels':
+        return { text: 'Listing Slack channels', activityType: 'tool' };
+      case 'read_history':
+        return { text: `Reading Slack${channel ? `: ${channel}` : ''}`, activityType: 'tool' };
+      case 'search_messages':
+        return { text: `Searching Slack: ${truncateActivityText(query || '…', 50)}`, activityType: 'tool' };
+      case 'add_reaction':
+        return { text: 'Adding Slack reaction', activityType: 'tool' };
+      default:
+        return { text: `Slack: ${action || 'action'}`, activityType: 'tool' };
+    }
+  }
+
+  if (tool === 'task_create') {
+    const title = p.title as string | undefined;
+    return { text: `Creating task: ${truncateActivityText(title || 'untitled', 56)}`, activityType: 'tool' };
+  }
+  if (tool === 'task_update') {
+    const id = p.task_id;
+    const status = p.status as string | undefined;
+    return { text: `Updating task #${id}${status ? ` → ${status}` : ''}`, activityType: 'tool' };
+  }
+  if (tool === 'task_list') {
+    return { text: p.show_all ? 'Listing all tasks' : 'Listing active tasks', activityType: 'tool' };
+  }
+  if (tool === 'task_get') {
+    return { text: `Reading task #${p.task_id ?? '?'}`, activityType: 'tool' };
+  }
+
+  if (tool === 'schedule_task') {
+    const title = p.title as string | undefined;
+    const prompt = p.prompt as string | undefined;
+    const head = title?.trim() || (prompt ? truncateActivityText(prompt, 48) : 'scheduled run');
+    const repeat = p.repeat as string | undefined;
+    return { text: repeat ? `Scheduling (repeat): ${truncateActivityText(head, 50)}` : `Scheduling: ${truncateActivityText(head, 50)}`, activityType: 'calendar' };
+  }
+
+  if (tool === 'tool_search') {
+    const q = p.query as string | undefined;
+    return { text: `Finding tools: ${truncateActivityText(q || '…', 56)}`, activityType: 'tool' };
+  }
+
+  if (tool === 'read_agent_output') {
+    const id = p.id as string | undefined;
+    return { text: `Reading stored output${id ? `: ${truncateActivityText(id, 40)}` : ''}`, activityType: 'tool' };
+  }
+
+  if (tool === 'app') {
+    const action = p.action as string | undefined;
+    const appId = p.app_id as string | undefined;
+    const toolName = p.tool_name as string | undefined;
+    switch (action) {
+      case 'list': return { text: 'Listing apps', activityType: 'tool' };
+      case 'call': return { text: `App call${appId ? ` (${appId})` : ''}${toolName ? `: ${toolName}` : ''}`, activityType: 'tool' };
+      case 'search': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
+      case 'create_local': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
+      case 'update_local': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
+      case 'delete_local': return { text: `Deleting app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
+      case 'get_app_state': return { text: `Reading app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
+      case 'set_app_state': return { text: `Updating app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
+      default: return { text: `Apps: ${action || 'action'}`, activityType: 'tool' };
+    }
+  }
+
+  if (tool === 'github') {
+    const action = p.action as string | undefined;
+    const repo = p.repo as string | undefined;
+    const base = repo ? `${action || 'github'} (${repo})` : (action || 'GitHub');
+    return { text: `GitHub: ${base}`, activityType: 'tool' };
+  }
+
+  if (tool === 'youtube') {
+    const url = p.url as string | undefined;
+    return { text: url ? `Transcript: ${formatActivityUrl(url)}` : 'Fetching YouTube transcript', activityType: 'tool' };
+  }
+
+  if (tool === 'arxiv') {
+    const query = p.query as string | undefined;
+    return { text: `arXiv: ${truncateActivityText(query || 'search', 56)}`, activityType: 'tool' };
+  }
+
+  if (tool === 'domain_intel') {
+    const domain = p.domain as string | undefined;
+    const action = p.action as string | undefined;
+    return { text: `Domain ${action || 'lookup'}: ${truncateActivityText(domain || '…', 48)}`, activityType: 'tool' };
+  }
+
+  if (tool === 'calendar' || tool === 'agent_calendar') {
     const action = p.action as string | undefined;
     const summary = p.summary as string | undefined;
     const shortSummary = summary ? (summary.length > 40 ? summary.slice(0, 40) + '...' : summary) : '';
@@ -329,12 +568,31 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   }
 
   if (tool === 'spawn_agent') {
-    const goal = p.goal as string | undefined;
-    return { text: `Spawning agent: ${(goal || 'task').slice(0, 60)}`, activityType: 'delegation' };
+    const taskText = (p.task as string | undefined) || (p.goal as string | undefined);
+    const agentType = p.agent_type as string | undefined;
+    const body = (taskText || 'task').slice(0, 58) + ((taskText && taskText.length > 58) ? '…' : '');
+    const label = agentType ? `${agentType}: ${body}` : body;
+    return { text: `Spawning agent: ${label}`, activityType: 'delegation' };
+  }
+  if (tool === 'spawn_agents') {
+    const tasks = p.tasks as Array<{ agent_type?: string; task?: string }> | undefined;
+    if (Array.isArray(tasks) && tasks.length > 0) {
+      const first = tasks[0].task || tasks[0].agent_type || 'task';
+      const preview = first.slice(0, 44) + (first.length > 44 ? '…' : '');
+      const extra = tasks.length > 1 ? ` (+${tasks.length - 1} more)` : '';
+      return { text: `Spawning ${tasks.length} agents: ${preview}${extra}`, activityType: 'delegation' };
+    }
+    return { text: 'Spawning agents', activityType: 'delegation' };
   }
   if (tool === 'wait_for_agents') {
-    const ids = p.agent_ids as string[] | undefined;
-    return { text: `Waiting for ${ids?.length || ''} agent${ids?.length === 1 ? '' : 's'} to complete`, activityType: 'delegation' };
+    const ids = (p.child_ids as string[] | undefined) || (p.agent_ids as string[] | undefined);
+    const n = ids?.length ?? 0;
+    return { text: `Waiting for ${n} agent${n === 1 ? '' : 's'}`, activityType: 'delegation' };
+  }
+  if (tool === 'cancel_agents') {
+    const ids = (p.child_ids as string[] | undefined) || (p.agent_ids as string[] | undefined);
+    const n = ids?.length ?? 0;
+    return { text: `Cancelling ${n} agent${n === 1 ? '' : 's'}`, activityType: 'delegation' };
   }
   if (tool === 'check_agent_status') return { text: 'Checking agent status', activityType: 'delegation' };
   if (tool === 'cancel_agent') return { text: 'Cancelling agent', activityType: 'delegation' };
@@ -360,7 +618,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     }
   }
 
-  return { text: `Using ${tool}`, activityType: 'tool' };
+  return defaultToolActivity(tool, p);
 }
 
 /** Convert a Composio slug like NOTION_CREATE_A_NEW_PAGE → "Notion: create a new page" */

@@ -359,6 +359,9 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
   const isRunning     = computer?.status === 'running';
 
+  const browserRunPhase = (config.metadata?.browserRunPhase as 'live' | 'complete' | 'error' | undefined) ?? 'live';
+  const browserRunErrorDetail = (config.metadata?.browserRunErrorDetail as string) || '';
+
   // Get URL/title from daemon tabs for this window's tab.
   const url = useComputerStore((s) => {
     if (!daemonTabId) return '';
@@ -855,6 +858,8 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
         {showingBrowser && (
           <BrowserOverlay
             streamUrl={activeBrowserUrl!}
+            runPhase={browserRunPhase}
+            runErrorDetail={browserRunErrorDetail}
             isDead={iframeDead}
             reloadKey={reloadKey}
             onLoad={onIframeLoad}
@@ -902,11 +907,21 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             )}
           </div>
         ) : !showingBrowser && !pageError ? (
-          <div className="flex flex-col items-center gap-3 text-[var(--color-text-subtle)]">
+          <div className="flex flex-col items-center gap-2 text-[var(--color-text-subtle)] max-w-sm text-center px-4">
             <Globe className="w-10 h-10 opacity-20" />
             <p className="text-xs">
-              {isLoading ? loadingPhase : 'Your agent will browse here when needed'}
+              {isLoading
+                ? loadingPhase
+                : isAgentBrowserWindow
+                  ? 'Waiting for live preview from Browser Use…'
+                  : 'Your agent will browse here when needed'}
             </p>
+            {isAgentBrowserWindow && !isLoading && (
+              <p className="text-[10px] text-[var(--color-text-muted)] opacity-80 leading-relaxed">
+                If this stays blank, the session URL was missing or blocked. Check that Browser Use is configured and
+                watch the activity log for errors.
+              </p>
+            )}
           </div>
         ) : null}
       </div>
@@ -949,28 +964,47 @@ function ChromeBar() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const BrowserOverlay = memo(function BrowserOverlay({
-  streamUrl, isDead, reloadKey, onLoad, onError, onManualReconnect,
+  streamUrl, runPhase, runErrorDetail, isDead, reloadKey, onLoad, onError, onManualReconnect,
 }: {
   streamUrl: string;
+  runPhase: 'live' | 'complete' | 'error';
+  runErrorDetail: string;
   isDead: boolean;
   reloadKey: number;
   onLoad: () => void;
   onError: () => void;
   onManualReconnect: () => void;
 }) {
-  const headerLabel = reloadKey > 0 && !isDead
-    ? `Agent browser working... (reconnecting, attempt ${reloadKey})`
-    : 'Agent browser working...';
+  const isLive = runPhase === 'live';
+  const isComplete = runPhase === 'complete';
+  const isErr = runPhase === 'error';
+
+  const headerLabel = isErr
+    ? `Run failed${runErrorDetail ? `: ${runErrorDetail.slice(0, 140)}${runErrorDetail.length > 140 ? '…' : ''}` : ''}`
+    : isComplete
+      ? 'Run finished — preview may freeze when the host ends the session. Close this window when you are done.'
+      : reloadKey > 0 && !isDead
+        ? `Live preview (reconnecting, attempt ${reloadKey})`
+        : 'Live preview — agent is controlling the browser';
+
+  const barClass = isErr
+    ? 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/25'
+    : isComplete
+      ? 'bg-[var(--color-success-muted)] text-[var(--color-success)] border-[var(--color-success)]/20'
+      : 'bg-[var(--color-warning-muted)] text-[var(--color-warning)] border-[var(--color-border)]';
+
   return (
     <div className="absolute inset-0 z-10 flex flex-col">
-      <div className="shrink-0 flex items-center gap-2 px-3 py-1.5
-                      bg-[var(--color-warning-muted)] text-[var(--color-warning)] text-xs
-                      border-b border-[var(--color-border)]">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)]" />
-        </span>
-        {headerLabel}
+      <div className={`shrink-0 flex items-center gap-2 px-3 py-1.5 text-xs border-b ${barClass}`}>
+        {isLive && !isDead ? (
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)]" />
+          </span>
+        ) : (
+          <span className="relative flex h-2 w-2 shrink-0 rounded-full bg-current opacity-60" />
+        )}
+        <span className="min-w-0 leading-snug">{headerLabel}</span>
       </div>
       {isDead ? (
         <div className="flex-1 flex items-center justify-center bg-[var(--color-surface)]">

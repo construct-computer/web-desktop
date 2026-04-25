@@ -7,14 +7,23 @@
  *
  * All tracking is fire-and-forget. If PostHog is not configured
  * (missing env vars), all calls are silent no-ops.
+ *
+ * The SDK is loaded via the official HTML snippet stub in index.html, which
+ * pulls `array.js` from PostHog's CDN on each visit so the client stays
+ * current without npm lockfile drift. See:
+ * https://posthog.com/docs/sdk-doctor/keeping-sdks-current
  */
 
-import posthog from 'posthog-js';
+import type { PostHog } from '@posthog/types';
 
 const POSTHOG_KEY = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string | undefined;
 const POSTHOG_HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST as string | undefined;
 
 let initialized = false;
+
+function client(): PostHog | undefined {
+  return typeof window !== 'undefined' ? window.posthog : undefined;
+}
 
 // ── Initialization ───────────────────────────────────────────────────────────
 
@@ -29,6 +38,14 @@ export function initAnalytics(): void {
       '[analytics] PostHog not initialized: missing ' +
       [!POSTHOG_KEY && 'VITE_PUBLIC_POSTHOG_KEY', !POSTHOG_HOST && 'VITE_PUBLIC_POSTHOG_HOST'].filter(Boolean).join(', ') +
       '. Tracking is disabled.'
+    );
+    return;
+  }
+
+  const posthog = client();
+  if (!posthog) {
+    console.warn(
+      '[analytics] PostHog loader missing: ensure index.html includes the official snippet stub (see PostHog keeping-sdks-current docs). Tracking is disabled.'
     );
     return;
   }
@@ -99,6 +116,9 @@ export function identifyUser(user: {
 }): void {
   if (!initialized) return;
 
+  const posthog = client();
+  if (!posthog) return;
+
   posthog.identify(user.id, {
     email: user.email,
     name: user.displayName,
@@ -113,7 +133,7 @@ export function identifyUser(user: {
  */
 export function resetUser(): void {
   if (!initialized) return;
-  posthog.reset();
+  client()?.reset();
 }
 
 // ── Event Tracking ───────────────────────────────────────────────────────────
@@ -123,7 +143,7 @@ export function resetUser(): void {
  */
 export function track(event: string, properties?: Record<string, unknown>): void {
   if (!initialized) return;
-  posthog.capture(event, properties);
+  client()?.capture(event, properties);
 }
 
 // ── Super Properties ─────────────────────────────────────────────────────────
@@ -134,7 +154,7 @@ export function track(event: string, properties?: Record<string, unknown>): void
  */
 export function registerSuperProperties(properties: Record<string, unknown>): void {
   if (!initialized) return;
-  posthog.register(properties);
+  client()?.register(properties);
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────────────
@@ -144,7 +164,7 @@ export function registerSuperProperties(properties: Record<string, unknown>): vo
  */
 export function isFeatureEnabled(flag: string): boolean {
   if (!initialized) return false;
-  return posthog.isFeatureEnabled(flag) ?? false;
+  return client()?.isFeatureEnabled(flag) ?? false;
 }
 
 /**
@@ -152,7 +172,7 @@ export function isFeatureEnabled(flag: string): boolean {
  */
 export function getFeatureFlag(flag: string): string | boolean | undefined {
   if (!initialized) return undefined;
-  return posthog.getFeatureFlag(flag);
+  return client()?.getFeatureFlag(flag);
 }
 
 // ── Groups ───────────────────────────────────────────────────────────────────
@@ -162,7 +182,7 @@ export function getFeatureFlag(flag: string): string | boolean | undefined {
  */
 export function setGroup(groupType: string, groupKey: string, properties?: Record<string, unknown>): void {
   if (!initialized) return;
-  posthog.group(groupType, groupKey, properties);
+  client()?.group(groupType, groupKey, properties);
 }
 
 // ── Convenience: Pre-defined Events ──────────────────────────────────────────
