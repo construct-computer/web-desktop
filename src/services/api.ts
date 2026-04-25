@@ -309,7 +309,7 @@ export interface Instance {
 export interface AgentConfigResponse {
   openrouter_api_key: string;
   telegram_bot_token: string;
-  tinyfish_api_key: string;
+  browser_use_api_key: string;
   agentmail_api_key: string;
   agentmail_inbox_username: string;
   model: string;
@@ -318,7 +318,7 @@ export interface AgentConfigResponse {
   timezone: string;
   has_api_key: boolean;
   has_telegram_token: boolean;
-  has_tinyfish_key: boolean;
+  has_browser_use_key: boolean;
   has_agentmail_key: boolean;
 }
 
@@ -355,7 +355,7 @@ export async function getAgentConfig(_instanceId: string): Promise<ApiResult<Age
 export async function updateAgentConfig(_instanceId: string, config: {
   openrouter_api_key?: string;
   telegram_bot_token?: string;
-  tinyfish_api_key?: string;
+  browser_use_api_key?: string;
   agentmail_api_key?: string;
   agentmail_inbox_username?: string;
   model?: string;
@@ -383,12 +383,12 @@ export interface AgentConfigStatus {
   configured: boolean;
   hasApiKey: boolean;
   hasTelegramToken: boolean;
-  hasTinyfishKey: boolean;
+  hasBrowserUseKey: boolean;
   hasAgentmailKey: boolean;
   /** Whether the platform provides shared API keys (zero-config fallback). */
   platformKeys?: {
     hasOpenrouter: boolean;
-    hasTinyfish: boolean;
+    hasBrowserUse: boolean;
     hasAgentmail: boolean;
   };
 }

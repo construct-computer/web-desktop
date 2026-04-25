@@ -203,11 +203,27 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   };
 
   const handleOpenInstalled = (app: UnifiedApp) => {
-    if (!app.installedApp) return;
+    // Prefer ids from this panel's install list (`installedIds` from fetchInstalled on mount).
+    // useAppStore.installedApps is often still empty after a hard refresh until fetchApps()
+    // runs elsewhere (e.g. Launchpad), so do not rely on it for registry opens alone.
+    let appId =
+      app.installedApp?.id ??
+      (app.registryApp && installedIds.has(app.registryApp.id) ? app.registryApp.id : undefined);
+    if (!appId && installedIds.has(app.id) && app.id !== 'app-registry') {
+      appId = app.id;
+    }
+    if (!appId) {
+      const row =
+        (app.registryApp &&
+          useAppStore.getState().installedApps.find((a) => a.id === app.registryApp!.id)) ??
+        useAppStore.getState().installedApps.find((a) => a.id === app.id);
+      appId = row?.id;
+    }
+    if (!appId) return;
     openWindow('app', {
       title: app.name,
       icon: app.icon,
-      metadata: { appId: app.installedApp.id },
+      metadata: { appId },
     } as Partial<WindowConfig>);
   };
 

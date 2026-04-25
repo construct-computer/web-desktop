@@ -81,7 +81,7 @@ function ActivityIcon({ type }: { type?: ChatMessage['activityType'] }) {
   const cls = "w-3 h-3";
   switch (type) {
     case 'browser': return <Globe className={cls} />;
-    case 'tinyfish': return <Zap className={cls} />;
+    case 'web': return <Zap className={cls} />;
     case 'terminal': return <Terminal className={cls} />;
     case 'file': return <FileText className={cls} />;
     case 'desktop': return <Monitor className={cls} />;
@@ -663,18 +663,18 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
           }
 
           if (msg.role === 'activity') {
-            const isTinyfish = msg.activityType === 'tinyfish';
+            const isAgentBrowser = msg.activityType === 'web';
             return (
               <div key={index} className="flex items-center gap-2 px-2 py-1">
                 <div className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center ${
-                  isTinyfish
+                  isAgentBrowser
                     ? 'bg-amber-500/20 text-amber-500'
                     : 'bg-[var(--color-border)] text-[var(--color-text-muted)]'
                 }`}>
                   <ActivityIcon type={msg.activityType} />
                 </div>
                 <span className={`text-xs truncate ${
-                  isTinyfish ? 'text-amber-400/80' : 'text-[var(--color-text-muted)]'
+                  isAgentBrowser ? 'text-amber-400/80' : 'text-[var(--color-text-muted)]'
                 }`}>
                   {msg.content}
                 </span>

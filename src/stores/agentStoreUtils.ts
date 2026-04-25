@@ -106,9 +106,9 @@ export function findWindowForDaemonTab(daemonTabId: string): string | undefined 
   return windows.find(w => w.type === 'browser' && w.metadata?.daemonTabId === daemonTabId)?.id;
 }
 
-export function findWindowForTinyfish(subagentId: string): string | undefined {
+export function findWindowForBrowser(subagentId: string): string | undefined {
   const windows = useWindowStore.getState().windows;
-  return windows.find(w => w.type === 'browser' && w.metadata?.tinyfishSubagentId === subagentId)?.id;
+  return windows.find(w => w.type === 'browser' && w.metadata?.browserSubagentId === subagentId)?.id;
 }
 
 export function findWindowForSubagent(subagentId: string): string | undefined {
@@ -204,7 +204,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const goal = p.goal as string | undefined;
     if (url && goal) {
       const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `TinyFish: ${shortGoal}`, activityType: 'tinyfish' };
+      return { text: `Web: ${shortGoal}`, activityType: 'web' };
     }
     const shortQuery = query && query.length > 50 ? query.slice(0, 50) + '...' : query;
     return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'tool' };
@@ -215,9 +215,9 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const goal = p.goal as string | undefined;
     if (url && goal) {
       const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `Scraping: ${shortGoal}`, activityType: 'tinyfish' };
+      return { text: `Scraping: ${shortGoal}`, activityType: 'web' };
     }
-    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'tinyfish' };
+    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'web' };
   }
 
   if (tool === 'notify') return { text: `Notification: ${p.title || 'alert'}`, activityType: 'desktop' };

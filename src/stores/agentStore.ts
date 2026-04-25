@@ -21,7 +21,7 @@ import analytics from '@/lib/analytics';
 // Types remain defined inline here (canonical source) for build compatibility.
 export { authConnectNotifIds, pendingAuthCards, clearAuthCard, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from './agentStoreUtils';
 
-import { authConnectNotifIds, pendingAuthCards, saveAuthCards, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns, findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForTinyfish as _findWindowForTinyfish, findWindowForSubagent as _findWindowForSubagent } from './agentStoreUtils';
+import { authConnectNotifIds, pendingAuthCards, saveAuthCards, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns, findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent } from './agentStoreUtils';
 
 // Auth card persistence moved to agentStoreUtils.ts
 
@@ -49,7 +49,7 @@ export interface ChatMessage {
   /** For activity messages: which tool triggered it */
   tool?: string;
   /** For activity messages: icon hint for rendering */
-  activityType?: 'browser' | 'tinyfish' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
+  activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** True for error/stopped/iteration-limit messages — rendered with error styling */
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
@@ -188,28 +188,28 @@ function describeToolCall(tool: string, params?: Record<string, unknown>): { tex
     return { text: `Desktop: ${action || 'action'}`, activityType: 'desktop' };
   }
 
-  // Web search — fast search or TinyFish scraping (backward compat)
+  // Web search — fast search or Browsing (backward compat)
   if (tool === 'web_search') {
     const query = p.query as string | undefined;
     const url = p.url as string | undefined;
     const goal = p.goal as string | undefined;
-    // If url+goal present, it's a TinyFish scrape (backward compat)
+    // If url+goal present, it's a Web Agent scrape (backward compat)
     if (url && goal) {
       const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `TinyFish: ${shortGoal}`, activityType: 'tinyfish' };
+      return { text: `Web: ${shortGoal}`, activityType: 'web' };
     }
     const shortQuery = query && query.length > 50 ? query.slice(0, 50) + '...' : query;
     return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'tool' };
   }
-  // Remote browser (TinyFish cloud browser automation) (backward compat for web_scrape)
+  // Remote browser (Browser automation) (backward compat for web_scrape)
   if (tool === 'remote_browser' || tool === 'web_scrape') {
     const url = p.url as string | undefined;
     const goal = p.goal as string | undefined;
     if (url && goal) {
       const shortGoal = goal.length > 50 ? goal.slice(0, 50) + '...' : goal;
-      return { text: `Scraping: ${shortGoal}`, activityType: 'tinyfish' };
+      return { text: `Scraping: ${shortGoal}`, activityType: 'web' };
     }
-    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'tinyfish' };
+    return { text: `Web scraping${url ? `: ${url}` : ''}`, activityType: 'web' };
   }
 
   // Notify tool
@@ -558,7 +558,7 @@ function closeAllAutoOpened(delayMs = 2000) {
 function toolToWindowType(tool: string, params?: Record<string, unknown>): WindowType | null {
   // ── Browser ──────────────────────────────────────────────────────
   if (tool === 'browser' || tool.startsWith('browser_')) return 'browser';
-  // web_scrape/web_search open browser via tinyfish:start event, not here
+  // remote_browser opens browser via browser:start event, not here
 
   // ── Terminal / Sandbox ───────────────────────────────────────────
   if (tool === 'exec' || tool === 'terminal') return 'terminal';
@@ -668,11 +668,11 @@ interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   /**
-   * Per-subagent TinyFish live browser stream URLs. Key is subagentId or 'main'.
+   * Per-subagent Web Agent live browser stream URLs. Key is subagentId or 'main'.
    * When a tab's subagentId (or 'main' for the main agent) has an entry here,
-   * the viewport shows the TinyFish iframe instead of a screenshot.
+   * the viewport shows the Live iframe instead of a screenshot.
    */
-  tinyfishStreams: Record<string, string>;
+  browserStreams: Record<string, string>;
   /** Which tab the daemon currently has active (from tabs WS poll). */
   daemonActiveTabId: string | null;
   /** Subagent tab annotations keyed by tab index. Stable across daemon polls. */
@@ -765,11 +765,11 @@ interface ComputerStore {
 
   // API key configuration status
   hasApiKey: boolean;
-  hasTinyfishKey: boolean;
+  hasBrowserUseKey: boolean;
   hasAgentmailKey: boolean;
   configChecked: boolean;
   /** Platform-provided shared keys (users don't need to configure these). */
-  platformKeys: { hasOpenrouter: boolean; hasTinyfish: boolean; hasAgentmail: boolean };
+  platformKeys: { hasOpenrouter: boolean; hasBrowserUse: boolean; hasAgentmail: boolean };
 
   // Real-time state for the computer
   browserState: BrowserState;
@@ -839,7 +839,7 @@ interface ComputerStore {
   // Actions
   fetchComputer: () => Promise<void>;
   checkConfigStatus: () => Promise<void>;
-  updateComputer: (data: { openrouterApiKey?: string; tinyfishApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<boolean>;
+  updateComputer: (data: { openrouterApiKey?: string; browserUseApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<boolean>;
 
   // Subscriptions
   subscribeToComputer: () => void;
@@ -1107,10 +1107,10 @@ function findWindowForDaemonTab(daemonTabId: string): string | undefined {
   return windows.find(w => w.type === 'browser' && w.metadata?.daemonTabId === daemonTabId)?.id;
 }
 
-/** Find the window ID for a TinyFish subagent */
-function findWindowForTinyfish(subagentId: string): string | undefined {
+/** Find the window ID for a Web Agent subagent */
+function findWindowForBrowser(subagentId: string): string | undefined {
   const windows = useWindowStore.getState().windows;
-  return windows.find(w => w.type === 'browser' && w.metadata?.tinyfishSubagentId === subagentId)?.id;
+  return windows.find(w => w.type === 'browser' && w.metadata?.browserSubagentId === subagentId)?.id;
 }
 
 /** Find the window ID for a subagent browser tab */
@@ -1126,10 +1126,10 @@ export const useComputerStore = create<ComputerStore>()(
     isLoading: false,
     error: null,
     hasApiKey: false,
-    hasTinyfishKey: false,
+    hasBrowserUseKey: false,
     hasAgentmailKey: false,
     configChecked: false,
-    platformKeys: { hasOpenrouter: false, hasTinyfish: false, hasAgentmail: false },
+    platformKeys: { hasOpenrouter: false, hasBrowserUse: false, hasAgentmail: false },
     browserState: {
       url: '',
       title: '',
@@ -1138,7 +1138,7 @@ export const useComputerStore = create<ComputerStore>()(
       connected: false,
       tabs: [],
       activeTabId: null,
-      tinyfishStreams: {},
+      browserStreams: {},
       daemonActiveTabId: null,
       subagentTabMap: {},
       subagentAnnotations: {},
@@ -1262,17 +1262,17 @@ export const useComputerStore = create<ComputerStore>()(
 
       const result = await api.getAgentConfigStatus(instanceId);
       if (result.success) {
-        const pk = result.data.platformKeys || { hasOpenrouter: false, hasTinyfish: false, hasAgentmail: false };
+        const pk = result.data.platformKeys || { hasOpenrouter: false, hasBrowserUse: false, hasAgentmail: false };
         set({
           hasApiKey: result.data.hasApiKey,
-          hasTinyfishKey: result.data.hasTinyfishKey,
+          hasBrowserUseKey: result.data.hasBrowserUseKey,
           hasAgentmailKey: result.data.hasAgentmailKey,
           configChecked: true,
           platformKeys: pk,
         });
       } else {
         // If we can't check, assume not configured
-        set({ configChecked: true, hasApiKey: false, hasTinyfishKey: false, hasAgentmailKey: false });
+        set({ configChecked: true, hasApiKey: false, hasBrowserUseKey: false, hasAgentmailKey: false });
       }
     },
 
@@ -1284,7 +1284,7 @@ export const useComputerStore = create<ComputerStore>()(
       // auth-verified DB record to prevent spoofing.
       const result = await api.updateAgentConfig(instanceId, {
         openrouter_api_key: data.openrouterApiKey,
-        tinyfish_api_key: data.tinyfishApiKey,
+        browser_use_api_key: data.browserUseApiKey,
         agentmail_api_key: data.agentmailApiKey,
         agentmail_inbox_username: data.agentmailInboxUsername,
         model: data.model,
@@ -1576,20 +1576,20 @@ export const useComputerStore = create<ComputerStore>()(
                 const pendingWindow =
                   browserWindows.find(w =>
                     !w.metadata?.daemonTabId &&
-                    !w.metadata?.tinyfishSubagentId &&
+                    !w.metadata?.browserSubagentId &&
                     w.metadata?.pendingUrl !== undefined &&
                     w.metadata?.pendingUrl === tab.url &&
                     !adoptedWindowIds.has(w.id)
                   ) ||
                   browserWindows.find(w =>
                     !w.metadata?.daemonTabId &&
-                    !w.metadata?.tinyfishSubagentId &&
+                    !w.metadata?.browserSubagentId &&
                     w.metadata?.pendingUrl !== undefined &&
                     !adoptedWindowIds.has(w.id)
                   ) ||
                   browserWindows.find(w =>
                     !w.metadata?.daemonTabId &&
-                    !w.metadata?.tinyfishSubagentId &&
+                    !w.metadata?.browserSubagentId &&
                     !adoptedWindowIds.has(w.id)
                   );
                 if (pendingWindow) {
@@ -1669,8 +1669,8 @@ export const useComputerStore = create<ComputerStore>()(
 
             // Close windows for REMOVED daemon tabs or handle orphaned windows
             for (const win of browserWindows) {
-              // Skip TinyFish windows (they don't have daemon tabs)
-              if (win.metadata?.tinyfishSubagentId) continue;
+              // Skip Browser windows (they don't have daemon tabs)
+              if (win.metadata?.browserSubagentId) continue;
 
               const winTabId = win.metadata?.daemonTabId as string | null;
               if (winTabId) {
@@ -1798,7 +1798,7 @@ export const useComputerStore = create<ComputerStore>()(
       _tabBlobCache.clear();
 
       set({
-        browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, tinyfishStreams: {}, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
+        browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
         agentConnected: false,
         agentRunning: false,
         agentThinking: null,
@@ -2789,8 +2789,8 @@ export const useComputerStore = create<ComputerStore>()(
       // Find the window that should receive this frame
       let targetWindowId: string | undefined;
       if (subagentId) {
-        // Try subagent window first, then TinyFish window
-        targetWindowId = findWindowForSubagent(subagentId) || findWindowForTinyfish(subagentId);
+        // Try subagent window first, then Browser window
+        targetWindowId = findWindowForSubagent(subagentId) || findWindowForBrowser(subagentId);
       } else if (effectiveTabId) {
         // Frame from a specific daemon tab — route to its window
         targetWindowId = findWindowForDaemonTab(effectiveTabId);
@@ -2853,7 +2853,7 @@ export const useComputerStore = create<ComputerStore>()(
       if (!win || win.type !== 'browser') return;
 
       const daemonTabId = win.metadata?.daemonTabId as string | null;
-      const tinyfishSubagentId = win.metadata?.tinyfishSubagentId as string | null;
+      const browserSubagentId = win.metadata?.browserSubagentId as string | null;
 
       // Tell daemon to close the tab
       if (daemonTabId) {
@@ -2867,19 +2867,19 @@ export const useComputerStore = create<ComputerStore>()(
         }
       }
 
-      // Clean up TinyFish state
-      if (tinyfishSubagentId) {
+      // Clean up Browser state
+      if (browserSubagentId) {
         const { browserState } = get();
-        const { [tinyfishSubagentId]: _removed, ...remainingStreams } = browserState.tinyfishStreams;
-        const { [tinyfishSubagentId]: _removedFrame, ...remainingFrames } = browserState.tabsWithFrames;
+        const { [browserSubagentId]: _removed, ...remainingStreams } = browserState.browserStreams;
+        const { [browserSubagentId]: _removedFrame, ...remainingFrames } = browserState.tabsWithFrames;
         set({
           browserState: {
             ...browserState,
-            tinyfishStreams: remainingStreams,
+            browserStreams: remainingStreams,
             tabsWithFrames: remainingFrames,
           },
         });
-        _tabBlobCache.delete(tinyfishSubagentId);
+        _tabBlobCache.delete(browserSubagentId);
       }
 
       // Clean up per-window renderer
@@ -3381,7 +3381,7 @@ export const useComputerStore = create<ComputerStore>()(
               || tool === 'respond_directly' || tool === 'respond_to_user'
               || tool === 'spawn_agent' || tool === 'wait_for_agents' || tool === 'check_agent_status'
               || tool === 'cancel_agent' || tool === 'list_active_agents'
-              || tool === 'web_scrape') { // tinyfish:start event handles the activity + window
+              || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start event handles the activity + window
             break;
           }
           // Skip tools with empty descriptions (e.g. respond_directly fallback)
@@ -3498,14 +3498,14 @@ export const useComputerStore = create<ComputerStore>()(
             }
           }
 
-          // Clear TinyFish overlay when web_scrape tool completes (safety net).
+          // Clear Browser overlay when web_scrape tool completes (safety net).
           if (tool === 'web_scrape' || tool === 'web_search') {
             const tfSubagentId = (event.data?.subagentId as string) || 'main';
             const { browserState: bs } = get();
-            const { [tfSubagentId]: _removed, ...remainingStreams } = bs.tinyfishStreams;
+            const { [tfSubagentId]: _removed, ...remainingStreams } = bs.browserStreams;
 
-            // Close the TinyFish browser window
-            const tfWindowId = findWindowForTinyfish(tfSubagentId);
+            // Close the Web Agent browser window
+            const tfWindowId = findWindowForBrowser(tfSubagentId);
             if (tfWindowId) {
               _frameRenderers.delete(tfWindowId);
               _canvasClearFns.delete(tfWindowId);
@@ -3515,7 +3515,7 @@ export const useComputerStore = create<ComputerStore>()(
             set({
               browserState: {
                 ...bs,
-                tinyfishStreams: remainingStreams,
+                browserStreams: remainingStreams,
               },
             });
           }
@@ -3630,7 +3630,7 @@ export const useComputerStore = create<ComputerStore>()(
           if (status === 'idle' && idleAffectsViewedChat) {
             // This chat session’s loop just ended. If other sessions are still
             // running, only reset local “this chat is thinking” state — do not
-            // clear tracker / TinyFish / windows that belong to other lanes.
+            // clear tracker / Web Agent / windows that belong to other lanes.
             clearAgentRunningTimer();
             const anyOtherSessionRunning = nextRunning.size > 0;
             if (!anyOtherSessionRunning) {
@@ -3649,7 +3649,7 @@ export const useComputerStore = create<ComputerStore>()(
             if (!anyOtherSessionRunning) {
               const wStore = useWindowStore.getState();
               const tfWindows = wStore.windows.filter(w =>
-                w.type === 'browser' && w.metadata?.tinyfishSubagentId
+                w.type === 'browser' && w.metadata?.browserSubagentId
               );
               for (const tfWin of tfWindows) {
                 _frameRenderers.delete(tfWin.id);
@@ -3676,7 +3676,7 @@ export const useComputerStore = create<ComputerStore>()(
               ...(!anyOtherSessionRunning
                 ? {
                     platformAgents: updatedPlatformAgents,
-                    browserState: { ...bs, tinyfishStreams: {} },
+                    browserState: { ...bs, browserStreams: {} },
                   }
                 : {}),
             });
@@ -4730,49 +4730,49 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        // TinyFish web agent events — show progress in activity log + browser view
-        case 'tinyfish:start': {
+        // Web agent events — show progress in activity log + browser view
+        case 'browser:start': {
           const url = event.data?.url as string || '';
           const goal = event.data?.goal as string || '';
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const tfWorkspaceId = event.data?.workspace_id as string | undefined;
           const shortGoal = goal.length > 60 ? goal.slice(0, 60) + '...' : goal;
-          const isSubagentTinyfish = tfSubagentId !== 'main';
+          const isSubagentBrowser = tfSubagentId !== 'main';
 
-          // Route to tracker if this TinyFish call belongs to a subagent
-          if (isSubagentTinyfish) {
+          // Route to tracker if this Browser call belongs to a subagent
+          if (isSubagentBrowser) {
             useAgentTrackerStore.getState().addSubAgentActivity(tfSubagentId, {
-              text: `TinyFish: ${shortGoal} (${url})`,
-              activityType: 'tinyfish',
+              text: `Web: ${shortGoal} (${url})`,
+              activityType: 'web',
               timestamp: Date.now(),
             });
           }
 
-          // Create a browser window for this TinyFish session (if not already open).
+          // Create a browser window for this Browser session (if not already open).
           // Route to the subagent's workspace if provided.
-          const existingTfWindow = findWindowForTinyfish(tfSubagentId);
+          const existingTfWindow = findWindowForBrowser(tfSubagentId);
           if (!existingTfWindow) {
-            const title = tfSubagentId === 'main' ? `TinyFish: ${shortGoal}` : shortGoal;
+            const title = tfSubagentId === 'main' ? `Web: ${shortGoal}` : shortGoal;
             useWindowStore.getState().openWindow('browser', {
               title,
               ...(tfWorkspaceId && { workspaceId: tfWorkspaceId }),
               metadata: {
-                tinyfishSubagentId: tfSubagentId,
-                ...(isSubagentTinyfish && { subagentId: tfSubagentId }),
+                browserSubagentId: tfSubagentId,
+                ...(isSubagentBrowser && { subagentId: tfSubagentId }),
               },
             });
           }
 
           set(state => ({
-            agentThinking: `TinyFish: ${shortGoal}...`,
-            // Only add to main chat for the main agent's TinyFish calls in the active session
-            ...(!isSubagentTinyfish && isActiveSession ? {
+            agentThinking: `Web: ${shortGoal}...`,
+            // Only add to main chat for the main agent's Browser calls in the active session
+            ...(!isSubagentBrowser && isActiveSession ? {
               chatMessages: appendMessage(state.chatMessages, {
                 role: 'activity' as const,
-                content: `TinyFish scraping ${url}`,
+                content: `Browsing ${url}`,
                 timestamp: new Date(),
                 tool: 'web_search',
-                activityType: 'tinyfish',
+                activityType: 'web',
               }),
             } : {}),
             agentActivity: { ...state.agentActivity, browser: true },
@@ -4780,23 +4780,23 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'tinyfish:waiting': {
-          // Subagent is queued waiting for a TinyFish slot to open.
+        case 'browser:waiting': {
+          // Subagent is queued waiting for a Browser slot to open.
           // Show this in the tracker so the user knows it's not stuck.
           const waitSubagentId = event.data?.subagentId as string || 'main';
           const queuePos = event.data?.queuePosition as number || 0;
           const maxConc = event.data?.maxConcurrent as number || 2;
           if (waitSubagentId !== 'main') {
             useAgentTrackerStore.getState().addSubAgentActivity(waitSubagentId, {
-              text: `Waiting for TinyFish slot (${queuePos} in queue, max ${maxConc} concurrent)`,
-              activityType: 'tinyfish',
+              text: `Waiting for browser slot (${queuePos} in queue, max ${maxConc} concurrent)`,
+              activityType: 'web',
               timestamp: Date.now(),
             });
           }
           break;
         }
 
-        case 'tinyfish:streaming_url': {
+        case 'browser:streaming_url': {
           const streamingUrl = event.data?.streamingUrl as string;
           const tfSubagentId = event.data?.subagentId as string || 'main';
           if (streamingUrl) {
@@ -4804,35 +4804,35 @@ export const useComputerStore = create<ComputerStore>()(
             set({
               browserState: {
                 ...bs,
-                tinyfishStreams: {
-                  ...bs.tinyfishStreams,
+                browserStreams: {
+                  ...bs.browserStreams,
                   [tfSubagentId]: streamingUrl,
                 },
               },
             });
-            // Route the streaming URL into the TinyFish window for this subagent.
+            // Route the streaming URL into the Browser window for this subagent.
             // If no window exists (either the start event was missed, the window
             // was previously closed by a completed sibling, or this is a
             // streaming_url arriving before start), auto-open one now so the
             // iframe becomes visible instead of silently populating state.
-            let tfWindowId = findWindowForTinyfish(tfSubagentId);
+            let tfWindowId = findWindowForBrowser(tfSubagentId);
             if (!tfWindowId) {
               const isSubagent = tfSubagentId !== 'main';
               const newWinId = useWindowStore.getState().openWindow('browser', {
-                title: isSubagent ? `TinyFish (sub-agent)` : 'TinyFish',
+                title: isSubagent ? `Web Agent (sub-agent)` : 'Web Agent',
                 metadata: {
-                  tinyfishSubagentId: tfSubagentId,
-                  tinyfishStreamUrl: streamingUrl,
+                  browserSubagentId: tfSubagentId,
+                  browserStreamUrl: streamingUrl,
                   ...(isSubagent && { subagentId: tfSubagentId }),
                 },
               });
-              tfWindowId = typeof newWinId === 'string' ? newWinId : findWindowForTinyfish(tfSubagentId);
+              tfWindowId = typeof newWinId === 'string' ? newWinId : findWindowForBrowser(tfSubagentId);
             }
             if (tfWindowId) {
               const win = useWindowStore.getState().getWindow(tfWindowId);
               if (win) {
                 useWindowStore.getState().updateWindow(tfWindowId, {
-                  metadata: { ...win.metadata, tinyfishStreamUrl: streamingUrl },
+                  metadata: { ...win.metadata, browserStreamUrl: streamingUrl },
                 });
               }
             }
@@ -4840,7 +4840,7 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'tinyfish:progress': {
+        case 'browser:progress': {
           const purpose = event.data?.purpose as string || 'Working...';
           const progressSubagentId = event.data?.subagentId as string || 'main';
           const isSubagentProgress = progressSubagentId !== 'main';
@@ -4848,8 +4848,8 @@ export const useComputerStore = create<ComputerStore>()(
           // Route to tracker if this belongs to a subagent
           if (isSubagentProgress) {
             useAgentTrackerStore.getState().addSubAgentActivity(progressSubagentId, {
-              text: `TinyFish: ${purpose}`,
-              activityType: 'tinyfish',
+              text: `Web: ${purpose}`,
+              activityType: 'web',
               timestamp: Date.now(),
             });
             break;
@@ -4857,28 +4857,28 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Batch into single set() (M16)
           set(state => ({
-            agentThinking: `TinyFish: ${purpose}`,
+            agentThinking: `Web: ${purpose}`,
             ...(isActiveSession ? {
               chatMessages: appendMessage(state.chatMessages, {
                 role: 'activity' as const,
-                content: `TinyFish: ${purpose}`,
+                content: `Web: ${purpose}`,
                 timestamp: new Date(),
                 tool: 'web_search',
-                activityType: 'tinyfish',
+                activityType: 'web',
               }),
             } : {}),
           }));
           break;
         }
 
-        case 'tinyfish:complete': {
+        case 'browser:complete': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const { browserState: bs } = get();
           // Remove this subagent's stream URL
-          const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.tinyfishStreams;
+          const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.browserStreams;
 
-          // Close the TinyFish browser window
-          const tfWindowId = findWindowForTinyfish(tfSubagentId);
+          // Close the Web Agent browser window
+          const tfWindowId = findWindowForBrowser(tfSubagentId);
           if (tfWindowId) {
             _frameRenderers.delete(tfWindowId);
             _canvasClearFns.delete(tfWindowId);
@@ -4889,24 +4889,24 @@ export const useComputerStore = create<ComputerStore>()(
             agentThinking: null,
             browserState: {
               ...bs,
-              tinyfishStreams: remainingStreams,
+              browserStreams: remainingStreams,
             },
           });
           const { browser: _, ...restActivity } = get().agentActivity;
-          // Only clear browser activity if no more TinyFish streams active
+          // Only clear browser activity if no more Web Agent streams active
           if (Object.keys(remainingStreams).length === 0) {
             set({ agentActivity: restActivity });
           }
           break;
         }
 
-        case 'tinyfish:error': {
+        case 'browser:error': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const { browserState: bs } = get();
-          const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.tinyfishStreams;
+          const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.browserStreams;
 
-          // Close the TinyFish browser window
-          const tfWindowId = findWindowForTinyfish(tfSubagentId);
+          // Close the Web Agent browser window
+          const tfWindowId = findWindowForBrowser(tfSubagentId);
           if (tfWindowId) {
             _frameRenderers.delete(tfWindowId);
             _canvasClearFns.delete(tfWindowId);
@@ -4917,7 +4917,7 @@ export const useComputerStore = create<ComputerStore>()(
             agentThinking: null,
             browserState: {
               ...bs,
-              tinyfishStreams: remainingStreams,
+              browserStreams: remainingStreams,
             },
           });
           break;

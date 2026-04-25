@@ -6,7 +6,7 @@ export function ActivityIcon({ type, className }: { type?: ChatMessage['activity
   const cls = className || 'w-3 h-3';
   switch (type) {
     case 'browser': return <Globe className={cls} />;
-    case 'tinyfish': return <Zap className={cls} />;
+    case 'web': return <Zap className={cls} />;
     case 'terminal': return <Terminal className={cls} />;
     case 'file': return <FileText className={cls} />;
     case 'desktop': return <Monitor className={cls} />;
@@ -19,7 +19,7 @@ export function ActivityIcon({ type, className }: { type?: ChatMessage['activity
 
 const ACTIVITY_COLORS: Record<string, string> = {
   browser: 'text-blue-400 bg-blue-400/10',
-  tinyfish: 'text-amber-400 bg-amber-400/10',
+  web: 'text-amber-400 bg-amber-400/10',
   terminal: 'text-green-400 bg-green-400/10',
   file: 'text-purple-400 bg-purple-400/10',
   desktop: 'text-cyan-400 bg-cyan-400/10',

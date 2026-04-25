@@ -15,7 +15,7 @@ import { useLatency, pickDisplayLatency, type LatencyData } from '@/hooks/useLat
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { useAuthStore } from '@/stores/authStore';
-import { Download, ExternalLink, Plus } from 'lucide-react';
+import { Download, ExternalLink, Crown } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -336,11 +336,17 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {!isMobile && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
-            className="flex items-center justify-center gap-1 h-6 pl-1.5 pr-2.5 mr-1 rounded-md transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400"
+            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
             title="Upgrade Plan"
           >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-            <span className="text-xs font-medium">Upgrade</span>
+            <span
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
+              aria-hidden
+            />
+            <span className="relative flex items-center gap-1">
+              <Crown className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span className="text-xs font-medium">Upgrade</span>
+            </span>
           </button>
         )}
 

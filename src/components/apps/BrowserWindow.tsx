@@ -322,8 +322,8 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   /* ── Window metadata ────────────────────────────────────────────────────── */
   const daemonTabId = config.metadata?.daemonTabId as string | null;
   const subagentId = config.metadata?.subagentId as string | null;
-  const tinyfishSubagentId = config.metadata?.tinyfishSubagentId as string | null;
-  const isTinyfishWindow = !!tinyfishSubagentId;
+  const browserSubagentId = config.metadata?.browserSubagentId as string | null;
+  const isAgentBrowserWindow = !!browserSubagentId;
 
   /** Send a browser action targeted at THIS window's daemon tab. */
   const sendTabAction = useCallback((action: Record<string, unknown>) => {
@@ -350,12 +350,12 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     // Subagent frames may be cached under subagentId (agent screenshots arrive
     // before daemon tab broadcast, so tabsWithFrames uses subagentId as key).
     if (subagentId && s.browserState.tabsWithFrames[subagentId]) return true;
-    // TinyFish subagent windows
-    if (tinyfishSubagentId && s.browserState.tabsWithFrames[tinyfishSubagentId]) return true;
+    // Web Agent subagent windows
+    if (browserSubagentId && s.browserState.tabsWithFrames[browserSubagentId]) return true;
     // Fallback to global flag for unassigned windows
     return !!s.browserState.screenshot;
   });
-  const tinyfishStreams = useComputerStore((s) => s.browserState.tinyfishStreams);
+  const browserStreams = useComputerStore((s) => s.browserState.browserStreams);
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
   const isRunning     = computer?.status === 'running';
 
@@ -369,12 +369,12 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     return s.browserState.tabs.find(t => t.id === daemonTabId)?.title || '';
   });
 
-  /* ── TinyFish detection ─────────────────────────────────────────────────── */
-  const activeTinyfishUrl: string | null = isTinyfishWindow
-    ? (tinyfishStreams[tinyfishSubagentId!] || (config.metadata?.tinyfishStreamUrl as string) || null)
+  /* ── Stream detection ─────────────────────────────────────────────────── */
+  const activeBrowserUrl: string | null = isAgentBrowserWindow
+    ? (browserStreams[browserSubagentId!] || (config.metadata?.browserStreamUrl as string) || null)
     : null;
-  const showingTinyfish = !!activeTinyfishUrl;
-  const anyTinyfishActive = isTinyfishWindow;
+  const showingBrowser = !!activeBrowserUrl;
+  const anyAgentBrowserActive = isAgentBrowserWindow;
 
 
   /* ── FindBar state ──────────────────────────────────────────────────────── */
@@ -403,12 +403,12 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     return 'Loading...';
   }, [isLoading]);
 
-  /* ── TinyFish iframe health & auto-reconnect ────────────────────────────── */
+  /* ── Live iframe health & auto-reconnect ────────────────────────────── */
   // Reconnect strategy: on iframe error, wait with exponential backoff and
   // force-remount the iframe by bumping `reloadKey`. After MAX_ATTEMPTS failed
   // retries, surface the dead state so the user sees the "results will appear
   // in chat" fallback AND a manual "Reconnect" button. Resets whenever a new
-  // streaming URL arrives (agent moved to a new TinyFish run).
+  // streaming URL arrives (agent moved to a new Browser run).
   const MAX_RECONNECT_ATTEMPTS = 6;
   const RECONNECT_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000, 30000];
   const [iframeDead, setIframeDead] = useState(false);
@@ -417,7 +417,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // New streaming URL (new TinyFish run) — reset everything.
+    // New streaming URL (new Browser run) — reset everything.
     reloadAttempts.current = 0;
     setIframeDead(false);
     setReloadKey(0);
@@ -425,7 +425,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
       clearTimeout(reloadTimerRef.current);
       reloadTimerRef.current = null;
     }
-  }, [activeTinyfishUrl]);
+  }, [activeBrowserUrl]);
 
   useEffect(() => () => {
     // Unmount: clear any pending reconnect timer.
@@ -662,7 +662,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   }, [mapCoords, sendTabAction]);
 
   // Scroll: accumulate wheel deltas, flush every 100ms to avoid flooding
-  const viewportVisible = !showingTinyfish && hasScreenshot;
+  const viewportVisible = !showingBrowser && hasScreenshot;
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -767,19 +767,19 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const security = useMemo(() => getSecurityInfo(url), [url]);
   const unfocusedDisplay = useMemo(() => displayDomain(url), [url]);
 
-  // This window is "active" if it has a daemon tab, is a TinyFish window,
+  // This window is "active" if it has a daemon tab, is a Browser window,
   // or is a shell browser window (user-opened, daemon tab pending assignment).
   // Shell windows should still allow URL bar editing so the user isn't stuck
   // staring at a disabled input while waiting for the daemon to connect.
-  const isShellWindow = !daemonTabId && !isTinyfishWindow && config.type === 'browser';
-  const hasContent = !!daemonTabId || isTinyfishWindow || isShellWindow;
+  const isShellWindow = !daemonTabId && !isAgentBrowserWindow && config.type === 'browser';
+  const hasContent = !!daemonTabId || isAgentBrowserWindow || isShellWindow;
 
   /* ═══════════════════════════════════════════════════════════════════════════
      Render
      ═══════════════════════════════════════════════════════════════════════════ */
 
-  // Default state — no local browser; the agent uses a remote browser (TinyFish)
-  if ((!isRunning || !connected) && !isTinyfishWindow) {
+  // Default state — no local browser; the agent uses a remote browser (Web Agent)
+  if ((!isRunning || !connected) && !isAgentBrowserWindow) {
     return (
       <div className="flex flex-col h-full bg-[var(--color-surface)] overflow-hidden">
         <ChromeBar />
@@ -807,8 +807,8 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
       onKeyDown={onBrowserKeyDown}
       onFocus={onWindowFocus}
     >
-      {/* ── Address bar (read-only, agent-controlled) — hidden for TinyFish windows ── */}
-      {!isTinyfishWindow && (
+      {/* ── Address bar (read-only, agent-controlled) — hidden for Browser windows ── */}
+      {!isAgentBrowserWindow && (
       <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-[var(--color-toolbar)] backdrop-blur-md border-b border-[var(--color-border)]">
         <div
           className="flex-1 min-w-0 flex items-center gap-1.5 h-[28px] px-2 text-[12px] font-mono
@@ -852,9 +852,9 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
           <FindBar onClose={() => setFindBarOpen(false)} sendAction={sendTabAction} />
         )}
 
-        {showingTinyfish && (
-          <TinyfishOverlay
-            streamUrl={activeTinyfishUrl!}
+        {showingBrowser && (
+          <BrowserOverlay
+            streamUrl={activeBrowserUrl!}
             isDead={iframeDead}
             reloadKey={reloadKey}
             onLoad={onIframeLoad}
@@ -864,11 +864,11 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
         )}
 
         {/* Error page */}
-        {pageError && !hasScreenshot && !showingTinyfish ? (
+        {pageError && !hasScreenshot && !showingBrowser ? (
           <ErrorPage error={pageError} url={url} onReload={refresh} />
         ) : null}
 
-        {!showingTinyfish && hasScreenshot && !pageError && hasContent ? (
+        {!showingBrowser && hasScreenshot && !pageError && hasContent ? (
           <div
             ref={viewportRef}
             className="w-full h-full relative outline-none"
@@ -901,7 +901,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
               />
             )}
           </div>
-        ) : !showingTinyfish && !pageError ? (
+        ) : !showingBrowser && !pageError ? (
           <div className="flex flex-col items-center gap-3 text-[var(--color-text-subtle)]">
             <Globe className="w-10 h-10 opacity-20" />
             <p className="text-xs">
@@ -911,14 +911,14 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
         ) : null}
       </div>
 
-      {/* ── Status bar (hidden for TinyFish windows) ──── */}
-      {!isTinyfishWindow && (
+      {/* ── Status bar (hidden for Browser windows) ──── */}
+      {!isAgentBrowserWindow && (
       <StatusBar
         connected={connected}
         fps={fps}
         pageTitle={pageTitle}
         isLoading={isLoading}
-        tinyfishActive={anyTinyfishActive}
+        agentBrowserActive={anyAgentBrowserActive}
         loadingPhase={loadingPhase}
       />
       )}
@@ -945,10 +945,10 @@ function ChromeBar() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   TinyFish overlay
+   Browser overlay
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const TinyfishOverlay = memo(function TinyfishOverlay({
+const BrowserOverlay = memo(function BrowserOverlay({
   streamUrl, isDead, reloadKey, onLoad, onError, onManualReconnect,
 }: {
   streamUrl: string;
@@ -959,8 +959,8 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
   onManualReconnect: () => void;
 }) {
   const headerLabel = reloadKey > 0 && !isDead
-    ? `TinyFish Web Agent working... (reconnecting, attempt ${reloadKey})`
-    : 'TinyFish Web Agent working...';
+    ? `Agent browser working... (reconnecting, attempt ${reloadKey})`
+    : 'Agent browser working...';
   return (
     <div className="absolute inset-0 z-10 flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-3 py-1.5
@@ -976,7 +976,7 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
         <div className="flex-1 flex items-center justify-center bg-[var(--color-surface)]">
           <div className="text-center text-[var(--color-text-muted)]">
             <Monitor className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">TinyFish is working in the background</p>
+            <p className="text-sm font-medium">Agent browser is working in the background</p>
             <p className="text-xs mt-1 text-[var(--color-text-subtle)]">
               Live preview disconnected — results will appear in chat
             </p>
@@ -1000,7 +1000,7 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
             className="absolute inset-0 w-full h-full border-none bg-white"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             allow="clipboard-read; clipboard-write"
-            title="TinyFish Live Browser Stream"
+            title="Agent Live Browser Stream"
             onLoad={onLoad}
             onError={onError}
           />
@@ -1015,10 +1015,10 @@ const TinyfishOverlay = memo(function TinyfishOverlay({
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const StatusBar = memo(function StatusBar({
-  connected, fps, pageTitle, isLoading, tinyfishActive, loadingPhase,
+  connected, fps, pageTitle, isLoading, agentBrowserActive, loadingPhase,
 }: {
   connected: boolean; fps: number;
-  pageTitle?: string; isLoading?: boolean; tinyfishActive?: boolean;
+  pageTitle?: string; isLoading?: boolean; agentBrowserActive?: boolean;
   loadingPhase?: string;
 }) {
   return (
@@ -1029,7 +1029,7 @@ const StatusBar = memo(function StatusBar({
         {isLoading ? (loadingPhase || 'Loading...') : pageTitle || ''}
       </span>
       <div className="flex items-center gap-2 shrink-0">
-        {tinyfishActive && (
+        {agentBrowserActive && (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium
                            bg-[var(--color-warning-muted)] text-[var(--color-warning)]
                            border border-[var(--color-warning)]/25">
@@ -1037,7 +1037,7 @@ const StatusBar = memo(function StatusBar({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-warning)]" />
             </span>
-            TinyFish
+            Web Agent
           </span>
         )}
         <span

@@ -27,7 +27,7 @@ export interface ChatMessage {
   /** For activity messages: which tool triggered it */
   tool?: string;
   /** For activity messages: icon hint for rendering */
-  activityType?: 'browser' | 'tinyfish' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
+  activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** True for error/stopped/iteration-limit messages — rendered with error styling */
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
@@ -103,8 +103,8 @@ export interface BrowserState {
   connected: boolean;
   tabs: BrowserTab[];
   activeTabId: string | null;
-  /** TinyFish live-stream URLs per subagentId */
-  tinyfishStreams: Record<string, string>;
+  /** Web Agent live-stream URLs per subagentId */
+  browserStreams: Record<string, string>;
   /** The daemon's own view of which tab is "active" (may differ from frontend focus). */
   daemonActiveTabId: string | null;
   /** Subagent tab mapping: daemon index → { subagentId, workspace } */

@@ -25,7 +25,10 @@ export default defineConfig({
         enabled: true
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 5000000
+        maximumFileSizeToCacheInBytes: 5000000,
+        // Do not let the SPA "offline shell" hijack top-level navigations to the API
+        // (e.g. Google OAuth start URL /api/auth/google -> must hit the network / worker).
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/v1\//, /^\/health$/],
       },
       manifest: {
         name: 'construct.computer',

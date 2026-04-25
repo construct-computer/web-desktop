@@ -10,13 +10,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelLeftOpen, Sparkles } from 'lucide-react';
+import { PanelLeftOpen, Sparkles, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
+import { openSettingsToSection } from '@/lib/settingsNav';
 import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
 import { SpotlightInput } from './spotlight/SpotlightInput';
 import { MessageList } from './spotlight/MessageList';
@@ -168,14 +169,38 @@ export function Spotlight() {
                 {/* Floating sidebar toggle — aligned 1:1 with the sidebar's collapse button so
                     nothing visually shifts when toggling open/closed. */}
                 {!sidebarOpen && (
-                  <Tooltip content="Show sidebar" side="bottom">
-                    <button
-                      onClick={() => setSidebarOpen(true)}
-                      className="absolute top-4 left-3 z-20 p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] bg-white/[0.03] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-95"
-                    >
-                      <PanelLeftOpen className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
+                  <div className="absolute top-4 left-3 z-20 flex items-center gap-2">
+                    <Tooltip content="Show sidebar" side="bottom">
+                      <button
+                        type="button"
+                        onClick={() => setSidebarOpen(true)}
+                        className="p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] bg-white/[0.03] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-95"
+                      >
+                        <PanelLeftOpen className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    {(!userPlan || userPlan === 'free') && (
+                      <Tooltip content="Upgrade Plan" side="bottom">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            closeSpotlight();
+                            openSettingsToSection('subscription');
+                          }}
+                          className="relative flex h-6 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+                        >
+                          <span
+                            className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
+                            aria-hidden
+                          />
+                          <span className="relative flex items-center gap-1">
+                            <Crown className="w-3.5 h-3.5" strokeWidth={2.5} />
+                            <span className="text-xs font-medium">Upgrade</span>
+                          </span>
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
                 )}
                 <MessageList />
                 <SpotlightInput />

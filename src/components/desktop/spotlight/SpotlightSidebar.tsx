@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, PanelLeftClose } from 'lucide-react';
+import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, PanelLeftClose, Crown } from 'lucide-react';
 import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useWindowStore } from '@/stores/windowStore';
+import { openSettingsToSection } from '@/lib/settingsNav';
 import { formatRelativeTime } from './utils';
 
 function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
@@ -192,6 +195,14 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
   const [initialized, setInitialized] = useState(false);
+  const userPlan = useAuthStore(s => s.user?.plan);
+  const closeSpotlight = useWindowStore(s => s.closeSpotlight);
+  const showUpgradeCta = !userPlan || userPlan === 'free';
+
+  const handleUpgradeClick = useCallback(() => {
+    closeSpotlight();
+    openSettingsToSection('subscription');
+  }, [closeSpotlight]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -224,7 +235,7 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
     : sorted;
 
   return (
-    <div className="w-[240px] min-w-[240px] shrink-0 flex flex-col h-full border-r border-white/[0.08]">
+    <div className="w-[240px] min-w-[240px] shrink-0 flex flex-col h-full min-h-0 border-r border-white/[0.08]">
       {/* Collapse + New Chat */}
       <div className="flex items-center gap-1.5 px-3 pt-4 pb-2">
         {onCollapse && (
@@ -261,38 +272,67 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
         </div>
       )}
 
-      {/* Session list */}
-      <div className="flex-1 overflow-y-auto scrollbar-none px-2 pb-3">
-        {filtered.length > 0 && (
-          <div className="px-1 pt-2 pb-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/30">
-              Recents
-            </span>
+      {/* Session list + bottom upgrade (list scrolls; upgrade stays pinned) */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none px-2 pb-2">
+          {filtered.length > 0 && (
+            <div className="px-1 pt-2 pb-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/30">
+                Recents
+              </span>
+            </div>
+          )}
+          <div className="flex flex-col gap-0.5">
+            {filtered.map(session => (
+              <SessionItem
+                key={session.key}
+                session={session}
+                isActive={session.key === activeKey}
+                hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
+                sessionStatus={activeSessions[session.key]}
+                onSwitch={() => switchSession(session.key)}
+                onRename={(title) => renameSession(session.key, title)}
+                onDelete={() => deleteSession(session.key)}
+              />
+            ))}
+          </div>
+          {filtered.length === 0 && searchQuery ? (
+            <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
+              No matches for "{searchQuery}"
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
+              No conversations yet
+            </div>
+          ) : null}
+        </div>
+        {showUpgradeCta && (
+          <div className="shrink-0 px-3 pt-3 pb-4 flex flex-col items-center gap-2 border-t border-white/[0.06]">
+            <p className="text-[10px] leading-snug text-center text-[var(--color-text-muted)]/75 px-0.5">
+              Starter and Pro add higher limits, more apps, and full email — open Settings to compare plans.
+            </p>
+            <button
+              type="button"
+              onClick={handleUpgradeClick}
+              title="Upgrade plan — opens Subscription in Settings"
+              className="relative w-full max-w-[216px] cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 bg-white/[0.06] py-2 px-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+            >
+              <span
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
+                aria-hidden
+              />
+              <span className="relative flex flex-col items-center gap-0.5">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+                  <Crown className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
+                  Upgrade your plan
+                </span>
+                <span className="text-[10px] font-medium leading-tight text-amber-700/85 dark:text-amber-300/90">
+                  View pricing and checkout in Settings
+                </span>
+              </span>
+            </button>
           </div>
         )}
-        <div className="flex flex-col gap-0.5">
-          {filtered.map(session => (
-            <SessionItem
-              key={session.key}
-              session={session}
-              isActive={session.key === activeKey}
-              hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
-              sessionStatus={activeSessions[session.key]}
-              onSwitch={() => switchSession(session.key)}
-              onRename={(title) => renameSession(session.key, title)}
-              onDelete={() => deleteSession(session.key)}
-            />
-          ))}
-        </div>
-        {filtered.length === 0 && searchQuery ? (
-          <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
-            No matches for "{searchQuery}"
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">
-            No conversations yet
-          </div>
-        ) : null}
       </div>
     </div>
   );
