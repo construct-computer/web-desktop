@@ -11,7 +11,7 @@ import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, DOCK_HEIGHT, Z_INDEX } from '@/l
 import { DebugPanelToggle } from './DebugPanel';
 import { formatTime, formatDate } from '@/lib/utils';
 import { getSlackStatus } from '@/services/api';
-import { useLatency } from '@/hooks/useLatency';
+import { useLatency, pickDisplayLatency, type LatencyData } from '@/hooks/useLatency';
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { useAuthStore } from '@/stores/authStore';
@@ -234,7 +234,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {menu.open === 'apple' && (
           <MenuDropdownPortal position={getDropdownPos()} isMobile={isMobile}>
             {/* About */}
-            <MenuItem label="About Construct Computer" isMobile={isMobile} icon={<Info className="w-3.5 h-3.5" />} onClick={() => { openWindow('about'); setMenu({ open: null }); }} />
+            <MenuItem label="About" isMobile={isMobile} icon={<Info className="w-3.5 h-3.5" />} onClick={() => { openWindow('about'); setMenu({ open: null }); }} />
             <MenuDivider />
 
             {/* Apps & configuration */}
@@ -676,11 +676,18 @@ function MenuDivider() {
 
 // --- Latency popover ---
 
-import type { LatencyData } from '@/hooks/useLatency';
-
 function LatencyPopover({ anchorRef, latency }: { anchorRef: React.RefObject<HTMLDivElement | null>; latency: LatencyData }) {
   const rect = anchorRef.current?.getBoundingClientRect();
   if (!rect) return null;
+
+  const ms = pickDisplayLatency(latency);
+  const color = ms === null
+    ? 'text-black/30 dark:text-white/30'
+    : ms < 50
+      ? 'text-green-600 dark:text-green-400'
+      : ms < 150
+        ? 'text-yellow-600 dark:text-yellow-400'
+        : 'text-red-500 dark:text-red-400';
 
   // Position below the icon, right-aligned
   const top = rect.bottom + 6;
@@ -688,7 +695,7 @@ function LatencyPopover({ anchorRef, latency }: { anchorRef: React.RefObject<HTM
 
   return createPortal(
     <div
-      className="fixed py-2 px-3 min-w-[180px]
+      className="fixed py-2 px-3 min-w-[120px]
                  bg-white/70 dark:bg-[#1a1918]/85 backdrop-blur-2xl saturate-150
                  border border-black/10 dark:border-white/15 rounded-xl
                  shadow-2xl shadow-black/20 dark:shadow-black/40
@@ -696,31 +703,13 @@ function LatencyPopover({ anchorRef, latency }: { anchorRef: React.RefObject<HTM
       style={{ zIndex: Z_INDEX.menu, top, right }}
       onMouseEnter={(e) => e.stopPropagation()}
     >
-      <div className="font-semibold text-black/60 dark:text-white/60 mb-1.5 text-[10px] uppercase tracking-wider">
-        Connection
+      <div className="text-[10px] uppercase tracking-wider text-black/50 dark:text-white/50 mb-0.5">
+        Latency
       </div>
-      <LatencyRow label="Worker" value={latency.http} />
-      <LatencyRow label="Agent" value={latency.agentWs} />
+      <div className={`font-mono text-sm font-semibold tabular-nums ${color}`}>
+        {ms === null ? '…' : `${ms} ms`}
+      </div>
     </div>,
     document.body,
-  );
-}
-
-function LatencyRow({ label, value }: { label: string; value: number | null }) {
-  const color = value === null
-    ? 'text-black/30 dark:text-white/30'
-    : value < 50
-      ? 'text-green-600 dark:text-green-400'
-      : value < 150
-        ? 'text-yellow-600 dark:text-yellow-400'
-        : 'text-red-500 dark:text-red-400';
-
-  return (
-    <div className="flex items-center justify-between py-0.5">
-      <span className="text-black/60 dark:text-white/60">{label}</span>
-      <span className={`font-mono font-medium ${color}`}>
-        {value === null ? '...' : `${value}ms`}
-      </span>
-    </div>
   );
 }

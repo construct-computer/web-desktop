@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -143,7 +144,7 @@ export function StatusWidget() {
   const hasWindowUsd = usage?.windowUsedUsd !== undefined && usage?.windowCapUsd !== undefined && usage.windowCapUsd > 0;
 
   // Provider-state drives the label + accent colors + CTA below.
-  const provider = useBillingStore(s => s.getEffectiveProvider());
+  const provider = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
   const byokSettings = useBillingStore(s => s.byok);
   const copy = providerCopy(provider);
   const providerAccent = copy.tone === 'neutral'

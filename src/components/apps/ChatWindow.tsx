@@ -8,6 +8,7 @@ import { AskUserCard } from '@/components/ui/AskUserCard';
 import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { useBillingStore } from '@/stores/billingStore';
+import { useShallow } from 'zustand/react/shallow';
 import { providerCopy, TONE_CLASSES } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { agentWS } from '@/services/websocket';
@@ -458,7 +459,7 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
   const taskProgress = useComputerStore((s) => s.taskProgress);
 
   // Provider state drives the sticky usage banner + per-message notice styling.
-  const providerState = useBillingStore(s => s.getEffectiveProvider());
+  const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
   const providerCopyData = providerCopy(providerState);
   const showBanner =
     providerState.kind === 'byok-fallback' ||

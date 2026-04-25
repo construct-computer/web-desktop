@@ -8,11 +8,21 @@ export interface LatencyData {
   agentWs: number | null;
 }
 
-const POLL_INTERVAL = 3000;
+/** Prefer agent WebSocket RTT; fall back to worker edge HTTP when agent is unavailable. */
+export function pickDisplayLatency(data: LatencyData): number | null {
+  if (data.agentWs !== null) return data.agentWs;
+  if (data.http !== null) return data.http;
+  return null;
+}
+
+const POLL_INTERVAL_MS = 1500;
 
 /**
  * Measures latency between the frontend and backend.
  * Only polls while `active` is true (i.e. when the popover is visible).
+ *
+ * HTTP and agent WS probes update independently so a slow or timing-out agent
+ * ping does not block showing worker (edge) latency first.
  */
 export function useLatency(active: boolean): LatencyData {
   const [data, setData] = useState<LatencyData>({
@@ -21,12 +31,13 @@ export function useLatency(active: boolean): LatencyData {
   });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const measure = useCallback(async () => {
-    const [http, agent] = await Promise.all([
-      measureHttp(),
-      measureWs(() => agentWS.ping(3000)),
-    ]);
-    setData({ http, agentWs: agent });
+  const measure = useCallback(() => {
+    void measureHttp().then((http) => {
+      setData((d) => (d.http === http ? d : { ...d, http }));
+    });
+    void measureWs(() => agentWS.ping(2500)).then((agentWs) => {
+      setData((d) => (d.agentWs === agentWs ? d : { ...d, agentWs }));
+    });
   }, []);
 
   useEffect(() => {
@@ -39,7 +50,7 @@ export function useLatency(active: boolean): LatencyData {
     }
 
     measure();
-    intervalRef.current = setInterval(measure, POLL_INTERVAL);
+    intervalRef.current = setInterval(measure, POLL_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) {

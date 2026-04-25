@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ExternalLink, Loader2, Trash2, AlertCircle, CheckCircle2, Key } from 'lucide-react';
 import { Button, Input, Label, Select, type SelectOption } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
+import { useShallow } from 'zustand/react/shallow';
 import type { ByokMode } from '@/services/api';
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -78,7 +79,7 @@ export function ByokSection() {
   const catalogue = byokModels?.models || [];
   const catalogueIds = useMemo(() => new Set(catalogue.map((m) => m.id)), [catalogue]);
 
-  const providerState = useBillingStore((s) => s.getEffectiveProvider());
+  const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
   const isByokCapBlocked = providerState.kind === 'blocked-byok-cap';
 
   const hasKey = !!byok?.hasKey;

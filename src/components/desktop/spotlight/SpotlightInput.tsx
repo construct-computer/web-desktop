@@ -3,6 +3,7 @@ import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircl
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSound } from '@/hooks/useSound';
@@ -369,7 +370,7 @@ export function SpotlightInput() {
 
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
-  const providerState = useBillingStore(s => s.getEffectiveProvider());
+  const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
   const providerCopyData = providerCopy(providerState);
 
   // Fetch usage + byok on mount so the provider-state strip is accurate
