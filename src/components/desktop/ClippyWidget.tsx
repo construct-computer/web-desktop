@@ -317,6 +317,10 @@ function pickFirstTimeWelcome(): string {
 // ── Main Component ──────────────────────────────────────────────────
 
 export function ClippyWidget() {
+  useEffect(() => {
+    injectStyles();
+  }, []);
+
   const { stateLabel, scrollText, isActive, isIdle } = useAgentStateLabel();
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
