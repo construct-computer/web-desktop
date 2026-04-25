@@ -600,7 +600,10 @@ export function ClippyWidget() {
            variant={visibleBubble.variant}
            avatarSize={avatarSize}
            closing={bubbleClosing}
-           onClickBubble={() => toggleSpotlight()}
+           onClickBubble={() => {
+             // Let any current drag/click settle, then open spotlight
+             setTimeout(toggleSpotlight, 0);
+           }}
          />
       )}
 
@@ -715,12 +718,16 @@ function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubbl
 
       {/* Clickable overlay */}
       <div
-        className="absolute inset-0 cursor-pointer"
-        onClick={onClickBubble}
+        className="absolute inset-0 cursor-pointer pointer-events-auto"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (onClickBubble) onClickBubble();
+        }}
       />
       {/* Content overlay */}
       <div
-        className="relative h-full flex flex-col items-center justify-center text-center"
+        className="relative h-full flex flex-col items-center justify-center text-center pointer-events-none"
         style={{ padding: contentPadding }}
       >
         {/* Title */}
