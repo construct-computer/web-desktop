@@ -399,6 +399,12 @@ html, body {
    Used inside agent chat bubbles.
    ═══════════════════════════════════════════════ */
 
+/* Contain wide tables / code in narrow viewports (agent messages) */
+.md-root {
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* --- Prose spacing --- */
 .md-root p            { margin: 0.35em 0; line-height: 1.55; }
 .md-root p:first-child { margin-top: 0; }
@@ -446,6 +452,7 @@ html.dark .md-inline-code {
   position: relative;
   margin: 0.5em 0;
   border-radius: 6px;
+  max-width: 100%;
   overflow: hidden;
   background: #1e1e2e;
   color: #cdd6f4;
@@ -480,6 +487,10 @@ html.dark .md-inline-code {
   transition: opacity 0.15s ease;
 }
 .md-code-block:hover .md-copy-btn { opacity: 1; }
+/* Touch / no-hover: show copy so it is discoverable without hover */
+@media (hover: none) {
+  .md-code-block .md-copy-btn { opacity: 0.75; }
+}
 .md-copy-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.85);
@@ -782,6 +793,28 @@ html.dark .construct-tour-popover .driver-popover-arrow-side-left {
    so reveal-on-hover patterns become unreachable.
    Force any group-hover-revealed element to be visible.
    ═══════════════════════════════════════════════ */
+/* User message: brief highlight when a queued (soft-inject) message is accepted */
+@keyframes user-msg-injection-landed {
+  0% {
+    filter: brightness(1.08) saturate(1.05);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 50%, transparent);
+  }
+  45% {
+    filter: brightness(1.12) saturate(1.1);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent),
+      0 8px 24px -6px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  100% {
+    filter: brightness(1) saturate(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.user-msg-injection-landed {
+  animation: user-msg-injection-landed 0.85s ease-out;
+}
+
 @media (hover: none) {
   .group-hover\:opacity-100 {
     opacity: 1 !important;

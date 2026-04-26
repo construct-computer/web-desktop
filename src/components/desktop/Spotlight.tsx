@@ -5,12 +5,16 @@
  * - Left sidebar: chat history, new chat button
  * - Right: message list (scrollable) + input at bottom
  *
+ * Desktop: persistent header (session title, sidebar, close), default size
+ * with optional width/height from localStorage, Tab focus loop inside the
+ * panel, Ctrl+Shift+B toggles the session list.
+ *
  * Sub-components live in ./spotlight/ directory.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelLeftOpen, Sparkles, Crown } from 'lucide-react';
+import { PanelLeftOpen, PanelLeftClose, X, Sparkles, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -22,11 +26,54 @@ import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
 import { SpotlightInput } from './spotlight/SpotlightInput';
 import { MessageList } from './spotlight/MessageList';
 
+const SPOTLIGHT_DESKTOP_SIZE_KEY = 'construct:spotlight-desktop-size';
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"]):not([type="hidden"])',
+].join(',');
+
+function readDesktopPanelSize(): { w: number; h: number | null } {
+  if (typeof globalThis.window === 'undefined') return { w: 960, h: null };
+  try {
+    const raw = globalThis.localStorage.getItem(SPOTLIGHT_DESKTOP_SIZE_KEY);
+    if (!raw) return { w: 960, h: null };
+    const p = JSON.parse(raw) as { w?: unknown; h?: unknown };
+    const w = Math.min(1200, Math.max(480, Math.round(Number(p.w)) || 960));
+    if (p.h == null || p.h === 0) return { w, h: null };
+    const h = Math.max(320, Math.min(900, Math.round(Number(p.h)) || 0)) || null;
+    return { w, h: h == null || h < 320 ? null : h };
+  } catch {
+    return { w: 960, h: null };
+  }
+}
+
+function listFocusableInPanel(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => {
+      if (el.closest('[aria-hidden="true"]') || el.closest('[inert]') || el.hasAttribute('data-focus-guard')) return false;
+      const p = getComputedStyle(el).position;
+      if (p !== 'fixed' && el.offsetParent === null) return false;
+      return !el.hasAttribute('disabled') && (el as HTMLInputElement).type !== 'hidden';
+    },
+  );
+}
+
 export function Spotlight() {
   const open = useWindowStore(s => s.spotlightOpen);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
-  const instanceId = useComputerStore(s => s.instanceId);
   const userPlan = useAuthStore(s => s.user?.plan);
+  const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const chatSessions = useComputerStore(s => s.chatSessions);
+  const sessionTitle = useMemo(
+    () => chatSessions.find(s => s.key === activeSessionKey)?.title || 'Chats',
+    [chatSessions, activeSessionKey],
+  );
   const isSubscribed = userPlan === 'pro' || userPlan === 'starter' || userPlan === 'free';
   const isMobile = useIsMobile();
 
@@ -34,12 +81,22 @@ export function Spotlight() {
   const [show, setShow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  /** Sheet vertical pull from handle (px), 0 = resting — mobile + desktop */
+  /** Sheet vertical pull from handle (px), 0 = resting — mobile bottom sheet only */
   const [sheetDragPx, setSheetDragPx] = useState(0);
   /** No CSS transition while pointer is down so the sheet tracks 1:1 */
   const [sheetDragLive, setSheetDragLive] = useState(false);
   const sheetInnerRef = useRef<HTMLDivElement>(null);
   const closeAfterSlideRef = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const [panelW] = useState(() => readDesktopPanelSize().w);
+  const [panelH] = useState<number | null>(() => readDesktopPanelSize().h);
+
+  const wClampedDesktop = useMemo(() => {
+    if (typeof globalThis.window === 'undefined') return Math.max(480, Math.min(1200, panelW));
+    const cap = globalThis.window.innerWidth - 48;
+    return Math.min(1200, Math.max(480, Math.min(panelW, cap)));
+  }, [panelW]);
 
   // ── Drag-and-drop on the panel ────────────────────────────────────────
   const [dragOver, setDragOver] = useState(false);
@@ -67,7 +124,8 @@ export function Spotlight() {
     }
   }, []);
 
-  // ── Open/close animation ──────────────────────────────────────────────
+  // ── Open/close animation (Zustand `open` → local animation state) ─────
+  /* eslint-disable react-hooks/set-state-in-effect -- portal visibility + sheet spring; driven by `open` */
   useEffect(() => {
     if (open) {
       setSidebarOpen(false);
@@ -85,6 +143,7 @@ export function Spotlight() {
       return () => clearTimeout(t);
     }
   }, [open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const onSheetDragY = useCallback((dy: number) => {
     setSheetDragPx(dy);
@@ -109,26 +168,95 @@ export function Spotlight() {
     [],
   );
 
+  const requestClose = useCallback(() => {
+    if (
+      isMobile &&
+      (globalThis.window.history.state as { __constructSpotlight?: number } | null)
+        ?.__constructSpotlight
+    ) {
+      globalThis.window.history.back();
+    } else {
+      closeSpotlight();
+    }
+  }, [isMobile, closeSpotlight]);
+
+  // Mobile: one history entry so the OS / browser "back" closes the sheet like a modal.
+  useEffect(() => {
+    if (!isMobile || !open) return;
+    const state: { __constructSpotlight: number } = { __constructSpotlight: 1 };
+    globalThis.window.history.pushState(
+      state,
+      '',
+      globalThis.window.location.href,
+    );
+    const onPop = () => { closeSpotlight(); };
+    globalThis.window.addEventListener('popstate', onPop);
+    return () => { globalThis.window.removeEventListener('popstate', onPop); };
+  }, [isMobile, open, closeSpotlight]);
+
+  const focusReturnRef = useRef<HTMLElement | null>(null);
+  // Capture the opener *before* children auto-focus the textarea (layout, before useEffect in children).
+  useLayoutEffect(() => {
+    if (!open) {
+      const el = focusReturnRef.current;
+      focusReturnRef.current = null;
+      if (el && document.body.contains(el)) {
+        queueMicrotask(() => { el.focus(); });
+      }
+      return;
+    }
+    focusReturnRef.current = document.activeElement as HTMLElement | null;
+  }, [open]);
+
+  // Close, sidebar toggle, focus trap (desktop)
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        requestClose();
+        return;
+      }
+      if (!isMobile && (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        setSidebarOpen(s => !s);
+        return;
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open, requestClose, isMobile]);
+
+  const onPanelKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (isMobile || e.key !== 'Tab' || !panelRef.current) return;
+      const list = listFocusableInPanel(panelRef.current);
+      if (list.length < 1) return;
+      const first = list[0]!;
+      const last = list[list.length - 1]!;
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    [isMobile],
+  );
+
   const onSheetInnerTransitionEnd = useCallback(
     (e: React.TransitionEvent<HTMLDivElement>) => {
       if (e.propertyName !== 'transform') return;
       if (closeAfterSlideRef.current) {
         closeAfterSlideRef.current = false;
-        closeSpotlight();
+        requestClose();
       }
     },
-    [closeSpotlight],
+    [requestClose],
   );
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); closeSpotlight(); }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [open, closeSpotlight]);
 
   if (!show) return null;
 
@@ -144,7 +272,7 @@ export function Spotlight() {
       {/* Backdrop */}
       <div
         className={`absolute inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
-        onClick={closeSpotlight}
+        onClick={requestClose}
       />
 
       {/* Centering wrapper */}
@@ -156,23 +284,32 @@ export function Spotlight() {
         style={{ zIndex: 1310 }}
       >
       <div
+        ref={panelRef}
+        onKeyDown={onPanelKeyDown}
         className={cn(
           "pointer-events-auto flex flex-col overflow-hidden transition-all duration-300 ease-out",
           isMobile
             ? "w-full rounded-t-[32px]"
-            : "w-[960px] max-w-[calc(100vw-48px)] rounded-2xl",
+            : "rounded-2xl max-w-[min(1200px,calc(100vw-48px))]",
           animating 
             ? (isMobile ? "translate-y-0 opacity-100" : "opacity-100 scale-100")
             : (isMobile ? "translate-y-full opacity-100" : "opacity-0 scale-[0.97]")
         )}
-        style={{ 
-          height: isMobile ? 'calc(100dvh - 10px)' : '70vh', 
-          maxHeight: isMobile ? 'none' : 720 
-        }}
+        style={
+          isMobile
+            ? { height: 'calc(100dvh - 10px)' }
+            : {
+                width: wClampedDesktop,
+                minHeight: 400,
+                ...(panelH == null
+                  ? { height: '70vh', maxHeight: 720 }
+                  : { height: panelH, maxHeight: 'min(92vh, 900px)' }),
+              }
+        }
       >
         <div
           ref={sheetInnerRef}
-          className="h-full min-h-0 flex flex-col overflow-hidden"
+          className="min-h-0 flex flex-1 flex-col overflow-hidden"
           style={{
             transform: `translateY(${sheetDragPx}px)`,
             transition: sheetDragLive
@@ -187,17 +324,19 @@ export function Spotlight() {
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
           className={cn(
-            'relative h-full min-h-0 flex flex-col overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
+            'relative min-h-0 flex flex-1 flex-col overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
             isMobile
               ? 'rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]'
               : 'rounded-2xl border border-white/30 dark:border-white/[0.1]',
           )}
         >
-          <SpotlightDragHandle
-            onDragStart={() => setSheetDragLive(true)}
-            onDragY={onSheetDragY}
-            onDragEnd={onSheetDragEnd}
-          />
+          {isMobile && (
+            <SpotlightDragHandle
+              onDragStart={() => setSheetDragLive(true)}
+              onDragY={onSheetDragY}
+              onDragEnd={onSheetDragEnd}
+            />
+          )}
 
           {/* Drag overlay */}
           {dragOver && (
@@ -219,8 +358,9 @@ export function Spotlight() {
           {/* Sidebar — collapsible.
               Mobile: full-width overlay that slides over the chat (the sidebar
               dwarfs the chat area at 240/~375px otherwise).
-              Desktop: inline column that pushes content. */}
-          {isMobile ? (
+              Desktop: left column beside chat (row), not above it, so the main
+              area fills height and the empty state can center. */}
+          {isMobile && (
             <>
               {sidebarOpen && (
                 <div
@@ -233,60 +373,161 @@ export function Spotlight() {
                   sidebarOpen ? 'translate-x-0' : '-translate-x-full'
                 }`}
               >
-                <SpotlightSidebar onCollapse={() => setSidebarOpen(false)} />
+                <SpotlightSidebar />
               </div>
             </>
-          ) : (
-            <div className={`shrink-0 transition-[width] duration-200 ease-out overflow-hidden ${sidebarOpen ? 'w-[240px]' : 'w-0'}`}>
-              <SpotlightSidebar onCollapse={() => setSidebarOpen(false)} />
-            </div>
           )}
 
-          {/* Chat area */}
-          <div className="flex-1 flex flex-col min-w-0 h-full relative">
+          <div
+            className={cn('flex-1 min-h-0 min-w-0 flex', isMobile ? 'flex-col' : 'flex-row')}
+          >
+            {!isMobile && (
+              <div
+                className={`shrink-0 transition-[width] duration-200 ease-out overflow-hidden ${sidebarOpen ? 'w-[240px]' : 'w-0'}`}
+              >
+                <SpotlightSidebar />
+              </div>
+            )}
+
+            {/* Chat area */}
+            <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
             {isSubscribed ? (
               <>
-                {/* Floating sidebar toggle — aligned 1:1 with the sidebar's collapse button so
-                    nothing visually shifts when toggling open/closed. */}
-                {!sidebarOpen && (
-                  <div className="absolute top-4 left-3 z-20 flex items-center gap-2">
-                    <Tooltip content="Show sidebar" side="bottom">
+                {isMobile && (
+                  <div
+                    className="shrink-0 z-30 flex min-h-0 items-center gap-2 border-b border-white/[0.08] bg-white/[0.02] pl-1 pr-3"
+                    style={{
+                      // Drag handle is absolutely positioned; reserve space for pill + status bar
+                      paddingTop: 'max(0.4rem, calc(2.25rem + env(safe-area-inset-top, 0px)))',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSidebarOpen(true)}
+                      className="touch-manipulation rounded-lg p-2.5 text-[var(--color-text-muted)]/80 active:bg-white/10"
+                      aria-label="Open chat history and sessions"
+                    >
+                      <PanelLeftOpen className="h-5 w-5" />
+                    </button>
+                    <span
+                      className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--color-text)]"
+                      title={sessionTitle}
+                    >
+                      {sessionTitle}
+                    </span>
+                    {(!userPlan || userPlan === 'free') && (
                       <button
                         type="button"
-                        onClick={() => setSidebarOpen(true)}
-                        className="p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] bg-white/[0.03] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-95"
+                        onClick={() => {
+                          closeSpotlight();
+                          if (
+                            (globalThis.window.history.state as { __constructSpotlight?: number } | null)
+                              ?.__constructSpotlight
+                          ) {
+                            globalThis.window.history.back();
+                          }
+                          openSettingsToSection('subscription');
+                        }}
+                        className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2 text-amber-600 backdrop-blur-sm transition-all active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400"
+                        aria-label="Upgrade plan (opens settings)"
                       >
-                        <PanelLeftOpen className="w-4 h-4" />
+                        <span
+                          className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
+                          aria-hidden
+                        />
+                        <span className="relative flex items-center gap-1">
+                          <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
+                          <span className="text-[11px] font-medium">Upgrade</span>
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {!isMobile && (
+                  <div
+                    className="flex h-10 shrink-0 z-30 items-center gap-2 border-b border-white/[0.08] bg-white/[0.02] px-2 pl-1.5"
+                    role="toolbar"
+                    aria-label="Spotlight header"
+                  >
+                    <Tooltip
+                      content={sidebarOpen ? 'Hide session list' : 'Show session list (Ctrl+Shift+B)'}
+                      side="bottom"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => { setSidebarOpen(s => !s); }}
+                        className="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] transition-all duration-150"
+                        aria-expanded={sidebarOpen}
+                        aria-label={sidebarOpen ? 'Hide session list' : 'Show session list'}
+                      >
+                        {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
                       </button>
                     </Tooltip>
+                    <span
+                      className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[var(--color-text)]"
+                      title={sessionTitle}
+                    >
+                      {sessionTitle}
+                    </span>
                     {(!userPlan || userPlan === 'free') && (
-                      <Tooltip content="Upgrade Plan" side="bottom">
+                      <Tooltip content="Upgrade plan" side="bottom">
                         <button
                           type="button"
                           onClick={() => {
                             closeSpotlight();
+                            if (
+                              (globalThis.window.history.state as { __constructSpotlight?: number } | null)
+                                ?.__constructSpotlight
+                            ) {
+                              globalThis.window.history.back();
+                            }
                             openSettingsToSection('subscription');
                           }}
-                          className="relative flex h-6 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+                          className="relative flex h-6 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400"
+                          aria-label="Upgrade plan (opens settings)"
                         >
                           <span
                             className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
                             aria-hidden
                           />
                           <span className="relative flex items-center gap-1">
-                            <Crown className="w-3.5 h-3.5" strokeWidth={2.5} />
+                            <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
                             <span className="text-xs font-medium">Upgrade</span>
                           </span>
                         </button>
                       </Tooltip>
                     )}
+                    <Tooltip content="Close (Esc)" side="bottom">
+                      <button
+                        type="button"
+                        onClick={requestClose}
+                        className="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/10"
+                        aria-label="Close"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
                   </div>
                 )}
-                <MessageList />
+
+                <MessageList
+                  paddingTopClass={isMobile ? 'pt-2' : undefined}
+                />
                 <SpotlightInput />
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center">
+              <div className="relative flex-1 min-h-0 flex items-center justify-center p-4">
+                {!isMobile && (
+                  <button
+                    type="button"
+                    onClick={requestClose}
+                    className="absolute right-2 top-2 z-20 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/10"
+                    aria-label="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
                 <div className="text-center max-w-xs">
                   <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
                     <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
@@ -298,6 +539,7 @@ export function Spotlight() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
         </div>
@@ -309,9 +551,9 @@ export function Spotlight() {
 }
 
 /**
- * Top drag handle — pointer (mouse / touch / pen) drives sheet translateY.
+ * Mobile bottom-sheet grab handle — pointer drives sheet translateY to dismiss.
+ * Not shown on desktop (close via backdrop, Escape, or window chrome).
  * Release past threshold animates off-screen then closes; otherwise springs back.
- * Click alone does not dismiss.
  */
 function SpotlightDragHandle({
   onDragStart,

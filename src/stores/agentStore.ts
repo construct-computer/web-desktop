@@ -28,6 +28,7 @@ import {
   composioDisplayTool,
 } from './agentStoreUtils';
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
+import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 
 // Auth card persistence moved to agentStoreUtils.ts
 
@@ -68,6 +69,17 @@ export interface ChatMessage {
   attachments?: string[];
   /** Source platform for external messages (used to render platform-specific UI). */
   source?: 'telegram' | 'slack' | 'email';
+  /**
+   * User message sent while the agent was still running (soft-inject) — not yet
+   * merged at the next iteration. Cleared when `injection_acknowledged` fires.
+   */
+  pendingInjection?: boolean;
+  /**
+   * Stable client-generated id, set on user messages queued via soft-inject so
+   * a force-inject (interject) can clear the exact bubble even when the user
+   * queued multiple identical messages.
+   */
+  clientId?: string;
 }
 
 
@@ -288,6 +300,31 @@ export interface ActiveSessionStatus {
   pendingInjectionCount?: number;
 }
 
+/**
+ * Session key to use for a targeted desktop Stop. Prefer the active tab, then
+ * a single unambiguous running session, so we never send a bare `abort` that
+ * would stop every session.
+ */
+function resolveDesktopStopSessionKey(
+  s: {
+    activeSessionKey: string;
+    runningSessions: Set<string>;
+    activeSessions: Record<string, ActiveSessionStatus>;
+  },
+): string | null {
+  // Prefer the only in-flight session so Stop targets the work when the
+  // user switched to another tab (activeSessionKey can be a different lane).
+  if (s.runningSessions.size === 1) {
+    return [...s.runningSessions][0] ?? null;
+  }
+  if (s.activeSessionKey) return s.activeSessionKey;
+  const busy = Object.entries(s.activeSessions).filter(
+    ([, v]) => v?.status === 'thinking' || v?.status === 'stuck',
+  );
+  if (busy.length === 1) return busy[0]![0];
+  return null;
+}
+
 /** One overseer alert event — broadcast by the DO when supervising peers. */
 export interface OverseerAlert {
   id: number;
@@ -445,7 +482,7 @@ interface ComputerStore {
    * new instruction that replaces whatever it was doing. Used by the
    * "Send + interrupt" mode of the composer.
    */
-  interruptSession: (sessionKey: string, message?: string) => void;
+  interruptSession: (sessionKey: string, message?: string, clientId?: string) => void;
   /** Clear all chat history and start fresh. */
   clearChatHistory: () => void;
 
@@ -1898,6 +1935,7 @@ export const useComputerStore = create<ComputerStore>()(
     sendChatMessage: async (content, attachments) => {
       let { instanceId, activeSessionKey, chatMessages, chatSessions } = get();
       if (!instanceId) return;
+      const injectWhileAgentRunning = get().agentRunning;
 
       // Auto-create a session if none exist (e.g. user deleted all chats)
       if (chatSessions.length === 0) {
@@ -1922,7 +1960,21 @@ export const useComputerStore = create<ComputerStore>()(
       }
 
       // Add user message to chat immediately (both desktop singleton and per-agent feed)
-      const userMsg: ChatMessage = { role: 'user', content, timestamp: new Date(), attachments };
+      const userMsg: ChatMessage = {
+        role: 'user',
+        content,
+        timestamp: new Date(),
+        attachments,
+        ...(injectWhileAgentRunning
+          ? {
+              pendingInjection: true,
+              clientId:
+                typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                  ? crypto.randomUUID()
+                  : `q-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            }
+          : {}),
+      };
       set(state => {
         const pa = state.platformAgents.desktop;
         const agentChatUpdates: Partial<typeof state> = {};
@@ -2037,7 +2089,7 @@ export const useComputerStore = create<ComputerStore>()(
             role: 'agent',
             content: 'Stopped by user',
             timestamp: new Date(),
-            isError: true,
+            isError: false,
             isStopped: true,
           }) : state.chatMessages,
           agentThinking: null,
@@ -2052,45 +2104,113 @@ export const useComputerStore = create<ComputerStore>()(
 
       useAgentTrackerStore.getState().failAllRunningOperations();
 
-      // Send the abort command — aborts ALL running lanes
-      agentWS.sendAbort();
+      // Send the abort command — aborts ALL running lanes (intentional; no sessionKey in payload)
+      const sent = agentWS.sendAbort();
+      if (!sent) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Stop may not have reached the agent',
+            body: 'Reconnecting. If work keeps running, try Stop again.',
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
     },
 
     stopPlatformAgent: (platform: string) => {
       // Targeted abort: stop all lanes for a specific platform.
       // Used by the Agent Tracker to stop Slack/Telegram/Email tasks.
-      agentWS.sendAbort({ platform });
+      const sent = agentWS.sendAbort({ platform });
+      if (!sent) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Stop may not have reached the agent',
+            body: "Reconnecting. If the task keeps running, try Stop again.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
     },
 
     stopChatSession: () => {
-      const { activeSessionKey, agentRunning, platformAgents } = get();
-      // Check both agentRunning (orchestrator lane) and platformAgents (child events)
-      // — children may still be running even after the orchestrator lane finishes.
-      const isDesktopRunning = agentRunning || platformAgents.desktop?.running;
+      const s = get();
+      const { activeSessionKey, agentRunning, platformAgents, runningSessions, activeSessions } = s;
+      const targetSessionKey = resolveDesktopStopSessionKey({
+        activeSessionKey,
+        runningSessions,
+        activeSessions,
+      });
+      const hasAnySessionActivity =
+        runningSessions.size > 0 ||
+        Object.values(activeSessions).some(
+          (v) => v?.status === 'thinking' || v?.status === 'stuck',
+        );
+      const isDesktopRunning =
+        agentRunning || platformAgents.desktop?.running || hasAnySessionActivity;
       if (!isDesktopRunning) return;
 
-      // Optimistically update the UI for the current chat session
+      if (!targetSessionKey) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: "Can't target a chat to stop",
+            body: "Reconnect, then use Stop again.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          6000,
+        );
+        agentWS.forceReconnect();
+        return;
+      }
+
       clearAgentRunningTimer();
-      set(state => ({
-        chatMessages: appendMessage(state.chatMessages, {
-          role: 'agent',
-          content: 'Stopped by user',
-          timestamp: new Date(),
-          isError: true,
-          isStopped: true,
-        }),
-        agentThinking: null,
-        agentThinkingStream: null,
-        agentRunning: false,
-        agentActivity: {},
-        queuedMessageCount: 0,
-        taskProgress: null,
-      }));
+      set(state => {
+        const nextRunning = new Set(state.runningSessions);
+        nextRunning.delete(targetSessionKey);
+        const nextActive = { ...state.activeSessions };
+        if (nextActive[targetSessionKey]) {
+          delete nextActive[targetSessionKey];
+        }
+        return {
+          chatMessages: appendMessage(state.chatMessages, {
+            role: 'agent',
+            content: 'Stopped by user',
+            timestamp: new Date(),
+            isError: false,
+            isStopped: true,
+          }),
+          runningSessions: nextRunning,
+          activeSessions: nextActive,
+          agentThinking: null,
+          agentThinkingStream: null,
+          agentRunning: false,
+          agentActivity: {},
+          queuedMessageCount: 0,
+          taskProgress: null,
+        };
+      });
 
-      useAgentTrackerStore.getState().failOperationsForSession(activeSessionKey, true);
+      useAgentTrackerStore.getState().failOperationsForSession(targetSessionKey, true);
 
-      // Targeted abort: stop only the current desktop chat session lane
-      agentWS.sendAbort({ sessionKey: activeSessionKey });
+      const sent = agentWS.sendAbort({ sessionKey: targetSessionKey });
+      if (!sent) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Stop may not have reached the agent',
+            body: "Reconnecting. If the task keeps running, try Stop again.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
     },
 
     stopSession: (sessionKey: string) => {
@@ -2114,7 +2234,7 @@ export const useComputerStore = create<ComputerStore>()(
             role: 'agent',
             content: 'Stopped by user',
             timestamp: new Date(),
-            isError: true,
+            isError: false,
             isStopped: true,
           }),
           agentThinking: null,
@@ -2126,10 +2246,22 @@ export const useComputerStore = create<ComputerStore>()(
         }));
       }
 
-      agentWS.sendAbort({ sessionKey });
+      const sent = agentWS.sendAbort({ sessionKey });
+      if (!sent) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Stop may not have reached the agent',
+            body: "Reconnecting. If the task keeps running, try Stop again.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
     },
 
-    interruptSession: (sessionKey: string, message?: string) => {
+    interruptSession: (sessionKey: string, message?: string, clientId?: string) => {
       if (!sessionKey) return;
       const prev = get().activeSessions;
       if (prev[sessionKey]) {
@@ -2144,7 +2276,50 @@ export const useComputerStore = create<ComputerStore>()(
           },
         });
       }
-      agentWS.sendInterrupt({ sessionKey, message });
+      const sent = agentWS.sendInterrupt({ sessionKey, message });
+      if (sent && message?.trim()) {
+        // Clear the matching soft-queued bubble immediately on force-inject so
+        // the UI matches a normal sent message; `injection_acknowledged` can
+        // follow later on the same session. Prefer clientId match (exact bubble)
+        // over content match — needed when the user queued the same text twice.
+        const t = message.trim();
+        set(state => {
+          const clearMatchingPending = (messages: typeof state.chatMessages) => {
+            let cleared = false;
+            return messages.map(m => {
+              if (cleared || m.role !== 'user' || !m.pendingInjection) return m;
+              const matches = clientId ? m.clientId === clientId : m.content.trim() === t;
+              if (matches) {
+                cleared = true;
+                return { ...m, pendingInjection: false };
+              }
+              return m;
+            });
+          };
+          const nextChat = clearMatchingPending(state.chatMessages);
+          const pa = state.platformAgents.desktop;
+          const nextPlatform
+            = pa
+              ? {
+                  ...state.platformAgents,
+                  desktop: { ...pa, chatMessages: clearMatchingPending(pa.chatMessages || []) },
+                }
+              : state.platformAgents;
+          return { chatMessages: nextChat, platformAgents: nextPlatform };
+        });
+      }
+      if (!sent) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Could not send interrupt',
+            body: "Reconnect, then try Interrupt + send again.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
     },
 
     setReplyingTo: (msg: ChatMessage | null) => { set({ replyingTo: msg }); },
@@ -2152,7 +2327,19 @@ export const useComputerStore = create<ComputerStore>()(
     clearChatHistory: () => {
       // Force stop all running agents first
       clearAgentRunningTimer();
-      agentWS.sendAbort();
+      const stopped = agentWS.sendAbort();
+      if (!stopped) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Could not reach agent to clear history',
+            body: "Reconnect, then try clearing again if the agent is still running.",
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
+      }
       // Clear session cache for current session
       const currentKey = get().activeSessionKey;
       if (currentKey) sessionMessageCache.delete(currentKey);
@@ -3300,20 +3487,45 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'injection_acknowledged': {
-          const count = (event.data?.count as number | undefined) ?? 0;
-          const prev = get().activeSessions;
-          const existing = prev[eventSessionKey];
-          if (existing) {
-            set({
-              activeSessions: {
-                ...prev,
-                [eventSessionKey]: {
-                  ...existing,
-                  pendingInjectionCount: Math.max(0, (existing.pendingInjectionCount ?? count) - count),
-                },
-              },
-            });
-          }
+          const count = Math.max(0, (event.data?.count as number | undefined) ?? 0);
+          if (count === 0) break;
+          set(state => {
+            const clearPending = (messages: typeof state.chatMessages) => {
+              let rem = count;
+              return messages.map(m => {
+                if (rem > 0 && m.role === 'user' && m.pendingInjection) {
+                  rem -= 1;
+                  return { ...m, pendingInjection: false };
+                }
+                return m;
+              });
+            };
+            const nextMessages = clearPending(state.chatMessages);
+            const pa = state.platformAgents.desktop;
+            const nextPlatform
+              = pa
+                ? {
+                    ...state.platformAgents,
+                    desktop: {
+                      ...pa,
+                      chatMessages: clearPending(pa.chatMessages || []),
+                    },
+                  }
+                : state.platformAgents;
+            const prev = state.activeSessions;
+            const existing = prev[eventSessionKey];
+            const nextActive
+              = existing
+                ? {
+                    ...prev,
+                    [eventSessionKey]: {
+                      ...existing,
+                      pendingInjectionCount: Math.max(0, (existing.pendingInjectionCount ?? 0) - count),
+                    },
+                  }
+                : prev;
+            return { chatMessages: nextMessages, platformAgents: nextPlatform, activeSessions: nextActive };
+          });
           break;
         }
 
@@ -4188,6 +4400,10 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'error': {
           const message = event.data?.message as string || 'Unknown error';
+          if (isAgentUserCancelErrorMessage(message)) {
+            set({ agentThinking: null, agentThinkingStream: null, agentRunning: false });
+            break;
+          }
           const errorSubagentId = event.data?.subagentId as string | undefined;
           const errorPlatform = event.data?.platform as string | undefined;
           const errorId = event.data?.errorId as string | undefined;
@@ -4278,7 +4494,17 @@ export const useComputerStore = create<ComputerStore>()(
             const nextRunning = new Set(state.runningSessions);
             nextRunning.delete(eventSessionKey);
             return {
-              ...(isActiveSession ? { chatMessages: appendMessage(state.chatMessages, { role: 'agent', content: stoppedMessage, timestamp: new Date(), isError: true, isStopped: isUserStop }) } : {}),
+              ...(isActiveSession
+                ? {
+                    chatMessages: appendMessage(state.chatMessages, {
+                      role: 'agent',
+                      content: stoppedMessage,
+                      timestamp: new Date(),
+                      isError: !isUserStop,
+                      isStopped: isUserStop,
+                    }),
+                  }
+                : {}),
               agentThinking: null,
               agentThinkingStream: null,
               ...(isActiveSession ? { agentRunning: false } : {}),

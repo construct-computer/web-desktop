@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Zap } from 'lucide-react';
+import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -8,6 +8,8 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSound } from '@/hooks/useSound';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportBottomInset';
+import { hapticLight } from '@/lib/haptics';
 import { uploadAttachment } from '@/lib/uploadAttachment';
 import { listFiles, downloadContainerFile } from '@/services/api';
 import { VoiceButton } from '@/components/ui/VoiceButton';
@@ -61,13 +63,17 @@ function isExternalSession(key: string): boolean {
 export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
   const stopChatSession = useComputerStore(s => s.stopChatSession);
-  const interruptSession = useComputerStore(s => s.interruptSession);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
   const instanceId = useComputerStore(s => s.instanceId);
   const pendingImages = useComputerStore(s => s.pendingImageData);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
+  const queuedCount = useComputerStore(s => {
+    let n = 0;
+    for (const m of s.chatMessages) if (m.role === 'user' && m.pendingInjection) n++;
+    return n;
+  });
   const isExternal = isExternalSession(activeSessionKey || '');
   const replyingTo = useComputerStore(s => s.replyingTo);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
@@ -89,6 +95,7 @@ export function SpotlightInput() {
 
   const { play } = useSound();
   const isMobile = useIsMobile();
+  const visualViewportBottomInset = useVisualViewportBottomInset();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [slashSelected, setSlashSelected] = useState(0);
@@ -336,9 +343,10 @@ export function SpotlightInput() {
 
   const executeSlashCommand = useCallback((cmd: { action: () => void }) => {
     play('click');
+    if (isMobile) hapticLight();
     cmd.action();
     clearDraft();
-  }, [play, clearDraft]);
+  }, [play, clearDraft, isMobile]);
 
   const handleSend = useCallback(() => {
     if (isExternal) return;
@@ -363,6 +371,7 @@ export function SpotlightInput() {
     }
 
     play('click');
+    if (isMobile) hapticLight();
     if (text) appendToInputHistory(activeSessionKey, text);
     else if (allPaths.length > 0) appendToInputHistory(activeSessionKey, `📎 ${allPaths.length} attachment(s)`);
     sendChatMessage(fullText, allPaths.length > 0 ? allPaths : undefined);
@@ -371,7 +380,7 @@ export function SpotlightInput() {
     atMentionedFilesRef.current.clear();
     setUploadError(null);
     setFsOpen(false);
-  }, [message, isConnected, sendChatMessage, play, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo, activeSessionKey]);
+  }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo, activeSessionKey]);
 
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
@@ -409,6 +418,7 @@ export function SpotlightInput() {
 
     if (voiceAutoSend && text) {
       play('click');
+      if (isMobile) hapticLight();
       appendToInputHistory(activeSessionKey, text);
       sendChatMessage(text);
       clearDraft();
@@ -417,7 +427,7 @@ export function SpotlightInput() {
       requestAnimationFrame(autoResize);
       inputRef.current?.focus();
     }
-  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, setMessage, autoResize, voiceReset, clearDraft, activeSessionKey]);
+  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, isMobile, setMessage, autoResize, voiceReset, clearDraft, activeSessionKey]);
 
   // Cancel voice recording on Escape
   useEffect(() => {
@@ -434,7 +444,16 @@ export function SpotlightInput() {
   }, [isVoiceActive, cancelRecording, clearDraft]);
 
   return (
-    <div className="shrink-0 border-t border-white/[0.08]">
+    <div
+      className="shrink-0 border-t border-white/[0.08]"
+      style={
+        isMobile
+          ? {
+              paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${visualViewportBottomInset}px)`,
+            }
+          : undefined
+      }
+    >
       {/* Reply preview */}
       {replyingTo && (
         <div className="flex items-center gap-2 px-4 py-2 bg-white/[0.03] border-b border-white/[0.06]">
@@ -570,6 +589,13 @@ export function SpotlightInput() {
             <textarea
               ref={inputRef}
               value={message}
+              enterKeyHint={isMobile ? 'send' : undefined}
+              onFocus={() => {
+                if (!isMobile) return;
+                requestAnimationFrame(() => {
+                  inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                });
+              }}
               onChange={(e) => {
                 setHistoryNavIndex(-1);
                 const val = e.target.value;
@@ -672,73 +698,67 @@ export function SpotlightInput() {
             )}
             <Tooltip content="Attach file" side="top">
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!isConnected || uploading || isExternal}
                 className="touch-target p-1.5 rounded-md hover:bg-white/10 text-[var(--color-text-muted)]/40 hover:text-[var(--color-text-muted)] disabled:opacity-20 transition-colors"
+                aria-label={uploading ? 'Uploading attachment' : 'Attach file'}
+                title="Attach file"
               >
                 {uploading ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Paperclip className="w-4.5 h-4.5" />}
               </button>
             </Tooltip>
             {sessionRunning ? (
               <>
-                {/* Always-visible Stop = hard-abort this session, no re-queue. */}
+                {queuedCount > 0 && !isExternal && (
+                  <Tooltip
+                    content={`${queuedCount} message${queuedCount === 1 ? '' : 's'} queued — will inject at the next safe point`}
+                    side="top"
+                  >
+                    <span
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 text-[10px] font-medium tabular-nums"
+                      aria-label={`${queuedCount} queued`}
+                    >
+                      <Clock className="w-2.5 h-2.5" />
+                      {queuedCount}
+                    </span>
+                  </Tooltip>
+                )}
                 <Tooltip content="Stop this session" side="top">
                   <button
+                    type="button"
                     onClick={stopChatSession}
                     className="touch-target p-1.5 rounded-md hover:bg-red-500/15 text-red-500/70 hover:text-red-500 transition-colors"
+                    aria-label="Stop this session"
+                    title="Stop this session"
                   >
                     <Square className="w-4.5 h-4.5" />
                   </button>
                 </Tooltip>
-                {/*
-                  When there's text in the box while the session is running we
-                  surface a 2-mode control:
-                    Send (inject)   → soft-inject into the running turn
-                    Send + interrupt → hard-abort and replace the current turn
-                  We render the inject path as the primary action because that
-                  matches the user-controlled default.
-                */}
                 {(message.trim() || attachments.length > 0) && !isExternal && (
-                  <>
-                    <Tooltip content="Send as context (soft-inject)" side="top">
-                      <button
-                        onClick={handleSend}
-                        disabled={!isConnected || isExternal}
-                        className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
-                      >
-                        <Send className="w-4.5 h-4.5" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Interrupt + send (hard-abort current turn)" side="top">
-                      <button
-                        onClick={() => {
-                          const text = message.trim();
-                          if (!text && attachments.length === 0) return;
-                          if (!activeSessionKey) return;
-                          play('click');
-                          if (text) appendToInputHistory(activeSessionKey, text);
-                          else if (attachments.length > 0) appendToInputHistory(activeSessionKey, `📎 ${attachments.length} attachment(s)`);
-                          interruptSession(activeSessionKey, text || 'See attached files');
-                          clearDraft();
-                          setAttachments([]);
-                          atMentionedFilesRef.current.clear();
-                          setUploadError(null);
-                        }}
-                        disabled={!isConnected || isExternal}
-                        className="touch-target p-1.5 rounded-md hover:bg-amber-500/15 text-amber-500/80 hover:text-amber-400 disabled:opacity-20 transition-colors"
-                      >
-                        <Zap className="w-4.5 h-4.5" />
-                      </button>
-                    </Tooltip>
-                  </>
+                  <Tooltip content="Queue this message — it will soft-inject at the next safe point. Use “Send now” on a queued bubble to interrupt instead." side="top">
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={!isConnected || isExternal}
+                      className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                      aria-label="Send as soft-inject"
+                      title="Send as soft-inject"
+                    >
+                      <Send className="w-4.5 h-4.5" />
+                    </button>
+                  </Tooltip>
                 )}
               </>
             ) : (message.trim() || attachments.length > 0) && !isExternal ? (
               <Tooltip content={providerCopyData.inputDisabled ? (providerCopyData.badge ?? 'Limit reached') : 'Send'} side="top">
                 <button
+                  type="button"
                   onClick={handleSend}
                   disabled={!isConnected || isExternal || providerCopyData.inputDisabled}
                   className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                  aria-label={providerCopyData.inputDisabled ? (providerCopyData.badge ?? 'Limit reached') : 'Send message'}
+                  title="Send"
                 >
                   <Send className="w-4.5 h-4.5" />
                 </button>

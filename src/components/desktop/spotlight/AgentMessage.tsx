@@ -55,7 +55,7 @@ function ErrorCard({ content }: { content: string }) {
   }, [raw, content]);
 
   return (
-    <div className="rounded-xl bg-red-500/[0.06] border border-red-500/15 overflow-hidden max-w-[480px]">
+    <div className="rounded-xl bg-red-500/[0.06] border border-red-500/15 overflow-hidden max-w-full min-w-0 sm:max-w-[480px]">
       {/* Header */}
       <div className="flex items-start gap-2.5 px-3.5 py-2.5">
         <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />

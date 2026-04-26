@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, PanelLeftClose, Crown } from 'lucide-react';
+import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, Crown } from 'lucide-react';
 import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -181,7 +181,7 @@ function SessionItem({
   );
 }
 
-export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
+export function SpotlightSidebar() {
   const sessions = useComputerStore(s => s.chatSessions);
   const activeKey = useComputerStore(s => s.activeSessionKey);
   const createSession = useComputerStore(s => s.createSession);
@@ -236,20 +236,12 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
 
   return (
     <div className="w-full min-w-[240px] shrink-0 flex flex-col h-full min-h-0 border-r border-white/[0.08]">
-      {/* Collapse + New Chat */}
-      <div className="flex items-center gap-1.5 px-3 pt-4 pb-2">
-        {onCollapse && (
-          <button
-            onClick={onCollapse}
-            className="shrink-0 p-2 rounded-lg text-[var(--color-text-muted)]/50 hover:text-[var(--color-text)] hover:bg-white/[0.06] transition-colors"
-            title="Hide sidebar"
-          >
-            <PanelLeftClose className="w-4 h-4" />
-          </button>
-        )}
+      {/* New Chat — sidebar close lives in the Spotlight header */}
+      <div className="px-3 pt-4 pb-2">
         <button
+          type="button"
           onClick={() => createSession()}
-          className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
         >
           <Plus className="w-4 h-4" />
           New Chat

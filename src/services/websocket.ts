@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '@/lib/constants';
-import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, WS_RECONNECT_JITTER_MS, WS_KEEPALIVE_TIMEOUT_MS, WS_KEEPALIVE_PING_INTERVAL_MS, WS_PING_TIMEOUT_MS, IS_DEV } from '@/lib/config';
+import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, WS_RECONNECT_JITTER_MS, WS_KEEPALIVE_TIMEOUT_MS, WS_KEEPALIVE_PING_INTERVAL_MS, IS_DEV } from '@/lib/config';
 import { log } from '@/lib/logger';
 
 const browserLog = log('BrowserWS');
@@ -468,12 +468,17 @@ class AgentWSClient {
         try {
           const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
           this.ws?.send(JSON.stringify({ type: 'set_timezone', timezone }));
-        } catch {}
+        } catch {
+          // timeZone not available in some runtimes
+          void 0;
+        }
 
         // Re-register dev app if connected (survives page refresh / WS reconnect)
         import('@/stores/devAppStore').then(({ useDevAppStore }) => {
           useDevAppStore.getState().reregister();
-        }).catch(() => {});
+        }).catch(() => {
+          void 0; // reregister is best-effort
+        });
 
         // Flush any messages that were queued while the WS was connecting
         for (const msg of this.pendingMessages) {
@@ -577,12 +582,21 @@ class AgentWSClient {
    * Abort running agent lanes. Hard-stops the session loop with no restart.
    * - No options: abort ALL running lanes
    * - sessionKey: abort a specific session lane
-   * - platform: abort all lanes for a platform
+   * - platform: (client metadata; server abort handler keys on sessionKey only)
+   * Returns true if the payload was sent or queued for the opening connection.
    */
-  sendAbort(options?: { sessionKey?: string; platform?: string }) {
+  sendAbort(options?: { sessionKey?: string; platform?: string }): boolean {
+    const payload = JSON.stringify({ type: 'abort', ...options });
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'abort', ...options }));
+      this.ws.send(payload);
+      return true;
     }
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.pendingMessages.push(payload);
+      return true;
+    }
+    agentLog.warn('Cannot send abort: WebSocket not connected');
+    return false;
   }
 
   /**
@@ -591,14 +605,22 @@ class AgentWSClient {
    * the current turn is cooperatively cancelled. Used by the Spotlight
    * "Interrupt" button.
    */
-  sendInterrupt(options: { sessionKey: string; message?: string }) {
+  sendInterrupt(options: { sessionKey: string; message?: string }): boolean {
+    const payload = JSON.stringify({
+      type: 'interrupt',
+      sessionKey: options.sessionKey,
+      ...(options.message ? { message: options.message } : {}),
+    });
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'interrupt',
-        sessionKey: options.sessionKey,
-        ...(options.message ? { message: options.message } : {}),
-      }));
+      this.ws.send(payload);
+      return true;
     }
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.pendingMessages.push(payload);
+      return true;
+    }
+    agentLog.warn('Cannot send interrupt: WebSocket not connected');
+    return false;
   }
 
   /** Cancel a specific child agent by ID. */

@@ -19,7 +19,10 @@ export function ChatScreen() {
       {/* Header */}
       <div
         className="flex items-center gap-2 px-4 py-3 shrink-0"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        style={{
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
+        }}
       >
         <Sparkles size={16} className="opacity-50" />
         <h2 className="text-[16px] font-semibold flex-1" style={{ color: textColor() }}>

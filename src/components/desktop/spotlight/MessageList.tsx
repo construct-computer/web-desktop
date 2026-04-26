@@ -3,7 +3,7 @@ import { ArrowDown, Globe, Terminal, FileSearch, Reply, AlertTriangle, AlertCirc
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
@@ -12,17 +12,21 @@ import { OperationCard } from './OperationCard';
 import { UserMessage } from './UserMessage';
 import { AgentMessage } from './AgentMessage';
 
-/** Hover-reveal slot with timestamp and reply button. */
+function isToday(date: Date): boolean {
+  const now = new Date();
+  return date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+}
+
+function timeLabel(ts?: Date) {
+  if (!ts) return '';
+  const timeStr = ts.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const dateStr = ts.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return isToday(ts) ? timeStr : `${dateStr}, ${timeStr}`;
+}
+
+/** Hover-reveal slot with timestamp and reply button (desktop). */
 function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: () => void }) {
-  const timeStr = timestamp
-    ? timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : '';
-  const dateStr = timestamp
-    ? timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' })
-    : '';
-  const label = timestamp
-    ? (isToday(timestamp) ? timeStr : `${dateStr}, ${timeStr}`)
-    : '';
+  const label = timeLabel(timestamp);
 
   return (
     <div className="flex items-center gap-1.5 opacity-0 group-hover/reply:opacity-100 transition-opacity duration-150 shrink-0">
@@ -35,6 +39,8 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
         onClick={onReply}
         className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-90 opacity-50 hover:!opacity-100"
         title="Reply"
+        type="button"
+        aria-label="Reply to this message"
       >
         <Reply className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
       </button>
@@ -42,9 +48,26 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
   );
 }
 
-function isToday(date: Date): boolean {
-  const now = new Date();
-  return date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+/** Always-visible reply (touch) — no hover. */
+function MessageTouchReply({ timestamp, onReply }: { timestamp?: Date; onReply: () => void }) {
+  const label = timeLabel(timestamp);
+  return (
+    <div className="flex flex-col items-end justify-center gap-0.5 shrink-0 min-w-0 max-w-[88px]">
+      <button
+        type="button"
+        onClick={onReply}
+        className="text-[11px] font-medium text-[var(--color-text-muted)]/70 active:text-[var(--color-text)] py-0.5"
+        aria-label="Reply to this message"
+      >
+        Reply
+      </button>
+      {label && (
+        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none text-right w-full">
+          {label}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -150,8 +173,12 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
       flushActivitiesAndOperation(`flush-${gi}`);
 
       if (msg.role === 'user') {
-        const replySlot = !isExternal && !isMobile && msg.content?.trim()
-          ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
+        const canReply = !isExternal && msg.content?.trim();
+        const cm = msg as ChatMessage;
+        const replySlot = canReply
+          ? isMobile
+            ? <MessageTouchReply timestamp={msg.timestamp} onReply={() => setReplyingTo(cm)} />
+            : <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(cm)} />
           : undefined;
         result.push({
           key: `msg-${group.index}`,
@@ -162,8 +189,12 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
           ),
         });
       } else {
-        const replySlot = !isExternal && !isMobile && msg.content?.trim()
-          ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
+        const canReply = !isExternal && msg.content?.trim();
+        const cm = msg as ChatMessage;
+        const replySlot = canReply
+          ? isMobile
+            ? <MessageTouchReply timestamp={msg.timestamp} onReply={() => setReplyingTo(cm)} />
+            : <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(cm)} />
           : undefined;
 
         result.push({
@@ -194,30 +225,52 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
 
   if (sessionSwitching) {
-    return <div className="flex-1" />;
+    return (
+      <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col gap-3 p-4 pt-6">
+        <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-4/5 max-w-md mx-auto motion-safe:animate-pulse" />
+        <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-2/3 max-w-sm mx-auto motion-safe:animate-pulse" />
+        <div className="h-3 bg-white/[0.08] dark:bg-white/[0.05] rounded-md w-1/2 max-w-xs mx-auto motion-safe:animate-pulse" />
+        <p className="text-center text-[12px] text-[var(--color-text-muted)]/50 mt-4">Switching chat…</p>
+      </div>
+    );
   }
 
   if (!hasContent) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center px-8 py-12">
-          <p className="text-[18px] font-light text-[var(--color-text)]/60">What can I help you with?</p>
-          <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
-          <div className="flex flex-wrap justify-center gap-2 mt-5">
-            {[
-              { icon: <Globe className="w-3.5 h-3.5" />, label: 'Research a topic', prompt: 'Help me research a topic. First ask me for the topic/industry, audience, deadline, and desired output format if I have not provided them; do not guess missing details.' },
-              { icon: <FileSearch className="w-3.5 h-3.5" />, label: 'Draft an email', prompt: 'Help me draft a professional email. First ask for the recipient, goal, tone, and key points if they are missing; do not invent meeting details.' },
-              { icon: <Terminal className="w-3.5 h-3.5" />, label: 'Summarize my files', prompt: 'Look through my workspace files and summarize only what you can verify from accessible files. Note unknowns separately and list any action items you find.' },
-            ].map(({ icon, label, prompt }) => (
-              <button
-                key={label}
-                onClick={() => sendChatMessage(prompt)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] text-[var(--color-text-muted)]/60 hover:text-[var(--color-text)] bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.12] transition-all"
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
+      <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col items-stretch">
+        <div className="flex-1 min-h-0 flex items-center justify-center px-4 sm:px-8">
+          <div className="text-center w-full max-w-lg mx-auto">
+            <p className="text-[18px] font-light text-[var(--color-text)]/60">What can I help you with?</p>
+            <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
+            {!isMobile && (
+              <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl+Space</span> to toggle the agent anytime</p>
+            )}
+            <div
+              className={cn(
+                'mt-5 gap-2 w-full',
+                isMobile ? 'grid grid-cols-1 max-w-md mx-auto' : 'flex flex-wrap justify-center',
+              )}
+            >
+              {[
+                { icon: <Globe className="w-3.5 h-3.5 shrink-0" />, label: 'Research a topic', prompt: 'Help me research a topic. First ask me for the topic/industry, audience, deadline, and desired output format if I have not provided them; do not guess missing details.' },
+                { icon: <FileSearch className="w-3.5 h-3.5 shrink-0" />, label: 'Draft an email', prompt: 'Help me draft a professional email. First ask for the recipient, goal, tone, and key points if they are missing; do not invent meeting details.' },
+                { icon: <Terminal className="w-3.5 h-3.5 shrink-0" />, label: 'Summarize my files', prompt: 'Look through my workspace files and summarize only what you can verify from accessible files. Note unknowns separately and list any action items you find.' },
+              ].map(({ icon, label, prompt }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => sendChatMessage(prompt)}
+                  className={cn(
+                    'flex items-center justify-center sm:justify-start gap-2 rounded-xl text-[12px] text-[var(--color-text-muted)]/60 active:text-[var(--color-text)] sm:hover:text-[var(--color-text)] bg-white/[0.04] sm:hover:bg-white/[0.08] border border-white/[0.06] sm:hover:border-white/[0.12] transition-all',
+                    isMobile && 'w-full min-h-11 py-2.5 px-3.5',
+                    !isMobile && 'px-3.5 py-2',
+                  )}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -284,8 +337,10 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
           <Tooltip content="Scroll to bottom" side="top">
             <button
+              type="button"
               onClick={scrollToBottom}
               className="w-7 h-7 rounded-full bg-[var(--color-surface-raised)]/80 backdrop-blur border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+              aria-label="Scroll to latest messages"
             >
               <ArrowDown className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
             </button>
