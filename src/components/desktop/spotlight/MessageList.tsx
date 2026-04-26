@@ -231,7 +231,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
         onScroll={handleScroll}
         className={cn(
           "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
-          paddingTopClass || (isMobile ? "pt-14" : "pt-4")
+          paddingTopClass || (isMobile ? "pt-14" : "pt-14")
         )}
         style={{ overscrollBehavior: 'contain' }}
       >
