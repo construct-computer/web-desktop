@@ -396,7 +396,6 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const action = p.action as string | undefined;
     const channel = p.channel as string | undefined;
     const text = p.text as string | undefined;
-    const query = p.query as string | undefined;
     switch (action) {
       case 'status':
         return { text: 'Checking Slack connection', activityType: 'tool' };
@@ -404,14 +403,22 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
         const preview = text ? truncateActivityText(text, 52) : '';
         return { text: `Slack: sending${channel ? ` to ${channel}` : ''}${preview ? ` — ${preview}` : ''}`, activityType: 'tool' };
       }
+      case 'send_card': {
+        const title = p.title as string | undefined;
+        return { text: `Slack card${channel ? ` → ${channel}` : ''}${title ? `: ${truncateActivityText(title, 40)}` : ''}`, activityType: 'tool' };
+      }
       case 'list_channels':
         return { text: 'Listing Slack channels', activityType: 'tool' };
       case 'read_history':
         return { text: `Reading Slack${channel ? `: ${channel}` : ''}`, activityType: 'tool' };
-      case 'search_messages':
-        return { text: `Searching Slack: ${truncateActivityText(query || '…', 50)}`, activityType: 'tool' };
+      case 'update_message':
+        return { text: 'Updating Slack message', activityType: 'tool' };
+      case 'delete_message':
+        return { text: 'Deleting Slack message', activityType: 'tool' };
       case 'add_reaction':
         return { text: 'Adding Slack reaction', activityType: 'tool' };
+      case 'remove_reaction':
+        return { text: 'Removing Slack reaction', activityType: 'tool' };
       default:
         return { text: `Slack: ${action || 'action'}`, activityType: 'tool' };
     }
