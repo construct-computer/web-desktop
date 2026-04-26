@@ -155,7 +155,7 @@ const FindBar = memo(function FindBar({
     >
       <input
         ref={inputRef}
-        className="w-[200px] h-[24px] px-2 text-[12px] bg-[var(--color-surface)] border border-[var(--color-border)]
+        className="w-full max-w-[200px] min-w-0 h-[24px] px-2 text-[12px] bg-[var(--color-surface)] border border-[var(--color-border)]
                    rounded-[var(--radius-input)] outline-none text-[var(--color-text)]
                    placeholder:text-[var(--color-text-subtle)]
                    focus:border-[var(--color-accent)]/60"

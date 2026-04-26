@@ -64,7 +64,7 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
 
   return (
     <div
-      className="relative min-h-screen flex items-center justify-center overflow-hidden"
+      className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden"
       onClick={() => {
         if (!woken) setWoken(true);
         if (isLocked && onUnlock) onUnlock();

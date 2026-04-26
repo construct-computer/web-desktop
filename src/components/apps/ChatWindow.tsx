@@ -180,9 +180,14 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
     setEditingKey(null);
   };
 
-  // Position below the anchor trigger
-  const top = anchorRect.bottom + 4;
-  const left = anchorRect.left;
+  // Position below the anchor trigger, clamped to the visible viewport so the
+  // menu never spills off-screen on narrow / mobile windows.
+  const DROPDOWN_W = 224; // matches w-56 (14rem)
+  const DROPDOWN_MAX_H = 320;
+  const vw = window.visualViewport?.width ?? window.innerWidth;
+  const vh = window.visualViewport?.height ?? window.innerHeight;
+  const left = Math.max(8, Math.min(anchorRect.left, vw - DROPDOWN_W - 8));
+  const top = Math.max(8, Math.min(anchorRect.bottom + 4, vh - DROPDOWN_MAX_H - 8));
 
   return createPortal(
     <div

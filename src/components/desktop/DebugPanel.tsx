@@ -6,6 +6,7 @@
 import { useErrorStore, type CapturedError } from '@/stores/errorStore';
 import { X, Copy, Trash2, ChevronDown, ChevronRight, Bug } from 'lucide-react';
 import { useState } from 'react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 function ErrorRow({ error }: { error: CapturedError }) {
   const [expanded, setExpanded] = useState(false);
@@ -76,12 +77,13 @@ export function DebugPanel() {
   const togglePanel = useErrorStore((s) => s.togglePanel);
   const clearAll = useErrorStore((s) => s.clearAll);
   const copyAll = useErrorStore((s) => s.copyAll);
+  const isMobile = useIsMobile();
 
-  if (!panelOpen) return null;
+  if (!panelOpen || isMobile) return null;
 
   return (
     <div
-      className="fixed bottom-0 right-0 w-[520px] max-h-[50vh] flex flex-col
+      className="fixed bottom-0 right-0 w-[min(520px,calc(100vw-16px))] max-h-[50dvh] flex flex-col
                  bg-black/90 backdrop-blur-xl border border-white/10 rounded-tl-xl
                  shadow-2xl z-[9998] font-mono text-[11px]"
     >

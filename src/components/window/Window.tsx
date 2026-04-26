@@ -1019,6 +1019,10 @@ export function Window({ config, children, missionControlTarget, missionControlI
               <button
                 className="w-full px-3 py-1.5 text-left text-[13px] font-medium rounded-[5px] flex items-center justify-between
                   hover:bg-blue-500 hover:text-white dark:hover:bg-blue-500 text-black/80 dark:text-white/90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCtxSubmenu((v) => !v);
+                }}
               >
                 Move to Workspace
                 <ChevronRight className="w-3.5 h-3.5 opacity-60" />

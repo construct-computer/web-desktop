@@ -855,6 +855,15 @@ export const useWindowStore = create<WindowStore>()(
         metadata = { ...metadata, terminalId };
       }
 
+      // On mobile, MobileWindow renders full-screen and never resizes. Force
+      // the minWidth/minHeight to be at most the viewport so any layout that
+      // reads `window.minWidth` (e.g. resize clamp) doesn't try to enforce a
+      // 600px minimum on a 375px screen.
+      const minWidthRaw = options.minWidth ?? defaults.minWidth ?? MIN_WINDOW_WIDTH;
+      const minHeightRaw = options.minHeight ?? defaults.minHeight ?? MIN_WINDOW_HEIGHT;
+      const minWidth = mobile ? Math.min(minWidthRaw, screenWidth) : minWidthRaw;
+      const minHeight = mobile ? Math.min(minHeightRaw, screenHeight) : minHeightRaw;
+
       const newWindow: WindowConfig = {
         id,
         type,
@@ -864,8 +873,8 @@ export const useWindowStore = create<WindowStore>()(
         y: position.y,
         width,
         height,
-        minWidth: options.minWidth ?? defaults.minWidth ?? MIN_WINDOW_WIDTH,
-        minHeight: options.minHeight ?? defaults.minHeight ?? MIN_WINDOW_HEIGHT,
+        minWidth,
+        minHeight,
         maxWidth: options.maxWidth ?? defaults.maxWidth,
         maxHeight: options.maxHeight ?? defaults.maxHeight,
         aspectRatio: options.aspectRatio ?? defaults.aspectRatio,

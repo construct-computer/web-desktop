@@ -1294,7 +1294,7 @@ function AppearanceSection() {
           <Image className="w-4 h-4 text-[var(--color-text-muted)]" />
           <span className="text-[13px] font-medium">Wallpaper</span>
         </div>
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {WALLPAPERS.map((wp) => {
             const isActive = wallpaperId === wp.id;
             return (

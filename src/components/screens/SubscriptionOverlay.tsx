@@ -78,8 +78,8 @@ export function SubscriptionOverlay() {
           </p>
         </div>
 
-        {/* Plan cards — side by side */}
-        <div className="px-6 pb-4 grid grid-cols-2 gap-4">
+        {/* Plan cards — side by side on desktop, stacked on mobile */}
+        <div className="px-6 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Starter */}
           <div className="rounded-xl border border-black/5 dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.03] p-5 flex flex-col">
             <div className="mb-3">

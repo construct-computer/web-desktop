@@ -85,7 +85,6 @@ import iconPreview from '@/icons/preview.png';
 import iconSlides from '@/icons/slides.png';
 import iconVscode from '@/icons/vscode.png';
 import iconConstructDrive from '@/icons/construct-drive.png';
-import iconSetupWizard from '@/icons/setup-wizard.png';
 
 // Phase 5: Tour & extras
 import tourChat from '@/assets/tour/tour-chat.gif';
@@ -117,8 +116,8 @@ let started = false;
 
 // We need to count total assets before starting. Let's enumerate them.
 function getTotalAssetCount(): number {
-  // 4 fonts + 3 welcome + 1 login + 7 lock-screen + 27 desktop + 3 tour
-  return 4 + 3 + 1 + 7 + 27 + 3;
+  // 4 fonts + 3 welcome + 1 login + 7 lock-screen + 26 desktop + 3 tour
+  return 4 + 3 + 1 + 7 + 26 + 3;
 }
 
 /**
@@ -197,7 +196,6 @@ export function preloadAllAssets(): void {
       preloadImage(iconSlides),
       preloadImage(iconVscode),
       preloadImage(iconConstructDrive),
-      preloadImage(iconSetupWizard),
       preloadImage(wpConstructTiny),
       preloadImage(wpConstructPng),
     ])

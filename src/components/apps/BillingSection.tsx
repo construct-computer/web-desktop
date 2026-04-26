@@ -243,8 +243,9 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
         })}
       </div>
 
-      {/* Feature comparison table */}
-      <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.06] overflow-hidden">
+      {/* Feature comparison table — scroll horizontally on narrow viewports */}
+      <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.06] overflow-x-auto">
+        <div className="min-w-[420px]">
         <div className="grid grid-cols-[1fr_84px_84px_84px] text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
           <span />
           <span className="text-center">Free</span>
@@ -292,6 +293,7 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
             })}
           </div>
         ))}
+        </div>
       </div>
     </div>
   );

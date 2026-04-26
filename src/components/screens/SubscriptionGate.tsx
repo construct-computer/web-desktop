@@ -67,7 +67,7 @@ export function SubscriptionGate({ onSubscribed, onLogout }: SubscriptionGatePro
   }, [startCheckout]);
 
   return (
-    <div className="relative h-screen flex items-center justify-center overflow-hidden">
+    <div className="relative h-[100dvh] flex items-center justify-center overflow-hidden">
       {/* Blurred wallpaper background */}
       <div
         className="fixed inset-0"

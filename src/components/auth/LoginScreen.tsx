@@ -109,7 +109,7 @@ export function LoginScreen() {
   const ease = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
+    <div className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden">
       {/* Wallpaper */}
       <div
         className="absolute inset-0"

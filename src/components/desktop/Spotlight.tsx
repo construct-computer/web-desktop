@@ -157,10 +157,31 @@ export function Spotlight() {
             </div>
           )}
 
-          {/* Sidebar — collapsible */}
-          <div className={`shrink-0 transition-[width] duration-200 ease-out overflow-hidden ${sidebarOpen ? 'w-[240px]' : 'w-0'}`}>
-            <SpotlightSidebar onCollapse={() => setSidebarOpen(false)} />
-          </div>
+          {/* Sidebar — collapsible.
+              Mobile: full-width overlay that slides over the chat (the sidebar
+              dwarfs the chat area at 240/~375px otherwise).
+              Desktop: inline column that pushes content. */}
+          {isMobile ? (
+            <>
+              {sidebarOpen && (
+                <div
+                  className="absolute inset-0 z-40 bg-black/30 transition-opacity"
+                  onClick={() => setSidebarOpen(false)}
+                />
+              )}
+              <div
+                className={`absolute inset-y-0 left-0 z-40 w-[min(320px,85vw)] transition-transform duration-200 ease-out bg-white/80 dark:bg-[#111113]/95 backdrop-blur-[40px] ${
+                  sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                }`}
+              >
+                <SpotlightSidebar onCollapse={() => setSidebarOpen(false)} />
+              </div>
+            </>
+          ) : (
+            <div className={`shrink-0 transition-[width] duration-200 ease-out overflow-hidden ${sidebarOpen ? 'w-[240px]' : 'w-0'}`}>
+              <SpotlightSidebar onCollapse={() => setSidebarOpen(false)} />
+            </div>
+          )}
 
           {/* Chat area */}
           <div className="flex-1 flex flex-col min-w-0 h-full relative">

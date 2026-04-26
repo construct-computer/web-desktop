@@ -2,8 +2,6 @@ import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Desktop } from '@/components/desktop';
 import { LoginScreen } from '@/components/auth';
 import { ReturningUserScreen } from '@/components/screens/ReturningUserScreen';
-// WelcomeScreen merged into LoginScreen — kept for power-on-after-shutdown only
-import { WelcomeScreen } from '@/components/screens/WelcomeScreen';
 import { DuplicateTabScreen } from '@/components/screens/DuplicateTabScreen';
 // SubscriptionGate replaced by SubscribeWindow (app window instead of full-screen overlay)
 import { useAuthStore } from '@/stores/authStore';
@@ -37,13 +35,11 @@ type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
  * App orchestrates the full boot flow:
  *
  *   1. Black screen while checking auth
- *   2. If not logged in: WelcomeScreen → Lock screen (login/register)
+ *   2. If not logged in: Lock screen (login/register)
  *   3. On login success: lock screen shows provisioning progress → container ready → slide up
  *   4. If returning with valid session: lock screen shows provisioning → ready → slide up
  *   5. Lock Screen: slides lock screen back down without logging out
- *   6. Restart: shows rebooting screen, calls backend reboot, re-provisions
- *   7. Shutdown: cinematic goodbye → black → power-on screen
- *   8. Duplicate tab: shows lock screen with "already open" message
+ *   6. Duplicate tab: shows lock screen with "already open" message
  */
 function App() {
   // Telegram Mini App — bypass everything else if running inside Telegram
@@ -127,9 +123,6 @@ function App() {
   // Tab singleton state: 'checking' | 'leader' | 'duplicate'
   const [tabStatus, setTabStatus] = useState<'checking' | 'leader' | 'duplicate'>('checking');
 
-  // Power-on state (after first visit or logout)
-  const [showPowerOn, setShowPowerOn] = useState(false);
-
   const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, checkAuth, handleOAuthReturn } = useAuthStore();
   const { isConnected, forceReconnect } = useWebSocket();
   const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
@@ -193,10 +186,10 @@ function App() {
   // Guard: don't retry if there's already an error, or if shutdown/power-on screen is showing
   // Don't provision at all for unsubscribed users — they must subscribe first
   useEffect(() => {
-    if (isAuthenticated && isSubscribed && tabStatus === 'leader' && !computer && !computerLoading && !computerError && !showPowerOn) {
+    if (isAuthenticated && isSubscribed && tabStatus === 'leader' && !computer && !computerLoading && !computerError) {
       fetchComputer();
     }
-  }, [isAuthenticated, isSubscribed, tabStatus, computer, computerLoading, computerError, showPowerOn, fetchComputer]);
+  }, [isAuthenticated, isSubscribed, tabStatus, computer, computerLoading, computerError, fetchComputer]);
 
   // Preload desktop assets (wallpaper, dock icons) while the user waits
   // on the lock/provisioning screen. By the time the desktop renders,
@@ -288,16 +281,6 @@ function App() {
     // editorStore auto-clears when last editor window closes via closeAll()
   }, []);
 
-  // Restart/Shutdown removed — no containers in serverless mode.
-  // Agent persists in Durable Object and reconnects on page load.
-
-  // Called when the WelcomeScreen finishes its boot animation after shutdown
-  const handlePowerOnComplete = useCallback(() => {
-    setShowPowerOn(false);
-    // fetchComputer will be triggered by the useEffect that watches
-    // isAuthenticated && !computer && !showPowerOn
-  }, []);
-
   // ── Black screen while checking auth ──
   if (!authChecked) {
     return <div className="fixed inset-0 bg-black" />;
@@ -351,11 +334,6 @@ function App() {
             <LoginScreen key={loginKey} />
           )}
         </div>
-      )}
-
-      {/* Layer 3: Power-on welcome (after shutdown only) */}
-      {showPowerOn && isAuthenticated && (
-        <WelcomeScreen onComplete={handlePowerOnComplete} />
       )}
 
       {/* Debug panel — staging only */}

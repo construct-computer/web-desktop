@@ -201,7 +201,7 @@ export function TelegramMiniApp() {
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen flex items-center justify-center" style={bgStyle()}>
+    <div className="min-h-[100dvh] flex items-center justify-center" style={bgStyle()}>
       <div className="flex flex-col items-center gap-3">
         <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin opacity-50" />
         <p className="text-sm opacity-50">Connecting...</p>
@@ -212,7 +212,7 @@ function LoadingScreen() {
 
 function NotLinkedScreen() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6" style={bgStyle()}>
+    <div className="min-h-[100dvh] flex items-center justify-center p-6" style={bgStyle()}>
       <div className="text-center max-w-[300px]">
         <div className="text-4xl mb-4">🔗</div>
         <h2 className="text-lg font-semibold mb-2">Not Linked Yet</h2>
@@ -253,7 +253,7 @@ function Step({ n, text }: { n: number; text: string }) {
 
 function ErrorScreen({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6" style={bgStyle()}>
+    <div className="min-h-[100dvh] flex items-center justify-center p-6" style={bgStyle()}>
       <div className="text-center max-w-[280px]">
         <div className="text-4xl mb-4">⚠️</div>
         <h2 className="text-lg font-semibold mb-2">Something went wrong</h2>
@@ -278,7 +278,7 @@ function Dashboard({ data }: { data: DashboardData }) {
   const hasWeeklyUsd = data.usage?.weeklyUsedUsd !== undefined && data.usage?.weeklyCapUsd !== undefined && data.usage.weeklyCapUsd > 0;
 
   return (
-    <div className="min-h-screen pb-6" style={bgStyle()}>
+    <div className="min-h-[100dvh] pb-6" style={bgStyle()}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3">
         <h1 className="text-xl font-semibold">{agentName}</h1>
@@ -416,7 +416,7 @@ function bgStyle(): React.CSSProperties {
   return {
     backgroundColor: tp?.bg_color || 'var(--color-bg)',
     color: tp?.text_color || 'var(--color-text)',
-    minHeight: '100vh',
+    minHeight: '100dvh',
   };
 }
 

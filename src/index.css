@@ -773,6 +773,21 @@ html.dark .construct-tour-popover .driver-popover-arrow-side-left {
   border-right-color: rgba(30, 28, 26, 0.85);
 }
 
+/* ═══════════════════════════════════════════════
+   Touch device hover-reveal fallback
+   On touch-only devices :hover never fires reliably,
+   so reveal-on-hover patterns become unreachable.
+   Force any group-hover-revealed element to be visible.
+   ═══════════════════════════════════════════════ */
+@media (hover: none) {
+  .group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+  .group-hover\:visible {
+    visibility: visible !important;
+  }
+}
+
 html.dark .construct-tour-popover .driver-popover-arrow-side-right {
   border-left-color: rgba(30, 28, 26, 0.85);
 }

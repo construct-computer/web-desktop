@@ -156,10 +156,10 @@ export function NotificationCenter() {
   }, [drawerOpen, setDrawerOpen]);
 
   const grouped = groupNotifications(notifications);
-  const drawerWidth = isMobile ? '100vw' : `${DRAWER_WIDTH}px`;
+  const drawerWidth = isMobile ? '100dvw' : `${DRAWER_WIDTH}px`;
   const topOffset = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
   const bottomOffset = isMobile ? MOBILE_APP_BAR_HEIGHT : 0;
-  const translateHidden = isMobile ? 'translateX(100vw)' : `translateX(${DRAWER_WIDTH}px)`;
+  const translateHidden = isMobile ? 'translateX(100dvw)' : `translateX(${DRAWER_WIDTH}px)`;
 
   return createPortal(
     <>

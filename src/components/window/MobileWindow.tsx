@@ -51,7 +51,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
         {/* Back / Close button */}
         <button
           onClick={handleClose}
-          className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/20 transition-colors"
+          className="flex items-center justify-center w-11 h-11 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/20 transition-colors"
           aria-label="Close window"
         >
           <ChevronLeft className="w-6 h-6 text-blue-500" />
@@ -68,7 +68,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
         </div>
 
         {/* Right Accessory (or placeholder to balance the back button) */}
-        <div className="flex items-center justify-end min-w-[40px] gap-0.5">
+        <div className="flex items-center justify-end min-w-[44px] gap-0.5">
           {titleBarAccessory}
         </div>
       </div>

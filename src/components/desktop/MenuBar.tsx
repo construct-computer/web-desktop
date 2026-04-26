@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, WifiOff, Sun, Moon, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, LayoutGrid, Brain, Shield, Map, Package } from 'lucide-react';
+import { Wifi, WifiOff, Sun, Moon, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, Brain, Shield, Map, Package } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -69,8 +69,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);
   const switchWorkspace = useWindowStore((s) => s.switchWorkspace);
   const deleteWorkspace = useWindowStore((s) => s.deleteWorkspace);
-  const missionControlActive = useWindowStore((s) => s.missionControlActive);
-  const toggleMissionControl = useWindowStore((s) => s.toggleMissionControl);
   // Stage manager is permanently on — no toggle needed
   const trackerPanelOpen = useWindowStore((s) => s.trackerPanelOpen);
   const toggleTrackerPanel = useWindowStore((s) => s.toggleTrackerPanel);
@@ -308,24 +306,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
           </div>
         )}
 
-        {/* Workspaces button — hidden, workspaces are manually managed via Mission Control
-        {!isMobile && (
-          <button
-            className={`flex items-center gap-1.5 rounded-md transition p-1.5 mr-1 ${
-              missionControlActive
-                ? 'bg-[var(--color-accent)] shadow-sm'
-                : 'hover:bg-black/8 dark:hover:bg-white/10'
-            }`}
-            onClick={toggleMissionControl}
-            title="Workspaces (Ctrl+Up)"
-          >
-            <LayoutGrid className={`w-3.5 h-3.5 ${
-              missionControlActive ? 'text-white' : 'text-black/80 dark:text-white/90'
-            }`} />
-          </button>
-        )}
-        */}
-
         {/* ── Agent activity indicator (compact glanceable status) ── */}
         {!isMobile && <AgentActivityIndicator />}
 
@@ -424,7 +404,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         </button>
       </div>
 
-      {/* Panel portals removed — Chat uses Spotlight, Tracker uses sliding side panel */}
     </div>
   );
 }
@@ -615,35 +594,6 @@ function MenuDropdownPortal({ children, position, isMobile }: { children: React.
       {children}
     </div>,
     document.body
-  );
-}
-
-/** Portaled panel — larger dropdown for embedded app content */
-function PanelPortal({ children, position, width, height }: {
-  children: React.ReactNode;
-  position: { top: number; left?: number; right?: number };
-  width: number;
-  height: number;
-}) {
-  return createPortal(
-    <div
-      id="menubar-panel-portal"
-      className="fixed flex flex-col overflow-hidden
-                 bg-white/70 dark:bg-[#1a1918]/85 backdrop-blur-2xl saturate-150
-                 border border-black/10 dark:border-white/15 rounded-xl
-                 shadow-2xl shadow-black/25 dark:shadow-black/50"
-      style={{
-        zIndex: Z_INDEX.menu,
-        top: position.top,
-        ...(position.left != null ? { left: position.left } : {}),
-        ...(position.right != null ? { right: position.right } : {}),
-        width,
-        height,
-      }}
-    >
-      {children}
-    </div>,
-    document.body,
   );
 }
 
