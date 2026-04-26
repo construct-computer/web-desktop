@@ -88,7 +88,8 @@ function getOrCreateTerminal(terminalId: string): CachedTerminal {
     theme: TERMINAL_THEME,
     allowTransparency: true,
     fontFamily: '"IBM Plex Mono", "Fira Code", "Cascadia Code", monospace',
-    fontSize: 13,
+    // Bump font on mobile so output is legible without pinch-zoom.
+    fontSize: typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches ? 15 : 13,
     lineHeight: 1.3,
     cursorBlink: true,
     cursorStyle: 'block',

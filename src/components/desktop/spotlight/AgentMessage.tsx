@@ -118,7 +118,7 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
   }
 
   return (
-    <div className="flex items-start gap-3 px-6 py-2" style={{ animation: 'spt-in 150ms ease-out' }}>
+    <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-2" style={{ animation: 'spt-in 150ms ease-out' }}>
       {isError ? (
         <div className="w-6 h-6 shrink-0 rounded-full bg-red-500/10 flex items-center justify-center mt-0.5 text-red-500 font-bold border border-red-500/20">
           <AlertCircle className="w-4 h-4 text-red-400" />
@@ -126,7 +126,7 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
       ) : (
         <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
       )}
-      <div className={`min-w-0 max-w-[90%] text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
+      <div className={`min-w-0 max-w-full sm:max-w-[90%] text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
         {(() => {
           if (msg.askUser) return <AskUserCard data={msg.askUser} />;
           if (isError) return <ErrorCard content={msg.content} />;

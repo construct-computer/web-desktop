@@ -523,9 +523,9 @@ export function Dock() {
           ref={dockRef}
           className={cn(
             'relative flex items-end px-3 pt-1 pb-1 rounded-t-[14px]',
-            'bg-white/20 dark:bg-black/30 backdrop-blur-2xl',
-            'border-t border-l border-r border-white/20 dark:border-white/5',
-            'shadow-[0_-5px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_-5px_20px_rgba(0,0,0,0.4)]',
+            'bg-white/70 dark:bg-black/70 backdrop-blur-2xl',
+            'border-t border-l border-r border-black/10 dark:border-white/10',
+            'shadow-[0_-5px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_-5px_20px_rgba(0,0,0,0.35)]',
             needsScroll && 'overflow-x-auto scrollbar-none',
           )}
           style={{ gap: `${gap}px` }}
@@ -551,7 +551,7 @@ export function Dock() {
 
           {/* Divider: launchpad | pinned */}
           <div
-            className="w-px bg-white/20 dark:bg-white/10 mx-0.5 self-center shrink-0"
+            className="w-px bg-black/10 dark:bg-white/10 mx-0.5 self-center shrink-0"
             style={{ height: dividerHeight }}
           />
 
@@ -576,7 +576,7 @@ export function Dock() {
             <>
               {/* Divider: pinned | dynamic */}
               <div
-                className="w-px bg-white/20 dark:bg-white/10 mx-0.5 self-center shrink-0"
+                className="w-px bg-black/10 dark:bg-white/10 mx-0.5 self-center shrink-0"
                 style={{ height: dividerHeight }}
               />
               {dynamicItems.map((item) => (

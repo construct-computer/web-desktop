@@ -630,6 +630,67 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     [],
   );
 
+  // ── Touch long-press → context menu (mobile equivalent of right-click) ──
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStart = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const startLongPress = useCallback(
+    (e: React.TouchEvent, fire: (x: number, y: number) => void) => {
+      if (e.touches.length !== 1) { cancelLongPress(); return; }
+      const t = e.touches[0];
+      longPressStart.current = { x: t.clientX, y: t.clientY };
+      longPressFired.current = false;
+      cancelLongPress();
+      longPressTimer.current = setTimeout(() => {
+        longPressFired.current = true;
+        const s = longPressStart.current;
+        if (s) fire(s.x, s.y);
+      }, 500);
+    },
+    [cancelLongPress],
+  );
+
+  const trackLongPressMove = useCallback((e: React.TouchEvent) => {
+    const start = longPressStart.current;
+    if (!start || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (dx * dx + dy * dy > 100) cancelLongPress(); // 10px threshold
+  }, [cancelLongPress]);
+
+  const endLongPress = useCallback(() => {
+    cancelLongPress();
+    longPressStart.current = null;
+  }, [cancelLongPress]);
+
+  const handleItemLongPressStart = useCallback(
+    (entry: FileEntry) => (e: React.TouchEvent) => {
+      startLongPress(e, (x, y) => {
+        setSelectedName(entry.name);
+        setContextMenu({ kind: 'local-item', x, y, entry });
+      });
+    },
+    [startLongPress],
+  );
+
+  const handleCloudItemLongPressStart = useCallback(
+    (file: DriveFileEntry) => (e: React.TouchEvent) => {
+      startLongPress(e, (x, y) => {
+        setContextMenu({ kind: 'cloud-item', x, y, file });
+      });
+    },
+    [startLongPress],
+  );
+
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   const handleEditFile = useCallback(
@@ -1182,9 +1243,16 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                               ? 'bg-[var(--color-accent)] text-white'
                               : 'hover:bg-[var(--color-accent-muted)]'
                           }`}
-                          onClick={(e) => handleItemClick(entry, e)}
+                          onClick={(e) => {
+                            if (longPressFired.current) { longPressFired.current = false; return; }
+                            handleItemClick(entry, e);
+                          }}
                           onDoubleClick={() => handleItemDoubleClick(entry)}
                           onContextMenu={(e) => handleItemContextMenu(entry, e)}
+                          onTouchStart={handleItemLongPressStart(entry)}
+                          onTouchMove={trackLongPressMove}
+                          onTouchEnd={endLongPress}
+                          onTouchCancel={endLongPress}
                         >
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             {appIconUrl ? (
@@ -1297,6 +1365,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                             : 'hover:bg-[var(--color-accent-muted)]'
                         }`}
                         onClick={(e) => {
+                          if (longPressFired.current) { longPressFired.current = false; return; }
                           e.stopPropagation();
                           driveFiles.navigateInto(file);
                         }}
@@ -1313,6 +1382,10 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                           }
                         }}
                         onContextMenu={(e) => handleCloudItemContextMenu(file, e)}
+                        onTouchStart={handleCloudItemLongPressStart(file)}
+                        onTouchMove={trackLongPressMove}
+                        onTouchEnd={endLongPress}
+                        onTouchCancel={endLongPress}
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <Icon

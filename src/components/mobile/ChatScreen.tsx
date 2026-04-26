@@ -39,7 +39,7 @@ export function ChatScreen() {
       </div>
 
       {/* Messages */}
-      <MessageList />
+      <MessageList paddingTopClass="pt-4" />
 
       {/* Input */}
       <SpotlightInput />

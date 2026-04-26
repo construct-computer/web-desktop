@@ -1,4 +1,4 @@
-import { useComputerStore, type TodoItem } from '@/stores/agentStore';
+import { useComputerStore } from '@/stores/agentStore';
 
 function Divider() {
   return (
@@ -24,7 +24,8 @@ export function TodoListWidget() {
   return (
     <div
       className="w-[240px] select-none pointer-events-auto font-mono text-[11px] leading-[1.7] mt-3
-                 bg-white/40 dark:bg-black/40 backdrop-blur-3xl saturate-150 rounded-[20px] p-4 shadow-xl border border-white/20 dark:border-white/10"
+                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl rounded-[20px] p-4 shadow-[var(--shadow-window)]
+                 border border-black/10 dark:border-white/10"
     >
       {/* Header */}
       <div className="flex justify-between items-baseline mb-1">

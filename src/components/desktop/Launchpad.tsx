@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAppStore, installedAppsToDefinitions, localAppsToDefinitions, composioToolkitsToDefinitions } from '@/stores/appStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { useSound } from '@/hooks/useSound';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { SYSTEM_APPS, type AppDefinition } from '@/lib/appRegistry';
 import iconGeneric from '@/icons/generic.png';
 import { cn } from '@/lib/utils';
@@ -86,6 +87,7 @@ export function Launchpad() {
   const closeLaunchpad = useWindowStore((s) => s.closeLaunchpad);
   const openWindow = useWindowStore((s) => s.openWindow);
   const { play } = useSound();
+  const isMobile = useIsMobile();
   const { installedApps: storeInstalledApps, localApps, connectedToolkits, fetchApps, fetched } = useAppStore();
 
   const [shouldRender, setShouldRender] = useState(false);
@@ -140,7 +142,8 @@ export function Launchpad() {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setAnimIn(true);
-          inputRef.current?.focus();
+          // Don't auto-focus on mobile — would pop the keyboard immediately.
+          if (!isMobile) inputRef.current?.focus();
         });
       });
     } else {
@@ -150,7 +153,7 @@ export function Launchpad() {
       }, 300);
     }
     return () => clearTimeout(dismountTimer.current);
-  }, [launchpadOpen]);
+  }, [launchpadOpen, isMobile]);
 
   // ── Escape to close ──
   useEffect(() => {
@@ -212,10 +215,32 @@ export function Launchpad() {
   const systemApps = filteredApps.filter((a) => a.category === 'system');
   const installedApps = filteredApps.filter((a) => a.category === 'installed');
 
+  // Mobile-only: dismiss with a downward swipe anywhere on the backdrop area.
+  const swipeStartY = useRef<number | null>(null);
+  const swipeFired = useRef(false);
+  const onSwipeStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    swipeStartY.current = e.touches[0].clientY;
+    swipeFired.current = false;
+  };
+  const onSwipeMove = (e: React.TouchEvent) => {
+    if (swipeStartY.current === null || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - swipeStartY.current;
+    if (dy > 80 && !swipeFired.current) {
+      swipeFired.current = true;
+      closeLaunchpad();
+    }
+  };
+  const onSwipeEnd = () => { swipeStartY.current = null; };
+
   return createPortal(
     <div
       className="fixed inset-0"
       style={{ zIndex: 1100 }}
+      onTouchStart={isMobile ? onSwipeStart : undefined}
+      onTouchMove={isMobile ? onSwipeMove : undefined}
+      onTouchEnd={isMobile ? onSwipeEnd : undefined}
+      onTouchCancel={isMobile ? onSwipeEnd : undefined}
     >
       {/* Backdrop */}
       <div

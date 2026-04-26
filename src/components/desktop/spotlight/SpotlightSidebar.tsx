@@ -139,7 +139,7 @@ function SessionItem({
         {!editing && (
           <button
             onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-            className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 transition-all"
+            className="touch-target shrink-0 p-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 transition-all"
           >
             <MoreHorizontal className="w-3.5 h-3.5" />
           </button>
@@ -235,7 +235,7 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
     : sorted;
 
   return (
-    <div className="w-[240px] min-w-[240px] shrink-0 flex flex-col h-full min-h-0 border-r border-white/[0.08]">
+    <div className="w-full min-w-[240px] shrink-0 flex flex-col h-full min-h-0 border-r border-white/[0.08]">
       {/* Collapse + New Chat */}
       <div className="flex items-center gap-1.5 px-3 pt-4 pb-2">
         {onCollapse && (
@@ -315,7 +315,7 @@ export function SpotlightSidebar({ onCollapse }: { onCollapse?: () => void }) {
               type="button"
               onClick={handleUpgradeClick}
               title="Upgrade plan — opens Subscription in Settings"
-              className="relative w-full max-w-[216px] cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 bg-white/[0.06] py-2 px-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+              className="relative w-full cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 bg-white/[0.06] py-2 px-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
             >
               <span
                 className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"

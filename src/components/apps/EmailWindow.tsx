@@ -687,7 +687,7 @@ function ThreadPane({
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
-        <button onClick={onBack} className="p-1 rounded hover:bg-white/10 shrink-0">
+        <button onClick={onBack} className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 shrink-0">
           <ArrowLeft size={14} />
         </button>
         <div className="flex-1 min-w-0">
@@ -698,7 +698,7 @@ function ThreadPane({
         </div>
         <button
           onClick={() => void onDelete(thread.threadId)}
-          className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)]"
+          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)]"
           title="Delete"
         >
           <Trash2 size={14} />

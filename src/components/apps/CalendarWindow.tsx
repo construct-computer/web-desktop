@@ -640,7 +640,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
   return (
     <div className="flex flex-col h-full bg-[var(--color-surface)] select-none">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
         <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">
           Today
         </Button>
@@ -648,18 +648,18 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           <Button variant="ghost" size="icon-sm" onClick={handlePrevMonth}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <span className="text-sm font-medium min-w-[140px] text-center">
+          <span className="text-sm font-medium min-w-[110px] sm:min-w-[140px] text-center">
             {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
           </span>
           <Button variant="ghost" size="icon-sm" onClick={handleNextMonth}>
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
-        <div className="flex-1" />
+        <div className="flex-1 min-w-0" />
         <div className="flex items-center gap-1 bg-[var(--color-surface)] rounded-md border border-[var(--color-border)] p-0.5">
           <button
             className={cn(
-              'px-2 py-0.5 text-xs rounded transition-colors',
+              'px-2 py-1 text-xs rounded transition-colors min-h-[28px]',
               view === 'month' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]'
             )}
             onClick={() => setView('month')}
@@ -668,7 +668,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           </button>
           <button
             className={cn(
-              'px-2 py-0.5 text-xs rounded transition-colors',
+              'px-2 py-1 text-xs rounded transition-colors min-h-[28px]',
               view === 'list' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]'
             )}
             onClick={() => setView('list')}
@@ -681,7 +681,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
         </Button>
         <Button variant="primary" size="sm" onClick={() => handleNewEvent()} className="text-xs">
           <Plus className="w-3.5 h-3.5 mr-1" />
-          New Event
+          {isMobile ? 'New' : 'New Event'}
         </Button>
       </div>
 

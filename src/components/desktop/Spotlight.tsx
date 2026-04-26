@@ -34,6 +34,13 @@ export function Spotlight() {
   const [show, setShow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  /** Sheet vertical pull from handle (px), 0 = resting — mobile + desktop */
+  const [sheetDragPx, setSheetDragPx] = useState(0);
+  /** No CSS transition while pointer is down so the sheet tracks 1:1 */
+  const [sheetDragLive, setSheetDragLive] = useState(false);
+  const sheetInnerRef = useRef<HTMLDivElement>(null);
+  const closeAfterSlideRef = useRef(false);
+
   // ── Drag-and-drop on the panel ────────────────────────────────────────
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
@@ -64,14 +71,54 @@ export function Spotlight() {
   useEffect(() => {
     if (open) {
       setSidebarOpen(false);
+      setSheetDragPx(0);
+      setSheetDragLive(false);
+      closeAfterSlideRef.current = false;
       setShow(true);
       requestAnimationFrame(() => requestAnimationFrame(() => setAnimating(true)));
     } else {
       setAnimating(false);
+      setSheetDragPx(0);
+      setSheetDragLive(false);
+      closeAfterSlideRef.current = false;
       const t = setTimeout(() => setShow(false), 200);
       return () => clearTimeout(t);
     }
   }, [open]);
+
+  const onSheetDragY = useCallback((dy: number) => {
+    setSheetDragPx(dy);
+  }, []);
+
+  const onSheetDragEnd = useCallback(
+    (dy: number) => {
+      setSheetDragLive(false);
+      const h = sheetInnerRef.current?.offsetHeight ?? 560;
+      const threshold = Math.max(96, Math.round(h * 0.2));
+      if (dy >= threshold) {
+        closeAfterSlideRef.current = true;
+        const off =
+          typeof globalThis.innerHeight === 'number'
+            ? Math.max(h + 80, globalThis.innerHeight)
+            : h + 80;
+        setSheetDragPx(off);
+      } else {
+        setSheetDragPx(0);
+      }
+    },
+    [],
+  );
+
+  const onSheetInnerTransitionEnd = useCallback(
+    (e: React.TransitionEvent<HTMLDivElement>) => {
+      if (e.propertyName !== 'transform') return;
+      if (closeAfterSlideRef.current) {
+        closeAfterSlideRef.current = false;
+        closeSpotlight();
+      }
+    },
+    [closeSpotlight],
+  );
 
   // Close on Escape
   useEffect(() => {
@@ -110,9 +157,9 @@ export function Spotlight() {
       >
       <div
         className={cn(
-          "pointer-events-auto transition-all duration-300 ease-out flex flex-col",
+          "pointer-events-auto flex flex-col overflow-hidden transition-all duration-300 ease-out",
           isMobile
-            ? "w-full"
+            ? "w-full rounded-t-[32px]"
             : "w-[960px] max-w-[calc(100vw-48px)] rounded-2xl",
           animating 
             ? (isMobile ? "translate-y-0 opacity-100" : "opacity-100 scale-100")
@@ -124,30 +171,42 @@ export function Spotlight() {
         }}
       >
         <div
+          ref={sheetInnerRef}
+          className="h-full min-h-0 flex flex-col overflow-hidden"
+          style={{
+            transform: `translateY(${sheetDragPx}px)`,
+            transition: sheetDragLive
+              ? 'none'
+              : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
+          }}
+          onTransitionEnd={onSheetInnerTransitionEnd}
+        >
+        <div
           onDragEnter={onPanelDragEnter}
           onDragOver={onPanelDragOver}
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
           className={cn(
-            "relative h-full flex overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5",
-            isMobile 
-              ? "rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]"
-              : "rounded-2xl border border-white/30 dark:border-white/[0.1]"
+            'relative h-full min-h-0 flex flex-col overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
+            isMobile
+              ? 'rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]'
+              : 'rounded-2xl border border-white/30 dark:border-white/[0.1]',
           )}
         >
-          {/* Mobile drag handle — reserves space in flex flow so it never overlaps messages */}
-          {isMobile && (
-            <div
-              className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 cursor-pointer"
-              onClick={closeSpotlight}
-            >
-              <div className="w-12 h-1.5 rounded-full bg-black/20 dark:bg-white/20" />
-            </div>
-          )}
+          <SpotlightDragHandle
+            onDragStart={() => setSheetDragLive(true)}
+            onDragY={onSheetDragY}
+            onDragEnd={onSheetDragEnd}
+          />
 
           {/* Drag overlay */}
           {dragOver && (
-            <div className="absolute inset-0 z-50 rounded-2xl bg-white/80 dark:bg-[#111113]/95 backdrop-blur-sm border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none">
+            <div
+              className={cn(
+                'absolute inset-0 z-50 bg-white/80 dark:bg-[#111113]/95 backdrop-blur-sm border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none',
+                isMobile ? 'rounded-t-[32px]' : 'rounded-2xl',
+              )}
+            >
               <div className="flex flex-col items-center gap-1.5 text-[var(--color-accent)]">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -241,9 +300,80 @@ export function Spotlight() {
             )}
           </div>
         </div>
+        </div>
       </div>
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Top drag handle — pointer (mouse / touch / pen) drives sheet translateY.
+ * Release past threshold animates off-screen then closes; otherwise springs back.
+ * Click alone does not dismiss.
+ */
+function SpotlightDragHandle({
+  onDragStart,
+  onDragY,
+  onDragEnd,
+}: {
+  onDragStart: () => void;
+  onDragY: (dy: number) => void;
+  onDragEnd: (dy: number) => void;
+}) {
+  const startY = useRef<number | null>(null);
+  const lastDy = useRef(0);
+
+  const finish = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startY.current === null) return;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* not capturing */
+      }
+      startY.current = null;
+      onDragEnd(lastDy.current);
+    },
+    [onDragEnd],
+  );
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      startY.current = e.clientY;
+      lastDy.current = 0;
+      onDragStart();
+      onDragY(0);
+    },
+    [onDragStart, onDragY],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startY.current === null) return;
+      const dy = Math.max(0, e.clientY - startY.current);
+      lastDy.current = dy;
+      onDragY(dy);
+    },
+    [onDragY],
+  );
+
+  return (
+    <div
+      className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 touch-none cursor-grab active:cursor-grabbing select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+    >
+      <div
+        className="pointer-events-none w-11 h-[5px] rounded-full bg-zinc-600 border border-zinc-700 shadow-sm dark:bg-zinc-800 dark:border-zinc-600"
+        aria-hidden
+      />
+    </div>
   );
 }

@@ -637,6 +637,117 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     });
   }, []);
 
+  /* ── Touch handlers — synthesize mouse events for the remote canvas ─────── */
+  // Mobile users need to be able to tap/drag the remote browser viewport.
+  // A long press (500ms with no movement) maps to a right-click / context menu.
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const onViewportTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) { clearLongPress(); return; }
+    if (contextMenu) { setContextMenu(null); return; }
+    const t = e.touches[0];
+    const c = mapCoords(t.clientX, t.clientY);
+    if (!c) return;
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+    longPressFired.current = false;
+    dragState.current = { x: t.clientX, y: t.clientY, dragging: false };
+    sendTabAction({ action: 'mousedown', x: c.x, y: c.y });
+    viewportRef.current?.focus();
+    // Long-press → context menu (after 500ms with minimal movement)
+    clearLongPress();
+    longPressTimer.current = setTimeout(() => {
+      const start = touchStartRef.current;
+      if (!start) return;
+      const ds = dragState.current;
+      if (ds && ds.dragging) return; // moved → not a long press
+      longPressFired.current = true;
+      const el = viewportRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setContextMenu({ x: start.x - rect.left, y: start.y - rect.top });
+      // Cancel the in-flight mousedown so it doesn't get stuck
+      sendTabAction({ action: 'mouseup', x: c.x, y: c.y });
+      dragState.current = null;
+    }, 500);
+  }, [mapCoords, contextMenu, sendTabAction, clearLongPress]);
+
+  const onViewportTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const now = Date.now();
+    if (now - lastMouseMove.current < 50) {
+      // Still update drag-detection state cheaply
+      const ds = dragState.current;
+      if (ds && !ds.dragging) {
+        const dx = t.clientX - ds.x;
+        const dy = t.clientY - ds.y;
+        if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+          ds.dragging = true;
+          clearLongPress();
+        }
+      }
+      return;
+    }
+    lastMouseMove.current = now;
+    const c = mapCoords(t.clientX, t.clientY);
+    if (!c) return;
+    const ds = dragState.current;
+    if (ds && !ds.dragging) {
+      const dx = t.clientX - ds.x;
+      const dy = t.clientY - ds.y;
+      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+        ds.dragging = true;
+        clearLongPress();
+      }
+    }
+    sendTabAction({ action: 'mousemove', x: c.x, y: c.y });
+  }, [mapCoords, sendTabAction, clearLongPress]);
+
+  const onViewportTouchEnd = useCallback((e: React.TouchEvent) => {
+    clearLongPress();
+    if (longPressFired.current) {
+      // Already handled as a context menu; don't fire mouseup again
+      touchStartRef.current = null;
+      longPressFired.current = false;
+      return;
+    }
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const c = mapCoords(t.clientX, t.clientY);
+    const ds = dragState.current;
+    if (c) {
+      sendTabAction({ action: 'mouseup', x: c.x, y: c.y });
+      if (ds && !ds.dragging) {
+        showRipple(t.clientX, t.clientY);
+      }
+    }
+    touchStartRef.current = null;
+    dragState.current = null;
+  }, [mapCoords, sendTabAction, showRipple, clearLongPress]);
+
+  const onViewportTouchCancel = useCallback(() => {
+    clearLongPress();
+    const ds = dragState.current;
+    if (ds) {
+      // Best-effort mouseup at the original touch position so the remote
+      // browser doesn't stay stuck holding a button.
+      const c = mapCoords(ds.x, ds.y);
+      if (c) sendTabAction({ action: 'mouseup', x: c.x, y: c.y });
+    }
+    touchStartRef.current = null;
+    dragState.current = null;
+    longPressFired.current = false;
+  }, [mapCoords, sendTabAction, clearLongPress]);
+
   // Global mouseup: if the user drags outside the viewport and releases,
   // we still need to send mouseup so the remote browser doesn't stay stuck.
   useEffect(() => {
@@ -877,7 +988,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
           <div
             ref={viewportRef}
             className="w-full h-full relative outline-none"
-            style={{ cursor: 'default' }}
+            style={{ cursor: 'default', touchAction: 'none' }}
             tabIndex={0}
             onMouseDown={onViewportMouseDown}
             onMouseUp={onViewportMouseUp}
@@ -885,6 +996,10 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             onMouseMove={onViewportMouseMove}
             onContextMenu={onViewportContextMenu}
             onKeyDown={onViewportKeyDown}
+            onTouchStart={onViewportTouchStart}
+            onTouchMove={onViewportTouchMove}
+            onTouchEnd={onViewportTouchEnd}
+            onTouchCancel={onViewportTouchCancel}
           >
             <canvas
               ref={canvasRef}

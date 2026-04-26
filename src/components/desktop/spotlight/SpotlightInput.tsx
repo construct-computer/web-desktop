@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSound } from '@/hooks/useSound';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { uploadAttachment } from '@/lib/uploadAttachment';
 import { listFiles, downloadContainerFile } from '@/services/api';
 import { VoiceButton } from '@/components/ui/VoiceButton';
@@ -87,6 +88,7 @@ export function SpotlightInput() {
   const cancelRecording = useVoiceStore(s => s.cancelRecording);
 
   const { play } = useSound();
+  const isMobile = useIsMobile();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [slashSelected, setSlashSelected] = useState(0);
@@ -125,13 +127,16 @@ export function SpotlightInput() {
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
 
-  // Focus input on mount and when typing
+  // Focus input on mount and when typing — but never on mobile, where
+  // auto-focus pops the keyboard immediately and obscures the rest of the UI.
   useEffect(() => {
+    if (isMobile) { autoResize(); return; }
     const t = setTimeout(() => { inputRef.current?.focus(); autoResize(); }, 120);
     return () => clearTimeout(t);
-  }, [autoResize]);
+  }, [autoResize, isMobile]);
 
   useEffect(() => {
+    if (isMobile) return;
     const h = (e: KeyboardEvent) => {
       const active = document.activeElement;
       if (active === inputRef.current) return;
@@ -142,7 +147,7 @@ export function SpotlightInput() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, []);
+  }, [isMobile]);
 
   // ── @ file/folder selector ────────────────────────────────────────────
   const [fsOpen, setFsOpen] = useState(false);
@@ -669,7 +674,7 @@ export function SpotlightInput() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!isConnected || uploading || isExternal}
-                className="p-1.5 rounded-md hover:bg-white/10 text-[var(--color-text-muted)]/40 hover:text-[var(--color-text-muted)] disabled:opacity-20 transition-colors"
+                className="touch-target p-1.5 rounded-md hover:bg-white/10 text-[var(--color-text-muted)]/40 hover:text-[var(--color-text-muted)] disabled:opacity-20 transition-colors"
               >
                 {uploading ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Paperclip className="w-4.5 h-4.5" />}
               </button>
@@ -680,7 +685,7 @@ export function SpotlightInput() {
                 <Tooltip content="Stop this session" side="top">
                   <button
                     onClick={stopChatSession}
-                    className="p-1.5 rounded-md hover:bg-red-500/15 text-red-500/70 hover:text-red-500 transition-colors"
+                    className="touch-target p-1.5 rounded-md hover:bg-red-500/15 text-red-500/70 hover:text-red-500 transition-colors"
                   >
                     <Square className="w-4.5 h-4.5" />
                   </button>
@@ -699,7 +704,7 @@ export function SpotlightInput() {
                       <button
                         onClick={handleSend}
                         disabled={!isConnected || isExternal}
-                        className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                        className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
                       >
                         <Send className="w-4.5 h-4.5" />
                       </button>
@@ -720,7 +725,7 @@ export function SpotlightInput() {
                           setUploadError(null);
                         }}
                         disabled={!isConnected || isExternal}
-                        className="p-1.5 rounded-md hover:bg-amber-500/15 text-amber-500/80 hover:text-amber-400 disabled:opacity-20 transition-colors"
+                        className="touch-target p-1.5 rounded-md hover:bg-amber-500/15 text-amber-500/80 hover:text-amber-400 disabled:opacity-20 transition-colors"
                       >
                         <Zap className="w-4.5 h-4.5" />
                       </button>
@@ -733,7 +738,7 @@ export function SpotlightInput() {
                 <button
                   onClick={handleSend}
                   disabled={!isConnected || isExternal || providerCopyData.inputDisabled}
-                  className="p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
+                  className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
                 >
                   <Send className="w-4.5 h-4.5" />
                 </button>

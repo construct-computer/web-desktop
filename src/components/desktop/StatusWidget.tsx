@@ -169,14 +169,7 @@ export function StatusWidget() {
   return (
     <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
       <div
-        className="px-5 py-4 rounded-2xl w-full"
-        style={{
-          maskImage: 'radial-gradient(ellipse 85% 75% at center, black 55%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 85% 75% at center, black 55%, transparent 100%)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%, transparent 80%)',
-        }}
+        className="px-5 py-4 rounded-2xl w-full bg-white/70 dark:bg-black/70 backdrop-blur-2xl border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)]"
       >
       {/* ── Agent status ── */}
       <div className="flex items-baseline justify-between">

@@ -180,32 +180,14 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
     return { top: rect.bottom + 4, left: rect.left };
   };
 
-  // Compute panel position anchored to the icon
-  const getPanelPos = (ref: React.RefObject<HTMLButtonElement | null>, panelWidth: number, align: 'left' | 'right' = 'right') => {
-    if (!ref.current) {
-      return align === 'left'
-        ? { top: MENUBAR_HEIGHT + 4, left: 8 }
-        : { top: MENUBAR_HEIGHT + 4, right: 8 };
-    }
-    const rect = ref.current.getBoundingClientRect();
-    if (align === 'left') {
-      // Left-align panel to icon, clamped to viewport
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8));
-      return { top: rect.bottom + 6, left };
-    }
-    // Right-align panel to icon, clamped to viewport
-    const right = Math.max(8, window.innerWidth - rect.right);
-    return { top: rect.bottom + 6, right };
-  };
-
   const barHeight = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
 
   return (
     <div
       ref={menuRef}
       className="absolute top-0 left-0 right-0 flex items-center select-none
-                 bg-white/20 dark:bg-black/30 backdrop-blur-2xl
-                 border-b border-white/5 dark:border-white/5 shadow-[0_1px_10px_rgba(0,0,0,0.05)]"
+                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl
+                 border-b border-black/10 dark:border-white/10"
       style={{ height: barHeight, zIndex: Z_INDEX.taskbar }}
     >
       {/* Logo + app name menu (single button) */}
@@ -234,6 +216,32 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             {/* About */}
             <MenuItem label="About" isMobile={isMobile} icon={<Info className="w-3.5 h-3.5" />} onClick={() => { openWindow('about'); setMenu({ open: null }); }} />
             <MenuDivider />
+
+            {/* Mobile-only workspace switcher (desktop has it inline in the bar) */}
+            {isMobile && workspaces.length > 1 && (
+              <>
+                <div className="px-3 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-black/40 dark:text-white/40">Workspaces</div>
+                {workspaces.map((ws, i) => {
+                  const isActive = ws.id === activeWorkspaceId;
+                  const PlatformIcon = ws.platform === 'slack' ? MessageCircle
+                    : ws.platform === 'telegram' ? Send
+                    : ws.platform === 'email' ? Mail
+                    : ws.platform === 'calendar' ? Calendar
+                    : Monitor;
+                  return (
+                    <MenuItem
+                      key={ws.id}
+                      isMobile={isMobile}
+                      icon={<PlatformIcon className="w-3.5 h-3.5" style={{ color: ws.color }} />}
+                      label={ws.name}
+                      shortcut={isActive ? '✓' : `⌃${i + 1}`}
+                      onClick={() => { switchWorkspace(ws.id); setMenu({ open: null }); }}
+                    />
+                  );
+                })}
+                <MenuDivider />
+              </>
+            )}
 
             {/* Apps & configuration */}
             <MenuItem label="App Registry..." isMobile={isMobile} icon={<Package className="w-3.5 h-3.5" />} onClick={() => { openWindow('app-registry'); setMenu({ open: null }); }} />

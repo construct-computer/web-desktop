@@ -5,22 +5,9 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
-import { apiJSON, haptic, bg2, textColor, accent, SectionLabel } from '../ui';
-import { MiniClippy } from '../MiniClippy';
-
-// App icons (same as desktop appRegistry)
-import iconLaunchpad from '@/icons/launchpad.png';
-import iconAppStore from '@/icons/app-store.png';
-import iconSettings from '@/icons/settings.png';
-import iconFiles from '@/icons/files.png';
-import iconCalendar from '@/icons/calendar.png';
-import iconEmail from '@/icons/email.png';
-import iconAccessLogs from '@/icons/access-logs.png';
-import iconAccessControl from '@/icons/access-control.png';
-import iconMemory from '@/icons/memory.png';
-import iconGeneric from '@/icons/generic.png';
+import { apiJSON, haptic, textColor, accent } from '../ui';
+import { CalendarEmailQuickWidgets } from '@/components/desktop/CalendarEmailQuickWidgets';
 
 export type MiniScreen =
   | 'home' | 'files' | 'calendar' | 'email' | 'settings'
@@ -28,24 +15,6 @@ export type MiniScreen =
 
 /** All navigable screens — MiniScreen + mobile-only screens like 'chat'. */
 export type NavigableScreen = MiniScreen | 'chat';
-
-interface AppItem {
-  id: MiniScreen;
-  label: string;
-  icon: string;
-  badge?: number;
-}
-
-const SYSTEM_APPS: AppItem[] = [
-  { id: 'app-registry', label: 'Apps', icon: iconAppStore },
-  { id: 'settings', label: 'Settings', icon: iconSettings },
-  { id: 'audit-logs', label: 'Audit Logs', icon: iconAccessLogs },
-  { id: 'access-control', label: 'Access', icon: iconAccessControl },
-  { id: 'memory', label: 'Memory', icon: iconMemory },
-  { id: 'files', label: 'Files', icon: iconFiles },
-  { id: 'calendar', label: 'Calendar', icon: iconCalendar },
-  { id: 'email', label: 'Email', icon: iconEmail },
-];
 
 interface UsageData {
   percentUsed: number;
@@ -59,29 +28,16 @@ interface Props {
 }
 
 export function HomeScreen({ onNavigate }: Props) {
-  const agentConnected = useComputerStore((s) => s.agentConnected);
-  const agentRunning = useComputerStore((s) => s.agentRunning);
-  const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
-  const computerConfig = useComputerStore((s) => s.computer?.config);
-
   const [usage, setUsage] = useState<UsageData | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [events, setEvents] = useState<any[]>([]);
-
-
   const fetchData = useCallback(async () => {
-    const [usageRes, appsRes, composioRes, eventsRes] = await Promise.all([
+    const [usageRes, appsRes, composioRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       apiJSON<any>('/billing/usage/current'),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       apiJSON<any>('/agent/apps'),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       apiJSON<any>('/composio/connected'),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      apiJSON<any>(
-        `/calendar/agent/events?time_min=${new Date().toISOString()}&time_max=${new Date(Date.now() + 7 * 86_400_000).toISOString()}&max_results=2`
-      ),
     ]);
 
     if (usageRes) {
@@ -105,10 +61,6 @@ export function HomeScreen({ onNavigate }: Props) {
     if (composioRes?.connected) {
       // Intentionally removed: no longer handling composio connected apps in HomeScreen
     }
-
-    if (eventsRes?.events) {
-      setEvents(eventsRes.events);
-    }
   }, []);
 
   useEffect(() => {
@@ -121,17 +73,9 @@ export function HomeScreen({ onNavigate }: Props) {
   const user = useAuthStore((s) => s.user);
   const nameToUse = user?.displayName || user?.username || '';
   const userName = nameToUse.split(' ')[0] || 'there';
-  const statusDot = !agentConnected ? '#f87171' : agentRunning ? '#4ade80' : '#22c55e';
-  const statusText = !agentConnected ? 'Offline' : agentRunning ? 'Working...' : 'Online';
   const pct = usage?.percentUsed ?? 0;
   const barColor = pct >= 100 ? '#f87171' : pct >= 85 ? '#fbbf24' : '#22d3ee';
   
-  const now = new Date();
-
-
-
-
-
   return (
     <div className="flex-1 flex flex-col pb-6 relative overflow-hidden h-full">
       {/* Header */}
@@ -155,41 +99,18 @@ export function HomeScreen({ onNavigate }: Props) {
       <div className="flex-1 flex flex-col items-center justify-center -mt-6 z-10">
       </div>
 
-      {/* Bottom Widgets */}
-      <div className="px-5 grid grid-cols-2 gap-3 mb-5 z-0 relative">
-        <button 
-          onClick={() => { haptic('light'); onNavigate('calendar'); }}
-          className="flex flex-col justify-between p-4 rounded-[20px] text-left active:scale-95 transition-transform backdrop-blur-md"
-          style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
-        >
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: accent() }}>{now.toLocaleString('default', { weekday: 'long' })}</span>
-            <div className="text-3xl font-semibold leading-none mt-1" style={{ color: textColor() }}>
-              {now.getDate()}
-            </div>
-          </div>
-          <div className="text-[12px] opacity-60 mt-2 line-clamp-2">
-            {events.length > 0 ? events[0].summary : 'No upcoming events'}
-          </div>
-        </button>
-
-        <button 
-          onClick={() => { haptic('light'); onNavigate('email'); }}
-          className="flex flex-col p-4 rounded-[20px] text-left active:scale-95 transition-transform backdrop-blur-md"
-          style={{ backgroundColor: 'var(--color-surface-raised)', minHeight: '110px' }}
-        >
-          <span className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-2">Inbox</span>
-          
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-            <span className="text-[14px] font-medium" style={{ color: textColor() }}>{emailUnreadCount} new emails</span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-            <span className="text-[14px] font-medium" style={{ color: textColor() }}>0 notifications</span>
-          </div>
-        </button>
+      {/* Bottom widgets — same frosted chrome as desktop / app windows */}
+      <div className="px-5 mb-5 z-0 relative">
+        <CalendarEmailQuickWidgets
+          onCalendarClick={() => {
+            haptic('light');
+            onNavigate('calendar');
+          }}
+          onEmailClick={() => {
+            haptic('light');
+            onNavigate('email');
+          }}
+        />
       </div>
 
     </div>

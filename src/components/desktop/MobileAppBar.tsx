@@ -153,7 +153,7 @@ export function MobileAppBar() {
     <div
       data-tour="dock"
       className="absolute bottom-0 left-0 right-0 px-1 pb-[18px] pt-1.5
-                 bg-white/70 dark:bg-black/50 backdrop-blur-2xl
+                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl
                  border-t border-black/10 dark:border-white/10
                  overflow-x-auto scrollbar-none"
       style={{ height: MOBILE_APP_BAR_HEIGHT, zIndex: Z_INDEX.taskbar }}

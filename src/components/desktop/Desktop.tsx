@@ -25,7 +25,7 @@ import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { getSlackStatus, validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
-import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, DOCK_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
+import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 
 // ── Workspace slide constants ──────────────────────────────────────
 

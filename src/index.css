@@ -437,7 +437,8 @@ html, body {
   word-break: break-word;
 }
 html.dark .md-inline-code {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 /* --- Fenced code blocks --- */
@@ -508,6 +509,7 @@ html.dark .md-inline-code {
 /* --- Tables (GFM) --- */
 .md-table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin: 0.5em 0;
 }
 .md-table-wrap table {
@@ -536,6 +538,7 @@ html.dark .md-table-wrap tr:nth-child(even) {
 .md-root .katex-display {
   margin: 0.5em 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   overflow-y: hidden;
 }
 .md-root .katex { font-size: 1em; }
@@ -785,6 +788,21 @@ html.dark .construct-tour-popover .driver-popover-arrow-side-left {
   }
   .group-hover\:visible {
     visibility: visible !important;
+  }
+  /* Touch-target utility — extends hit area to 44x44 on touch devices via
+     a transparent ::before overlay, without changing visual size. Apply to
+     small icon buttons. The button itself must be position: relative. */
+  .touch-target {
+    position: relative;
+  }
+  .touch-target::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
   }
 }
 

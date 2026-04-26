@@ -51,7 +51,7 @@ function isToday(date: Date): boolean {
  * MessageList — Scrollable message area with auto-scroll, message grouping,
  * and tool call banners between activity clusters and agent responses.
  */
-export function MessageList() {
+export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = {}) {
   const chatMessages = useComputerStore(s => s.chatMessages);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const agentStatusLabel = useComputerStore(s => s.agentStatusLabel);
@@ -150,7 +150,7 @@ export function MessageList() {
       flushActivitiesAndOperation(`flush-${gi}`);
 
       if (msg.role === 'user') {
-        const replySlot = !isExternal && msg.content?.trim()
+        const replySlot = !isExternal && !isMobile && msg.content?.trim()
           ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
           : undefined;
         result.push({
@@ -162,7 +162,7 @@ export function MessageList() {
           ),
         });
       } else {
-        const replySlot = !isExternal && msg.content?.trim()
+        const replySlot = !isExternal && !isMobile && msg.content?.trim()
           ? <MessageHoverSlot timestamp={msg.timestamp} onReply={() => setReplyingTo(msg as any)} />
           : undefined;
 
@@ -180,7 +180,7 @@ export function MessageList() {
     flushActivitiesAndOperation(`flush-end`, { isActive: agentRunning });
 
     return result;
-  }, [groups, isExternal, setReplyingTo, agentRunning]);
+  }, [groups, isExternal, setReplyingTo, agentRunning, isMobile]);
 
   const runningSessions = useComputerStore(s => s.runningSessions);
   const activeSessionMeta = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
@@ -231,7 +231,7 @@ export function MessageList() {
         onScroll={handleScroll}
         className={cn(
           "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
-          isMobile ? "pt-8" : "pt-4"
+          paddingTopClass || (isMobile ? "pt-14" : "pt-4")
         )}
         style={{ overscrollBehavior: 'contain' }}
       >

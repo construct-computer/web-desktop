@@ -595,7 +595,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteMemory(m.id); }}
                           disabled={deletingId === m.id}
-                          className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-500 transition-all"
+                          className="touch-target shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-500 transition-all"
                           title="Delete memory"
                         >
                           {deletingId === m.id

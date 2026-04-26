@@ -101,8 +101,14 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
 
   return (
     <div className={`flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
-      {/* Sidebar / Topnav */}
-      <div className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]`}>
+      {/* Sidebar / Topnav — on mobile, fade right edge to hint at scrollable overflow */}
+      <div
+        className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]`}
+        style={isMobile ? {
+          maskImage: 'linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%)',
+        } : undefined}
+      >
         <div className={`${isMobile ? 'flex gap-1.5' : 'space-y-0.5'}`}>
           {SECTIONS.map((s) => {
                 const active = section === s.id;
@@ -110,7 +116,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
                   <button
                     key={s.id}
                     onClick={() => setSection(s.id)}
-                    className={`flex items-center gap-2 px-2.5 py-[5px] rounded-md text-[13px] transition-all duration-100 ${
+                    className={`flex items-center gap-2 px-2.5 ${isMobile ? 'py-2' : 'py-[5px]'} rounded-md text-[13px] transition-all duration-100 ${
                       !isMobile ? 'w-full' : ''
                     } ${
                       active

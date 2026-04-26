@@ -89,9 +89,9 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     const Icon = PLATFORM_ICONS[parsed.platform] || Send;
 
     return (
-      <div className="flex items-center justify-end gap-1.5 px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
+      <div className="flex items-center justify-end gap-1.5 px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
         {replySlot}
-        <div className="max-w-[80%] rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
+        <div className="max-w-[95%] sm:max-w-[80%] rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
           <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-white/60" style={{ background: 'rgba(0,0,0,0.15)' }}>
             {appIcon ? (
               <img src={appIcon} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
@@ -116,9 +116,9 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
   }
 
   return (
-    <div className="flex items-center justify-end gap-1.5 px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
+    <div className="flex items-center justify-end gap-1.5 px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
       {replySlot}
-      <div className="max-w-[80%] px-4 py-2.5 text-[15px] leading-relaxed rounded-[18px] rounded-br-md bg-[var(--color-accent)] text-white shadow-sm selection:!bg-white/90 selection:!text-[var(--color-accent)]">
+      <div className="max-w-[95%] sm:max-w-[80%] px-4 py-2.5 text-[15px] leading-relaxed rounded-[18px] rounded-br-md bg-[var(--color-accent)] text-white shadow-sm selection:!bg-white/90 selection:!text-[var(--color-accent)]">
         {(() => {
           const reply = parseReply(msg.content);
           if (reply) {
