@@ -54,6 +54,7 @@ function isToday(date: Date): boolean {
 export function MessageList() {
   const chatMessages = useComputerStore(s => s.chatMessages);
   const agentRunning = useComputerStore(s => s.agentRunning);
+  const agentStatusLabel = useComputerStore(s => s.agentStatusLabel);
   const thinkingStream = useComputerStore(s => s.agentThinkingStream);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
   const activeKey = useComputerStore(s => s.activeSessionKey);
@@ -81,7 +82,7 @@ export function MessageList() {
     if (el) setShowScrollBtn(el.scrollTop + el.clientHeight < el.scrollHeight - 60);
   }, []);
 
-  useEffect(() => { scrollToBottom(); }, [chatMessages, agentRunning, thinkingStream, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [chatMessages, agentRunning, agentStatusLabel, thinkingStream, scrollToBottom]);
   useEffect(() => { const t = setTimeout(scrollToBottom, 200); return () => clearTimeout(t); }, [scrollToBottom]);
 
   // Build enhanced groups: operations always render (as ToolCallBanner if

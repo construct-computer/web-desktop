@@ -1634,10 +1634,48 @@ export interface InstalledApp {
   has_ui: boolean;
   tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
   installed_at: number;
+  /** false = installed from custom URL (not Construct registry); omit/true = registry-linked */
+  registry_linked?: boolean;
+  mcp_path?: string;
 }
 
 export async function listInstalledApps(): Promise<ApiResult<{ apps: InstalledApp[] }>> {
   return request('/apps');
+}
+
+/** Server-side MCP tools/list preview (SSRF-checked). */
+export async function probeMcpFromUrl(
+  url: string,
+  mcp_path?: string,
+): Promise<
+  ApiResult<{
+    ok: boolean;
+    origin?: string;
+    mcp_path?: string;
+    tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+    tool_count?: number;
+    error?: string;
+  }>
+> {
+  return request('/apps/mcp-probe', {
+    method: 'POST',
+    body: JSON.stringify({ url, mcp_path: mcp_path || undefined }),
+  });
+}
+
+/** Install an MCP server or hosted app from an HTTPS URL (no registry entry required). */
+export async function installAppFromUrl(opts: {
+  url: string;
+  mcp_path?: string;
+  name?: string;
+  description?: string;
+  has_ui?: boolean;
+  icon_url?: string;
+}): Promise<ApiResult<{ ok: boolean; app: InstalledApp }>> {
+  return request('/apps/install-from-url', {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  });
 }
 
 /** Search the Construct App Registry. */

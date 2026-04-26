@@ -29,6 +29,7 @@ function TypingDots() {
 export function ThinkingIndicator() {
   const stream = useComputerStore(s => s.agentThinkingStream);
   const agentRunning = useComputerStore(s => s.agentRunning);
+  const agentStatusLabel = useComputerStore(s => s.agentStatusLabel);
   const activeKey = useComputerStore(s => s.activeSessionKey);
   const runningSet = useComputerStore(s => s.runningSessions);
   const live = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
@@ -38,6 +39,7 @@ export function ThinkingIndicator() {
     || Boolean(live && live.status !== 'idle');
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = stream !== null || running;
+  const isCompacting = agentStatusLabel === 'compacting';
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [stream]);
   if (!isActive) return null;
   const hasText = stream && stream.length > 0;
@@ -45,7 +47,13 @@ export function ThinkingIndicator() {
   return (
     <div className="flex gap-3 px-6 py-2">
       <img src={constructGif} alt="" className="w-[27px] h-[27px] shrink-0 mt-0.5 drop-shadow-sm" />
-      {!hasText ? (
+      {isCompacting ? (
+        <div className="min-w-0 flex items-center" style={{ minHeight: '1.625rem' }}>
+          <p className="text-[13px] text-[var(--color-text-muted)]/80 leading-snug">
+            Compacting conversation context…
+          </p>
+        </div>
+      ) : !hasText ? (
         <div className="min-w-0 flex items-center" style={{ minHeight: '1.625rem' }}>
           <TypingDots />
         </div>

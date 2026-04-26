@@ -465,7 +465,12 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     switch (action) {
       case 'list': return { text: 'Listing apps', activityType: 'tool' };
       case 'call': return { text: `App call${appId ? ` (${appId})` : ''}${toolName ? `: ${toolName}` : ''}`, activityType: 'tool' };
-      case 'search': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
+      case 'search_registry': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
+      case 'install_registry': return { text: `Installing app: ${truncateActivityText((p.registry_app_id as string) || '…', 48)}`, activityType: 'tool' };
+      case 'install_from_url': return { text: `Installing MCP from URL`, activityType: 'tool' };
+      case 'mcp_probe': return { text: 'Probing MCP server', activityType: 'tool' };
+      case 'uninstall': return { text: `Uninstalling app${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
+      case 'refresh_tools': return { text: `Refreshing app tools${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
       case 'create_local': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
       case 'update_local': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
       case 'delete_local': return { text: `Deleting app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
@@ -613,6 +618,22 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   if (tool === 'ask_user') {
     const question = p.question as string | undefined;
     return { text: `Asking: ${(question || 'question').slice(0, 50)}`, activityType: 'tool' };
+  }
+
+  if (tool === 'integrations') {
+    const action = p.action as string | undefined;
+    const tk = p.toolkit as string | undefined;
+    const app = p.app_id as string | undefined;
+    switch (action) {
+      case 'composio_connect': return { text: tk ? `Connecting ${tk}` : 'Connecting integration', activityType: 'tool' };
+      case 'composio_list': return { text: 'Listing Composio connections', activityType: 'tool' };
+      case 'composio_finalize': return { text: 'Finalizing Composio connection', activityType: 'tool' };
+      case 'composio_disconnect': return { text: tk ? `Disconnecting ${tk}` : 'Disconnecting integration', activityType: 'tool' };
+      case 'registry_app_status': return { text: app ? `App connection status: ${app}` : 'App connection status', activityType: 'tool' };
+      case 'registry_app_connect': return { text: app ? `Connecting app: ${app}` : 'Connecting registry app', activityType: 'tool' };
+      case 'registry_app_disconnect': return { text: app ? `Disconnecting app: ${app}` : 'Disconnecting registry app', activityType: 'tool' };
+      default: return { text: `Integrations: ${action || '…'}`, activityType: 'tool' };
+    }
   }
 
   if (tool === 'composio') {

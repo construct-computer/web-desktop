@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '@/services/api';
+import type { InstalledApp } from '@/services/api';
+
+export type { InstalledApp };
 
 // ── Types ──
 
@@ -43,14 +46,6 @@ export interface SmitherySkillDetail extends SmitherySkill {
 export interface ConfigSchema {
   type: string; required?: string[];
   properties?: Record<string, { type: string; description?: string; default?: unknown; enum?: unknown[] }>;
-}
-
-export interface InstalledApp {
-  id: string; name: string; description: string;
-  icon_url?: string; has_ui: boolean;
-  tools: Array<{ name: string; description?: string }>;
-  installed_at: number;
-  base_url?: string;
 }
 
 export interface CuratedDef {
@@ -253,9 +248,11 @@ export function composioSearchToUnified(t: {
 }
 
 export function installedToUnified(app: InstalledApp): UnifiedApp {
+  const fromCustomUrl = app.registry_linked === false;
   return {
     id: app.id, name: app.name || app.id, description: app.description || '',
-    icon: app.icon_url, category: 'productivity', tags: ['mcp'],
+    icon: app.icon_url, category: 'productivity',
+    tags: fromCustomUrl ? ['mcp', 'from-url'] : ['mcp'],
     source: 'installed', tools: app.tools || [], hasUi: !!app.has_ui,
     status: 'installed', installedApp: app,
   };
@@ -298,7 +295,7 @@ export function prettyAuthLabel(scheme?: string): string | undefined {
   return scheme;
 }
 
-export type Tab = 'discover' | 'installed';
+export type Tab = 'discover' | 'installed' | 'from_url';
 
 export function useAppDiscovery() {
   const [tab, setTab] = useState<Tab>('discover');
