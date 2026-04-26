@@ -205,9 +205,9 @@ export function MessageList() {
           <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
           <div className="flex flex-wrap justify-center gap-2 mt-5">
             {[
-              { icon: <Globe className="w-3.5 h-3.5" />, label: 'Research a topic', prompt: 'Research the latest trends in my industry and write a brief report with key takeaways I can share with my team.' },
-              { icon: <FileSearch className="w-3.5 h-3.5" />, label: 'Draft an email', prompt: 'Help me draft a professional follow-up email to a client after a meeting, thanking them and summarizing the next steps we discussed.' },
-              { icon: <Terminal className="w-3.5 h-3.5" />, label: 'Summarize my files', prompt: 'Look through my workspace files and give me a quick overview of what projects and documents I have, with any action items you spot.' },
+              { icon: <Globe className="w-3.5 h-3.5" />, label: 'Research a topic', prompt: 'Help me research a topic. First ask me for the topic/industry, audience, deadline, and desired output format if I have not provided them; do not guess missing details.' },
+              { icon: <FileSearch className="w-3.5 h-3.5" />, label: 'Draft an email', prompt: 'Help me draft a professional email. First ask for the recipient, goal, tone, and key points if they are missing; do not invent meeting details.' },
+              { icon: <Terminal className="w-3.5 h-3.5" />, label: 'Summarize my files', prompt: 'Look through my workspace files and summarize only what you can verify from accessible files. Note unknowns separately and list any action items you find.' },
             ].map(({ icon, label, prompt }) => (
               <button
                 key={label}
