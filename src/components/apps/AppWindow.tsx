@@ -22,7 +22,7 @@ import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAppStore, localAppIframeRefs } from '@/stores/appStore';
 import type { ConnectedToolkit } from '@/stores/appStore';
-import { STORAGE_KEYS } from '@/lib/config';
+import { API_BASE_URL, STORAGE_KEYS } from '@/lib/config';
 import { agentWS } from '@/services/websocket';
 import * as api from '@/services/api';
 import { log } from '@/lib/logger';
@@ -58,6 +58,9 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   const connectedToolkits = useAppStore((s) => s.connectedToolkits);
   const fetched = useAppStore((s) => s.fetched);
   const fetchApps = useAppStore((s) => s.fetchApps);
+  const devAppInfo = useDevAppStore((s) => s.appInfo);
+  const devUrl = useDevAppStore((s) => s.devUrl);
+  const devStatus = useDevAppStore((s) => s.status);
 
   // Trigger app list fetch if not loaded yet (e.g., after page refresh with persisted windows)
   useEffect(() => {
@@ -83,9 +86,6 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   }
 
   // Dev app — connected from localhost via developer mode
-  const devAppInfo = useDevAppStore((s) => s.appInfo);
-  const devUrl = useDevAppStore((s) => s.devUrl);
-  const devStatus = useDevAppStore((s) => s.status);
   if (appId === 'dev-app' && devAppInfo && devUrl && devStatus === 'connected') {
     return <DevAppIframeView config={config} appId={appId} devUrl={devUrl} />;
   }
@@ -125,9 +125,24 @@ export function AppWindow({ config }: { config: WindowConfig }) {
 
 // ── Iframe App View (for apps with custom UI) ──
 
-function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConfig; appId: string; baseUrl: string; isLocal?: boolean }) {
+function withTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+function IframeAppView({
+  config, appId, baseUrl, isLocal, appData,
+}: {
+  config: WindowConfig;
+  appId: string;
+  baseUrl: string;
+  isLocal?: boolean;
+  appData?: InstalledApp;
+}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkingFrame, setCheckingFrame] = useState(false);
+  const [useProxy, setUseProxy] = useState(false);
+  const [proxyReason, setProxyReason] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Register iframe ref for local apps so agentStore can trigger live reloads
@@ -163,11 +178,49 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
     return () => window.removeEventListener('message', handleMessage);
   }, [handleMessage]);
 
+  const isCustomUrlApp = !isLocal && appData?.registry_linked === false;
+
+  useEffect(() => {
+    let cancelled = false;
+    setUseProxy(false);
+    setProxyReason(null);
+
+    if (!isCustomUrlApp) {
+      setCheckingFrame(false);
+      return () => { cancelled = true; };
+    }
+
+    setCheckingFrame(true);
+    api.checkAppUiFrame(appId).then((res) => {
+      if (cancelled) return;
+      const data = res.success ? res.data : null;
+      if (data?.blocked && data.proxy_available) {
+        setUseProxy(true);
+        setProxyReason(data.reason || 'remote iframe policy');
+      }
+    }).catch(() => {
+      // Keep the direct load path if detection itself fails.
+    }).finally(() => {
+      if (!cancelled) setCheckingFrame(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [appId, isCustomUrlApp]);
+
   // Local apps need auth token in URL since the sandboxed iframe can't send headers/cookies
-  const token = isLocal ? localStorage.getItem(STORAGE_KEYS.token) : null;
+  const token = (isLocal || useProxy) ? localStorage.getItem(STORAGE_KEYS.token) : null;
+  const directUiUrl = isCustomUrlApp ? withTrailingSlash(baseUrl) : `${baseUrl}/ui/`;
+  const proxyUiUrl = `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/ui-proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   const uiUrl = isLocal
     ? `${baseUrl}/${token ? `?token=${encodeURIComponent(token)}` : ''}`
-    : `${baseUrl}/ui/`;
+    : useProxy
+      ? proxyUiUrl
+      : directUiUrl;
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+  }, [uiUrl]);
 
   // Allow same-origin ONLY when the app is hosted on its own per-app
   // sub-subdomain (`<label>.apps.construct.computer`). That gives the
@@ -177,8 +230,8 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
   // sandbox to prevent them from reading the user's auth token from the
   // construct frontend's storage.
   const sandboxAttr = !isLocal && /^https:\/\/[a-z0-9-]+\.apps\.construct\.computer(?:\/|$)/.test(baseUrl)
-    ? 'allow-scripts allow-same-origin'
-    : 'allow-scripts';
+    ? 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox'
+    : 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
 
   return (
     <div className="w-full h-full relative bg-[var(--color-bg-secondary)]">
@@ -186,7 +239,10 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="text-center">
             <Loader2 className="w-8 h-8 mx-auto mb-3 opacity-40 animate-spin" />
-            <p className="text-sm opacity-40">Loading app...</p>
+            <p className="text-sm opacity-40">{checkingFrame ? 'Checking app framing...' : 'Loading app...'}</p>
+            {useProxy && proxyReason && (
+              <p className="text-[11px] opacity-30 mt-1">Using secure proxy: {proxyReason}</p>
+            )}
           </div>
         </div>
       )}
@@ -199,15 +255,17 @@ function IframeAppView({ config, appId, baseUrl, isLocal }: { config: WindowConf
           </div>
         </div>
       )}
-      <iframe
-        ref={iframeRef}
-        src={uiUrl}
-        className="absolute inset-0 w-full h-full border-none"
-        sandbox={sandboxAttr}
-        onLoad={() => setLoading(false)}
-        onError={() => { setLoading(false); setError('Failed to load app UI'); }}
-        title={config.title}
-      />
+      {!checkingFrame && (
+        <iframe
+          ref={iframeRef}
+          src={uiUrl}
+          className="absolute inset-0 w-full h-full border-none"
+          sandbox={sandboxAttr}
+          onLoad={() => setLoading(false)}
+          onError={() => { setLoading(false); setError('Failed to load app UI'); }}
+          title={config.title}
+        />
+      )}
     </div>
   );
 }
@@ -341,7 +399,7 @@ function InstalledAppView({
   if (showDetails) {
     return <GenericAppPanel config={config} appId={appId} appData={appData} />;
   }
-  return <IframeAppView config={config} appId={appId} baseUrl={appData.base_url} />;
+  return <IframeAppView config={config} appId={appId} baseUrl={appData.base_url} appData={appData} />;
 }
 
 // ── Generic App Management Panel ──

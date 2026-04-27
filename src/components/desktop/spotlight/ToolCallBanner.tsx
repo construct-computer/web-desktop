@@ -3,9 +3,12 @@ import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Squar
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { ActivityIcon } from './ActivityGroup';
 import { BrowserActivityRow, mergeBrowserRepeats } from './BrowserActivityRow';
+import { BrowserRunCard } from './BrowserRunCard';
 import { useElapsed } from './hooks';
 import { formatDuration } from './utils';
 import type { ChatMessage } from '@/stores/agentStore';
+
+const EMPTY_SUB_AGENTS: TrackedSubAgent[] = [];
 
 /**
  * ToolCallBanner — Unified "Working/Worked for Xs" banner showing a timeline
@@ -20,6 +23,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
   const op = useAgentTrackerStore(s => operationId ? s.operations[operationId] : undefined);
   const isRunning = isActive || (op ? op.status === 'running' : false);
   const [expanded, setExpanded] = useState(isRunning);
+  const [fallbackStartTime] = useState(() => Date.now());
 
   // Compute total duration from activities or operation
   const totalMs = op?.durationMs ??
@@ -27,13 +31,11 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
       ? new Date(activities[activities.length - 1].timestamp).getTime() - new Date(activities[0].timestamp).getTime()
       : 0);
 
-  const startTime = op?.startedAt ?? (activities.length > 0 ? new Date(activities[0].timestamp).getTime() : Date.now());
+  const startTime = op?.startedAt ?? (activities.length > 0 ? new Date(activities[0].timestamp).getTime() : fallbackStartTime);
   const elapsed = useElapsed(startTime, isRunning);
   const durationText = isRunning ? elapsed : (totalMs > 0 ? formatDuration(totalMs) : '');
 
-  if (activities.length === 0 && !op) return null;
-
-  const subAgents = op?.subAgents || [];
+  const subAgents = op?.subAgents ?? EMPTY_SUB_AGENTS;
   const hasSubAgents = subAgents.length > 0;
 
   // Build unified timeline when sub-agents are present
@@ -90,6 +92,20 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     });
   }, [activities, hasSubAgents]);
 
+  // Detect a browser run for the main agent so we can promote it to a
+  // dedicated card above the activity list. We key on the first "Browsing X"
+  // activity emitted by browser:start. Sub-agent banners skip this — their
+  // browser context already shows up inside the SubAgentEntry tree.
+  const browserRunMeta = useMemo(() => {
+    if (hasSubAgents) return null;
+    const start = activities.find(
+      (a) => (a.tool === 'browser' || a.tool === 'remote_browser') && typeof a.content === 'string' && a.content.startsWith('Browsing '),
+    );
+    if (!start) return null;
+    const startUrl = start.content.replace(/^Browsing\s+/, '').trim() || undefined;
+    return { goal: startUrl ? `Browsing ${startUrl}` : 'Browsing the web', startUrl };
+  }, [activities, hasSubAgents]);
+
   const stepCount = hasSubAgents
     ? subAgents.length + activities.length
     : activities.length;
@@ -101,6 +117,8 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [expanded, activities.length, subAgents.length]);
+
+  if (activities.length === 0 && !op) return null;
 
   return (
     <div className="mx-4 my-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
@@ -129,6 +147,15 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
 
       {expanded && (
         <div className="px-3 pb-2.5 border-t border-white/[0.04]">
+          {browserRunMeta && (
+            <div className="mt-2">
+              <BrowserRunCard
+                goal={browserRunMeta.goal}
+                startUrl={browserRunMeta.startUrl}
+                activities={activities}
+              />
+            </div>
+          )}
           <div ref={scrollRef} className="ml-1 mt-1.5 space-y-0.5 max-h-[200px] overflow-y-auto">
             {hasSubAgents && timeline ? (
               /* ── Merged timeline: sub-agents + main activities ── */

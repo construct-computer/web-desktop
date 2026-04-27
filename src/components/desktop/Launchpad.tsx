@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { Search, Package } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
-import { useAuthStore } from '@/stores/authStore';
 import { useAppStore, installedAppsToDefinitions, localAppsToDefinitions, composioToolkitsToDefinitions } from '@/stores/appStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { useSound } from '@/hooks/useSound';
@@ -88,13 +87,15 @@ export function Launchpad() {
   const openWindow = useWindowStore((s) => s.openWindow);
   const { play } = useSound();
   const isMobile = useIsMobile();
-  const { installedApps: storeInstalledApps, localApps, connectedToolkits, fetchApps, fetched } = useAppStore();
+  const { installedApps: storeInstalledApps, localApps, connectedToolkits, fetchApps } = useAppStore();
 
   const [shouldRender, setShouldRender] = useState(false);
   const [animIn, setAnimIn] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const dismountTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const swipeStartY = useRef<number | null>(null);
+  const swipeFired = useRef(false);
 
   // ── Fetch installed apps every time the Launchpad opens ──
   useEffect(() => {
@@ -216,8 +217,6 @@ export function Launchpad() {
   const installedApps = filteredApps.filter((a) => a.category === 'installed');
 
   // Mobile-only: dismiss with a downward swipe anywhere on the backdrop area.
-  const swipeStartY = useRef<number | null>(null);
-  const swipeFired = useRef(false);
   const onSwipeStart = (e: React.TouchEvent) => {
     if (e.touches.length !== 1) return;
     swipeStartY.current = e.touches[0].clientY;

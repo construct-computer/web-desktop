@@ -48,29 +48,65 @@ export function AppStoreScreen() {
   const [fromDisplayName, setFromDisplayName] = useState('');
   const [fromHasUi, setFromHasUi] = useState(false);
   const [probeTools, setProbeTools] = useState<Array<{ name: string; description?: string }> | null>(null);
-  const [probeMeta, setProbeMeta] = useState<{ origin: string; mcp_path: string } | null>(null);
+  const [probeMeta, setProbeMeta] = useState<{
+    origin: string;
+    mcp_path: string;
+    transport?: 'json' | 'sse';
+    content_type?: string;
+    has_ui_guess?: boolean;
+  } | null>(null);
+  const [probeAttempted, setProbeAttempted] = useState(false);
   const [probing, setProbing] = useState(false);
   const [installingUrl, setInstallingUrl] = useState(false);
+  const probeSeqRef = useRef(0);
 
-  const resetFromUrlProbe = () => { setProbeTools(null); setProbeMeta(null); };
+  const resetFromUrlProbe = () => { setProbeTools(null); setProbeMeta(null); setProbeAttempted(false); };
 
-  const handleProbeFromUrl = async () => {
-    setError(null); resetFromUrlProbe();
-    if (!fromUrl.trim()) { setError('Enter a URL first.'); return; }
+  const runProbeFromUrl = useCallback(async (mode: 'auto' | 'manual' = 'manual') => {
+    if (!fromUrl.trim()) { if (mode === 'manual') setError('Enter a URL first.'); return false; }
+    if (!isProbeableUrl(fromUrl)) { if (mode === 'manual') setError('Enter a valid https:// URL.'); return false; }
+    const seq = ++probeSeqRef.current;
+    setError(null); setProbeAttempted(true); setProbeTools(null); setProbeMeta(null);
     setProbing(true);
     try {
       const res = await api.probeMcpFromUrl(fromUrl.trim(), fromMcpPath.trim() || '/mcp');
+      if (seq !== probeSeqRef.current) return false;
       if (res.success && res.data?.ok) {
-        setProbeMeta({ origin: res.data.origin || '', mcp_path: res.data.mcp_path || '/mcp' });
+        const origin = res.data.origin || '';
+        setProbeMeta({
+          origin,
+          mcp_path: res.data.mcp_path || '/mcp',
+          transport: res.data.transport,
+          content_type: res.data.content_type,
+          has_ui_guess: res.data.has_ui_guess,
+        });
         setProbeTools((res.data.tools || []).map((t) => ({ name: t.name, description: t.description })));
+        if (res.data.has_ui_guess) setFromHasUi(true);
+        setFromDisplayName(prev => prev.trim() ? prev : getHostname(origin || fromUrl.trim()));
+        if (seq === probeSeqRef.current) setProbing(false);
+        return true;
       } else {
         const msg = (res.success && res.data && 'error' in res.data && (res.data as any).error)
           || (!res.success ? res.error : 'Probe failed');
         setError(typeof msg === 'string' ? msg : 'Probe failed');
       }
     } catch (err) { setError(err instanceof Error ? err.message : 'Probe failed'); }
-    setProbing(false);
+    if (seq === probeSeqRef.current) setProbing(false);
+    return false;
+  }, [fromMcpPath, fromUrl]);
+
+  const handleProbeFromUrl = () => {
+    void runProbeFromUrl('manual');
   };
+
+  useEffect(() => {
+    if (tab !== 'from_url') return;
+    if (!fromUrl.trim() || !isProbeableUrl(fromUrl)) return;
+    const timer = window.setTimeout(() => {
+      void runProbeFromUrl('auto');
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [fromMcpPath, fromUrl, runProbeFromUrl, tab]);
 
   const handleInstallFromUrl = async () => {
     if (!fromUrl.trim()) { setError('Enter a URL first.'); return; }
@@ -715,11 +751,24 @@ export function AppStoreScreen() {
                 autoCorrect="off"
                 spellCheck={false}
                 value={fromUrl}
-                onChange={e => { setFromUrl(e.target.value); resetFromUrlProbe(); }}
-                placeholder="https://mcp.example.com"
+                onChange={e => {
+                  const next = e.target.value;
+                  setFromUrl(next);
+                  resetFromUrlProbe();
+                  try {
+                    const parsed = new URL(next);
+                    if (parsed.pathname && parsed.pathname !== '/') setFromMcpPath(parsed.pathname);
+                    else setFromMcpPath('/mcp');
+                    setFromDisplayName(prev => prev.trim() ? prev : getHostname(parsed.origin));
+                  } catch {
+                    // Ignore incomplete URLs while typing.
+                  }
+                }}
+                placeholder="https://calculator.caseyjhand.com/mcp"
                 className="w-full text-[13px] px-3 py-2.5 rounded-xl outline-none"
                 style={{ backgroundColor: bg2(), color: textColor() }}
               />
+              <p className="text-[10px] opacity-30 mt-1 truncate">{formatEndpointPreview(fromUrl, fromMcpPath)}</p>
             </div>
 
             <div>
@@ -750,11 +799,6 @@ export function AppStoreScreen() {
               />
             </div>
 
-            <label className="flex items-center gap-2 px-1 py-1 text-[12px] opacity-70">
-              <input type="checkbox" checked={fromHasUi} onChange={e => setFromHasUi(e.target.checked)} />
-              Server hosts a web UI at this URL
-            </label>
-
             <div className="flex gap-2">
               <button
                 onClick={handleProbeFromUrl}
@@ -779,8 +823,15 @@ export function AppStoreScreen() {
                 <div className="flex items-center gap-1.5 mb-2">
                   <Shield size={12} style={{ color: '#22c55e' }} />
                   <span className="text-[12px] font-semibold">Reachable</span>
+                  {probeMeta.transport && (
+                    <span className="ml-auto text-[10px] opacity-40 uppercase">{probeMeta.transport}</span>
+                  )}
                 </div>
                 <p className="text-[11px] opacity-50 truncate">{probeMeta.origin}{probeMeta.mcp_path}</p>
+                <label className="flex items-center gap-2 mt-2 text-[11px] opacity-60">
+                  <input type="checkbox" checked={fromHasUi} onChange={e => setFromHasUi(e.target.checked)} />
+                  Open as an app UI
+                </label>
                 {probeTools && probeTools.length > 0 && (
                   <>
                     <div className="text-[11px] opacity-40 mt-2 mb-1">{probeTools.length} tool{probeTools.length !== 1 ? 's' : ''}</div>
@@ -800,6 +851,11 @@ export function AppStoreScreen() {
                 {probeTools && probeTools.length === 0 && (
                   <p className="text-[11px] opacity-40 mt-2">Server responded but exposes no tools.</p>
                 )}
+              </Card>
+            )}
+            {!probeMeta && probeAttempted && !probing && (
+              <Card>
+                <p className="text-[11px] opacity-50">We could not verify this MCP yet. Check the URL, path, or server requirements and try again.</p>
               </Card>
             )}
           </div>
@@ -855,6 +911,27 @@ export function AppStoreScreen() {
       </div>
     </div>
   );
+}
+
+function isProbeableUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function formatEndpointPreview(rawUrl: string, rawPath: string): string {
+  if (!rawUrl.trim()) return 'Paste an MCP URL';
+  try {
+    const parsed = new URL(rawUrl.trim());
+    const explicitPath = rawPath.trim();
+    const path = explicitPath || (parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '/mcp');
+    return `${parsed.origin}${path.startsWith('/') ? path : `/${path}`}`;
+  } catch {
+    return 'Waiting for a valid URL';
+  }
 }
 
 // ── Installed Tab ──

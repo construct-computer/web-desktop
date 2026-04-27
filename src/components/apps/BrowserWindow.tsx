@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useEffect, memo, useMemo } from 'react';
 import {
   RefreshCw, Globe, X,
-  Monitor, Lock, AlertTriangle,
-  ChevronUp, ChevronDown, Square,
+  Lock, AlertTriangle,
+  ChevronUp, ChevronDown, Square, Camera, Check,
 } from 'lucide-react';
 import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from '@/stores/agentStore';
 import { browserWS } from '@/services/websocket';
 import type { WindowConfig } from '@/types';
-import { BrowserRunHistory } from './BrowserRunHistory';
+import { BrowserDashboardPanel } from './browser/BrowserDashboardPanel';
+import { BrowserLivePreview } from './browser/BrowserLivePreview';
+import { captureBrowserScreenshot, listBrowserActiveSessions } from '@/services/api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Constants
@@ -324,7 +326,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const daemonTabId = config.metadata?.daemonTabId as string | null;
   const subagentId = config.metadata?.subagentId as string | null;
   const browserSubagentId = config.metadata?.browserSubagentId as string | null;
-  const isAgentBrowserWindow = !!browserSubagentId;
+  const isAgentBrowserWindow = !!config.metadata?.browserAppWindow || !!browserSubagentId;
 
   /** Send a browser action targeted at THIS window's daemon tab. */
   const sendTabAction = useCallback((action: Record<string, unknown>) => {
@@ -357,11 +359,23 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     return !!s.browserState.screenshot;
   });
   const browserStreams = useComputerStore((s) => s.browserState.browserStreams);
+  const browserSessions = useComputerStore((s) => s.browserState.browserSessions);
+  const activeBrowserSessionId = useComputerStore((s) => s.browserState.activeBrowserSessionId);
+  const hydrateBrowserSessions = useComputerStore((s) => s.hydrateBrowserSessions);
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
   const isRunning     = computer?.status === 'running';
 
   const browserRunPhase = (config.metadata?.browserRunPhase as 'live' | 'complete' | 'error' | undefined) ?? 'live';
   const browserRunErrorDetail = (config.metadata?.browserRunErrorDetail as string) || '';
+  const browserStepCount = typeof config.metadata?.browserStepCount === 'number'
+    ? config.metadata.browserStepCount as number
+    : undefined;
+  const browserRunId = typeof config.metadata?.browserRunId === 'string'
+    ? config.metadata.browserRunId as string
+    : undefined;
+  const browserPageUrl = typeof config.metadata?.browserPageUrl === 'string'
+    ? config.metadata.browserPageUrl as string
+    : '';
 
   // Get URL/title from daemon tabs for this window's tab.
   const url = useComputerStore((s) => {
@@ -374,11 +388,41 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   });
 
   /* ── Stream detection ─────────────────────────────────────────────────── */
+  const sessionList = useMemo(
+    () => Object.values(browserSessions).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)),
+    [browserSessions],
+  );
+  const activeSession = activeBrowserSessionId ? browserSessions[activeBrowserSessionId] : sessionList[0];
+  const activeBrowserKey = browserSubagentId || activeSession?.subagentId || 'main';
   const activeBrowserUrl: string | null = isAgentBrowserWindow
-    ? (browserStreams[browserSubagentId!] || (config.metadata?.browserStreamUrl as string) || null)
+    ? (activeSession?.streamUrl || browserStreams[activeBrowserKey] || (config.metadata?.browserStreamUrl as string) || null)
     : null;
+  const selectedRunPhase = activeSession
+    ? (activeSession.status === 'error' ? 'error' : activeSession.status === 'complete' ? 'complete' : 'live')
+    : browserRunPhase;
+  const selectedRunId = activeSession?.runId || browserRunId;
+  const selectedStepCount = activeSession?.stepCount ?? browserStepCount;
+  const selectedRunError = activeSession?.error || browserRunErrorDetail;
   const showingBrowser = !!activeBrowserUrl;
   const anyAgentBrowserActive = isAgentBrowserWindow;
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshActiveBrowserSessions = async () => {
+      const res = await listBrowserActiveSessions();
+      if (!cancelled && res.success && res.data) {
+        hydrateBrowserSessions(res.data.sessions);
+      }
+    };
+    void refreshActiveBrowserSessions();
+    const interval = window.setInterval(() => {
+      void refreshActiveBrowserSessions();
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hydrateBrowserSessions]);
 
 
   /* ── FindBar state ──────────────────────────────────────────────────────── */
@@ -910,9 +954,10 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
               </p>
             </div>
           </div>
-          <div className="w-72 shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)]">
-            <BrowserRunHistory />
-          </div>
+          <BrowserDashboardPanel
+            sessions={sessionList}
+            activeSessionId={activeSession?.id || null}
+          />
         </div>
         <StatusBar connected={false} fps={0} />
       </div>
@@ -957,94 +1002,99 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             </>
           )}
         </div>
+        {hasContent && url && (
+          <AddressBarScreenshotButton url={url} />
+        )}
       </div>
       )}
 
       {/* ── Content area ──────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden relative flex items-center justify-center"
-           style={{ background: '#0a0a0a' }}>
+      <div className="flex-1 min-h-0 overflow-hidden flex bg-[#0a0a0a]">
+      <div className="flex-1 min-w-0 overflow-hidden relative flex items-center justify-center">
 
-        {/* Progress bar */}
-        <ProgressBar isLoading={isLoading} />
-
-        {/* Find bar */}
-        {findBarOpen && (
-          <FindBar onClose={() => setFindBarOpen(false)} sendAction={sendTabAction} />
-        )}
-
-        {showingBrowser && (
-          <BrowserOverlay
-            streamUrl={activeBrowserUrl!}
-            runPhase={browserRunPhase}
-            runErrorDetail={browserRunErrorDetail}
+        {isAgentBrowserWindow ? (
+          <BrowserLivePreview
+            streamUrl={activeBrowserUrl}
+            session={activeSession}
+            runPhase={selectedRunPhase}
+            runErrorDetail={selectedRunError}
+            stepCount={selectedStepCount}
+            runId={selectedRunId}
+            pageUrl={browserPageUrl}
             isDead={iframeDead}
             reloadKey={reloadKey}
             onLoad={onIframeLoad}
             onError={onIframeError}
             onManualReconnect={onManualReconnect}
           />
+        ) : (
+          <>
+            {/* Progress bar */}
+            <ProgressBar isLoading={isLoading} />
+
+            {/* Find bar */}
+            {findBarOpen && (
+              <FindBar onClose={() => setFindBarOpen(false)} sendAction={sendTabAction} />
+            )}
+
+            {/* Error page */}
+            {pageError && !hasScreenshot ? (
+              <ErrorPage error={pageError} url={url} onReload={refresh} />
+            ) : null}
+
+            {hasScreenshot && !pageError && hasContent ? (
+              <div
+                ref={viewportRef}
+                className="w-full h-full relative outline-none"
+                style={{ cursor: 'default', touchAction: 'none' }}
+                tabIndex={0}
+                onMouseDown={onViewportMouseDown}
+                onMouseUp={onViewportMouseUp}
+                onDoubleClick={onViewportDblClick}
+                onMouseMove={onViewportMouseMove}
+                onContextMenu={onViewportContextMenu}
+                onKeyDown={onViewportKeyDown}
+                onTouchStart={onViewportTouchStart}
+                onTouchMove={onViewportTouchMove}
+                onTouchEnd={onViewportTouchEnd}
+                onTouchCancel={onViewportTouchCancel}
+              >
+                <canvas
+                  ref={canvasRef}
+                  className="w-full h-full object-contain pointer-events-none select-none"
+                />
+                {/* Context menu overlay */}
+                {contextMenu && (
+                  <ContextMenu
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    onClose={() => setContextMenu(null)}
+                    onBack={goBack}
+                    onForward={goForward}
+                    onRefresh={refresh}
+                    onNewTab={() => {
+                      useComputerStore.getState().openBrowserWindow(url);
+                    }}
+                    currentUrl={url}
+                  />
+                )}
+              </div>
+            ) : !pageError ? (
+              <div className="flex flex-col items-center gap-2 text-[var(--color-text-subtle)] max-w-sm text-center px-4">
+                <Globe className="w-10 h-10 opacity-20" />
+                <p className="text-xs">
+                  {isLoading ? loadingPhase : 'Your agent will browse here when needed'}
+                </p>
+              </div>
+            ) : null}
+          </>
         )}
+      </div>
 
-        {/* Error page */}
-        {pageError && !hasScreenshot && !showingBrowser ? (
-          <ErrorPage error={pageError} url={url} onReload={refresh} />
-        ) : null}
-
-        {!showingBrowser && hasScreenshot && !pageError && hasContent ? (
-          <div
-            ref={viewportRef}
-            className="w-full h-full relative outline-none"
-            style={{ cursor: 'default', touchAction: 'none' }}
-            tabIndex={0}
-            onMouseDown={onViewportMouseDown}
-            onMouseUp={onViewportMouseUp}
-            onDoubleClick={onViewportDblClick}
-            onMouseMove={onViewportMouseMove}
-            onContextMenu={onViewportContextMenu}
-            onKeyDown={onViewportKeyDown}
-            onTouchStart={onViewportTouchStart}
-            onTouchMove={onViewportTouchMove}
-            onTouchEnd={onViewportTouchEnd}
-            onTouchCancel={onViewportTouchCancel}
-          >
-            <canvas
-              ref={canvasRef}
-              className="w-full h-full object-contain pointer-events-none select-none"
-            />
-            {/* Context menu overlay */}
-            {contextMenu && (
-              <ContextMenu
-                x={contextMenu.x}
-                y={contextMenu.y}
-                onClose={() => setContextMenu(null)}
-                onBack={goBack}
-                onForward={goForward}
-                onRefresh={refresh}
-                onNewTab={() => {
-                  useComputerStore.getState().openBrowserWindow(url);
-                }}
-                currentUrl={url}
-              />
-            )}
-          </div>
-        ) : !showingBrowser && !pageError ? (
-          <div className="flex flex-col items-center gap-2 text-[var(--color-text-subtle)] max-w-sm text-center px-4">
-            <Globe className="w-10 h-10 opacity-20" />
-            <p className="text-xs">
-              {isLoading
-                ? loadingPhase
-                : isAgentBrowserWindow
-                  ? 'Waiting for live preview from Browser Use…'
-                  : 'Your agent will browse here when needed'}
-            </p>
-            {isAgentBrowserWindow && !isLoading && (
-              <p className="text-[10px] text-[var(--color-text-muted)] opacity-80 leading-relaxed">
-                If this stays blank, the session URL was missing or blocked. Check that Browser Use is configured and
-                watch the activity log for errors.
-              </p>
-            )}
-          </div>
-        ) : null}
+      <BrowserDashboardPanel
+        sessions={sessionList}
+        activeSessionId={activeSession?.id || null}
+      />
       </div>
 
       {/* ── Status bar (hidden for Browser windows) ──── */}
@@ -1081,87 +1131,47 @@ function ChromeBar() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Browser overlay
+   Address bar screenshot button
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const BrowserOverlay = memo(function BrowserOverlay({
-  streamUrl, runPhase, runErrorDetail, isDead, reloadKey, onLoad, onError, onManualReconnect,
-}: {
-  streamUrl: string;
-  runPhase: 'live' | 'complete' | 'error';
-  runErrorDetail: string;
-  isDead: boolean;
-  reloadKey: number;
-  onLoad: () => void;
-  onError: () => void;
-  onManualReconnect: () => void;
-}) {
-  const isLive = runPhase === 'live';
-  const isComplete = runPhase === 'complete';
-  const isErr = runPhase === 'error';
-
-  const headerLabel = isErr
-    ? `Run failed${runErrorDetail ? `: ${runErrorDetail.slice(0, 140)}${runErrorDetail.length > 140 ? '…' : ''}` : ''}`
-    : isComplete
-      ? 'Run finished — preview may freeze when the host ends the session. Close this window when you are done.'
-      : reloadKey > 0 && !isDead
-        ? `Live preview (reconnecting, attempt ${reloadKey})`
-        : 'Live preview — agent is controlling the browser';
-
-  const barClass = isErr
-    ? 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/25'
-    : isComplete
-      ? 'bg-[var(--color-success-muted)] text-[var(--color-success)] border-[var(--color-success)]/20'
-      : 'bg-[var(--color-warning-muted)] text-[var(--color-warning)] border-[var(--color-border)]';
+const AddressBarScreenshotButton = memo(function AddressBarScreenshotButton({ url }: { url: string }) {
+  const [state, setState] = useState<'idle' | 'capturing' | 'saved' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const onClick = useCallback(async () => {
+    if (state === 'capturing') return;
+    setState('capturing');
+    setMessage('');
+    const res = await captureBrowserScreenshot(url);
+    if (res.success) {
+      setState('saved');
+      setMessage(res.data.path);
+      setTimeout(() => setState('idle'), 2500);
+    } else {
+      setState('error');
+      setMessage(res.error || 'Capture failed');
+      setTimeout(() => setState('idle'), 3500);
+    }
+  }, [url, state]);
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col">
-      <div className={`shrink-0 flex items-center gap-2 px-3 py-1.5 text-xs border-b ${barClass}`}>
-        {isLive && !isDead ? (
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)]" />
-          </span>
-        ) : (
-          <span className="relative flex h-2 w-2 shrink-0 rounded-full bg-current opacity-60" />
-        )}
-        <span className="min-w-0 leading-snug">{headerLabel}</span>
-      </div>
-      {isDead ? (
-        <div className="flex-1 flex items-center justify-center bg-[var(--color-surface)]">
-          <div className="text-center text-[var(--color-text-muted)]">
-            <Monitor className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">Agent browser is working in the background</p>
-            <p className="text-xs mt-1 text-[var(--color-text-subtle)]">
-              Live preview disconnected — results will appear in chat
-            </p>
-            <button
-              type="button"
-              onClick={onManualReconnect}
-              className="mt-4 px-3 py-1.5 text-xs rounded border border-[var(--color-border)]
-                         bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface)]
-                         text-[var(--color-text)] transition-colors"
-            >
-              Reconnect live preview
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 relative">
-          <iframe
-            // reloadKey bump forces iframe re-mount to re-establish the stream.
-            key={reloadKey}
-            src={streamUrl}
-            className="absolute inset-0 w-full h-full border-none bg-white"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-            allow="clipboard-read; clipboard-write"
-            title="Agent Live Browser Stream"
-            onLoad={onLoad}
-            onError={onError}
-          />
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={state === 'capturing'}
+      title={
+        state === 'saved' ? `Saved to ${message}`
+        : state === 'error' ? message
+        : 'Save a screenshot of this page to your workspace'
+      }
+      className="shrink-0 inline-flex items-center justify-center w-[28px] h-[28px] rounded-md
+                 border border-[var(--color-border)] bg-[var(--color-surface)]
+                 hover:bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]
+                 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      {state === 'saved'
+        ? <Check className="w-3.5 h-3.5 text-[var(--color-success)]" />
+        : <Camera className={`w-3.5 h-3.5 ${state === 'capturing' ? 'animate-pulse' : ''}`} />}
+    </button>
   );
 });
 

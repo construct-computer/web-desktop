@@ -3,41 +3,38 @@
  * Now Unified with all sources (Registry, Smithery, Composio, Skills).
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
-  AlertCircle, ExternalLink, Plug, Upload, Wrench, Shield,
-  Tag, Globe, Star, Download, History, BadgeCheck, Sparkles,
-  Lock, Unlock, KeyRound, Package, Link2,
+  AlertCircle, ExternalLink, Upload, Wrench, Shield,
+  Globe, Download, BadgeCheck, Sparkles,
+  Lock, KeyRound, Package, Link2, Server, Eye,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
-import { openSettingsToSection } from '@/lib/settingsNav';
-import Markdown from 'react-markdown';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import {
-  AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, Badge
+  AppHeroHeader, HeaderIconButton, InfoCard, ToolsList
 } from './AppShared';
 import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hooks/useAppDiscovery';
-import type { UnifiedApp, Category } from '@/hooks/useAppDiscovery';
-import { useIsMobile } from '@/hooks/useIsMobile';
+import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 
 const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
 // ── Main Component ──
 
 export function AppRegistryWindow({ config: _config }: { config: WindowConfig }) {
+  void _config;
   const openWindow = useWindowStore((s) => s.openWindow);
-  const isMobile = useIsMobile();
   
   // Use the unified app discovery hook
   const {
     tab, setTab, category, setCategory, search, handleSearch, searching,
     loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
-    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected, userPlan
+    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected
   } = useAppDiscovery();
 
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +45,18 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   const [fromDisplayName, setFromDisplayName] = useState('');
   const [fromHasUi, setFromHasUi] = useState(false);
   const [probeTools, setProbeTools] = useState<Array<{ name: string; description?: string }> | null>(null);
-  const [probeMeta, setProbeMeta] = useState<{ origin: string; mcp_path: string } | null>(null);
+  const [probeMeta, setProbeMeta] = useState<{
+    origin: string;
+    mcp_path: string;
+    transport?: 'json' | 'sse';
+    content_type?: string;
+    has_ui_guess?: boolean;
+  } | null>(null);
+  const [probeAttempted, setProbeAttempted] = useState(false);
+  const [lastInstalledName, setLastInstalledName] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [installingUrl, setInstallingUrl] = useState(false);
+  const probeSeqRef = useRef(0);
 
   // Detail view
   const [detail, setDetail] = useState<UnifiedApp | null>(null);
@@ -153,21 +159,41 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
   const resetFromUrlProbe = () => {
     setProbeTools(null);
     setProbeMeta(null);
+    setProbeAttempted(false);
   };
 
-  const handleProbeFromUrl = async () => {
-    setError(null);
-    resetFromUrlProbe();
+  const runProbeFromUrl = useCallback(async (mode: 'auto' | 'manual' = 'manual') => {
     if (!fromUrl.trim()) {
-      setError('Enter a URL first.');
-      return;
+      if (mode === 'manual') setError('Enter a URL first.');
+      return false;
     }
+    if (!isProbeableUrl(fromUrl)) {
+      if (mode === 'manual') setError('Enter a valid https:// URL.');
+      return false;
+    }
+    const seq = ++probeSeqRef.current;
+    setError(null);
+    setProbeAttempted(true);
+    setProbeTools(null);
+    setProbeMeta(null);
     setProbing(true);
     try {
       const res = await api.probeMcpFromUrl(fromUrl.trim(), fromMcpPath.trim() || '/mcp');
+      if (seq !== probeSeqRef.current) return false;
       if (res.success && res.data?.ok) {
-        setProbeMeta({ origin: res.data.origin || '', mcp_path: res.data.mcp_path || '/mcp' });
+        const origin = res.data.origin || '';
+        setProbeMeta({
+          origin,
+          mcp_path: res.data.mcp_path || '/mcp',
+          transport: res.data.transport,
+          content_type: res.data.content_type,
+          has_ui_guess: res.data.has_ui_guess,
+        });
         setProbeTools((res.data.tools || []).map((t) => ({ name: t.name, description: t.description || undefined })));
+        if (res.data.has_ui_guess) setFromHasUi(true);
+        setFromDisplayName(prev => prev.trim() ? prev : getHostname(origin || fromUrl.trim()));
+        if (seq === probeSeqRef.current) setProbing(false);
+        return true;
       } else {
         const msg =
           (res.success && res.data && 'error' in res.data && (res.data as { error?: string }).error) ||
@@ -175,10 +201,25 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
         setError(typeof msg === 'string' ? msg : 'Probe failed');
       }
     } catch (err) {
+      if (seq !== probeSeqRef.current) return false;
       setError(err instanceof Error ? err.message : 'Probe failed');
     }
-    setProbing(false);
+    if (seq === probeSeqRef.current) setProbing(false);
+    return false;
+  }, [fromMcpPath, fromUrl]);
+
+  const handleProbeFromUrl = () => {
+    void runProbeFromUrl('manual');
   };
+
+  useEffect(() => {
+    if (tab !== 'from_url') return;
+    if (!fromUrl.trim() || !isProbeableUrl(fromUrl)) return;
+    const timer = window.setTimeout(() => {
+      void runProbeFromUrl('auto');
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [fromMcpPath, fromUrl, runProbeFromUrl, tab]);
 
   const handleInstallFromUrl = async () => {
     if (!fromUrl.trim()) {
@@ -203,13 +244,13 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
         has_ui: fromHasUi,
       });
       if (res.success && res.data?.ok && res.data.app) {
+        setLastInstalledName(res.data.app.name);
         setFromUrl('');
         setFromMcpPath('/mcp');
         setFromDisplayName('');
         setFromHasUi(false);
         resetFromUrlProbe();
         await refreshAfterInstall();
-        setTab('installed');
       } else {
         setError(!res.success ? res.error : 'Install failed');
       }
@@ -756,83 +797,169 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
           </div>
         ) : tab === 'from_url' ? (
           <div className="space-y-4">
-            <InfoCard
-              title="Install from URL"
-              subtitle="MCP server or self-hosted Construct app"
-            >
-              <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed mb-3">
-                Paste an <strong className="text-[var(--color-text)]">https://</strong> URL to a JSON-RPC MCP endpoint
-                (default path <code className="text-[10px] bg-black/[0.06] dark:bg-white/[0.08] px-1 rounded">/mcp</code>)
-                or include the path in the URL. Construct’s servers call this URL from the cloud — private IPs and
-                localhost are blocked. OAuth / Connect in this window only works for apps published in the Construct
-                registry; URL installs work best for unauthenticated MCP or servers that accept platform headers.
-              </p>
-              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">Server URL</label>
-              <input
-                type="url"
-                value={fromUrl}
-                onChange={(e) => {
-                  setFromUrl(e.target.value);
-                  resetFromUrlProbe();
-                }}
-                placeholder="https://my-mcp.example.com or https://app-id-xxx.apps.construct.computer"
-                className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 mb-3"
-              />
-              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP path (optional)</label>
-              <input
-                type="text"
-                value={fromMcpPath}
-                onChange={(e) => {
-                  setFromMcpPath(e.target.value);
-                  resetFromUrlProbe();
-                }}
-                placeholder="/mcp"
-                className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 mb-3"
-              />
-              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">Display name (optional)</label>
-              <input
-                type="text"
-                value={fromDisplayName}
-                onChange={(e) => setFromDisplayName(e.target.value)}
-                placeholder="Defaults to hostname"
-                className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 mb-3"
-              />
-              <label className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] mb-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={fromHasUi}
-                  onChange={(e) => setFromHasUi(e.target.checked)}
-                  className="rounded border-black/20"
-                />
-                Hosted app with UI (opens in app window)
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleProbeFromUrl}
-                  disabled={probing || !fromUrl.trim()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.06] dark:bg-white/[0.1] hover:bg-black/[0.1] dark:hover:bg-white/[0.14] disabled:opacity-40"
-                >
-                  {probing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                  Check URL
-                </button>
-                <button
-                  type="button"
-                  onClick={handleInstallFromUrl}
-                  disabled={installingUrl || !probeMeta || atAppLimit}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  {installingUrl ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                  Install
+            <div className="relative overflow-hidden rounded-[16px] border border-black/[0.06] dark:border-white/[0.08] bg-gradient-to-br from-[var(--color-accent)]/12 via-black/[0.02] to-transparent dark:via-white/[0.03] px-4 py-4">
+              <div className="absolute right-4 top-4 w-28 h-28 rounded-full bg-[var(--color-accent)]/10 blur-2xl pointer-events-none" />
+              <div className="relative flex items-start gap-3">
+                <div className="w-11 h-11 rounded-[14px] bg-[var(--color-accent)]/12 text-[var(--color-accent)] flex items-center justify-center border border-[var(--color-accent)]/15">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[17px] font-bold leading-tight">Install any remote MCP</h2>
+                  <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed mt-1">
+                    Paste a URL and Construct will auto-check reachability, supported transport, tools, and whether there is a web UI to open later.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {lastInstalledName && (
+              <div className="flex items-center gap-2 text-[12px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 rounded-[12px] px-3 py-2">
+                <Check className="w-4 h-4 shrink-0" />
+                <span className="flex-1"><strong>{lastInstalledName}</strong> is installed and ready for the agent.</span>
+                <button onClick={() => setTab('installed')} className="text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500/15">
+                  Open installed
                 </button>
               </div>
+            )}
+
+            <InfoCard title="Server" subtitle="Paste once. We will check it automatically.">
+              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP URL</label>
+              <div className="relative mb-2">
+                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]/60 pointer-events-none" />
+                <input
+                  type="url"
+                  value={fromUrl}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setFromUrl(next);
+                    setLastInstalledName(null);
+                    resetFromUrlProbe();
+                    try {
+                      const parsed = new URL(next);
+                      if (parsed.pathname && parsed.pathname !== '/') setFromMcpPath(parsed.pathname);
+                      else setFromMcpPath('/mcp');
+                      setFromDisplayName(prev => prev.trim() ? prev : getHostname(parsed.origin));
+                    } catch {
+                      // Keep typing fluid while the URL is incomplete.
+                    }
+                  }}
+                  placeholder="https://calculator.caseyjhand.com/mcp"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full text-[13px] pl-9 pr-3 py-3 rounded-[12px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 transition-colors placeholder:text-black/30 dark:placeholder:text-white/25"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.04] dark:bg-white/[0.06] font-mono max-w-full truncate">
+                  <Link2 className="w-3 h-3 shrink-0" />
+                  {formatEndpointPreview(fromUrl, fromMcpPath)}
+                </span>
+                {probing && <span className="inline-flex items-center gap-1 text-[var(--color-accent)]"><Loader2 className="w-3 h-3 animate-spin" /> Checking...</span>}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP path</label>
+                  <input
+                    type="text"
+                    value={fromMcpPath}
+                    onChange={(e) => {
+                      setFromMcpPath(e.target.value);
+                      setLastInstalledName(null);
+                      resetFromUrlProbe();
+                    }}
+                    placeholder="/mcp"
+                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">Display name</label>
+                  <input
+                    type="text"
+                    value={fromDisplayName}
+                    onChange={(e) => setFromDisplayName(e.target.value)}
+                    placeholder="Auto-filled from hostname"
+                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50"
+                  />
+                </div>
+              </div>
             </InfoCard>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <UrlCheckCard
+                icon={<Server className="w-4 h-4" />}
+                title="Reachable"
+                tone={probeMeta ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
+                value={probeMeta ? 'Server responded' : probing ? 'Checking endpoint' : probeAttempted ? 'Needs attention' : 'Waiting for URL'}
+                detail={probeMeta ? `${probeMeta.origin}${probeMeta.mcp_path}` : 'Construct calls this from the cloud. Private IPs and localhost are blocked.'}
+              />
+              <UrlCheckCard
+                icon={<Wrench className="w-4 h-4" />}
+                title="MCP tools"
+                tone={probeTools?.length ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
+                value={probeTools ? `${probeTools.length} discovered` : probing ? 'Listing tools' : 'Not checked yet'}
+                detail={probeMeta?.transport === 'sse' ? 'Streamable HTTP supported' : probeMeta?.transport === 'json' ? 'JSON response supported' : 'We verify tools/list before install.'}
+              />
+              <UrlCheckCard
+                icon={<Eye className="w-4 h-4" />}
+                title="Interface"
+                tone={fromHasUi ? 'emerald' : probeMeta ? 'gray' : 'gray'}
+                value={fromHasUi ? 'Will open as an app' : probeMeta?.has_ui_guess ? 'UI detected' : 'Tools-only by default'}
+                detail="Enable this only when the server also hosts a user-facing web UI."
+                action={
+                  <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fromHasUi}
+                      onChange={(e) => setFromHasUi(e.target.checked)}
+                      className="rounded border-black/20"
+                    />
+                    Has UI
+                  </label>
+                }
+              />
+              <UrlCheckCard
+                icon={<BadgeCheck className="w-4 h-4" />}
+                title="Ready"
+                tone={probeMeta && !atAppLimit ? 'emerald' : atAppLimit ? 'red' : 'gray'}
+                value={atAppLimit ? 'Plan limit reached' : probeMeta ? 'Ready to install' : 'Check required'}
+                detail={atAppLimit ? `You have reached ${maxApps} installed apps.` : 'Install saves the tool list and makes it available to the agent.'}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleProbeFromUrl}
+                disabled={probing || !fromUrl.trim()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[12px] font-semibold bg-black/[0.06] dark:bg-white/[0.1] hover:bg-black/[0.1] dark:hover:bg-white/[0.14] disabled:opacity-40 transition-colors"
+              >
+                {probing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Recheck
+              </button>
+              <button
+                type="button"
+                onClick={handleInstallFromUrl}
+                disabled={installingUrl || !probeMeta || atAppLimit}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[10px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity shadow-sm"
+              >
+                {installingUrl ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                Install MCP
+              </button>
+              {probeMeta?.content_type && (
+                <span className="text-[10px] text-[var(--color-text-muted)] font-mono px-2 py-1 rounded-md bg-black/[0.04] dark:bg-white/[0.06]">
+                  {probeMeta.content_type.split(';')[0]}
+                </span>
+              )}
+            </div>
+
             {probeMeta && probeTools && (
-              <InfoCard title="Preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} tool(s)`}>
+              <InfoCard title="Tool Preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} tool(s)`}>
                 {probeTools.length > 0 ? (
-                  <ToolsList tools={probeTools.slice(0, 20).map((t) => ({ slug: t.name, name: t.name, description: t.description }))} />
+                  <ToolsList tools={probeTools.map((t) => ({ slug: t.name, name: t.name, description: t.description }))} />
                 ) : (
-                  <p className="text-[11px] text-[var(--color-text-muted)]">No tools returned (install is still allowed).</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">No tools returned by this server.</p>
                 )}
               </InfoCard>
             )}
@@ -940,6 +1067,63 @@ function EmptyState({ message }: { message: string }) {
       <span className="text-[12px]">{message}</span>
     </div>
   );
+}
+
+type CheckTone = 'emerald' | 'blue' | 'red' | 'gray';
+
+const CHECK_TONE_CLASS: Record<CheckTone, string> = {
+  emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/15',
+  blue: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/15',
+  red: 'text-red-500 bg-red-500/10 border-red-500/15',
+  gray: 'text-[var(--color-text-muted)] bg-black/[0.03] dark:bg-white/[0.04] border-black/[0.06] dark:border-white/[0.06]',
+};
+
+function UrlCheckCard({
+  icon, title, value, detail, tone, action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  detail: string;
+  tone: CheckTone;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-[12px] border px-3 py-2.5 ${CHECK_TONE_CLASS[tone]}`}>
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5 shrink-0">{icon}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{title}</p>
+            {action}
+          </div>
+          <p className="text-[12px] font-semibold mt-1 text-[var(--color-text)]">{value}</p>
+          <p className="text-[11px] leading-snug mt-0.5 text-[var(--color-text-muted)]">{detail}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function isProbeableUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function formatEndpointPreview(rawUrl: string, rawPath: string): string {
+  if (!rawUrl.trim()) return 'Paste an MCP URL';
+  try {
+    const parsed = new URL(rawUrl.trim());
+    const explicitPath = rawPath.trim();
+    const path = explicitPath || (parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '/mcp');
+    return `${parsed.origin}${path.startsWith('/') ? path : `/${path}`}`;
+  } catch {
+    return 'Waiting for a valid URL';
+  }
 }
 
 function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void }) {

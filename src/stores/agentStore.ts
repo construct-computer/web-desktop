@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import * as api from '@/services/api';
-import type { SessionInfo } from '@/services/api';
+import type { SessionInfo, BrowserRunSummary, BrowserScreenshotSummary } from '@/services/api';
 import { browserWS, agentWS, type AgentEvent } from '@/services/websocket';
 import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
@@ -234,6 +234,23 @@ export interface BrowserTab {
   workspaceId?: string;
 }
 
+export interface BrowserSessionRecord {
+  id: string;
+  subagentId: string;
+  streamUrl?: string;
+  runId?: string;
+  task?: string;
+  status: 'starting' | 'running' | 'idle' | 'complete' | 'error' | 'expired';
+  startedAt: number;
+  expiresAt?: number;
+  costUsd?: number;
+  stepCount?: number;
+  error?: string;
+  files?: Array<{ name?: string; workspacePath: string; size?: number; contentType?: string }>;
+  sessionKey?: string | null;
+  kind?: string;
+}
+
 export interface SystemStats {
   cpuPercent: number;
   cpuCount: number;
@@ -274,6 +291,9 @@ interface BrowserState {
    * the viewport shows the Live iframe instead of a screenshot.
    */
   browserStreams: Record<string, string>;
+  /** Browser Use sessions keyed by upstream/construct session id. Used by the single Browser app dashboard. */
+  browserSessions: Record<string, BrowserSessionRecord>;
+  activeBrowserSessionId: string | null;
   /** Which tab the daemon currently has active (from tabs WS poll). */
   daemonActiveTabId: string | null;
   /** Subagent tab annotations keyed by tab index. Stable across daemon polls. */
@@ -508,7 +528,21 @@ interface ComputerStore {
   deleteSession: (key: string) => Promise<void>;
   renameSession: (key: string, title: string) => Promise<void>;
 
+  // Browser run history (live-patched via WS events; hydrated from listBrowserRuns once on first read)
+  browserRuns: BrowserRunSummary[];
+  browserRunsHydrated: boolean;
+  hydrateBrowserRuns: (runs: BrowserRunSummary[]) => void;
+  prependBrowserRun: (run: BrowserRunSummary) => void;
+  patchBrowserRun: (patch: { run_id: string } & Partial<BrowserRunSummary>) => void;
+
+  // Browser gallery (live-patched via WS events)
+  browserScreenshots: BrowserScreenshotSummary[];
+  browserScreenshotsHydrated: boolean;
+  hydrateBrowserScreenshots: (shots: BrowserScreenshotSummary[]) => void;
+  prependBrowserScreenshot: (shot: BrowserScreenshotSummary) => void;
+
   // Browser
+  hydrateBrowserSessions: (sessions: BrowserSessionRecord[]) => void;
   setBrowserFrame: (frame: Blob, forceDisplay?: boolean, subagentId?: string, taggedTabId?: string) => void;
   /** Open a new browser window (creates daemon tab). Returns the window ID. */
   openBrowserWindow: (url?: string) => string;
@@ -518,6 +552,8 @@ interface ComputerStore {
   focusBrowserWindow: (windowId: string) => void;
   /** Navigate the focused browser window to a URL. */
   navigateTo: (url: string, windowId?: string) => void;
+  /** Select which Browser Use session the Browser app should preview. */
+  setActiveBrowserSession: (sessionId: string | null) => void;
   // Email
   clearEmailUnread: () => void;
 
@@ -540,24 +576,106 @@ import { AGENT_RUNNING_TIMEOUT_MS, MAX_CHAT_MESSAGES, STORAGE_KEYS as CONFIG_STO
 /**
  * Map a raw browser-use action label/type to a friendlier display string.
  * Browser-use emits things like "evaluate" or "Running JavaScript"; we want
- * a single concise phrase that still hints at what changed.
+ * a single concise phrase that still hints at what changed. When `payload`
+ * is provided we surface a short context preview (URL, target, JS expr).
  */
-function humanizeActionLabel(rawLabel: string, actionType: string | null): string {
+function humanizeActionLabel(
+  rawLabel: string,
+  actionType: string | null,
+  payload?: unknown,
+): string {
   const label = (rawLabel || '').trim();
-  // Drop redundant "running ", "performing " filler verbs.
-  const trimmed = label.replace(/^(running|performing|executing)\s+/i, '');
-  if (trimmed) return trimmed;
+  const trimmed = label.replace(/^(running|performing|executing)\s+/i, '').trim();
+
+  const p = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  const pickStr = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = p[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+  const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  const hostOf = (u: string) => {
+    try { return new URL(u).host || u; } catch { return u; }
+  };
+
   switch (actionType) {
-    case 'navigate': return 'Navigated';
-    case 'evaluate': return 'Ran JS';
-    case 'wait': return 'Waited';
-    case 'find_text': return 'Found text';
-    case 'fetch': return 'Fetched';
-    case 'click': return 'Clicked';
-    case 'type': case 'input': return 'Typed';
-    case 'discover_data_sources': return 'Discovered data sources';
-    case 'screenshot': return 'Captured screenshot';
-    default: return actionType || 'Step';
+    case 'navigate':
+    case 'go_to_url':
+    case 'open_tab': {
+      const url = pickStr('url', 'startUrl', 'href');
+      return url ? `Opened ${hostOf(url)}` : (trimmed || 'Navigated');
+    }
+    case 'click':
+    case 'click_element':
+    case 'click_element_by_index': {
+      const target = pickStr('text', 'selector', 'label', 'name', 'role');
+      return target ? `Clicked ${truncate(target, 50)}` : (trimmed || 'Clicked');
+    }
+    case 'type':
+    case 'input':
+    case 'input_text':
+    case 'fill': {
+      const what = pickStr('text', 'value');
+      return what ? `Typed "${truncate(what, 40)}"` : (trimmed || 'Typed');
+    }
+    case 'evaluate':
+    case 'run_script': {
+      const code = pickStr('code', 'expression', 'script', 'js');
+      return code ? `Ran JS: ${truncate(code.replace(/\s+/g, ' '), 60)}` : (trimmed || 'Ran JS');
+    }
+    case 'scroll':
+    case 'scroll_to':
+    case 'scroll_into_view':
+      return trimmed || 'Scrolled';
+    case 'wait':
+    case 'wait_for_selector': {
+      const ms = typeof p.duration === 'number' ? p.duration : typeof p.ms === 'number' ? p.ms : undefined;
+      return ms ? `Waited ${Math.round(ms)}ms` : (trimmed || 'Waited');
+    }
+    case 'find_text':
+    case 'search':
+    case 'search_text': {
+      const q = pickStr('text', 'query', 'q');
+      return q ? `Searched for "${truncate(q, 40)}"` : (trimmed || 'Searched');
+    }
+    case 'fetch':
+    case 'http_request': {
+      const url = pickStr('url');
+      return url ? `Fetched ${hostOf(url)}` : (trimmed || 'Fetched');
+    }
+    case 'extract':
+    case 'extract_content':
+    case 'extract_data':
+    case 'read_page':
+    case 'get_page_content':
+      return trimmed || 'Read page data';
+    case 'discover_data_sources':
+      return 'Inspected network';
+    case 'screenshot':
+    case 'take_screenshot':
+      return 'Captured screenshot';
+    case 'select':
+    case 'select_option':
+    case 'choose': {
+      const what = pickStr('value', 'label', 'option');
+      return what ? `Selected ${truncate(what, 40)}` : (trimmed || 'Selected');
+    }
+    case 'press':
+    case 'key':
+    case 'send_keys': {
+      const k = pickStr('key', 'keys');
+      return k ? `Pressed ${truncate(k, 30)}` : (trimmed || 'Pressed key');
+    }
+    case 'switch_tab':
+    case 'close_tab':
+      return trimmed || (actionType === 'switch_tab' ? 'Switched tab' : 'Closed tab');
+    case 'done':
+    case 'finish':
+      return trimmed || 'Finished';
+    default:
+      return trimmed || actionType || 'Step';
   }
 }
 
@@ -760,7 +878,61 @@ function findWindowForDaemonTab(daemonTabId: string): string | undefined {
 /** Find the window ID for a Web Agent subagent */
 function findWindowForBrowser(subagentId: string): string | undefined {
   const windows = useWindowStore.getState().windows;
-  return windows.find(w => w.type === 'browser' && w.metadata?.browserSubagentId === subagentId)?.id;
+  return (
+    windows.find(w => w.type === 'browser' && w.metadata?.browserAppWindow)?.id
+    || windows.find(w => w.type === 'browser' && w.metadata?.browserSubagentId === subagentId)?.id
+  );
+}
+
+export function getOrCreateBrowserAppWindow(options: {
+  focus?: boolean;
+  title?: string;
+  metadata?: Record<string, unknown>;
+  workspaceId?: string;
+} = {}): string {
+  const ws = useWindowStore.getState();
+  const focus = options.focus ?? true;
+  const title = options.title || 'Browser';
+  const metadata = { ...(options.metadata || {}), browserAppWindow: true };
+  const existing = ws.windows.find(w => w.type === 'browser' && w.metadata?.browserAppWindow);
+  if (existing) {
+    ws.updateWindow(existing.id, {
+      title,
+      metadata: { ...(existing.metadata || {}), ...metadata },
+    });
+    if (options.workspaceId && existing.workspaceId !== options.workspaceId) {
+      ws.moveWindowToWorkspace(existing.id, options.workspaceId);
+    }
+    if (focus) ws.focusWindow(existing.id);
+    return existing.id;
+  }
+
+  const idle = ws.windows.find((w) => {
+    if (w.type !== 'browser') return false;
+    const m = w.metadata || {};
+    return !m.daemonTabId
+      && !m.pendingUrl
+      && !m.browserStreamUrl
+      && !m.browserSubagentId
+      && !m.subagentId;
+  });
+  if (idle) {
+    ws.updateWindow(idle.id, {
+      title,
+      metadata: { ...(idle.metadata || {}), ...metadata },
+    });
+    if (options.workspaceId && idle.workspaceId !== options.workspaceId) {
+      ws.moveWindowToWorkspace(idle.id, options.workspaceId);
+    }
+    if (focus) ws.focusWindow(idle.id);
+    return idle.id;
+  }
+
+  return ws.openWindow('browser', {
+    title,
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    metadata,
+  }) as string;
 }
 
 /** Find the window ID for a subagent browser tab */
@@ -789,6 +961,8 @@ export const useComputerStore = create<ComputerStore>()(
       tabs: [],
       activeTabId: null,
       browserStreams: {},
+      browserSessions: {},
+      activeBrowserSessionId: null,
       daemonActiveTabId: null,
       subagentTabMap: {},
       subagentAnnotations: {},
@@ -819,6 +993,10 @@ export const useComputerStore = create<ComputerStore>()(
     terminalOutputSeq: 0,
     chatSessions: [],
     activeSessionKey: 'default',
+    browserRuns: [],
+    browserRunsHydrated: false,
+    browserScreenshots: [],
+    browserScreenshotsHydrated: false,
 
     fetchComputer: async () => {
       if (fetchComputerPromise) return fetchComputerPromise;
@@ -1448,7 +1626,7 @@ export const useComputerStore = create<ComputerStore>()(
       _tabBlobCache.clear();
 
       set({
-        browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
+        browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
         agentConnected: false,
         agentRunning: false,
         agentThinking: null,
@@ -2114,6 +2292,7 @@ export const useComputerStore = create<ComputerStore>()(
     stopAgent: () => {
       // Optimistically update the UI immediately — don't wait for the
       // agent's 'stopped' event which may take seconds to arrive.
+      const stopSnapshot = get();
       clearAgentRunningTimer();
       set(state => {
         // Reset all platform agents to not-running (unconditional — clear stale state too)
@@ -2145,6 +2324,14 @@ export const useComputerStore = create<ComputerStore>()(
 
       // Send the abort command — aborts ALL running lanes (intentional; no sessionKey in payload)
       const sent = agentWS.sendAbort();
+      const browserStopKeys = new Set<string>([
+        ...stopSnapshot.runningSessions,
+        ...Object.keys(stopSnapshot.activeSessions),
+        stopSnapshot.activeSessionKey,
+      ].filter(Boolean));
+      browserStopKeys.forEach((key) => {
+        void api.stopAllBrowserForSession(key).catch(() => {});
+      });
       if (!sent) {
         useNotificationStore.getState().addNotification(
           {
@@ -2250,6 +2437,8 @@ export const useComputerStore = create<ComputerStore>()(
         );
         agentWS.forceReconnect();
       }
+
+      void api.stopAllBrowserForSession(targetSessionKey).catch(() => {});
     },
 
     stopSession: (sessionKey: string) => {
@@ -2298,6 +2487,7 @@ export const useComputerStore = create<ComputerStore>()(
         );
         agentWS.forceReconnect();
       }
+      void api.stopAllBrowserForSession(sessionKey).catch(() => {});
     },
 
     interruptSession: (sessionKey: string, message?: string, clientId?: string) => {
@@ -2316,6 +2506,7 @@ export const useComputerStore = create<ComputerStore>()(
         });
       }
       const sent = agentWS.sendInterrupt({ sessionKey, message });
+      void api.stopAllBrowserForSession(sessionKey).catch(() => {});
       if (sent && message?.trim()) {
         // Clear the matching soft-queued bubble immediately on force-inject so
         // the UI matches a normal sent message; `injection_acknowledged` can
@@ -2568,6 +2759,66 @@ export const useComputerStore = create<ComputerStore>()(
       set({ pendingApprovalCount: 0 });
     },
 
+    hydrateBrowserRuns: (runs) => {
+      set({ browserRuns: runs.slice(0, 200), browserRunsHydrated: true });
+    },
+    prependBrowserRun: (run) => {
+      set((state) => {
+        // Dedupe by run_id — if a hydration race or status_change replayed it
+        // already, replace in place rather than create a duplicate header row.
+        const idx = state.browserRuns.findIndex((r) => r.run_id === run.run_id);
+        if (idx >= 0) {
+          const next = state.browserRuns.slice();
+          next[idx] = { ...next[idx], ...run };
+          return { browserRuns: next };
+        }
+        return { browserRuns: [run, ...state.browserRuns].slice(0, 200) };
+      });
+    },
+    patchBrowserRun: (patch) => {
+      set((state) => {
+        const idx = state.browserRuns.findIndex((r) => r.run_id === patch.run_id);
+        if (idx < 0) return state;
+        const next = state.browserRuns.slice();
+        next[idx] = { ...next[idx], ...patch };
+        return { browserRuns: next };
+      });
+    },
+    hydrateBrowserScreenshots: (shots) => {
+      set({ browserScreenshots: shots.slice(0, 200), browserScreenshotsHydrated: true });
+    },
+    prependBrowserScreenshot: (shot) => {
+      set((state) => {
+        if (state.browserScreenshots.some((s) => s.key === shot.key)) return state;
+        return { browserScreenshots: [shot, ...state.browserScreenshots].slice(0, 200) };
+      });
+    },
+    hydrateBrowserSessions: (sessions) => {
+      set((state) => {
+        const sorted = sessions
+          .slice()
+          .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+          .slice(0, 100);
+        const browserSessions = Object.fromEntries(
+          sorted.map((session) => [
+            session.id,
+            { ...(state.browserState.browserSessions[session.id] || {}), ...session },
+          ]),
+        );
+        const activeBrowserSessionId =
+          state.browserState.activeBrowserSessionId && browserSessions[state.browserState.activeBrowserSessionId]
+            ? state.browserState.activeBrowserSessionId
+            : (sorted[0]?.id || null);
+        return {
+          browserState: {
+            ...state.browserState,
+            browserSessions,
+            activeBrowserSessionId,
+          },
+        };
+      });
+    },
+
     setBrowserFrame: (frame, forceDisplay, subagentId, taggedTabId) => {
       // Frame arrives as a Blob from the WS screencast pipeline or agent
       // screenshot. Cache it and render to the correct per-window canvas,
@@ -2813,6 +3064,28 @@ export const useComputerStore = create<ComputerStore>()(
           set({ browserState: { ...bs, isLoading: false } });
         }
       }, 30_000);
+    },
+
+    setActiveBrowserSession: (sessionId) => {
+      set((state) => ({
+        browserState: {
+          ...state.browserState,
+          activeBrowserSessionId: sessionId,
+        },
+      }));
+      const session = sessionId ? get().browserState.browserSessions[sessionId] : null;
+      if (session) {
+        getOrCreateBrowserAppWindow({
+          title: session.task ? `Web: ${session.task.slice(0, 60)}` : 'Browser',
+          metadata: {
+            browserSubagentId: session.subagentId || 'main',
+            browserSessionId: session.id,
+            ...(session.streamUrl ? { browserStreamUrl: session.streamUrl } : {}),
+            ...(session.runId ? { browserRunId: session.runId } : {}),
+            browserRunPhase: session.status === 'error' ? 'error' : session.status === 'complete' ? 'complete' : 'live',
+          },
+        });
+      }
     },
 
     handleAgentEvent: (event) => {
@@ -3192,7 +3465,7 @@ export const useComputerStore = create<ComputerStore>()(
               || tool === 'respond_directly' || tool === 'respond_to_user'
               || tool === 'spawn_agent' || tool === 'wait_for_agents' || tool === 'check_agent_status'
               || tool === 'cancel_agent' || tool === 'list_active_agents'
-              || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start event handles the activity + window
+              || tool === 'browser' || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start event handles the activity + window
             break;
           }
           // Skip tools with empty descriptions (e.g. respond_directly fallback)
@@ -3487,7 +3760,7 @@ export const useComputerStore = create<ComputerStore>()(
               ...(!anyOtherSessionRunning
                 ? {
                     platformAgents: updatedPlatformAgents,
-                    browserState: { ...bs, browserStreams: {} },
+                    browserState: { ...bs, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null },
                   }
                 : {}),
             });
@@ -4586,6 +4859,8 @@ export const useComputerStore = create<ComputerStore>()(
           const goal = event.data?.goal as string || '';
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const tfWorkspaceId = event.data?.workspace_id as string | undefined;
+          const browserSessionId = (event.data?.browserSessionId as string | undefined) || `pending:${tfSubagentId}`;
+          const browserExpiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt as number : undefined;
           const shortGoal = goal.length > 60 ? goal.slice(0, 60) + '...' : goal;
           const isSubagentBrowser = tfSubagentId !== 'main';
 
@@ -4598,28 +4873,34 @@ export const useComputerStore = create<ComputerStore>()(
             });
           }
 
-          // Create a browser window for this Browser session (if not already open).
-          // Route to the subagent's workspace if provided.
-          const existingTfWindow = findWindowForBrowser(tfSubagentId);
-          if (!existingTfWindow) {
-            const title = tfSubagentId === 'main' ? `Web: ${shortGoal}` : shortGoal;
-            useWindowStore.getState().openWindow('browser', {
-              title,
-              ...(tfWorkspaceId && { workspaceId: tfWorkspaceId }),
-              metadata: {
-                browserSubagentId: tfSubagentId,
-                browserRunPhase: 'live',
-                ...(isSubagentBrowser && { subagentId: tfSubagentId }),
-              },
-            });
-          } else {
+          // Reuse the single Browser app window for every Browser Use session.
+          const existingTfWindow = getOrCreateBrowserAppWindow({
+            title: tfSubagentId === 'main' ? `Web: ${shortGoal}` : 'Browser',
+            workspaceId: tfWorkspaceId,
+            metadata: {
+              browserSubagentId: tfSubagentId,
+              browserRunPhase: 'live',
+              browserRunErrorDetail: '',
+              browserSessionId,
+              ...(isSubagentBrowser ? { subagentId: tfSubagentId } : {}),
+            },
+          });
+          if (existingTfWindow) {
             const win = useWindowStore.getState().getWindow(existingTfWindow);
             if (win) {
+              const {
+                browserStepCount: _bs,
+                browserRunId: _br,
+                ...restMeta
+              } = win.metadata ?? {};
               useWindowStore.getState().updateWindow(existingTfWindow, {
                 metadata: {
-                  ...win.metadata,
+                  ...restMeta,
+                  browserAppWindow: true,
+                  browserSubagentId: tfSubagentId,
                   browserRunPhase: 'live',
                   browserRunErrorDetail: '',
+                  browserSessionId,
                 },
               });
             }
@@ -4627,13 +4908,29 @@ export const useComputerStore = create<ComputerStore>()(
 
           set(state => ({
             agentThinking: `Web: ${shortGoal}...`,
+            browserState: {
+              ...state.browserState,
+              activeBrowserSessionId: browserSessionId,
+              browserSessions: {
+                ...state.browserState.browserSessions,
+                [browserSessionId]: {
+                  ...(state.browserState.browserSessions[browserSessionId] || {}),
+                  id: browserSessionId,
+                  subagentId: tfSubagentId,
+                  task: goal,
+                  status: 'starting',
+                  startedAt: Date.now(),
+                  ...(browserExpiresAt ? { expiresAt: browserExpiresAt } : {}),
+                },
+              },
+            },
             // Only add to main chat for the main agent's Browser calls in the active session
             ...(!isSubagentBrowser && isActiveSession ? {
               chatMessages: appendMessage(state.chatMessages, {
                 role: 'activity' as const,
                 content: `Browsing ${url}`,
                 timestamp: new Date(),
-                tool: 'web_search',
+                tool: 'browser',
                 activityType: 'web',
               }),
             } : {}),
@@ -4643,17 +4940,126 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'browser:waiting': {
-          // Subagent is queued waiting for a Browser slot to open.
-          // Show this in the tracker so the user knows it's not stuck.
+          // Surfacing a queued browser run so the user knows it's not stuck.
+          // Subagent waits go to the tracker; main-agent waits go to the chat.
           const waitSubagentId = event.data?.subagentId as string || 'main';
           const queuePos = event.data?.queuePosition as number || 0;
           const maxConc = event.data?.maxConcurrent as number || 2;
+          const waitText = queuePos > 0
+            ? `Waiting for a browser slot (${queuePos} ahead, max ${maxConc} concurrent)`
+            : `Waiting for a browser slot (max ${maxConc} concurrent)`;
           if (waitSubagentId !== 'main') {
             useAgentTrackerStore.getState().addSubAgentActivity(waitSubagentId, {
-              text: `Waiting for browser slot (${queuePos} in queue, max ${maxConc} concurrent)`,
+              text: waitText,
               activityType: 'web',
               timestamp: Date.now(),
             });
+          } else if (isActiveSession) {
+            set(state => ({
+              agentThinking: waitText,
+              chatMessages: appendMessage(state.chatMessages, {
+                role: 'activity' as const,
+                content: waitText,
+                timestamp: new Date(),
+                tool: 'browser',
+                activityType: 'web',
+              }),
+            }));
+          }
+          break;
+        }
+
+        case 'browser:run_started': {
+          const startedRunId = typeof event.data?.runId === 'string' ? event.data.runId as string : undefined;
+          if (startedRunId) {
+            const sessionKey = (event.data?.sessionKey as string | undefined) ?? null;
+            const subagentId = (event.data?.subagentId as string | undefined) ?? null;
+            const taskText = typeof event.data?.task === 'string' ? event.data.task as string : '';
+            const expiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt as number : undefined;
+            get().prependBrowserRun({
+              run_id: startedRunId,
+              status: 'running',
+              task: taskText,
+              started_at: Date.now(),
+              ended_at: null,
+              cost_usd: null,
+              step_count: null,
+              session_key: sessionKey,
+              subagent_id: subagentId,
+              live_url: null,
+            } as BrowserRunSummary);
+            set((state) => {
+              const key = startedRunId;
+              const pendingKey = `pending:${subagentId || 'main'}`;
+              const existing = state.browserState.browserSessions[key] || state.browserState.browserSessions[pendingKey];
+              const { [pendingKey]: _drop, ...restSessions } = state.browserState.browserSessions;
+              return {
+                browserState: {
+                  ...state.browserState,
+                  activeBrowserSessionId: key,
+                  browserSessions: {
+                    ...restSessions,
+                    [key]: {
+                      ...(existing || {}),
+                      id: key,
+                      subagentId: subagentId || 'main',
+                      runId: startedRunId,
+                      task: taskText,
+                      status: 'running',
+                      startedAt: Date.now(),
+                      ...(expiresAt ? { expiresAt } : {}),
+                    },
+                  },
+                },
+              };
+            });
+          }
+          break;
+        }
+
+        case 'browser:run_status': {
+          // Emitted by the reconciliation alarm and the per-run stop handler.
+          const statusRunId = typeof event.data?.runId === 'string' ? event.data.runId as string : undefined;
+          const nextStatus = typeof event.data?.status === 'string' ? event.data.status as BrowserRunSummary['status'] : undefined;
+          if (statusRunId && nextStatus) {
+            const costUsd = typeof event.data?.costUsd === 'number' ? event.data.costUsd as number : undefined;
+            const stepCount = typeof event.data?.stepCount === 'number' ? event.data.stepCount as number : undefined;
+            const endedAt = typeof event.data?.endedAt === 'number' ? event.data.endedAt as number : (nextStatus !== 'running' ? Date.now() : null);
+            get().patchBrowserRun({
+              run_id: statusRunId,
+              status: nextStatus,
+              ...(endedAt !== null ? { ended_at: endedAt } : {}),
+              ...(costUsd !== undefined ? { cost_usd: costUsd } : {}),
+              ...(stepCount !== undefined ? { step_count: stepCount } : {}),
+            });
+            set((state) => ({
+              browserState: {
+                ...state.browserState,
+                browserSessions: {
+                  ...state.browserState.browserSessions,
+                  [statusRunId]: {
+                    ...(state.browserState.browserSessions[statusRunId] || {}),
+                    id: statusRunId,
+                    subagentId: (event.data?.subagentId as string | undefined) || 'main',
+                    runId: statusRunId,
+                    status: nextStatus === 'running' ? 'running' : nextStatus === 'success' ? 'complete' : nextStatus === 'cancelled' ? 'idle' : 'error',
+                    startedAt: state.browserState.browserSessions[statusRunId]?.startedAt || Date.now(),
+                    ...(costUsd !== undefined ? { costUsd } : {}),
+                    ...(stepCount !== undefined ? { stepCount } : {}),
+                  },
+                },
+              },
+            }));
+          }
+          break;
+        }
+
+        case 'browser:gallery_screenshot': {
+          // Post-run harvest landed a new gallery shot; prepend it live so the
+          // gallery doesn't need to refetch.
+          const shot = event.data?.screenshot as BrowserScreenshotSummary | undefined;
+          if (shot && shot.key) {
+            get().prependBrowserScreenshot(shot);
           }
           break;
         }
@@ -4661,14 +5067,29 @@ export const useComputerStore = create<ComputerStore>()(
         case 'browser:streaming_url': {
           const streamingUrl = event.data?.streamingUrl as string;
           const tfSubagentId = event.data?.subagentId as string || 'main';
+          const browserSessionId = (event.data?.browserSessionId as string | undefined) || (event.data?.runId as string | undefined) || tfSubagentId;
+          const expiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt as number : undefined;
           if (streamingUrl) {
             const { browserState: bs } = get();
             set({
               browserState: {
                 ...bs,
+                activeBrowserSessionId: browserSessionId,
                 browserStreams: {
                   ...bs.browserStreams,
                   [tfSubagentId]: streamingUrl,
+                },
+                browserSessions: {
+                  ...bs.browserSessions,
+                  [browserSessionId]: {
+                    ...(bs.browserSessions[browserSessionId] || {}),
+                    id: browserSessionId,
+                    subagentId: tfSubagentId,
+                    streamUrl: streamingUrl,
+                    status: 'running',
+                    startedAt: bs.browserSessions[browserSessionId]?.startedAt || Date.now(),
+                    ...(expiresAt ? { expiresAt } : {}),
+                  },
                 },
               },
             });
@@ -4677,19 +5098,19 @@ export const useComputerStore = create<ComputerStore>()(
             // was previously closed by a completed sibling, or this is a
             // streaming_url arriving before start), auto-open one now so the
             // iframe becomes visible instead of silently populating state.
+            const isSubagent = tfSubagentId !== 'main';
             let tfWindowId = findWindowForBrowser(tfSubagentId);
             if (!tfWindowId) {
-              const isSubagent = tfSubagentId !== 'main';
-              const newWinId = useWindowStore.getState().openWindow('browser', {
-                title: isSubagent ? `Web Agent (sub-agent)` : 'Web Agent',
+              tfWindowId = getOrCreateBrowserAppWindow({
+                title: isSubagent ? 'Web Agent (sub-agent)' : 'Web Agent',
                 metadata: {
                   browserSubagentId: tfSubagentId,
                   browserStreamUrl: streamingUrl,
+                  browserSessionId,
                   browserRunPhase: 'live',
-                  ...(isSubagent && { subagentId: tfSubagentId }),
+                  ...(isSubagent ? { subagentId: tfSubagentId } : {}),
                 },
               });
-              tfWindowId = typeof newWinId === 'string' ? newWinId : findWindowForBrowser(tfSubagentId);
             }
             if (tfWindowId) {
               const win = useWindowStore.getState().getWindow(tfWindowId);
@@ -4697,7 +5118,10 @@ export const useComputerStore = create<ComputerStore>()(
                 useWindowStore.getState().updateWindow(tfWindowId, {
                   metadata: {
                     ...win.metadata,
+                    browserAppWindow: true,
+                    browserSubagentId: tfSubagentId,
                     browserStreamUrl: streamingUrl,
+                    browserSessionId,
                     browserRunPhase: 'live',
                     browserRunErrorDetail: '',
                   },
@@ -4718,7 +5142,7 @@ export const useComputerStore = create<ComputerStore>()(
           // Strip noise: drop "Web:" prefix and split semicolon-joined compounds.
           const cleaned = rawPurpose.replace(/^web:\s*/i, '').trim();
           const parts = cleaned.split(/\s*;\s+/).filter(Boolean);
-          const headLabel = humanizeActionLabel(parts[0] || cleaned, actionType);
+          const headLabel = humanizeActionLabel(parts[0] || cleaned, actionType, payload);
           const subActions = parts.length > 1 ? parts.slice(1) : undefined;
 
           // Best-effort: pull URL out of the payload for nav events.
@@ -4741,6 +5165,23 @@ export const useComputerStore = create<ComputerStore>()(
             ...(subActions ? { subActions } : {}),
           };
 
+          // Mirror the latest known page URL onto the matching browser
+          // window's metadata so the in-app screenshot button can use it
+          // without re-deriving from chatMessages.
+          if (url) {
+            try {
+              const winStore = useWindowStore.getState();
+              const targetWin = winStore.windows.find(
+                (w) => w.type === 'browser' && w.metadata?.browserSubagentId === progressSubagentId,
+              );
+              if (targetWin) {
+                winStore.updateWindow(targetWin.id, {
+                  metadata: { ...(targetWin.metadata || {}), browserPageUrl: url },
+                });
+              }
+            } catch { /* non-critical */ }
+          }
+
           // Route to tracker if this belongs to a subagent
           if (isSubagentProgress) {
             useAgentTrackerStore.getState().addSubAgentActivity(progressSubagentId, {
@@ -4759,7 +5200,7 @@ export const useComputerStore = create<ComputerStore>()(
                 role: 'activity' as const,
                 content: headLabel,
                 timestamp: new Date(),
-                tool: 'web_search',
+                tool: 'browser',
                 activityType: 'web',
                 browserAction,
               }),
@@ -4770,6 +5211,19 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'browser:complete': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
+          const tfCostUsd = typeof event.data?.costUsd === 'number' ? event.data.costUsd as number : undefined;
+          const tfStepCount = typeof event.data?.stepCount === 'number' ? event.data.stepCount as number : undefined;
+          const tfRunId = typeof event.data?.runId === 'string' ? event.data.runId as string : undefined;
+          const tfFiles = Array.isArray(event.data?.files) ? event.data.files as BrowserSessionRecord['files'] : undefined;
+          if (tfRunId) {
+            get().patchBrowserRun({
+              run_id: tfRunId,
+              status: 'success',
+              ended_at: Date.now(),
+              ...(tfCostUsd !== undefined ? { cost_usd: tfCostUsd } : {}),
+              ...(tfStepCount !== undefined ? { step_count: tfStepCount } : {}),
+            });
+          }
           const { browserState: bs } = get();
           const lastStreamUrl = bs.browserStreams[tfSubagentId];
           // Remove global stream handle so new runs can replace; keep window open
@@ -4787,6 +5241,8 @@ export const useComputerStore = create<ComputerStore>()(
                   ...(preservedUrl ? { browserStreamUrl: preservedUrl } : {}),
                   browserRunPhase: 'complete',
                   browserRunErrorDetail: '',
+                  ...(tfStepCount !== undefined ? { browserStepCount: tfStepCount } : {}),
+                  ...(tfRunId !== undefined ? { browserRunId: tfRunId } : {}),
                 },
               });
             }
@@ -4797,6 +5253,22 @@ export const useComputerStore = create<ComputerStore>()(
             browserState: {
               ...bs,
               browserStreams: remainingStreams,
+              activeBrowserSessionId: tfRunId || bs.activeBrowserSessionId,
+              browserSessions: tfRunId ? {
+                ...bs.browserSessions,
+                [tfRunId]: {
+                  ...(bs.browserSessions[tfRunId] || {}),
+                  id: tfRunId,
+                  subagentId: tfSubagentId,
+                  runId: tfRunId,
+                  status: 'complete',
+                  startedAt: bs.browserSessions[tfRunId]?.startedAt || Date.now(),
+                  ...(lastStreamUrl ? { streamUrl: lastStreamUrl } : {}),
+                  ...(tfCostUsd !== undefined ? { costUsd: tfCostUsd } : {}),
+                  ...(tfStepCount !== undefined ? { stepCount: tfStepCount } : {}),
+                  ...(tfFiles ? { files: tfFiles } : {}),
+                },
+              } : bs.browserSessions,
             },
           });
           const { browser: _, ...restActivity } = get().agentActivity;
@@ -4810,6 +5282,19 @@ export const useComputerStore = create<ComputerStore>()(
         case 'browser:error': {
           const tfSubagentId = event.data?.subagentId as string || 'main';
           const errText = (event.data?.error as string) || 'Browser session error';
+          const tfCostUsd = typeof event.data?.costUsd === 'number' ? event.data.costUsd as number : undefined;
+          const tfStepCount = typeof event.data?.stepCount === 'number' ? event.data.stepCount as number : undefined;
+          const tfRunId = typeof event.data?.runId === 'string' ? event.data.runId as string : undefined;
+          if (tfRunId) {
+            const isCancelled = /cancelled by user|^cancelled$/i.test(errText);
+            get().patchBrowserRun({
+              run_id: tfRunId,
+              status: isCancelled ? 'cancelled' : 'error',
+              ended_at: Date.now(),
+              ...(tfCostUsd !== undefined ? { cost_usd: tfCostUsd } : {}),
+              ...(tfStepCount !== undefined ? { step_count: tfStepCount } : {}),
+            });
+          }
           const { browserState: bs } = get();
           const lastStreamUrl = bs.browserStreams[tfSubagentId];
           const { [tfSubagentId]: _removedStream, ...remainingStreams } = bs.browserStreams;
@@ -4825,6 +5310,8 @@ export const useComputerStore = create<ComputerStore>()(
                   ...(preservedUrl ? { browserStreamUrl: preservedUrl } : {}),
                   browserRunPhase: 'error',
                   browserRunErrorDetail: errText.slice(0, 500),
+                  ...(tfStepCount !== undefined ? { browserStepCount: tfStepCount } : {}),
+                  ...(tfRunId !== undefined ? { browserRunId: tfRunId } : {}),
                 },
               });
             }
@@ -4835,6 +5322,22 @@ export const useComputerStore = create<ComputerStore>()(
             browserState: {
               ...bs,
               browserStreams: remainingStreams,
+              activeBrowserSessionId: tfRunId || bs.activeBrowserSessionId,
+              browserSessions: tfRunId ? {
+                ...bs.browserSessions,
+                [tfRunId]: {
+                  ...(bs.browserSessions[tfRunId] || {}),
+                  id: tfRunId,
+                  subagentId: tfSubagentId,
+                  runId: tfRunId,
+                  status: 'error',
+                  startedAt: bs.browserSessions[tfRunId]?.startedAt || Date.now(),
+                  error: errText.slice(0, 500),
+                  ...(lastStreamUrl ? { streamUrl: lastStreamUrl } : {}),
+                  ...(tfCostUsd !== undefined ? { costUsd: tfCostUsd } : {}),
+                  ...(tfStepCount !== undefined ? { stepCount: tfStepCount } : {}),
+                },
+              } : bs.browserSessions,
             },
           });
           break;

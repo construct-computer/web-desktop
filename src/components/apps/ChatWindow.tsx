@@ -364,6 +364,9 @@ function SubAgentLine({ agent }: { agent: TrackedSubAgent }) {
 
 function OperationCard({ operationId, label }: { operationId: string; label: string }) {
   const operation = useAgentTrackerStore(s => s.operations[operationId]);
+  const isRunning = operation?.status === 'running' || operation?.status === 'aggregating';
+  const elapsed = useElapsed(operation?.startedAt ?? 0, Boolean(operation && isRunning));
+
   if (!operation) {
     // Operation not tracked yet — show placeholder
     return (
@@ -376,12 +379,10 @@ function OperationCard({ operationId, label }: { operationId: string; label: str
     );
   }
 
-  const isRunning = operation.status === 'running' || operation.status === 'aggregating';
   const isFailed = operation.status === 'failed';
   const completed = operation.subAgents.filter(a => a.status === 'complete').length;
   const failed = operation.subAgents.filter(a => a.status === 'failed').length;
   const total = operation.subAgents.length;
-  const elapsed = useElapsed(operation.startedAt, isRunning);
   const duration = operation.durationMs ? `${Math.round(operation.durationMs / 1000)}s` : elapsed;
 
   // Border color by type

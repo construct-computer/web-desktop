@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import {
   Globe, Code2, Timer, Search, Download, MousePointerClick, Keyboard,
-  Compass, Camera, ChevronRight, ChevronDown, Sparkles,
+  Compass, Camera, ChevronRight, ChevronDown, Sparkles, FileText, StopCircle,
 } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
 
@@ -30,6 +30,12 @@ const BROWSER_STYLES: Record<string, BrowserStyle> = {
   input: { icon: Keyboard, color: 'text-blue-400 bg-blue-400/10' },
   discover_data_sources: { icon: Compass, color: 'text-fuchsia-400 bg-fuchsia-400/10' },
   screenshot: { icon: Camera, color: 'text-pink-400 bg-pink-400/10' },
+  open: { icon: Globe, color: 'text-cyan-400 bg-cyan-400/10' },
+  task: { icon: Sparkles, color: 'text-amber-400 bg-amber-400/10' },
+  read: { icon: FileText, color: 'text-violet-400 bg-violet-400/10' },
+  files: { icon: Download, color: 'text-emerald-400 bg-emerald-400/10' },
+  status: { icon: Timer, color: 'text-gray-400 bg-gray-400/10' },
+  stop: { icon: StopCircle, color: 'text-red-400 bg-red-400/10' },
 };
 
 const DEFAULT_STYLE: BrowserStyle = { icon: Sparkles, color: 'text-[var(--color-text-muted)]/60 bg-white/5' };

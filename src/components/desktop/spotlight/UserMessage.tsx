@@ -111,6 +111,21 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     ? useAppStore.getState().localApps.find(a => a.id === parsed.user)?.icon_url
     : undefined;
 
+  const showPending = Boolean(msg.pendingInjection) && !isExternalSessionKey(activeSessionKey);
+  const wasPending = useRef(false);
+  const [injectionLanded, setInjectionLanded] = useState(false);
+  const reply = parseReply(msg.content);
+
+  useEffect(() => {
+    if (wasPending.current && !showPending) {
+      setInjectionLanded(true);
+      const t = window.setTimeout(() => { setInjectionLanded(false); }, 900);
+      wasPending.current = false;
+      return () => clearTimeout(t);
+    }
+    wasPending.current = showPending;
+  }, [showPending]);
+
   if (parsed?.platform) {
     const color = PLATFORM_COLORS[parsed.platform] || 'var(--color-accent)';
     const Icon = PLATFORM_ICONS[parsed.platform] || Send;
@@ -141,21 +156,6 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
       </div>
     );
   }
-
-  const showPending = Boolean(msg.pendingInjection) && !isExternalSessionKey(activeSessionKey);
-  const wasPending = useRef(false);
-  const [injectionLanded, setInjectionLanded] = useState(false);
-  const reply = parseReply(msg.content);
-
-  useEffect(() => {
-    if (wasPending.current && !showPending) {
-      setInjectionLanded(true);
-      const t = window.setTimeout(() => { setInjectionLanded(false); }, 900);
-      wasPending.current = false;
-      return () => clearTimeout(t);
-    }
-    wasPending.current = showPending;
-  }, [showPending]);
 
   return (
     <div

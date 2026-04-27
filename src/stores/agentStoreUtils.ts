@@ -188,6 +188,7 @@ const TOOL_ACTIVITY_VERB: Record<string, string> = {
   arxiv: 'arXiv search',
   domain_intel: 'Domain intel',
   app: 'Apps',
+  browser: 'Browser',
   remote_browser_session: 'Browser session',
   cancel_agents: 'Cancelling agents',
   coding_guide: 'Loading guide',
@@ -213,7 +214,22 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   const p = params || {};
 
   // Browser tools
-  if (tool === 'local_browser' || tool === 'browser' || tool.startsWith('browser_')) {
+  if (tool === 'browser') {
+    const intent = p.intent as string | undefined;
+    const url = p.url as string | undefined;
+    const instruction = p.instruction as string | undefined;
+    if (intent === 'screenshot') return { text: `Screenshot: ${url ? formatActivityUrl(url) : 'page'}`, activityType: 'web' };
+    if (intent === 'read') return { text: `Reading rendered page: ${url ? formatActivityUrl(url) : 'page'}`, activityType: 'web' };
+    if (intent === 'evaluate') return { text: `Evaluating page JavaScript${url ? `: ${formatActivityUrl(url)}` : ''}`, activityType: 'web' };
+    if (intent === 'files') return { text: 'Syncing browser files', activityType: 'file' };
+    if (intent === 'status') return { text: 'Checking browser status', activityType: 'web' };
+    if (intent === 'stop') return { text: 'Stopping browser session', activityType: 'web' };
+    if (instruction) return { text: `Browsing: ${instruction.slice(0, 55)}${instruction.length > 55 ? '…' : ''}`, activityType: 'web' };
+    if (url) return { text: `Browsing: ${formatActivityUrl(url)}`, activityType: 'web' };
+    return { text: 'Browsing the web', activityType: 'web' };
+  }
+
+  if (tool === 'local_browser' || tool.startsWith('browser_')) {
     const action = (p.action as string) || tool.replace('browser_', '');
     const url = p.url as string | undefined;
     const text = p.text as string | undefined;

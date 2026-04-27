@@ -120,6 +120,17 @@ export interface BrowserState {
   activeTabId: string | null;
   /** Web Agent live-stream URLs per subagentId */
   browserStreams: Record<string, string>;
+  browserSessions?: Record<string, {
+    id: string;
+    subagentId: string;
+    streamUrl?: string;
+    runId?: string;
+    task?: string;
+    status: string;
+    startedAt: number;
+    expiresAt?: number;
+  }>;
+  activeBrowserSessionId?: string | null;
   /** The daemon's own view of which tab is "active" (may differ from frontend focus). */
   daemonActiveTabId: string | null;
   /** Subagent tab mapping: daemon index → { subagentId, workspace } */

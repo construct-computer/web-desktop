@@ -1667,6 +1667,9 @@ export async function probeMcpFromUrl(
     mcp_path?: string;
     tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
     tool_count?: number;
+    transport?: 'json' | 'sse';
+    content_type?: string;
+    has_ui_guess?: boolean;
     error?: string;
   }>
 > {
@@ -1903,6 +1906,17 @@ export async function refreshAppTools(appId: string): Promise<ApiResult<{ ok: bo
   return request(`/apps/${encodeURIComponent(appId)}/refresh-tools`, { method: 'POST' });
 }
 
+/** Check whether an installed app's UI blocks direct iframe embedding. */
+export async function checkAppUiFrame(appId: string): Promise<ApiResult<{
+  blocked: boolean;
+  reason?: string | null;
+  status?: number;
+  content_type?: string;
+  proxy_available?: boolean;
+}>> {
+  return request(`/apps/${encodeURIComponent(appId)}/ui-frame-check`);
+}
+
 // ── Browser Run History ──
 
 export interface BrowserRunSummary {
@@ -1915,6 +1929,10 @@ export interface BrowserRunSummary {
   status: 'running' | 'success' | 'error' | 'cancelled';
   cost_usd: number | null;
   step_count: number | null;
+  /** browser-use live preview URL (live.browser-use.com iframe). Persisted so
+   * past runs can be reopened for inspection even after the BrowserWindow
+   * auto-closes. May be null for very old runs created before persistence. */
+  live_url?: string | null;
 }
 
 export interface BrowserRunDetail {
@@ -1927,6 +1945,108 @@ export async function listBrowserRuns(limit = 30): Promise<ApiResult<{ runs: Bro
 
 export async function getBrowserRun(runId: string): Promise<ApiResult<BrowserRunDetail>> {
   return request(`/browser/runs/${encodeURIComponent(runId)}`);
+}
+
+export interface BrowserActiveSessionSummary {
+  id: string;
+  subagentId: string;
+  streamUrl?: string;
+  runId?: string;
+  task?: string;
+  status: 'starting' | 'running' | 'idle' | 'complete' | 'error' | 'expired';
+  startedAt: number;
+  expiresAt?: number;
+  stepCount?: number;
+  error?: string;
+  files?: Array<{ name?: string; workspacePath: string; size?: number; contentType?: string }>;
+  sessionKey?: string | null;
+  kind?: string;
+}
+
+export async function listBrowserActiveSessions(): Promise<ApiResult<{ sessions: BrowserActiveSessionSummary[] }>> {
+  return request('/browser/sessions');
+}
+
+export async function stopBrowserRun(runId: string): Promise<ApiResult<{ status: string; already?: string }>> {
+  return request(`/browser/runs/${encodeURIComponent(runId)}/stop`, { method: 'POST' });
+}
+
+export async function stopAllBrowserForSession(sessionKey: string): Promise<ApiResult<{ status: string; stopped: number; attempted: number }>> {
+  return request(`/browser/stop-all-for-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionKey }),
+  });
+}
+
+export async function stopAllBrowserForUser(): Promise<ApiResult<{ status: string; stopped: number; attempted: number }>> {
+  return request('/browser/stop-all-for-user', { method: 'POST' });
+}
+
+// ── Browser Screenshot Gallery ──
+
+export interface BrowserScreenshotSummary {
+  key: string;
+  size: number;
+  captured_at: number;
+  url: string | null;
+  session_key: string | null;
+  subagent_id: string | null;
+  /** Set when the screenshot came from the post-run harvest of a remote_browser run. */
+  run_id?: string | null;
+  full_page: boolean;
+  content_type: string;
+}
+
+export async function listBrowserScreenshots(opts: { limit?: number; sessionKey?: string } = {}): Promise<ApiResult<{ screenshots: BrowserScreenshotSummary[] }>> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.sessionKey) params.set('session_key', opts.sessionKey);
+  const qs = params.toString();
+  return request(`/browser/screenshots${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Fetch screenshot bytes (auth-protected proxy through the worker).
+ * Caller is responsible for creating a blob URL and revoking it.
+ */
+export async function fetchBrowserScreenshot(key: string): Promise<Response> {
+  const url = `${API_BASE_URL}/browser/screenshots/bytes?key=${encodeURIComponent(key)}`;
+  const doFetch = () => {
+    const token = getToken();
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
+  const res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await ensureTokenRefreshed();
+    if (refreshed) return doFetch();
+  }
+  return res;
+}
+
+export async function saveBrowserScreenshotToWorkspace(
+  key: string,
+  destPath?: string,
+): Promise<ApiResult<{ status: string; path: string; size: number }>> {
+  return request('/browser/screenshots/save', {
+    method: 'POST',
+    body: JSON.stringify({ key, dest_path: destPath }),
+  });
+}
+
+/**
+ * Live-capture a screenshot of {url} and save it directly to the user's
+ * workspace (also archived to the screenshot gallery). User-triggered analog
+ * of the agent's `remote_browser_screenshot` tool.
+ */
+export async function captureBrowserScreenshot(
+  url: string,
+  opts: { savePath?: string; fullPage?: boolean } = {},
+): Promise<ApiResult<{ status: string; path: string; size: number; gallery_key: string; url: string }>> {
+  return request('/browser/screenshots/capture', {
+    method: 'POST',
+    body: JSON.stringify({ url, save_path: opts.savePath, full_page: opts.fullPage }),
+  });
 }
 
 // ── Local Apps ──
