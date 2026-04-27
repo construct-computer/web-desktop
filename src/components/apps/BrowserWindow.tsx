@@ -7,6 +7,7 @@ import {
 import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from '@/stores/agentStore';
 import { browserWS } from '@/services/websocket';
 import type { WindowConfig } from '@/types';
+import { BrowserRunHistory } from './BrowserRunHistory';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Constants
@@ -897,15 +898,20 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     return (
       <div className="flex flex-col h-full bg-[var(--color-surface)] overflow-hidden">
         <ChromeBar />
-        <div className="flex-1 flex items-center justify-center bg-black/90">
-          <div className="text-center px-8 max-w-md">
-            <Globe className="w-10 h-10 mx-auto mb-3 text-[var(--color-text-subtle)] opacity-40" />
-            <p className="text-sm text-[var(--color-text-subtle)] mb-1">
-              Remote browser
-            </p>
-            <p className="text-xs text-[var(--color-text-subtle)] opacity-60">
-              Your agent will use this browser to search the web and visit pages. Ask it to look something up!
-            </p>
+        <div className="flex-1 flex bg-black/90 overflow-hidden">
+          <div className="flex-1 flex items-center justify-center min-w-0">
+            <div className="text-center px-8 max-w-md">
+              <Globe className="w-10 h-10 mx-auto mb-3 text-[var(--color-text-subtle)] opacity-40" />
+              <p className="text-sm text-[var(--color-text-subtle)] mb-1">
+                Remote browser
+              </p>
+              <p className="text-xs text-[var(--color-text-subtle)] opacity-60">
+                Your agent will use this browser to search the web and visit pages. Ask it to look something up!
+              </p>
+            </div>
+          </div>
+          <div className="w-72 shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)]">
+            <BrowserRunHistory />
           </div>
         </div>
         <StatusBar connected={false} fps={0} />

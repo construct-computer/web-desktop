@@ -38,6 +38,21 @@ export interface ChatMessage {
   askUser?: AskUserData;
   /** File paths attached to this message (uploaded to workspace/uploads/) */
   attachments?: string[];
+  /** Structured details for browser activity rows (icons, payload disclosures, etc.). */
+  browserAction?: BrowserActionMeta;
+}
+
+export interface BrowserActionMeta {
+  /** Raw browser-use action type (e.g. "navigate", "evaluate", "wait", "find_text"). */
+  actionType: string | null;
+  /** Best-effort URL extracted from payload, used for grouping by host. */
+  url?: string;
+  /** Best-effort wait duration in ms (when actionType === "wait"). */
+  waitMs?: number;
+  /** Pretty-printable payload from browser-use, capped server-side at ~4KB. */
+  payload?: unknown;
+  /** Sub-actions when the source label was a "x; y; z" compound. */
+  subActions?: string[];
 }
 
 export interface BrowserTab {

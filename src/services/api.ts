@@ -1637,6 +1637,19 @@ export interface InstalledApp {
   /** false = installed from custom URL (not Construct registry); omit/true = registry-linked */
   registry_linked?: boolean;
   mcp_path?: string;
+  /** false = app is installed but disabled (hidden from agent). Default true. */
+  enabled?: boolean;
+}
+
+/** Enable or disable an installed app without uninstalling it. */
+export async function toggleAppEnabled(
+  appId: string,
+  enabled: boolean,
+): Promise<ApiResult<{ ok: boolean; enabled: boolean }>> {
+  return request(`/apps/${encodeURIComponent(appId)}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 export async function listInstalledApps(): Promise<ApiResult<{ apps: InstalledApp[] }>> {
@@ -1888,6 +1901,32 @@ export async function getStorageUsage(): Promise<ApiResult<{ bytesUsed: number; 
 /** Refresh cached tool definitions for an app. */
 export async function refreshAppTools(appId: string): Promise<ApiResult<{ ok: boolean; tools: Array<{ name: string; description?: string }> }>> {
   return request(`/apps/${encodeURIComponent(appId)}/refresh-tools`, { method: 'POST' });
+}
+
+// ── Browser Run History ──
+
+export interface BrowserRunSummary {
+  run_id: string;
+  session_key: string | null;
+  subagent_id: string | null;
+  task: string | null;
+  started_at: number;
+  ended_at: number | null;
+  status: 'running' | 'success' | 'error' | 'cancelled';
+  cost_usd: number | null;
+  step_count: number | null;
+}
+
+export interface BrowserRunDetail {
+  run: BrowserRunSummary & { final_text: string | null };
+}
+
+export async function listBrowserRuns(limit = 30): Promise<ApiResult<{ runs: BrowserRunSummary[] }>> {
+  return request(`/browser/runs?limit=${limit}`);
+}
+
+export async function getBrowserRun(runId: string): Promise<ApiResult<BrowserRunDetail>> {
+  return request(`/browser/runs/${encodeURIComponent(runId)}`);
 }
 
 // ── Local Apps ──

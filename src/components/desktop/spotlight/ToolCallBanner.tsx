@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { ActivityIcon } from './ActivityGroup';
+import { BrowserActivityRow, mergeBrowserRepeats } from './BrowserActivityRow';
 import { useElapsed } from './hooks';
 import { formatDuration } from './utils';
 import type { ChatMessage } from '@/stores/agentStore';
@@ -65,16 +66,27 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     return entries;
   }, [hasSubAgents, subAgents, activities]);
 
-  // Flat activity durations (used when no sub-agents)
+  // Flat activity durations (used when no sub-agents). Browser activities are
+  // first collapsed: consecutive identical browser steps fold into one row
+  // with a `×N` badge so the panel doesn't drown in repeats.
   const itemsWithDuration = useMemo(() => {
     if (hasSubAgents) return [];
-    return activities.map((act, i) => {
+    const merged = mergeBrowserRepeats(activities);
+    // Per-row duration = gap to the next merged group's first activity.
+    // Track original-index of the last-activity-in-group to compute that.
+    let runningIdx = 0;
+    return merged.map((entry, i) => {
+      const groupEndIdx = runningIdx + entry.repeat - 1;
       let dur = '';
-      if (i < activities.length - 1) {
-        const diff = new Date(activities[i + 1].timestamp).getTime() - new Date(act.timestamp).getTime();
+      const nextGroupStartIdx = groupEndIdx + 1;
+      if (nextGroupStartIdx < activities.length) {
+        const diff =
+          new Date(activities[nextGroupStartIdx].timestamp).getTime() -
+          new Date(activities[groupEndIdx].timestamp).getTime();
         if (diff > 500) dur = formatDuration(diff);
       }
-      return { act, dur };
+      runningIdx += entry.repeat;
+      return { act: entry.act, dur, repeat: entry.repeat, key: i };
     });
   }, [activities, hasSubAgents]);
 
@@ -128,12 +140,22 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               })
             ) : (
               /* ── Flat activity list (no sub-agents) ── */
-              itemsWithDuration.map(({ act, dur }, i) => {
+              itemsWithDuration.map(({ act, dur, repeat, key }) => {
+                if (act.activityType === 'web' && act.browserAction) {
+                  return (
+                    <BrowserActivityRow
+                      key={key}
+                      message={act}
+                      duration={dur || undefined}
+                      repeatCount={repeat}
+                    />
+                  );
+                }
                 const isTerminal = act.activityType === 'terminal';
                 return (
-                  <div key={i} className="flex items-center gap-2.5 py-[2px]">
+                  <div key={key} className="flex items-center gap-2.5 py-[2px]">
                     <div className="relative flex items-center justify-center w-5">
-                      {i > 0 && (
+                      {key > 0 && (
                         <div className="absolute -top-[6px] left-1/2 -translate-x-1/2 w-px h-[6px] bg-white/[0.06]" />
                       )}
                       <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)]/20" />

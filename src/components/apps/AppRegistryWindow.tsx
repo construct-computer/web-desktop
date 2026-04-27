@@ -268,6 +268,41 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setPendingActions(prev => { const n = { ...prev }; delete n[appId]; return n; });
   };
 
+  const handleToggleEnabled = async (appId: string, next: boolean) => {
+    setPendingActions(prev => ({ ...prev, [`toggle-${appId}`]: true }));
+    try {
+      const res = await api.toggleAppEnabled(appId, next);
+      if (res.success) {
+        await fetchInstalled();
+        setDetail(prev =>
+          prev?.installedApp?.id === appId
+            ? { ...prev, installedApp: { ...prev.installedApp, enabled: next } }
+            : prev,
+        );
+      } else {
+        setError('Toggle failed: ' + res.error);
+      }
+    } catch (err) {
+      setError(`Toggle failed: ${err instanceof Error ? err.message : err}`);
+    }
+    setPendingActions(prev => { const n = { ...prev }; delete n[`toggle-${appId}`]; return n; });
+  };
+
+  const handleRefreshTools = async (appId: string) => {
+    setPendingActions(prev => ({ ...prev, [`refresh-${appId}`]: true }));
+    try {
+      const res = await api.refreshAppTools(appId);
+      if (res.success) {
+        await fetchInstalled();
+      } else {
+        setError('Refresh failed: ' + res.error);
+      }
+    } catch (err) {
+      setError(`Refresh failed: ${err instanceof Error ? err.message : err}`);
+    }
+    setPendingActions(prev => { const n = { ...prev }; delete n[`refresh-${appId}`]; return n; });
+  };
+
   const handleDisconnect = async (toolkit: string) => {
     setPendingActions(prev => ({ ...prev, [`composio-${toolkit}`]: true }));
     try {
@@ -526,6 +561,54 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             </div>
           )}
 
+          {/* Per-app management (installed MCP apps only) */}
+          {detail.installedApp && (() => {
+            const ia = detail.installedApp;
+            const enabled = ia.enabled !== false;
+            const togglePending = !!pendingActions[`toggle-${ia.id}`];
+            const refreshPending = !!pendingActions[`refresh-${ia.id}`];
+            return (
+              <InfoCard title="Manage app" subtitle={enabled ? 'Active for the agent' : 'Hidden from the agent'}>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
+                      {enabled
+                        ? 'The agent can call this app\'s tools. Disable to hide it without uninstalling.'
+                        : 'This app is currently hidden from the agent. Enable to make its tools available again.'}
+                    </div>
+                    <button
+                      onClick={() => handleToggleEnabled(ia.id, !enabled)}
+                      disabled={togglePending}
+                      className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
+                        enabled
+                          ? 'bg-emerald-500/12 text-emerald-600 hover:bg-emerald-500/20'
+                          : 'bg-black/[0.06] dark:bg-white/[0.08] text-[var(--color-text-muted)] hover:bg-black/[0.1] dark:hover:bg-white/[0.12]'
+                      } disabled:opacity-50`}
+                      title={enabled ? 'Disable app' : 'Enable app'}
+                    >
+                      {togglePending ? <Loader2 className="w-3 h-3 animate-spin" /> : enabled ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-black/[0.05] dark:border-white/[0.05]">
+                    <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
+                      Re-fetch this app's tool list from its MCP endpoint.
+                    </div>
+                    <button
+                      onClick={() => handleRefreshTools(ia.id)}
+                      disabled={refreshPending}
+                      className="px-3 py-1 rounded-md text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text)] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      title="Refresh tools"
+                    >
+                      {refreshPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      Refresh tools
+                    </button>
+                  </div>
+                </div>
+              </InfoCard>
+            );
+          })()}
+
           {!isSkill && toolCount > 0 && (
             <ToolsList tools={detail.tools.map(t => ({ slug: t.name, name: t.name, description: t.description || undefined }))} />
           )}
@@ -758,15 +841,41 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
           yourApps.length === 0 ? (
             <EmptyState message={search ? 'No installed apps match your filter.' : 'No apps installed yet. Browse Discover to find some.'} />
           ) : (
-            <AppGrid>
-              {yourApps.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.description.toLowerCase().includes(search.toLowerCase())).map((app) => (
-                <UnifiedAppCard
-                  key={app.id}
-                  app={app}
-                  onClick={() => openDetail(app)}
-                />
-              ))}
-            </AppGrid>
+            (() => {
+              const q = search.toLowerCase().trim();
+              const filtered = q
+                ? yourApps.filter(a => a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q))
+                : yourApps;
+              if (filtered.length === 0) {
+                return <EmptyState message={`No installed apps match "${search}".`} />;
+              }
+              const mcpApps = filtered.filter(a => a.source !== 'composio' && !a.isSkill);
+              const skillApps = filtered.filter(a => a.isSkill);
+              const composioApps = filtered.filter(a => a.source === 'composio');
+              const groups: Array<[string, typeof filtered]> = [];
+              if (mcpApps.length > 0) groups.push(['MCP Apps', mcpApps]);
+              if (skillApps.length > 0) groups.push(['Skills', skillApps]);
+              if (composioApps.length > 0) groups.push(['Integrations', composioApps]);
+              const showHeaders = groups.length > 1;
+              return (
+                <div className="space-y-4">
+                  {groups.map(([label, apps]) => (
+                    <section key={label}>
+                      {showHeaders && (
+                        <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">
+                          {label} <span className="opacity-50 font-semibold">{apps.length}</span>
+                        </p>
+                      )}
+                      <AppGrid>
+                        {apps.map(app => (
+                          <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
+                        ))}
+                      </AppGrid>
+                    </section>
+                  ))}
+                </div>
+              );
+            })()
           )
         ) : isSearching ? (
           <div className="space-y-3">

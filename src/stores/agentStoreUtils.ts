@@ -465,12 +465,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     switch (action) {
       case 'list': return { text: 'Listing apps', activityType: 'tool' };
       case 'call': return { text: `App call${appId ? ` (${appId})` : ''}${toolName ? `: ${toolName}` : ''}`, activityType: 'tool' };
-      case 'search_registry': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
-      case 'install_registry': return { text: `Installing app: ${truncateActivityText((p.registry_app_id as string) || '…', 48)}`, activityType: 'tool' };
-      case 'install_from_url': return { text: `Installing MCP from URL`, activityType: 'tool' };
-      case 'mcp_probe': return { text: 'Probing MCP server', activityType: 'tool' };
-      case 'uninstall': return { text: `Uninstalling app${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
-      case 'refresh_tools': return { text: `Refreshing app tools${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
+      case 'search': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
       case 'create_local': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
       case 'update_local': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
       case 'delete_local': return { text: `Deleting app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };

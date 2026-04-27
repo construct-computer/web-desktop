@@ -80,6 +80,21 @@ export interface ChatMessage {
    * queued multiple identical messages.
    */
   clientId?: string;
+  /** Structured details for browser activity rows (icons, payload disclosures). */
+  browserAction?: BrowserActionMeta;
+}
+
+export interface BrowserActionMeta {
+  /** Raw browser-use action type (e.g. "navigate", "evaluate", "wait", "find_text"). */
+  actionType: string | null;
+  /** Best-effort URL extracted from payload, used for grouping by host. */
+  url?: string;
+  /** Best-effort wait duration in ms (when actionType === "wait"). */
+  waitMs?: number;
+  /** Pretty-printable payload from browser-use, capped server-side at ~4KB. */
+  payload?: unknown;
+  /** Sub-actions when the source label was a "x; y; z" compound. */
+  subActions?: string[];
 }
 
 
@@ -522,6 +537,30 @@ interface ComputerStore {
 import { AGENT_RUNNING_TIMEOUT_MS, MAX_CHAT_MESSAGES, STORAGE_KEYS as CONFIG_STORAGE_KEYS, TOAST_DURATION_MS, TOAST_DURATION_LONG_MS } from '@/lib/config';
 
 /** Append a message and trim the array if it exceeds the cap. */
+/**
+ * Map a raw browser-use action label/type to a friendlier display string.
+ * Browser-use emits things like "evaluate" or "Running JavaScript"; we want
+ * a single concise phrase that still hints at what changed.
+ */
+function humanizeActionLabel(rawLabel: string, actionType: string | null): string {
+  const label = (rawLabel || '').trim();
+  // Drop redundant "running ", "performing " filler verbs.
+  const trimmed = label.replace(/^(running|performing|executing)\s+/i, '');
+  if (trimmed) return trimmed;
+  switch (actionType) {
+    case 'navigate': return 'Navigated';
+    case 'evaluate': return 'Ran JS';
+    case 'wait': return 'Waited';
+    case 'find_text': return 'Found text';
+    case 'fetch': return 'Fetched';
+    case 'click': return 'Clicked';
+    case 'type': case 'input': return 'Typed';
+    case 'discover_data_sources': return 'Discovered data sources';
+    case 'screenshot': return 'Captured screenshot';
+    default: return actionType || 'Step';
+  }
+}
+
 function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   // Deduplicate consecutive identical error messages
   if (msg.isError && messages.length > 0) {
@@ -4670,14 +4709,42 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'browser:progress': {
-          const purpose = event.data?.purpose as string || 'Working...';
+          const rawPurpose = (event.data?.purpose as string) || 'Working...';
+          const actionType = (event.data?.actionType as string | null) ?? null;
+          const payload = event.data?.payload;
           const progressSubagentId = event.data?.subagentId as string || 'main';
           const isSubagentProgress = progressSubagentId !== 'main';
+
+          // Strip noise: drop "Web:" prefix and split semicolon-joined compounds.
+          const cleaned = rawPurpose.replace(/^web:\s*/i, '').trim();
+          const parts = cleaned.split(/\s*;\s+/).filter(Boolean);
+          const headLabel = humanizeActionLabel(parts[0] || cleaned, actionType);
+          const subActions = parts.length > 1 ? parts.slice(1) : undefined;
+
+          // Best-effort: pull URL out of the payload for nav events.
+          let url: string | undefined;
+          let waitMs: number | undefined;
+          if (payload && typeof payload === 'object') {
+            const p = payload as Record<string, unknown>;
+            if (typeof p.url === 'string') url = p.url;
+            else if (typeof p.startUrl === 'string') url = p.startUrl;
+            if (typeof p.duration === 'number') waitMs = p.duration;
+            else if (typeof p.ms === 'number') waitMs = p.ms;
+            else if (typeof p.wait === 'number') waitMs = p.wait;
+          }
+
+          const browserAction: BrowserActionMeta = {
+            actionType,
+            ...(url ? { url } : {}),
+            ...(typeof waitMs === 'number' ? { waitMs } : {}),
+            ...(payload !== undefined ? { payload } : {}),
+            ...(subActions ? { subActions } : {}),
+          };
 
           // Route to tracker if this belongs to a subagent
           if (isSubagentProgress) {
             useAgentTrackerStore.getState().addSubAgentActivity(progressSubagentId, {
-              text: `Web: ${purpose}`,
+              text: headLabel,
               activityType: 'web',
               timestamp: Date.now(),
             });
@@ -4686,14 +4753,15 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Batch into single set() (M16)
           set(state => ({
-            agentThinking: `Web: ${purpose}`,
+            agentThinking: headLabel,
             ...(isActiveSession ? {
               chatMessages: appendMessage(state.chatMessages, {
                 role: 'activity' as const,
-                content: `Web: ${purpose}`,
+                content: headLabel,
                 timestamp: new Date(),
                 tool: 'web_search',
                 activityType: 'web',
+                browserAction,
               }),
             } : {}),
           }));

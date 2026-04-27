@@ -42,6 +42,87 @@ export function AppStoreScreen() {
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
 
+  // Install from URL (MCP / self-hosted) — mobile parity with desktop AppRegistryWindow
+  const [fromUrl, setFromUrl] = useState('');
+  const [fromMcpPath, setFromMcpPath] = useState('/mcp');
+  const [fromDisplayName, setFromDisplayName] = useState('');
+  const [fromHasUi, setFromHasUi] = useState(false);
+  const [probeTools, setProbeTools] = useState<Array<{ name: string; description?: string }> | null>(null);
+  const [probeMeta, setProbeMeta] = useState<{ origin: string; mcp_path: string } | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [installingUrl, setInstallingUrl] = useState(false);
+
+  const resetFromUrlProbe = () => { setProbeTools(null); setProbeMeta(null); };
+
+  const handleProbeFromUrl = async () => {
+    setError(null); resetFromUrlProbe();
+    if (!fromUrl.trim()) { setError('Enter a URL first.'); return; }
+    setProbing(true);
+    try {
+      const res = await api.probeMcpFromUrl(fromUrl.trim(), fromMcpPath.trim() || '/mcp');
+      if (res.success && res.data?.ok) {
+        setProbeMeta({ origin: res.data.origin || '', mcp_path: res.data.mcp_path || '/mcp' });
+        setProbeTools((res.data.tools || []).map((t) => ({ name: t.name, description: t.description })));
+      } else {
+        const msg = (res.success && res.data && 'error' in res.data && (res.data as any).error)
+          || (!res.success ? res.error : 'Probe failed');
+        setError(typeof msg === 'string' ? msg : 'Probe failed');
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Probe failed'); }
+    setProbing(false);
+  };
+
+  const handleInstallFromUrl = async () => {
+    if (!fromUrl.trim()) { setError('Enter a URL first.'); return; }
+    if (!probeMeta) { setError('Tap "Check URL" first so we can reach your MCP server.'); return; }
+    setInstallingUrl(true); setError(null);
+    try {
+      const res = await api.installAppFromUrl({
+        url: fromUrl.trim(),
+        mcp_path: fromMcpPath.trim() || '/mcp',
+        name: fromDisplayName.trim() || undefined,
+        has_ui: fromHasUi,
+      });
+      if (res.success && res.data?.ok && res.data.app) {
+        haptic('success'); toast.show(`${res.data.app.name} installed`, 'success');
+        setFromUrl(''); setFromMcpPath('/mcp'); setFromDisplayName(''); setFromHasUi(false);
+        resetFromUrlProbe();
+        await fetchInstalled();
+        setTab('installed');
+      } else {
+        haptic('error');
+        setError(!res.success ? res.error : 'Install failed');
+      }
+    } catch (err) { haptic('error'); setError(err instanceof Error ? err.message : 'Install failed'); }
+    setInstallingUrl(false);
+  };
+
+  const handleToggleEnabled = async (appId: string, next: boolean) => {
+    setPendingActions(prev => ({ ...prev, [`toggle-${appId}`]: true }));
+    try {
+      const res = await api.toggleAppEnabled(appId, next);
+      if (res.success) {
+        await fetchInstalled();
+        setDetail(prev =>
+          prev?.installedApp?.id === appId
+            ? { ...prev, installedApp: { ...prev.installedApp, enabled: next } }
+            : prev,
+        );
+      } else { setError('Toggle failed: ' + res.error); }
+    } catch (err) { setError(`Toggle failed: ${err instanceof Error ? err.message : err}`); }
+    setPendingActions(prev => { const n = { ...prev }; delete n[`toggle-${appId}`]; return n; });
+  };
+
+  const handleRefreshTools = async (appId: string) => {
+    setPendingActions(prev => ({ ...prev, [`refresh-${appId}`]: true }));
+    try {
+      const res = await api.refreshAppTools(appId);
+      if (res.success) { haptic('success'); toast.show('Tools refreshed', 'success'); await fetchInstalled(); }
+      else { setError('Refresh failed: ' + res.error); }
+    } catch (err) { setError(`Refresh failed: ${err instanceof Error ? err.message : err}`); }
+    setPendingActions(prev => { const n = { ...prev }; delete n[`refresh-${appId}`]; return n; });
+  };
+
   // ── Actions ──
 
   const isAppInstalled = (app: UnifiedApp): boolean => {
@@ -427,6 +508,52 @@ export function AppStoreScreen() {
             )}
           </div>
 
+          {/* Manage installed app */}
+          {detail.installedApp && (
+            <div className="mb-4">
+              <SectionLabel>Manage</SectionLabel>
+              <Card>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium opacity-80">
+                      {detail.installedApp.enabled === false ? 'Disabled' : 'Enabled'}
+                    </p>
+                    <p className="text-[11px] opacity-40">
+                      {detail.installedApp.enabled === false
+                        ? 'Hidden from the agent — tools are not callable.'
+                        : 'Tools are exposed to the agent.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleToggleEnabled(detail.installedApp!.id, detail.installedApp!.enabled === false)}
+                    disabled={!!pendingActions[`toggle-${detail.installedApp.id}`]}
+                    className="px-3 py-1.5 rounded-lg text-[12px] font-medium shrink-0 disabled:opacity-40"
+                    style={{
+                      backgroundColor: detail.installedApp.enabled === false ? accent() : 'rgba(239,68,68,0.12)',
+                      color: detail.installedApp.enabled === false ? '#fff' : '#ef4444',
+                    }}
+                  >
+                    {pendingActions[`toggle-${detail.installedApp.id}`]
+                      ? <Loader2 size={12} className="animate-spin inline" />
+                      : detail.installedApp.enabled === false ? 'Enable' : 'Disable'}
+                  </button>
+                </div>
+                <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <button
+                    onClick={() => handleRefreshTools(detail.installedApp!.id)}
+                    disabled={!!pendingActions[`refresh-${detail.installedApp.id}`]}
+                    className="flex items-center gap-1.5 text-[12px] opacity-70 disabled:opacity-30"
+                  >
+                    {pendingActions[`refresh-${detail.installedApp.id}`]
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <RefreshCw size={12} />}
+                    Refresh tools
+                  </button>
+                </div>
+              </Card>
+            </div>
+          )}
+
           {/* Tools list */}
           {!isSkill && detailLoading && toolCount === 0 ? (
             <div className="flex items-center gap-2 py-4 opacity-30">
@@ -508,27 +635,37 @@ export function AppStoreScreen() {
           )}
           {tab === 'installed' && <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full" style={{ backgroundColor: accent() }} />}
         </button>
+        <button
+          onClick={() => { setTab('from_url'); handleSearch(''); haptic(); }}
+          className="px-4 py-2 text-[12px] font-semibold transition-colors relative"
+          style={{ color: tab === 'from_url' ? accent() : 'rgba(255,255,255,0.4)' }}
+        >
+          From URL
+          {tab === 'from_url' && <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full" style={{ backgroundColor: accent() }} />}
+        </button>
       </div>
 
       {/* Search bar */}
-      <div className="px-4 mb-2 shrink-0">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 opacity-25 pointer-events-none" />
-          <input
-            type="text"
-            className="w-full text-[13px] pl-8 pr-8 py-2.5 rounded-xl outline-none"
-            style={{ backgroundColor: bg2(), color: textColor() }}
-            placeholder={tab === 'installed' ? 'Filter installed apps...' : 'Search apps and integrations...'}
-            value={search}
-            onChange={e => handleSearch(e.target.value)}
-          />
-          {search && (
-            <button onClick={() => handleSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 opacity-30">
-              <X size={14} />
-            </button>
-          )}
+      {tab !== 'from_url' && (
+        <div className="px-4 mb-2 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 opacity-25 pointer-events-none" />
+            <input
+              type="text"
+              className="w-full text-[13px] pl-8 pr-8 py-2.5 rounded-xl outline-none"
+              style={{ backgroundColor: bg2(), color: textColor() }}
+              placeholder={tab === 'installed' ? 'Filter installed apps...' : 'Search apps and integrations...'}
+              value={search}
+              onChange={e => handleSearch(e.target.value)}
+            />
+            {search && (
+              <button onClick={() => handleSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 opacity-30">
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Category pills — Discover tab only */}
       {tab === 'discover' && (
@@ -561,7 +698,112 @@ export function AppStoreScreen() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {loading ? (
+        {tab === 'from_url' ? (
+          <div className="space-y-3 pt-2">
+            <Card>
+              <p className="text-[12px] opacity-60 leading-relaxed">
+                Connect a self-hosted MCP server by URL. We probe <code className="opacity-70">tools/list</code> over JSON-RPC and add it to your installed apps.
+              </p>
+            </Card>
+
+            <div>
+              <label className="block text-[11px] font-medium opacity-50 mb-1">Server URL</label>
+              <input
+                type="url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={fromUrl}
+                onChange={e => { setFromUrl(e.target.value); resetFromUrlProbe(); }}
+                placeholder="https://mcp.example.com"
+                className="w-full text-[13px] px-3 py-2.5 rounded-xl outline-none"
+                style={{ backgroundColor: bg2(), color: textColor() }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium opacity-50 mb-1">MCP path</label>
+              <input
+                type="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={fromMcpPath}
+                onChange={e => { setFromMcpPath(e.target.value); resetFromUrlProbe(); }}
+                placeholder="/mcp"
+                className="w-full text-[13px] px-3 py-2.5 rounded-xl outline-none"
+                style={{ backgroundColor: bg2(), color: textColor() }}
+              />
+              <p className="text-[10px] opacity-30 mt-1">Defaults to <code>/mcp</code>. Change only if your server uses a different endpoint.</p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium opacity-50 mb-1">Display name (optional)</label>
+              <input
+                type="text"
+                value={fromDisplayName}
+                onChange={e => setFromDisplayName(e.target.value)}
+                placeholder="My MCP server"
+                className="w-full text-[13px] px-3 py-2.5 rounded-xl outline-none"
+                style={{ backgroundColor: bg2(), color: textColor() }}
+              />
+            </div>
+
+            <label className="flex items-center gap-2 px-1 py-1 text-[12px] opacity-70">
+              <input type="checkbox" checked={fromHasUi} onChange={e => setFromHasUi(e.target.checked)} />
+              Server hosts a web UI at this URL
+            </label>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleProbeFromUrl}
+                disabled={probing || !fromUrl.trim()}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-medium disabled:opacity-40"
+                style={{ backgroundColor: bg2(), color: textColor() }}
+              >
+                {probing ? <Loader2 size={14} className="animate-spin inline" /> : 'Check URL'}
+              </button>
+              <button
+                onClick={handleInstallFromUrl}
+                disabled={installingUrl || !probeMeta}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-40"
+                style={{ backgroundColor: accent(), color: '#fff' }}
+              >
+                {installingUrl ? <Loader2 size={14} className="animate-spin inline" /> : 'Install'}
+              </button>
+            </div>
+
+            {probeMeta && (
+              <Card>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Shield size={12} style={{ color: '#22c55e' }} />
+                  <span className="text-[12px] font-semibold">Reachable</span>
+                </div>
+                <p className="text-[11px] opacity-50 truncate">{probeMeta.origin}{probeMeta.mcp_path}</p>
+                {probeTools && probeTools.length > 0 && (
+                  <>
+                    <div className="text-[11px] opacity-40 mt-2 mb-1">{probeTools.length} tool{probeTools.length !== 1 ? 's' : ''}</div>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {probeTools.map(t => (
+                        <div key={t.name} className="flex items-start gap-2">
+                          <Wrench size={10} className="opacity-30 mt-0.5 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-mono opacity-70 truncate">{t.name}</p>
+                            {t.description && <p className="text-[10px] opacity-30 line-clamp-2">{t.description}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {probeTools && probeTools.length === 0 && (
+                  <p className="text-[11px] opacity-40 mt-2">Server responded but exposes no tools.</p>
+                )}
+              </Card>
+            )}
+          </div>
+        ) : loading ? (
           <SkeletonList count={6} />
         ) : tab === 'installed' ? (
           <InstalledTabContent
