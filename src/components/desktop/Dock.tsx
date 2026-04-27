@@ -4,23 +4,13 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
 import { Z_INDEX } from '@/lib/constants';
+import { DESKTOP_DOCK_APP_IDS, getSystemAppsByIds, SYSTEM_WINDOW_METADATA } from '@/lib/appRegistry';
 import type { WindowType } from '@/types';
 
 // Icons — pinned apps
-import iconTerminal from '@/icons/terminal.png';
-import iconBrowser from '@/icons/browser.png';
-import iconFiles from '@/icons/files.png';
 import iconCalendar from '@/icons/calendar.png';
-import iconEmail from '@/icons/email.png';
 import iconLaunchpad from '@/icons/launchpad.png';
 
-// Icons — non-pinned system types (used for dynamic dock items)
-import iconSettings from '@/icons/settings.png';
-import iconAccessLogs from '@/icons/access-logs.png';
-import iconAccessControl from '@/icons/access-control.png';
-import iconMemory from '@/icons/memory.png';
-import iconText from '@/icons/text.png';
-import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
 
 // ── Types ────────────────────────────────────────────────────
@@ -56,39 +46,14 @@ const DOCK_PAD_X = 24;      // px-3 * 2
 const DIVIDER_APPROX_W = 10;
 
 // Pinned dock items (always present)
-const pinnedItems: DockItemConfig[] = [
-  { id: 'app-registry', label: 'App Registry', icon: iconAppStore, windowType: 'app-registry' },
-  { id: 'browser', label: 'Browser', icon: iconBrowser, windowType: 'browser' },
-  { id: 'terminal', label: 'Terminal', icon: iconTerminal, windowType: 'terminal' },
-  { id: 'files', label: 'Files', icon: iconFiles, windowType: 'files' },
-  { id: 'calendar', label: 'Agent Calendar', icon: iconCalendar, windowType: 'calendar' },
-  { id: 'email', label: 'Email', icon: iconEmail, windowType: 'email' },
-];
+const pinnedItems: DockItemConfig[] = getSystemAppsByIds(DESKTOP_DOCK_APP_IDS).map((app) => ({
+  id: app.id,
+  label: app.id === 'calendar' ? 'Agent Calendar' : app.label,
+  icon: app.icon,
+  windowType: app.windowType,
+}));
 
 const PINNED_WINDOW_TYPES = new Set<WindowType>(pinnedItems.map((i) => i.windowType));
-
-/** Icon fallbacks for non-pinned system window types. */
-const SYSTEM_TYPE_ICONS: Partial<Record<WindowType, string>> = {
-  settings: iconSettings,
-  auditlogs: iconAccessLogs,
-  'access-control': iconAccessControl,
-  memory: iconMemory,
-  editor: iconText,
-  'document-viewer': iconText,
-  'app-registry': iconAppStore,
-  about: iconGeneric,
-};
-
-const SYSTEM_TYPE_LABELS: Partial<Record<WindowType, string>> = {
-  settings: 'Settings',
-  auditlogs: 'Access Logs',
-  'access-control': 'Access Control',
-  memory: 'Memory',
-  editor: 'Editor',
-  'document-viewer': 'Editor',
-  'app-registry': 'App Registry',
-  about: 'About',
-};
 
 // ── Sizing computation ───────────────────────────────────────
 
@@ -208,7 +173,7 @@ const LaunchpadDockItem = forwardRef<
                      transition-all duration-200
                      flex flex-col items-center z-50">
         <div className="px-3 py-1 text-xs text-white rounded-md
-                        bg-black/80 backdrop-blur-md whitespace-nowrap">
+                        glass-tooltip whitespace-nowrap">
           Launchpad
         </div>
         <div className="w-2 h-2 bg-black/80 rotate-45 -mt-1" />
@@ -305,7 +270,7 @@ function DockItem({
                    flex flex-col items-center z-50"
       >
         <div className="px-3 py-1 text-xs text-white rounded-md
-                        bg-black/80 backdrop-blur-md whitespace-nowrap">
+                        glass-tooltip whitespace-nowrap">
           {item.label}
         </div>
         <div className="w-2 h-2 bg-black/80 rotate-45 -mt-1" />
@@ -413,7 +378,7 @@ export function Dock() {
         items.push({
           id: `dynamic-${win.type}-${win.id}`,
           label: win.title,
-          icon: win.icon || SYSTEM_TYPE_ICONS[win.type] || iconGeneric,
+          icon: win.icon || SYSTEM_WINDOW_METADATA[win.type]?.icon || iconGeneric,
           windowType: win.type,
           windowId: win.id,
         });
@@ -421,8 +386,8 @@ export function Dock() {
         seenTypes.add(win.type);
         items.push({
           id: `dynamic-${win.type}`,
-          label: SYSTEM_TYPE_LABELS[win.type] || win.title,
-          icon: SYSTEM_TYPE_ICONS[win.type] || iconGeneric,
+          label: SYSTEM_WINDOW_METADATA[win.type]?.label || win.title,
+          icon: SYSTEM_WINDOW_METADATA[win.type]?.icon || iconGeneric,
           windowType: win.type,
         });
       }
@@ -523,7 +488,7 @@ export function Dock() {
           ref={dockRef}
           className={cn(
             'relative flex items-end px-3 pt-1 pb-1 rounded-t-[14px]',
-            'bg-white/70 dark:bg-black/70 backdrop-blur-2xl',
+            'glass-window',
             'border-t border-l border-r border-black/10 dark:border-white/10',
             'shadow-[0_-5px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_-5px_20px_rgba(0,0,0,0.35)]',
             needsScroll && 'overflow-x-auto scrollbar-none',

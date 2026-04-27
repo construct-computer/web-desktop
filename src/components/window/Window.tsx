@@ -6,12 +6,11 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useWindowAccessoryStore } from '@/stores/windowAccessoryStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
-import { useIsMobile } from '@/hooks/useIsMobile';
 import { TitleBar } from './TitleBar';
 import { ResizeHandles } from './ResizeHandles';
 import type { WindowConfig, ResizeHandle } from '@/types';
 import type { MissionControlTarget } from './WindowManager';
-import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, STAGE_STRIP_WIDTH, DOCK_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH, DOCK_HEIGHT, Z_INDEX } from '@/lib/constants';
 
 interface StageTarget {
   x: number; // delta x from current position
@@ -83,7 +82,6 @@ export function Window({ config, children, missionControlTarget, missionControlI
   };
 
   const { play } = useSound();
-  const isMobile = useIsMobile();
   const focusedWindowId = useWindowStore((s) => s.focusedWindowId);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
   const titleBarAccessory = useWindowAccessoryStore((s) => s.accessories[config.id]);
@@ -243,10 +241,10 @@ export function Window({ config, children, missionControlTarget, missionControlI
         let newY = dragRef.current.startWindowY + dy;
         
         const useWindowStoreStageActive = useWindowStore.getState().stageManagerActive;
-        const paddingLeft = useWindowStoreStageActive && !isMobile ? STAGE_STRIP_WIDTH : 0;
+        const paddingLeft = useWindowStoreStageActive ? STAGE_STRIP_WIDTH : 0;
         
         const areaWidth = window.innerWidth;
-        const areaHeight = window.innerHeight - MENUBAR_HEIGHT - (!isMobile ? DOCK_HEIGHT : MOBILE_APP_BAR_HEIGHT);
+        const areaHeight = window.innerHeight - MENUBAR_HEIGHT - DOCK_HEIGHT;
         
         newX = Math.max(paddingLeft, Math.min(newX, areaWidth - cfg.width));
         newY = Math.max(0, Math.min(newY, areaHeight - cfg.height));
@@ -344,9 +342,9 @@ export function Window({ config, children, missionControlTarget, missionControlI
         }
         
         const useWindowStoreStageActive = useWindowStore.getState().stageManagerActive;
-        const paddingLeft = useWindowStoreStageActive && !isMobile ? STAGE_STRIP_WIDTH : 0;
+        const paddingLeft = useWindowStoreStageActive ? STAGE_STRIP_WIDTH : 0;
         const areaWidth = window.innerWidth;
-        const areaHeight = window.innerHeight - MENUBAR_HEIGHT - (!isMobile ? DOCK_HEIGHT : MOBILE_APP_BAR_HEIGHT);
+        const areaHeight = window.innerHeight - MENUBAR_HEIGHT - DOCK_HEIGHT;
 
         if (newX + newWidth > areaWidth) {
           if (handle.includes('e')) newWidth = areaWidth - newX;
@@ -804,17 +802,13 @@ export function Window({ config, children, missionControlTarget, missionControlI
       data-window-id={config.id}
       data-window-type={config.type}
       className={cn(
-        'absolute flex flex-col backdrop-blur-2xl',
-        // No rounded corners on mobile when maximized (edge-to-edge)
-        isMobile && isMaximized ? '' : 'rounded-lg',
-        'bg-white/70 dark:bg-black/70',
+        'absolute flex flex-col glass-window',
+        'rounded-lg',
         'border border-black/10 dark:border-white/10',
         // Shadows
-        isMobile && isMaximized ? '' : (
-          isFocused
-            ? 'shadow-[var(--shadow-window-focus)]'
-            : 'shadow-[var(--shadow-window)]'
-        ),
+        isFocused
+          ? 'shadow-[var(--shadow-window-focus)]'
+          : 'shadow-[var(--shadow-window)]',
         // MC / Stage strip: overflow visible for labels/popovers, and prevent text selection
         inMC ? (mcDragDelta ? 'cursor-grabbing overflow-visible select-none' : 'cursor-pointer overflow-visible select-none')
           : stageTarget ? 'cursor-pointer overflow-visible select-none'
@@ -863,7 +857,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
             transformOrigin: 'left center',
           }}
         >
-          <div className="bg-black/80 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+          <div className="glass-tooltip text-white text-sm px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
             {config.title}
           </div>
         </div>
@@ -878,7 +872,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
           title={config.title}
           icon={config.icon}
           isFocused={isFocused}
-          isMobile={isMobile}
+          isMobile={false}
           state={config.state}
           onMinimize={inMC ? undefined : handleMinimize}
           onMaximize={inMC ? undefined : handleMaximize}
@@ -896,8 +890,8 @@ export function Window({ config, children, missionControlTarget, missionControlI
         </div>
       </div>
       
-      {/* Resize handles — hidden on mobile and in MC mode */}
-      {!isMobile && !inMC && !stageTarget && (
+      {/* Resize handles — hidden in MC mode */}
+      {!inMC && !stageTarget && (
         <ResizeHandles
           onResizeStart={handleResizeStart}
           disabled={isMaximized}
@@ -927,7 +921,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
           <button
             className={cn(
               'absolute z-10 w-6 h-6 rounded-full',
-              'bg-black/60 border border-white/20 backdrop-blur-sm',
+              'glass-popover border border-white/20',
               'flex items-center justify-center',
               'transition-all duration-150',
               mcHovered
@@ -965,7 +959,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
           >
             <span className={cn(
               'px-3 py-1 rounded-md text-xs font-medium text-white truncate max-w-[200px]',
-              'bg-black/40 backdrop-blur-sm',
+              'glass-popover',
             )}>
               {config.title}
               {isMinimized && <span className="text-white/40 ml-1">(minimized)</span>}
@@ -979,8 +973,8 @@ export function Window({ config, children, missionControlTarget, missionControlI
         <div
           ref={ctxRef}
           className="fixed min-w-[180px] rounded-[10px] p-1
-            bg-white/70 dark:bg-black/60 border border-black/10 dark:border-white/10
-            shadow-2xl backdrop-blur-3xl saturate-150"
+            glass-popover border border-black/10 dark:border-white/10
+            shadow-2xl"
           style={{
             left: ctxMenu.x,
             top: ctxMenu.y,
@@ -1031,8 +1025,8 @@ export function Window({ config, children, missionControlTarget, missionControlI
                 <div
                   ref={ctxSubmenuRef}
                   className="fixed min-w-[160px] rounded-[10px] p-1
-                    bg-white/70 dark:bg-black/60 border border-black/10 dark:border-white/10
-                    shadow-2xl backdrop-blur-3xl saturate-150"
+                    glass-popover border border-black/10 dark:border-white/10
+                    shadow-2xl"
                   style={{
                     zIndex: Z_INDEX.menu + 1,
                     left: ctxSubmenuTriggerRef.current

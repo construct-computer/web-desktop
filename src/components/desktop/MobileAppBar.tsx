@@ -4,19 +4,11 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
 import { MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { getSystemAppsByIds, MOBILE_APP_BAR_APP_IDS, SYSTEM_WINDOW_METADATA } from '@/lib/appRegistry';
 import type { WindowType } from '@/types';
 
 // App icons
 import iconLaunchpad from '@/icons/launchpad.png';
-import iconAppStore from '@/icons/app-store.png';
-import iconFiles from '@/icons/files.png';
-import iconCalendar from '@/icons/calendar.png';
-import iconEmail from '@/icons/email.png';
-import iconSettings from '@/icons/settings.png';
-import iconAccessLogs from '@/icons/access-logs.png';
-import iconAccessControl from '@/icons/access-control.png';
-import iconMemory from '@/icons/memory.png';
-import iconText from '@/icons/text.png';
 import iconGeneric from '@/icons/generic.png';
 
 interface MobileAppItem {
@@ -28,36 +20,14 @@ interface MobileAppItem {
   windowId?: string;
 }
 
-const pinnedItems: MobileAppItem[] = [
-  { id: 'app-registry', label: 'App Store', icon: iconAppStore, windowType: 'app-registry' },
-  { id: 'files', label: 'Files', icon: iconFiles, windowType: 'files' },
-  { id: 'calendar', label: 'Calendar', icon: iconCalendar, windowType: 'calendar' },
-  { id: 'email', label: 'Email', icon: iconEmail, windowType: 'email' },
-];
+const pinnedItems: MobileAppItem[] = getSystemAppsByIds(MOBILE_APP_BAR_APP_IDS).map((app) => ({
+  id: app.id,
+  label: app.id === 'app-registry' ? 'App Store' : app.label,
+  icon: app.icon,
+  windowType: app.windowType,
+}));
 
 const PINNED_WINDOW_TYPES = new Set<WindowType>(pinnedItems.map((i) => i.windowType));
-
-const SYSTEM_TYPE_ICONS: Partial<Record<WindowType, string>> = {
-  settings: iconSettings,
-  auditlogs: iconAccessLogs,
-  'access-control': iconAccessControl,
-  memory: iconMemory,
-  editor: iconText,
-  'document-viewer': iconText,
-  'app-registry': iconAppStore,
-  about: iconGeneric,
-};
-
-const SYSTEM_TYPE_LABELS: Partial<Record<WindowType, string>> = {
-  settings: 'Settings',
-  auditlogs: 'Access Logs',
-  'access-control': 'Access Control',
-  memory: 'Memory',
-  editor: 'Editor',
-  'document-viewer': 'Editor',
-  'app-registry': 'App Store',
-  about: 'About',
-};
 
 export function MobileAppBar() {
   const { play } = useSound();
@@ -90,7 +60,7 @@ export function MobileAppBar() {
         items.push({
           id: `dynamic-${win.type}-${win.id}`,
           label: win.title,
-          icon: win.icon || SYSTEM_TYPE_ICONS[win.type] || iconGeneric,
+          icon: win.icon || SYSTEM_WINDOW_METADATA[win.type]?.icon || iconGeneric,
           windowType: win.type,
           windowId: win.id,
         });
@@ -98,8 +68,8 @@ export function MobileAppBar() {
         seenTypes.add(win.type);
         items.push({
           id: `dynamic-${win.type}`,
-          label: SYSTEM_TYPE_LABELS[win.type] || win.title,
-          icon: SYSTEM_TYPE_ICONS[win.type] || iconGeneric,
+          label: SYSTEM_WINDOW_METADATA[win.type]?.label || win.title,
+          icon: SYSTEM_WINDOW_METADATA[win.type]?.icon || iconGeneric,
           windowType: win.type,
         });
       }
@@ -153,7 +123,7 @@ export function MobileAppBar() {
     <div
       data-tour="dock"
       className="absolute bottom-0 left-0 right-0 px-1 pb-[18px] pt-1.5
-                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl
+                 glass-window
                  border-t border-black/10 dark:border-white/10
                  overflow-x-auto scrollbar-none"
       style={{ height: MOBILE_APP_BAR_HEIGHT, zIndex: Z_INDEX.taskbar }}

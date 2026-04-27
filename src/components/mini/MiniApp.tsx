@@ -1,21 +1,21 @@
 /**
  * MiniApp — Telegram Mini App entry point.
  *
- * Thin Telegram-specific wrapper around MobileShell:
+ * Thin Telegram-specific wrapper around the mobile-optimized Desktop:
  * - Telegram init (ready, expand, theme)
  * - initData HMAC authentication
  * - Telegram linking flows (Google OAuth, email)
- * - Delegates all UI to MobileShell via PlatformProvider
+ * - Delegates all UI to Desktop so Telegram keeps the same iPhone-like mobile OS
  */
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { agentWS } from '@/services/websocket';
 import { STORAGE_KEYS, API_BASE_URL } from '@/lib/constants';
 import * as api from '@/services/api';
 import { bg, textColor } from './ui';
-import { PlatformProvider, createTelegramPlatform, applyTelegramTheme } from '../mobile/platform';
+import { applyTelegramTheme } from '../mobile/platform';
 import { Desktop } from '@/components/desktop';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { Loader2, Mail, CheckCircle } from 'lucide-react';
@@ -37,7 +37,6 @@ export function MiniApp() {
 
   const [state, setState] = useState<AppState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
-
   const { isConnected, forceReconnect } = useWebSocket();
 
   const handleLogout = useCallback(() => {
@@ -45,8 +44,6 @@ export function MiniApp() {
     api.setToken('');
     setState('not_linked');
   }, []);
-
-  const platform = useMemo(() => createTelegramPlatform(), []);
 
   // ── 1. Telegram init + theme ──
   useEffect(() => {
@@ -56,8 +53,8 @@ export function MiniApp() {
       setState('error');
       return;
     }
-    tg.ready();
-    tg.expand();
+    tg.ready?.();
+    tg.expand?.();
     applyTelegramTheme();
   }, []);
 
@@ -223,21 +220,19 @@ export function MiniApp() {
           <div className="text-4xl mb-4">⚠️</div>
           <h2 className="text-lg font-semibold mb-2">Something went wrong</h2>
           <p className="text-sm opacity-60 mb-4">{errorMsg}</p>
-          <button onClick={() => window.Telegram?.WebApp?.close()} className="px-4 py-2 rounded-lg text-sm font-medium bg-white/10 active:bg-white/20">Close</button>
+          <button onClick={() => window.Telegram?.WebApp?.close?.()} className="px-4 py-2 rounded-lg text-sm font-medium bg-white/10 active:bg-white/20">Close</button>
         </div>
       </div>
     );
   }
 
   return (
-    <PlatformProvider value={platform}>
-      <Desktop
-        onLogout={handleLogout}
-        onLockScreen={() => {}}
-        onReconnect={forceReconnect}
-        isConnected={isConnected}
-      />
-    </PlatformProvider>
+    <Desktop
+      onLogout={handleLogout}
+      onLockScreen={() => {}}
+      onReconnect={forceReconnect}
+      isConnected={isConnected}
+    />
   );
 }
 

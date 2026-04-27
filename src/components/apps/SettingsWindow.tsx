@@ -39,6 +39,7 @@ import { ByokSection } from './ByokSection';
 import { UsageSection } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
+import { hasPaidAccess } from '@/lib/plans';
 // Dev app upload removed — apps are now hosted MCP servers
 import { useAppStore } from '@/stores/appStore';
 import { useDevAppStore } from '@/stores/devAppStore';
@@ -103,7 +104,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
     <div className={`flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
       {/* Sidebar / Topnav — on mobile, fade right edge to hint at scrollable overflow */}
       <div
-        className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]`}
+        className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] surface-sidebar`}
         style={isMobile ? {
           maskImage: 'linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%)',
           WebkitMaskImage: 'linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%)',
@@ -165,7 +166,7 @@ function SectionPanel({ title, subtitle, children }: { title: string; subtitle?:
 
 function SettingsCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] overflow-visible ${className}`}>
+    <div className={`rounded-lg surface-card border border-black/[0.06] dark:border-white/[0.06] overflow-visible ${className}`}>
       {children}
     </div>
   );
@@ -488,7 +489,7 @@ function composioLogoUrl(slug: string, logo?: string): string {
 
 function ConnectionsSection() {
   const userPlan = useAuthStore((s) => s.user?.plan);
-  const isSubscribed = userPlan === 'pro' || userPlan === 'starter';
+  const isSubscribed = hasPaidAccess(userPlan);
 
   // Slack state
   const [slackConfigured, setSlackConfigured] = useState(false);

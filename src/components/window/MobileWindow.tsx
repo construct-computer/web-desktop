@@ -40,14 +40,14 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       data-window-type={config.type}
       className={cn(
         'absolute inset-0 flex flex-col pointer-events-auto',
-        'bg-white/70 dark:bg-black/70 backdrop-blur-2xl',
+        'glass-window',
         // Instead of conditionally unmounting, we use z-index and visibility to ensure
         // unfocused windows don't block interactions or render pointlessly, but keep their state.
         isFocused ? 'z-[200] visible' : 'z-[100] invisible'
       )}
     >
       {/* Mobile Title Bar */}
-      <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none">
+      <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none surface-toolbar">
         {/* Back / Close button */}
         <button
           onClick={handleClose}

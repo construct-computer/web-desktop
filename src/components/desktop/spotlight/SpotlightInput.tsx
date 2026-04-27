@@ -65,6 +65,7 @@ export function SpotlightInput() {
   const stopChatSession = useComputerStore(s => s.stopChatSession);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
+  const agentConnected = useComputerStore(s => s.agentConnected);
   const instanceId = useComputerStore(s => s.instanceId);
   const pendingImages = useComputerStore(s => s.pendingImageData);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
@@ -117,7 +118,7 @@ export function SpotlightInput() {
     try { localStorage.setItem(DRAFT_KEY, val); } catch { /* */ }
   }, []);
 
-  const isConnected = computer?.status === 'running';
+  const isConnected = computer?.status === 'running' && agentConnected;
   const showSlash = message.startsWith('/') && !message.includes(' ');
   const filteredCommands = showSlash ? slashCommands.filter(c => c.name.startsWith(message.toLowerCase())) : [];
   useEffect(() => { setSlashSelected(0); }, [message]);
@@ -681,7 +682,7 @@ export function SpotlightInput() {
                   if (document.activeElement !== inputRef.current) setFsOpen(false);
                 }, 150);
               }}
-              placeholder={isVoiceActive ? 'Listening...' : isExternal ? 'This conversation is from an external platform (read-only)' : isConnected ? 'Ask anything... (@ to reference files)' : 'Connecting...'}
+              placeholder={isVoiceActive ? 'Listening...' : isExternal ? 'This conversation is from an external platform (read-only)' : isConnected ? 'Ask anything... (@ to reference files)' : agentConnected ? 'Starting agent...' : 'Reconnecting to agent...'}
               disabled={!isConnected || isExternal}
               rows={1}
               className="w-full bg-transparent outline-none border-none resize-none focus:outline-none focus:ring-0 focus:border-none text-[15px]"

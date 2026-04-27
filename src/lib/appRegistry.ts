@@ -19,6 +19,7 @@ import iconAccessLogs from '@/icons/access-logs.png';
 import iconAccessControl from '@/icons/access-control.png';
 import iconText from '@/icons/text.png';
 import iconAppStore from '@/icons/app-store.png';
+import iconGeneric from '@/icons/generic.png';
 
 export interface AppDefinition {
   /** Unique identifier. */
@@ -156,6 +157,34 @@ export const SYSTEM_APPS: AppDefinition[] = [
     keywords: ['code', 'vscode', 'edit', 'programming', 'ide', 'document', 'viewer', 'markdown', 'pdf', 'text'],
   },
 ];
+
+export const DESKTOP_DOCK_APP_IDS = ['app-registry', 'browser', 'terminal', 'files', 'calendar', 'email'] as const;
+export const MOBILE_APP_BAR_APP_IDS = ['app-registry', 'files', 'calendar', 'email'] as const;
+export const MOBILE_HOME_APP_IDS = ['chat', 'files', 'calendar', 'email', 'app-registry', 'memory', 'settings'] as const;
+
+/** Shared fallback metadata for dynamic system windows. */
+export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string; icon: string }>> = {
+  settings: { label: 'Settings', icon: iconSettings },
+  auditlogs: { label: 'Access Logs', icon: iconAccessLogs },
+  'access-control': { label: 'Access Control', icon: iconAccessControl },
+  memory: { label: 'Memory', icon: iconMemory },
+  editor: { label: 'Editor', icon: iconText },
+  'document-viewer': { label: 'Editor', icon: iconText },
+  'app-registry': { label: 'App Registry', icon: iconAppStore },
+  about: { label: 'About', icon: iconGeneric },
+};
+
+/** Get a system app by its stable id. */
+export function getSystemAppById(id: string): AppDefinition | undefined {
+  return SYSTEM_APPS.find((a) => a.id === id);
+}
+
+/** Return system apps in an explicit product order, omitting unknown ids. */
+export function getSystemAppsByIds(ids: readonly string[]): AppDefinition[] {
+  return ids
+    .map((id) => getSystemAppById(id))
+    .filter((app): app is AppDefinition => Boolean(app));
+}
 
 /** Get a system app by its WindowType. */
 export function getAppByWindowType(type: WindowType): AppDefinition | undefined {

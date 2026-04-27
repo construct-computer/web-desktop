@@ -138,7 +138,7 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
               <button
                 onClick={(e) => { e.stopPropagation(); onRetry(); }}
                 className="flex items-center gap-2 px-5 py-2.5 text-sm rounded-full font-medium
-                           bg-white/15 backdrop-blur-3xl
+                           glass-tooltip
                            border border-white/20
                            text-white
                            hover:bg-white/25
@@ -171,7 +171,7 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
         ) : isLocked ? (
           /* Locked mode — click to unlock */
           <p
-            className="text-[13px] font-medium text-white/60 tracking-wide uppercase px-4 py-2 rounded-full bg-black/20 backdrop-blur-xl border border-white/10"
+            className="text-[13px] font-medium text-white/60 tracking-wide uppercase px-4 py-2 rounded-full glass-tooltip border border-white/10"
             style={{}}
           >
             Click to unlock

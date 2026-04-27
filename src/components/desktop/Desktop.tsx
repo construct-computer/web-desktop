@@ -26,6 +26,7 @@ import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { getSlackStatus, validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
+import { hasAgentAccess } from '@/lib/plans';
 
 // ── Workspace slide constants ──────────────────────────────────────
 
@@ -260,11 +261,11 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // Guided tour: auto-starts when setup hasn't been completed (always),
   // or on first visit if the user hasn't completed/skipped the tour yet.
   // Force-start from the menubar always works regardless of flags.
-  // Skip for unsubscribed users — they see the subscribe window instead.
-  const isSubscribed = isTelegram || user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
+  // Skip for blocked users — they see the subscription overlay instead.
+  const hasAccess = isTelegram || hasAgentAccess(user?.plan);
   const tourTriggered = useRef(false);
   useEffect(() => {
-    if (tourTriggered.current || !user || !isSubscribed) return;
+    if (tourTriggered.current || !user || !hasAccess) return;
 
     const needsSetup = !user.setupCompleted;
     const tourDone = localStorage.getItem('construct:tour-completed') === '1';
@@ -279,7 +280,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       window.dispatchEvent(new Event('construct:start-tour'));
     }, 600);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, isSubscribed]);
+  }, [user, hasAccess]);
 
   // Request browser notification permission early so it's available
   // when the agent sends notifications while the tab is in the background.
@@ -396,9 +397,9 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       </div>
 
 
-      {/* Agent widgets — only for subscribed users (need agent connection). */}
-      {isSubscribed && <AgentGraphWidget />}
-      {isSubscribed && <ClippyWidget />}
+      {/* Agent widgets — only for active plans (need agent connection). */}
+      {hasAccess && <AgentGraphWidget />}
+      {hasAccess && <ClippyWidget />}
       {isMobile ? null : (
         <>
           <StatusWidget />
@@ -429,14 +430,14 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       <NotificationCenter />
 
       {/* Subscription overlay — permanent until user subscribes */}
-      {user && !isSubscribed && <SubscriptionOverlay />}
+      {user && !hasAccess && <SubscriptionOverlay />}
 
-      {/* Setup modal — permanent overlay until user completes initial setup (only for subscribed users) */}
-      {user && !user.setupCompleted && isSubscribed && <SetupModal />}
+      {/* Setup modal — permanent overlay until user completes initial setup (only for active plans) */}
+      {user && !user.setupCompleted && hasAccess && <SetupModal />}
 
       {/* Promo code modal — shown once after onboarding if the user landed
           via ?code=XXX and isn't already on Pro. Also shown to unsubscribed users immediately. */}
-      {(user?.setupCompleted || !isSubscribed) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
+      {(user?.setupCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
         <PromoCodeModal code={promoCode} onDismiss={() => setPromoDismissed(true)} />
       )}
     </div>

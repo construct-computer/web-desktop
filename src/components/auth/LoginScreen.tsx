@@ -131,7 +131,7 @@ export function LoginScreen() {
             : 'rgba(0,0,0,0.7)',
         }}
       />
-      <div className="absolute inset-0 backdrop-blur-md" />
+      <div className="absolute inset-0 glass-scrim" />
 
       {/* ── Phase 0: Power button (centered) ── */}
       {!poweredOn && (
@@ -145,7 +145,7 @@ export function LoginScreen() {
         >
           <div className="flex flex-col items-center gap-4">
             <button
-              className="group flex items-center justify-center w-16 h-16 rounded-full border border-white/10 bg-white/5 backdrop-blur-xl hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+              className="group flex items-center justify-center w-16 h-16 rounded-full border border-white/10 glass-tooltip hover:bg-white/10 hover:border-white/20 transition-all duration-300"
               onClick={handlePowerOn}
             >
               <svg className="w-6 h-6 text-white/50 group-hover:text-white/90 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
@@ -239,7 +239,7 @@ export function LoginScreen() {
           {/* Error message */}
           {error && (
             <div className="w-full mb-6 p-2.5 text-sm rounded-xl font-medium text-center
-                            bg-red-500/10 dark:bg-red-500/20 backdrop-blur-xl
+                            surface-card
                             text-red-700 dark:text-red-100 border border-red-500/20 dark:border-red-500/30 shadow-lg">
               {error}
             </div>
@@ -248,7 +248,7 @@ export function LoginScreen() {
           {/* Form Container */}
           <div className="w-full flex-col gap-3">
             {magicLinkState === 'sent' || magicLinkState === 'verifying' ? (
-              <div className="flex flex-col items-center text-center gap-3 w-full bg-white/40 dark:bg-black/20 backdrop-blur-xl p-4 rounded-3xl border border-black/10 dark:border-white/10 shadow-xl transition-colors duration-500">
+              <div className="flex flex-col items-center text-center gap-3 w-full surface-card p-4 rounded-3xl border border-black/10 dark:border-white/10 shadow-xl transition-colors duration-500">
                 <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                 <div>
                   <p className="text-[15px] font-medium text-black/90 dark:text-white mb-1">
@@ -274,7 +274,7 @@ export function LoginScreen() {
                     placeholder="000000"
                     autoFocus
                     className="w-[180px] py-2.5 text-center text-[22px] font-bold tracking-[8px] rounded-xl
-                               bg-white/50 dark:bg-black/30 backdrop-blur-2xl
+                               surface-control
                                border border-black/10 dark:border-white/15
                                text-black/90 dark:text-white
                                placeholder-black/20 dark:placeholder-white/20
@@ -315,7 +315,7 @@ export function LoginScreen() {
                     autoFocus
                     required
                     className="w-full py-2.5 px-4 text-[13px] font-medium rounded-full
-                               bg-white/50 dark:bg-black/30 backdrop-blur-2xl
+                               surface-control
                                border border-black/10 dark:border-white/15
                                text-black/90 dark:text-white shadow-inner
                                placeholder-black/40 dark:placeholder-white/40
@@ -350,7 +350,7 @@ export function LoginScreen() {
                   disabled={isLoading}
                   className="w-full flex items-center justify-center gap-3 py-2.5 px-4
                              text-[14px] font-medium rounded-full
-                             bg-white/50 dark:bg-white/10 backdrop-blur-2xl
+                             surface-control
                              border border-black/10 dark:border-white/15 shadow-lg
                              text-black/90 dark:text-white
                              hover:bg-white/70 dark:hover:bg-white/25

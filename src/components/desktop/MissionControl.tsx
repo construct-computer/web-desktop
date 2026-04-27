@@ -123,7 +123,7 @@ function WorkspaceThumbnail({
       {workspace.id !== 'main' && onDelete && (
         <button
           className="absolute -top-2 -right-2 w-5 h-5 rounded-full
-                     bg-black/70 border border-white/20 backdrop-blur-sm
+                     glass-tooltip border border-white/20
                      flex items-center justify-center
                      opacity-0 group-hover:opacity-100 transition-opacity duration-150
                      hover:bg-red-500/80 hover:border-red-400/40"
@@ -162,7 +162,7 @@ export function MissionControlScrim() {
     <div
       className={cn(
         'absolute inset-0 transition-[background-color,backdrop-filter] duration-400 ease-[cubic-bezier(0.16,1,0.3,1)]',
-        animIn ? 'bg-black/20 backdrop-blur-3xl saturate-150' : 'bg-black/0 backdrop-blur-0 saturate-100',
+        animIn ? 'glass-scrim' : 'bg-black/0 backdrop-blur-0 saturate-100',
       )}
       style={{ zIndex: Z_INDEX.missionControlScrim, pointerEvents: 'none' }}
     />

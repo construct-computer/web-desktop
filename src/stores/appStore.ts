@@ -14,6 +14,25 @@ import iconGeneric from '@/icons/generic.png';
 export const localAppIframeRefs = new Map<string, React.RefObject<HTMLIFrameElement | null>>();
 
 const logger = log('AppStore');
+const TOOLKIT_DETAIL_TTL_MS = 10 * 60_000;
+const toolkitDetailCache = new Map<string, { fetchedAt: number; detail: { name?: string; description?: string; logo?: string } }>();
+
+async function getCachedToolkitDetail(toolkit: string) {
+  const cached = toolkitDetailCache.get(toolkit);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < TOOLKIT_DETAIL_TTL_MS) return cached.detail;
+  const detail = await api.getComposioToolkitDetail(toolkit);
+  if (detail.success && detail.data) {
+    const slim = {
+      name: detail.data.name,
+      description: detail.data.description,
+      logo: detail.data.logo,
+    };
+    toolkitDetailCache.set(toolkit, { fetchedAt: now, detail: slim });
+    return slim;
+  }
+  return null;
+}
 
 /** A connected Composio toolkit with optional detail metadata. */
 export interface ConnectedToolkit {
@@ -81,13 +100,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         const enriched = await Promise.all(
           raw.map(async (t) => {
             try {
-              const detail = await api.getComposioToolkitDetail(t.toolkit);
-              if (detail.success && detail.data) {
+              const detail = await getCachedToolkitDetail(t.toolkit);
+              if (detail) {
                 return {
                   ...t,
-                  name: detail.data.name,
-                  description: detail.data.description,
-                  logo: detail.data.logo,
+                  name: detail.name,
+                  description: detail.description,
+                  logo: detail.logo,
                 };
               }
             } catch { /* ignore */ }

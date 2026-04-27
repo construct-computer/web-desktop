@@ -59,7 +59,7 @@ export function DropdownMenu({ trigger, children, align = 'start', className }: 
           ref={menuRef}
           className={cn(
             `absolute top-full mt-1 min-w-[150px] rounded-lg
-             bg-[var(--color-surface)] border border-[var(--color-border)]
+             glass-popover border border-[var(--color-border)]
              shadow-[var(--shadow-menu)] py-1 overflow-hidden`,
             alignClass[align],
             className

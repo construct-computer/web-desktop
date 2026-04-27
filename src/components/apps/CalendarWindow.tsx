@@ -638,7 +638,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
   const selectedDayEvents = getEventsForDay(selectedDate);
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-surface)] select-none">
+    <div className="flex flex-col h-full surface-app select-none">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
         <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">
@@ -656,7 +656,7 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           </Button>
         </div>
         <div className="flex-1 min-w-0" />
-        <div className="flex items-center gap-1 bg-[var(--color-surface)] rounded-md border border-[var(--color-border)] p-0.5">
+        <div className="flex items-center gap-1 surface-control rounded-md border border-[var(--color-border)] p-0.5">
           <button
             className={cn(
               'px-2 py-1 text-xs rounded transition-colors min-h-[28px]',
@@ -1123,10 +1123,10 @@ function EventDialog({
     // Overlay contained inside the calendar window (absolute, not fixed)
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-b-xl"
+      className="absolute inset-0 z-50 flex items-center justify-center glass-scrim rounded-b-xl"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="bg-[#f5f3f1] dark:bg-[#1e1c1b]
+      <div className="glass-popover
                       border border-black/10 dark:border-white/15 rounded-xl
                       shadow-[0_8px_24px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]
                       w-[96%] max-w-[620px] max-h-[92%] flex flex-col overflow-hidden">
@@ -1392,10 +1392,10 @@ function ConfirmDialog({
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-b-xl"
+      className="absolute inset-0 z-[60] flex items-center justify-center glass-scrim rounded-b-xl"
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
     >
-      <div className="bg-[#f5f3f1] dark:bg-[#2a2827]
+      <div className="glass-popover
                       border border-black/10 dark:border-white/15 rounded-xl
                       shadow-[0_8px_24px_rgba(0,0,0,0.2)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5)]
                       w-[280px] overflow-hidden">

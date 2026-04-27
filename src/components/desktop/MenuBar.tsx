@@ -186,7 +186,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
     <div
       ref={menuRef}
       className="absolute top-0 left-0 right-0 flex items-center select-none
-                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl
+                 glass-window
                  border-b border-black/10 dark:border-white/10"
       style={{ height: barHeight, zIndex: Z_INDEX.taskbar }}
     >
@@ -324,7 +324,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {!isMobile && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
-            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
             title="Upgrade Plan"
           >
             <span
@@ -593,7 +593,7 @@ function MenuDropdownPortal({ children, position, isMobile }: { children: React.
     <div
       id="menu-dropdown-portal"
       className={`fixed py-1.5
-                 bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150
+                 glass-popover
                  border border-black/10 dark:border-white/15 rounded-xl
                  shadow-2xl shadow-black/20 dark:shadow-black/40
                  ${isMobile ? 'min-w-[260px] max-w-[calc(100vw-24px)]' : 'min-w-[220px]'}`}
@@ -660,7 +660,7 @@ function LatencyPopover({ anchorRef, latency }: { anchorRef: React.RefObject<HTM
   return createPortal(
     <div
       className="fixed py-2 px-3 min-w-[120px]
-                 bg-white/70 dark:bg-[#1a1918]/85 backdrop-blur-2xl saturate-150
+                 glass-popover
                  border border-black/10 dark:border-white/15 rounded-xl
                  shadow-2xl shadow-black/20 dark:shadow-black/40
                  text-xs text-black/80 dark:text-white/90"

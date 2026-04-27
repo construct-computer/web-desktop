@@ -22,6 +22,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { hasAgentAccess } from '@/lib/plans';
 import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
 import { SpotlightInput } from './spotlight/SpotlightInput';
 import { MessageList } from './spotlight/MessageList';
@@ -74,7 +75,7 @@ export function Spotlight() {
     () => chatSessions.find(s => s.key === activeSessionKey)?.title || 'Chats',
     [chatSessions, activeSessionKey],
   );
-  const isSubscribed = userPlan === 'pro' || userPlan === 'starter' || userPlan === 'free';
+  const hasAccess = hasAgentAccess(userPlan);
   const isMobile = useIsMobile();
 
   const [animating, setAnimating] = useState(false);
@@ -271,7 +272,7 @@ export function Spotlight() {
 
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 glass-scrim transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
         onClick={requestClose}
       />
 
@@ -324,7 +325,7 @@ export function Spotlight() {
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
           className={cn(
-            'relative min-h-0 flex flex-1 flex-col overflow-hidden bg-white/50 dark:bg-[#111113]/80 backdrop-blur-[40px] shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
+            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
             isMobile
               ? 'rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]'
               : 'rounded-2xl border border-white/30 dark:border-white/[0.1]',
@@ -342,7 +343,7 @@ export function Spotlight() {
           {dragOver && (
             <div
               className={cn(
-                'absolute inset-0 z-50 bg-white/80 dark:bg-[#111113]/95 backdrop-blur-sm border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none',
+                'absolute inset-0 z-50 glass-drawer border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none',
                 isMobile ? 'rounded-t-[32px]' : 'rounded-2xl',
               )}
             >
@@ -369,7 +370,7 @@ export function Spotlight() {
                 />
               )}
               <div
-                className={`absolute inset-y-0 left-0 z-40 w-[min(320px,85vw)] transition-transform duration-200 ease-out bg-white/80 dark:bg-[#111113]/95 backdrop-blur-[40px] ${
+                className={`absolute inset-y-0 left-0 z-40 w-[min(320px,85vw)] transition-transform duration-200 ease-out glass-drawer ${
                   sidebarOpen ? 'translate-x-0' : '-translate-x-full'
                 }`}
               >
@@ -391,7 +392,7 @@ export function Spotlight() {
 
             {/* Chat area */}
             <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
-            {isSubscribed ? (
+            {hasAccess ? (
               <>
                 {isMobile && (
                   <div
@@ -428,7 +429,7 @@ export function Spotlight() {
                           }
                           openSettingsToSection('subscription');
                         }}
-                        className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2 text-amber-600 backdrop-blur-sm transition-all active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400"
+                        className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2 text-amber-600 transition-all active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
                         aria-label="Upgrade plan (opens settings)"
                       >
                         <span
@@ -484,7 +485,7 @@ export function Spotlight() {
                             }
                             openSettingsToSection('subscription');
                           }}
-                          className="relative flex h-6 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 bg-white/[0.06] pl-1.5 pr-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400"
+                          className="relative flex h-6 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
                           aria-label="Upgrade plan (opens settings)"
                         >
                           <span

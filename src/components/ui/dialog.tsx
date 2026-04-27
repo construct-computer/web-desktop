@@ -30,7 +30,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center"
+      className="fixed inset-0 glass-scrim flex items-center justify-center"
       style={{ zIndex: Z_INDEX.modal }}
       onClick={(e) => {
         if (e.target === overlayRef.current) {
@@ -40,7 +40,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
     >
       <div
         className={cn(
-          `bg-white/90 dark:bg-[#1c1c2a]/95 backdrop-blur-2xl saturate-150
+          `glass-popover
            border border-[var(--color-border)] rounded-xl
            shadow-[var(--shadow-window)] min-w-[300px] max-w-[90vw] max-h-[90vh]
            flex flex-col overflow-hidden`,
@@ -64,7 +64,7 @@ export function DialogHeader({ children, onClose, className }: DialogHeaderProps
     <div
       className={cn(
         `flex items-center justify-between px-2 py-1
-         bg-[var(--color-titlebar)] border-b border-[var(--color-border)]
+         surface-toolbar border-b border-[var(--color-border)]
          select-none`,
         className
       )}

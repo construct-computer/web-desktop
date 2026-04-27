@@ -37,7 +37,7 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
       )}
       <button
         onClick={onReply}
-        className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] border border-transparent hover:border-white/[0.08] backdrop-blur-sm transition-all duration-150 active:scale-90 opacity-50 hover:!opacity-100"
+        className="p-1.5 rounded-lg surface-control hover:bg-white/[0.1] border border-transparent hover:border-white/[0.08] transition-all duration-150 active:scale-90 opacity-50 hover:!opacity-100"
         title="Reply"
         type="button"
         aria-label="Reply to this message"
@@ -339,7 +339,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
             <button
               type="button"
               onClick={scrollToBottom}
-              className="w-7 h-7 rounded-full bg-[var(--color-surface-raised)]/80 backdrop-blur border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+              className="w-7 h-7 rounded-full surface-card-raised border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
               aria-label="Scroll to latest messages"
             >
               <ArrowDown className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />

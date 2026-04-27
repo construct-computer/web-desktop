@@ -246,7 +246,7 @@ export function Launchpad() {
         className={cn(
           'absolute inset-0 transition-all duration-300',
           animIn
-            ? 'bg-black/50 backdrop-blur-2xl'
+            ? 'glass-scrim'
             : 'bg-black/0 backdrop-blur-0',
         )}
         onClick={closeLaunchpad}
@@ -276,7 +276,7 @@ export function Launchpad() {
               onChange={(e) => setQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-sm text-white placeholder-white/40
                         bg-white/10 border border-white/15 rounded-lg
-                        backdrop-blur-md
+                        surface-control
                         outline-none focus:bg-white/15 focus:border-white/25
                         transition-colors duration-200"
             />

@@ -152,13 +152,13 @@ const FindBar = memo(function FindBar({
 
   return (
     <div className="absolute top-0 right-4 z-40 flex items-center gap-1.5 px-2 py-1.5
-                    bg-[var(--color-toolbar)] backdrop-blur-md border border-[var(--color-border)]
+                    glass-popover border border-[var(--color-border)]
                     rounded-b-md shadow-md"
          onClick={(e) => e.stopPropagation()}
     >
       <input
         ref={inputRef}
-        className="w-full max-w-[200px] min-w-0 h-[24px] px-2 text-[12px] bg-[var(--color-surface)] border border-[var(--color-border)]
+        className="w-full max-w-[200px] min-w-0 h-[24px] px-2 text-[12px] surface-control border border-[var(--color-border)]
                    rounded-[var(--radius-input)] outline-none text-[var(--color-text)]
                    placeholder:text-[var(--color-text-subtle)]
                    focus:border-[var(--color-accent)]/60"
@@ -242,8 +242,8 @@ const ContextMenu = memo(function ContextMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute z-50 min-w-[180px] py-1 bg-[var(--color-surface-raised)] border border-[var(--color-border)]
-                 rounded-md shadow-lg backdrop-blur-sm"
+      className="absolute z-50 min-w-[180px] py-1 glass-popover border border-[var(--color-border)]
+                 rounded-md shadow-lg"
       style={{ left: x, top: y }}
     >
       {menuItems.map((item, i) =>
@@ -282,7 +282,7 @@ const ErrorPage = memo(function ErrorPage({
   try { domain = new URL(url).hostname; } catch { domain = url; }
 
   return (
-    <div className="w-full h-full flex items-center justify-center bg-[var(--color-surface)]">
+    <div className="w-full h-full flex items-center justify-center surface-app">
       <div className="text-center max-w-[400px] px-6">
         <div className="text-4xl mb-4 opacity-30">
           {error.code.includes('SSL') ? (
@@ -940,7 +940,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   // Default state — no local browser; the agent uses a remote browser (Web Agent)
   if ((!isRunning || !connected) && !isAgentBrowserWindow) {
     return (
-      <div className="flex flex-col h-full bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex flex-col h-full surface-app overflow-hidden">
         <ChromeBar />
         <div className="flex-1 flex bg-black/90 overflow-hidden">
           <div className="flex-1 flex items-center justify-center min-w-0">
@@ -967,18 +967,18 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   return (
     <div
       ref={containerRef}
-      className="flex flex-col h-full bg-[var(--color-surface)] overflow-hidden outline-none"
+      className="flex flex-col h-full surface-app overflow-hidden outline-none"
       tabIndex={-1}
       onKeyDown={onBrowserKeyDown}
       onFocus={onWindowFocus}
     >
       {/* ── Address bar (read-only, agent-controlled) — hidden for Browser windows ── */}
       {!isAgentBrowserWindow && (
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-[var(--color-toolbar)] backdrop-blur-md border-b border-[var(--color-border)]">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 surface-toolbar border-b border-[var(--color-border)]">
         <div
           className="flex-1 min-w-0 flex items-center gap-1.5 h-[28px] px-2 text-[12px] font-mono
                      rounded-md shadow-inner cursor-default
-                     bg-[var(--color-surface)] border border-[var(--color-border)]"
+                     surface-control border border-[var(--color-border)]"
         >
           {hasContent && url ? (
             <>
@@ -1119,9 +1119,9 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
 function ChromeBar() {
   return (
     <div className="shrink-0 pointer-events-none opacity-50">
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-toolbar)] backdrop-blur-md border-b border-[var(--color-border)]">
+      <div className="flex items-center gap-2 px-3 py-2 surface-toolbar border-b border-[var(--color-border)]">
         <div className="flex-1 h-[28px] px-2.5 flex items-center text-[12px] font-mono rounded-md shadow-inner
-                        bg-[var(--color-surface)] border border-[var(--color-border)]">
+                        surface-control border border-[var(--color-border)]">
           <Globe className="w-3 h-3 text-[var(--color-text-subtle)] mr-2" />
           <span className="text-[var(--color-text-subtle)]">Agent-controlled browser</span>
         </div>
@@ -1164,7 +1164,7 @@ const AddressBarScreenshotButton = memo(function AddressBarScreenshotButton({ ur
         : 'Save a screenshot of this page to your workspace'
       }
       className="shrink-0 inline-flex items-center justify-center w-[28px] h-[28px] rounded-md
-                 border border-[var(--color-border)] bg-[var(--color-surface)]
+                 border border-[var(--color-border)] surface-control
                  hover:bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]
                  disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
     >
@@ -1188,7 +1188,7 @@ const StatusBar = memo(function StatusBar({
 }) {
   return (
     <div className="shrink-0 flex items-center justify-between h-[22px] px-2 text-[10px]
-                    border-t border-[var(--color-border)] bg-[var(--color-surface-raised)]
+                    border-t border-[var(--color-border)] surface-card-raised
                     text-[var(--color-text-muted)]">
       <span className="truncate mr-4">
         {isLoading ? (loadingPhase || 'Loading...') : pageTitle || ''}

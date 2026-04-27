@@ -1,12 +1,20 @@
 import { useEffect } from 'react';
 import { useWindowStore } from '@/stores/windowStore';
+import { useIsMobile } from './useIsMobile';
 
 /** Helper: returns true if Ctrl or Alt is held (both act as the modifier key). */
 function hasMod(e: KeyboardEvent): boolean {
   return e.ctrlKey || e.altKey;
 }
 
-export function useKeyboardShortcuts(_handlers: Record<string, unknown> = {}) {
+interface KeyboardShortcutHandlers {
+  onOpenTerminal?: () => void;
+  onToggleStartMenu?: () => void;
+}
+
+export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers = {}) {
+  const isMobile = useIsMobile();
+  const { onOpenTerminal, onToggleStartMenu } = handlers;
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const toggleLaunchpad = useWindowStore(s => s.toggleLaunchpad);
   const cycleWindows = useWindowStore(s => s.cycleWindows);
@@ -31,7 +39,18 @@ export function useKeyboardShortcuts(_handlers: Record<string, unknown> = {}) {
       // F4 — toggle Launchpad
       if (e.key === 'F4' && !hasMod(e) && !e.shiftKey) {
         e.preventDefault();
-        toggleLaunchpad();
+        if (!isMobile) toggleLaunchpad();
+        else onToggleStartMenu?.();
+        return;
+      }
+
+      // Mod+Shift+T — open Terminal. Keep this explicit because Desktop owns
+      // the app-opening action, while this hook owns the keyboard listener.
+      if (e.key.toLowerCase() === 't' && hasMod(e) && e.shiftKey) {
+        if (!isMobile && onOpenTerminal) {
+          e.preventDefault();
+          onOpenTerminal();
+        }
         return;
       }
 
@@ -52,6 +71,7 @@ export function useKeyboardShortcuts(_handlers: Record<string, unknown> = {}) {
 
       // Mod+` (backtick) — cycle workspaces
       if (e.key === '`' && hasMod(e) && !e.shiftKey) {
+        if (isMobile) return;
         e.preventDefault();
         cycleWorkspaces();
         return;
@@ -59,6 +79,7 @@ export function useKeyboardShortcuts(_handlers: Record<string, unknown> = {}) {
 
       // Mod+1-9 — switch to workspace by number
       if (hasMod(e) && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+        if (isMobile) return;
         const idx = parseInt(e.key, 10) - 1;
         if (idx < workspaces.length) {
           e.preventDefault();
@@ -70,5 +91,5 @@ export function useKeyboardShortcuts(_handlers: Record<string, unknown> = {}) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSpotlight, toggleLaunchpad, cycleWindows, cycleWorkspaces, switchWorkspace, closeWindow, getFocusedWindow, workspaces]);
+  }, [toggleSpotlight, toggleLaunchpad, cycleWindows, cycleWorkspaces, switchWorkspace, closeWindow, getFocusedWindow, workspaces, onOpenTerminal, onToggleStartMenu, isMobile]);
 }

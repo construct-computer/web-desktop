@@ -209,7 +209,7 @@ export function TerminalWindow({ config }: TerminalWindowProps) {
   }, [terminalId]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-black/70 backdrop-blur-[20px] text-white/90">
+    <div className="flex flex-col h-full overflow-hidden bg-black/90 text-white/90">
       {/* ── Header bar ───────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06] bg-white/[0.03]">
         {/* Left: status + label */}

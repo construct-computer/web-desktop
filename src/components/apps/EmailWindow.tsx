@@ -43,21 +43,8 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailSetupPane } from './EmailSetupPane';
 import { EmailHtmlBody } from './email/EmailHtmlBody';
-
-const AVATAR_COLORS = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-rose-500',
-  'bg-amber-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-pink-500',
-];
-
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const diff = Date.now() - date.getTime();
-  if (diff < 60_000) return 'now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+import { formatRelativeTimeShort } from '@/lib/format';
+import { getEmailAvatarClass, getEmailInitial } from '@/services/emailUi';
 
 function formatFullDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString('en-US', {
@@ -68,16 +55,6 @@ function formatFullDate(dateStr: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function getInitial(name: string): string {
-  return (name[0] || '?').toUpperCase();
-}
-
-function avatarColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 function Checkbox({
@@ -407,7 +384,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full bg-[var(--color-surface)]">
+      <div className="flex items-center justify-center h-full surface-app">
         <Loader2 size={24} className="animate-spin text-[var(--color-text-muted)]" />
       </div>
     );
@@ -419,7 +396,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
   if (initError) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-[var(--color-surface)] gap-3 p-6 text-center">
+      <div className="flex flex-col items-center justify-center h-full surface-app gap-3 p-6 text-center">
         <Mail size={32} className="text-[var(--color-text-muted)] opacity-40" />
         <p className="text-sm text-[var(--color-text-muted)]">{initError}</p>
         <button onClick={() => void init()} className="text-xs text-[var(--color-accent)] hover:underline">
@@ -430,10 +407,10 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
   }
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 bg-[var(--color-surface)] text-sm overflow-hidden">
+    <div className="relative flex h-full min-h-0 min-w-0 surface-app text-sm overflow-hidden">
       {(!isMobile || !selectedThread) && (
       <div className={`${isMobile ? 'w-full' : 'w-[380px] border-r'} shrink-0 min-h-0 border-[var(--color-border)] flex flex-col overflow-hidden`}>
-        <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-titlebar)] px-3 py-2 space-y-2">
+        <div className="shrink-0 border-b border-[var(--color-border)] surface-toolbar px-3 py-2 space-y-2">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium">All Mail</div>
@@ -456,7 +433,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           </div>
 
           {searchOpen && (
-            <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white/5 px-2.5 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] surface-control px-2.5 py-2">
               <Search size={13} className="text-[var(--color-text-muted)]" />
               <input
                 autoFocus
@@ -475,7 +452,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           )}
 
           {selectedCount > 0 && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white/5 px-2 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] surface-control px-2 py-1.5">
               <Checkbox
                 checked={allVisibleSelected}
                 indeterminate={someVisibleSelected}
@@ -585,8 +562,8 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
                       >
                         <div className="flex items-center gap-2">
                           <div className="relative shrink-0">
-                            <div className={`w-8 h-8 rounded-full ${avatarColor(sender)} flex items-center justify-center text-white text-[11px] font-semibold`}>
-                              {getInitial(sender)}
+                            <div className={`w-8 h-8 rounded-full ${getEmailAvatarClass(sender)} flex items-center justify-center text-white text-[11px] font-semibold`}>
+                              {getEmailInitial(sender)}
                             </div>
                             {unread && (
                               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-surface)]" />
@@ -598,7 +575,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
                                 {sender}
                               </span>
                               <span className={`text-[10px] shrink-0 ${unread ? 'text-[var(--color-accent)] font-medium' : 'text-[var(--color-text-muted)]'}`}>
-                                {formatRelativeTime(item.updatedAt)}
+                                {formatRelativeTimeShort(item.updatedAt)}
                               </span>
                             </div>
                             <p className={`text-[11px] truncate ${unread ? 'font-medium text-[var(--color-text)]' : 'text-[var(--color-text)]/80'}`}>{title}</p>
@@ -636,7 +613,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
       )}
 
       {(!isMobile || selectedThread) && (
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--color-surface)]">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col surface-app">
         {threadLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 size={20} className="animate-spin text-[var(--color-text-muted)]" />
@@ -686,7 +663,7 @@ function ThreadPane({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         <button onClick={onBack} className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 shrink-0">
           <ArrowLeft size={14} />
         </button>
@@ -727,7 +704,7 @@ function ThreadPane({
                         key={attachment.attachmentId || attachment.filename}
                         type="button"
                         onClick={() => void onOpenAttachment(message, attachment.attachmentId)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-surface)] text-[10px] text-[var(--color-text-muted)] border border-[var(--color-border)] hover:bg-white/5"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded surface-control text-[10px] text-[var(--color-text-muted)] border border-[var(--color-border)] hover:bg-white/5"
                       >
                         <Paperclip size={9} />
                         {attachment.filename || 'attachment'}
@@ -814,8 +791,8 @@ function MessageHeader({ message }: { message: EmailMessage }) {
   return (
     <div className="border-b border-[var(--color-border)]">
       <div className="flex items-start gap-2 px-3 py-2">
-        <div className={`w-7 h-7 rounded-full ${avatarColor(senderDisplay)} flex items-center justify-center text-white text-[10px] font-semibold shrink-0 mt-[1px]`}>
-          {getInitial(senderDisplay)}
+        <div className={`w-7 h-7 rounded-full ${getEmailAvatarClass(senderDisplay)} flex items-center justify-center text-white text-[10px] font-semibold shrink-0 mt-[1px]`}>
+          {getEmailInitial(senderDisplay)}
         </div>
 
         <div className="flex-1 min-w-0">

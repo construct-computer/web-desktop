@@ -41,7 +41,7 @@ export function MobileDesktopBackground() {
       }}
     >
       {screen === 'chat' && (
-        <div className="flex items-center shrink-0 px-2 pt-1 pb-0.5 z-10 bg-black/60 backdrop-blur-xl border-b border-white/10">
+        <div className="flex items-center shrink-0 px-2 pt-1 pb-0.5 z-10 surface-toolbar border-b border-white/10">
           <button
             onClick={() => setScreen('home')}
             className="flex items-center gap-0.5 px-1.5 py-1.5 -ml-1 rounded-lg active:bg-white/5 transition-colors"

@@ -193,7 +193,7 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
     <div
       ref={dropdownRef}
       id="chat-session-dropdown"
-      className="fixed z-[9999] w-56 rounded-lg border border-white/20 dark:border-white/10 bg-white/60 dark:bg-neutral-900/50 backdrop-blur-2xl shadow-2xl overflow-hidden"
+      className="fixed z-[9999] w-56 rounded-lg border border-white/20 dark:border-white/10 glass-popover shadow-2xl overflow-hidden"
       style={{ top, left }}
     >
       {/* New chat */}
@@ -571,7 +571,7 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
   return (
     <div className="flex flex-col h-full bg-[var(--color-surface)]">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-toolbar)] backdrop-blur-md">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         {/* Status dot */}
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${

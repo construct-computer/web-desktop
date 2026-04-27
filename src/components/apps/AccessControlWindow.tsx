@@ -16,6 +16,7 @@ import {
 } from '@/services/access-control';
 import { useComputerStore } from '@/stores/agentStore';
 import { Select } from '@/components/ui';
+import { PanelError } from './AppShared';
 
 type Tab = 'queue' | 'list' | 'settings';
 
@@ -125,9 +126,7 @@ export function AccessControlWindow({ config: _config }: { config: WindowConfig 
 
       {/* Error banner */}
       {error && (
-        <div className="px-3 py-2 bg-[var(--color-error-muted)] text-[var(--color-error)] text-xs">
-          {error}
-        </div>
+        <PanelError message={error} onRetry={refresh} onDismiss={() => setError(null)} />
       )}
 
       {/* Content */}

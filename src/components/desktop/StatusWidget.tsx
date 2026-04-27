@@ -169,7 +169,7 @@ export function StatusWidget() {
   return (
     <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
       <div
-        className="px-5 py-4 rounded-2xl w-full bg-white/70 dark:bg-black/70 backdrop-blur-2xl border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)]"
+        className="px-5 py-4 rounded-2xl w-full glass-window border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)]"
       >
       {/* ── Agent status ── */}
       <div className="flex items-baseline justify-between">

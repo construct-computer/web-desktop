@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { apiJSON, haptic, textColor, accent } from '../ui';
 import { CalendarEmailQuickWidgets } from '@/components/desktop/CalendarEmailQuickWidgets';
+import { LogOut } from 'lucide-react';
 
 export type MiniScreen =
   | 'home' | 'files' | 'calendar' | 'email' | 'settings'
@@ -25,20 +26,15 @@ interface UsageData {
 
 interface Props {
   onNavigate: (screen: NavigableScreen) => void;
+  onLogout?: () => void;
 }
 
-export function HomeScreen({ onNavigate }: Props) {
+export function HomeScreen({ onNavigate, onLogout }: Props) {
   const [usage, setUsage] = useState<UsageData | null>(null);
 
   const fetchData = useCallback(async () => {
-    const [usageRes, appsRes, composioRes] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      apiJSON<any>('/billing/usage/current'),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      apiJSON<any>('/agent/apps'),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      apiJSON<any>('/composio/connected'),
-    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const usageRes = await apiJSON<any>('/billing/usage/current');
 
     if (usageRes) {
       const resetsAt = usageRes.weeklyResetsAt || usageRes.resetsAt;
@@ -52,14 +48,6 @@ export function HomeScreen({ onNavigate }: Props) {
         usedUsd: usageRes.weeklyUsedUsd,
         capUsd: usageRes.weeklyCapUsd,
       });
-    }
-
-    if (appsRes) {
-      // Intentionally removed: no longer handling installed/connected apps in HomeScreen
-    }
-
-    if (composioRes?.connected) {
-      // Intentionally removed: no longer handling composio connected apps in HomeScreen
     }
   }, []);
 
@@ -86,18 +74,28 @@ export function HomeScreen({ onNavigate }: Props) {
             Welcome
           </h1>
         </div>
-        <div className="flex flex-col items-end text-right">
-          <span className="text-[11px] font-medium uppercase tracking-widest opacity-40 mb-1">Usage</span>
-          <div className="w-16 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-            <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }} />
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col items-end text-right">
+            <span className="text-[11px] font-medium uppercase tracking-widest opacity-40 mb-1">Usage</span>
+            <div className="w-16 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }} />
+            </div>
+            <span className="text-[10px] mt-1 opacity-40">{Math.round(pct)}% used</span>
           </div>
-          <span className="text-[10px] mt-1 opacity-40">{Math.round(pct)}% used</span>
+          {onLogout && (
+            <button
+              onClick={() => { haptic('light'); onLogout(); }}
+              className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full active:bg-white/10"
+              style={{ color: textColor() }}
+              aria-label="Log out"
+            >
+              <LogOut size={15} className="opacity-45" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Center content — removed */}
-      <div className="flex-1 flex flex-col items-center justify-center -mt-6 z-10">
-      </div>
+      <div className="flex-1" />
 
       {/* Bottom widgets — same frosted chrome as desktop / app windows */}
       <div className="px-5 mb-5 z-0 relative">

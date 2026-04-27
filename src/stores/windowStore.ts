@@ -6,6 +6,7 @@ import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import analytics from '@/lib/analytics';
 import { useAuthStore } from '@/stores/authStore';
+import { hasAgentAccess } from '@/lib/plans';
 
 /** Window types unsubscribed users can open in preview mode. */
 const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
@@ -791,7 +792,7 @@ export const useWindowStore = create<WindowStore>()(
       // Telegram Mini App users are exempt from this UI block since they use the serverless agent.
       const userPlan = useAuthStore.getState().user?.plan;
       const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
-      if (!isTelegram && userPlan !== 'pro' && userPlan !== 'starter' && userPlan !== 'free' && !PREVIEW_ALLOWED_TYPES.has(type)) {
+      if (!isTelegram && !hasAgentAccess(userPlan) && !PREVIEW_ALLOWED_TYPES.has(type)) {
         return '';
       }
 
@@ -1470,6 +1471,10 @@ export const useWindowStore = create<WindowStore>()(
     missionControlActive: false,
 
     toggleMissionControl: () => {
+      if (isMobileViewport()) {
+        set({ missionControlActive: false });
+        return;
+      }
       set((s) => ({ missionControlActive: !s.missionControlActive, menuBarPanel: null, launchpadOpen: false }));
     },
 

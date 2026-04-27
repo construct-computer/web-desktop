@@ -53,7 +53,7 @@ export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
       className="fixed inset-0 flex items-center justify-center bg-black/30"
       style={{ zIndex: 2147483647 }}
     >
-      <div className="relative w-full max-w-md bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150 rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+      <div className="relative w-full max-w-md glass-popover rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         <button
           onClick={handleDismiss}
           className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"

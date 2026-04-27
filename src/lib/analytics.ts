@@ -63,16 +63,16 @@ export function initAnalytics(): void {
     // ── Session replay ──
     // Recording is controlled server-side in PostHog project settings.
     // These options configure what gets captured when recording is active.
-    enable_recording_console_log: true,
+    enable_recording_console_log: false,
     session_recording: {
-      maskAllInputs: false,
+      maskAllInputs: true,
       maskInputOptions: { password: true },
-      recordCrossOriginIframes: true,
+      recordCrossOriginIframes: false,
     },
 
     // ── Autocapture, heatmaps & dead clicks ──
     autocapture: {
-      capture_copied_text: true,
+      capture_copied_text: false,
     },
     capture_dead_clicks: true,
 

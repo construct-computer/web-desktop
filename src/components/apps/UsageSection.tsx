@@ -17,6 +17,7 @@ import {
 import * as api from '@/services/api';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
+import { formatBytes } from '@/lib/format';
 
 function formatTimeRemaining(resetsAt: number | string): string {
   const ts = typeof resetsAt === 'string' ? new Date(resetsAt).getTime() : resetsAt;
@@ -33,13 +34,6 @@ function formatTimeRemaining(resetsAt: number | string): string {
 function formatCost(usd: number): string {
   if (usd < 0.01) return '<$0.01';
   return `$${usd.toFixed(2)}`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function InfoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {

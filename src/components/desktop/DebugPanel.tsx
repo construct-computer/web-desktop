@@ -84,7 +84,7 @@ export function DebugPanel() {
   return (
     <div
       className="fixed bottom-0 right-0 w-[min(520px,calc(100vw-16px))] max-h-[50dvh] flex flex-col
-                 bg-black/90 backdrop-blur-xl border border-white/10 rounded-tl-xl
+                 glass-tooltip border border-white/10 rounded-tl-xl
                  shadow-2xl z-[9998] font-mono text-[11px]"
     >
       {/* Header */}

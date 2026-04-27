@@ -13,13 +13,15 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { preloadAllSounds, installGlobalClickSound, unlockAudio } from '@/lib/sounds';
 import { preloadAllAssets, preloadDesktopAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useBillingStore } from '@/stores/billingStore';
 import { installGlobalErrorHandlers } from '@/stores/errorStore';
 import { DebugPanel } from '@/components/desktop/DebugPanel';
 import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tabSingleton';
 import * as api from '@/services/api';
 import analytics from '@/lib/analytics';
+import { hasAgentAccess } from '@/lib/plans';
 
-// Telegram Mini App — lazy loaded, only for /mini route
+// Telegram Mini App — lazy loaded only when running inside Telegram.
 const MiniApp = lazy(() =>
   import('@/components/mini/MiniApp').then((m) => ({ default: m.MiniApp })),
 );
@@ -41,12 +43,20 @@ type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
  *   5. Lock Screen: slides lock screen back down without logging out
  *   6. Duplicate tab: shows lock screen with "already open" message
  */
-function App() {
-  // Telegram Mini App — bypass everything else if running inside Telegram
+function isTelegramMiniApp(): boolean {
   const tg = window.Telegram?.WebApp;
-  const isTelegram = tg && (tg as any).platform && (tg as any).platform !== 'unknown';
-  
-  if (isTelegram /* || window.location.pathname === '/mini' */) {
+  return !!(tg && (tg as any).platform && (tg as any).platform !== 'unknown');
+}
+
+function isTelegramOAuthReturn(): boolean {
+  if (window.location.pathname !== '/mini') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has('token') || params.has('linked') || params.has('auth_error');
+}
+
+function App() {
+  // Telegram Mini App — keep Telegram auth/linking, then render the mobile-optimized desktop.
+  if (isTelegramMiniApp() || isTelegramOAuthReturn()) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
         <MiniApp />
@@ -63,6 +73,10 @@ function App() {
     );
   }
 
+  return <WebAppShell />;
+}
+
+function WebAppShell() {
   // Capture a promo/referral code from the URL (?code=XXX) and stash it in
   // localStorage so we can offer it to the user once they finish onboarding.
   // Runs before the OAuth callback block so we can strip the param below.
@@ -124,8 +138,10 @@ function App() {
   const [tabStatus, setTabStatus] = useState<'checking' | 'leader' | 'duplicate'>('checking');
 
   const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, checkAuth, handleOAuthReturn } = useAuthStore();
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const fetchUsage = useBillingStore((s) => s.fetchUsage);
   const { isConnected, forceReconnect } = useWebSocket();
-  const isSubscribed = user?.plan === 'pro' || user?.plan === 'starter' || user?.plan === 'free';
+  const hasAccess = hasAgentAccess(user?.plan);
 
   const computer = useComputerStore((s) => s.computer);
   const computerLoading = useComputerStore((s) => s.isLoading);
@@ -182,14 +198,14 @@ function App() {
 
   // (Welcome animation now built into LoginScreen — no separate trigger needed)
 
-  // Once authenticated + subscribed + leader tab, start provisioning the container
+  // Once authenticated + active plan + leader tab, start provisioning the serverless agent.
   // Guard: don't retry if there's already an error, or if shutdown/power-on screen is showing
-  // Don't provision at all for unsubscribed users — they must subscribe first
+  // Don't provision at all for disabled/unsubscribed users — they must switch plans first.
   useEffect(() => {
-    if (isAuthenticated && isSubscribed && tabStatus === 'leader' && !computer && !computerLoading && !computerError) {
+    if (isAuthenticated && hasAccess && tabStatus === 'leader' && !computer && !computerLoading && !computerError) {
       fetchComputer();
     }
-  }, [isAuthenticated, isSubscribed, tabStatus, computer, computerLoading, computerError, fetchComputer]);
+  }, [isAuthenticated, hasAccess, tabStatus, computer, computerLoading, computerError, fetchComputer]);
 
   // Preload desktop assets (wallpaper, dock icons) while the user waits
   // on the lock/provisioning screen. By the time the desktop renders,
@@ -200,11 +216,11 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Slide up lock screen when container is ready OR user is unsubscribed (show desktop with subscribe window).
+  // Slide up lock screen when the agent is ready OR the user is blocked (show desktop with subscription overlay).
   // Skip when the user has explicitly locked the screen (isLocked).
   useEffect(() => {
     const canSlide = isAuthenticated && authChecked && !lockScreenGone && !slidingUp && !isLocked;
-    const ready = computer || !isSubscribed; // unsubscribed users go straight to desktop
+    const ready = computer || !hasAccess; // blocked users go straight to desktop
     if (canSlide && ready) {
       const timer = setTimeout(() => {
         setSlidingUp(true);
@@ -212,7 +228,7 @@ function App() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, isSubscribed, computer, authChecked, lockScreenGone, slidingUp, isLocked]);
+  }, [isAuthenticated, hasAccess, computer, authChecked, lockScreenGone, slidingUp, isLocked]);
 
   // loginKey forces LoginScreen to remount (replay hello animation) on logout
   const [loginKey, setLoginKey] = useState(0);
@@ -224,16 +240,16 @@ function App() {
     logout();
   }, [logout]);
 
-  // When user subscribes or changes plan, reload the tab to pick up the new plan
+  // When user returns from billing, refresh auth and billing in-place instead
+  // of dropping the desktop state with a full reload.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const billingStatus = params.get('billing_status');
     if (billingStatus === 'success' || billingStatus === 'portal_return') {
-      // Clear URL params and reload to pick up the new plan
       window.history.replaceState({}, '', '/');
-      window.location.reload();
+      void Promise.allSettled([checkAuth(), fetchSubscription(), fetchUsage()]);
     }
-  }, []);
+  }, [checkAuth, fetchSubscription, fetchUsage]);
 
   // ── Lock Screen: slide in from top ──
   const handleLockScreen = useCallback(() => {
@@ -293,8 +309,8 @@ function App() {
 
   return (
     <>
-      {/* Layer 1: App shell (bottom) — when authenticated (subscribed with computer, or unsubscribed with subscribe window) */}
-      {isAuthenticated && (computer || !isSubscribed) && (
+      {/* Layer 1: App shell (bottom) — when authenticated (active plan with agent, or blocked with subscription overlay) */}
+      {isAuthenticated && (computer || !hasAccess) && (
         <div className="fixed inset-0">
           <Desktop
             onLogout={handleLogout}
@@ -326,8 +342,8 @@ function App() {
           {isAuthenticated ? (
               <ReturningUserScreen
                 onUnlock={isLocked ? handleUnlock : undefined}
-                isProvisioning={isSubscribed && (computerLoading || (!computer && !computerError))}
-                provisionError={isSubscribed ? computerError : null}
+                isProvisioning={hasAccess && (computerLoading || (!computer && !computerError))}
+                provisionError={hasAccess ? computerError : null}
                 onRetry={fetchComputer}
               />
           ) : (

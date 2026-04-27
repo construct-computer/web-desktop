@@ -24,7 +24,7 @@ export function TodoListWidget() {
   return (
     <div
       className="w-[240px] select-none pointer-events-auto font-mono text-[11px] leading-[1.7] mt-3
-                 bg-white/70 dark:bg-black/70 backdrop-blur-2xl rounded-[20px] p-4 shadow-[var(--shadow-window)]
+                 glass-window rounded-[20px] p-4 shadow-[var(--shadow-window)]
                  border border-black/10 dark:border-white/10"
     >
       {/* Header */}

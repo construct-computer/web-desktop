@@ -287,6 +287,154 @@ html, body {
 }
 
 /* ═══════════════════════════════════════════════
+   Glass surfaces
+   Use these instead of raw translucent bg classes when a surface is meant
+   to frost whatever is visually behind it. Explicit -webkit support keeps
+   the effect reliable in Safari and Telegram's WKWebView.
+   ═══════════════════════════════════════════════ */
+
+:root {
+  --surface-app-bg: rgba(255, 255, 255, 0.28);
+  --surface-card-bg: rgba(255, 255, 255, 0.42);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.52);
+  --surface-control-bg: rgba(255, 255, 255, 0.48);
+  --surface-toolbar-bg: rgba(255, 255, 255, 0.56);
+  --surface-sidebar-bg: rgba(244, 244, 245, 0.62);
+  --glass-window-bg: rgba(255, 255, 255, 0.64);
+  --glass-drawer-bg: rgba(255, 255, 255, 0.72);
+  --glass-popover-bg: rgba(255, 255, 255, 0.82);
+  --glass-scrim-bg: rgba(0, 0, 0, 0.28);
+}
+
+html.dark {
+  --surface-app-bg: rgba(255, 255, 255, 0.035);
+  --surface-card-bg: rgba(255, 255, 255, 0.055);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.075);
+  --surface-control-bg: rgba(255, 255, 255, 0.065);
+  --surface-toolbar-bg: rgba(255, 255, 255, 0.045);
+  --surface-sidebar-bg: rgba(9, 9, 11, 0.42);
+  --glass-window-bg: rgba(0, 0, 0, 0.62);
+  --glass-drawer-bg: rgba(9, 9, 11, 0.74);
+  --glass-popover-bg: rgba(12, 12, 14, 0.84);
+  --glass-scrim-bg: rgba(0, 0, 0, 0.42);
+}
+
+.surface-app,
+.surface-card,
+.surface-card-raised,
+.surface-control,
+.surface-toolbar,
+.surface-sidebar {
+  isolation: isolate;
+}
+
+.surface-app {
+  background-color: var(--surface-app-bg);
+}
+
+.surface-card {
+  background-color: var(--surface-card-bg);
+}
+
+.surface-card-raised {
+  background-color: var(--surface-card-raised-bg);
+}
+
+.surface-control {
+  background-color: var(--surface-control-bg);
+}
+
+.surface-toolbar {
+  background-color: var(--surface-toolbar-bg);
+}
+
+.surface-sidebar {
+  background-color: var(--surface-sidebar-bg);
+}
+
+.glass-window,
+.glass-toolbar,
+.glass-drawer,
+.glass-popover,
+.glass-scrim {
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  isolation: isolate;
+}
+
+.glass-window {
+  --glass-filter: blur(28px) saturate(1.45);
+  background-color: var(--glass-window-bg);
+}
+
+.glass-toolbar {
+  --glass-filter: blur(18px) saturate(1.35);
+  background-color: var(--surface-toolbar-bg);
+}
+
+.glass-drawer {
+  --glass-filter: blur(24px) saturate(1.35);
+  background-color: var(--glass-drawer-bg);
+  transform: translateZ(0);
+}
+
+.glass-sidebar,
+.glass-panel {
+  background-color: var(--surface-card-bg);
+}
+
+.glass-panel-raised {
+  background-color: var(--surface-card-raised-bg);
+}
+
+.glass-popover {
+  --glass-filter: blur(28px) saturate(1.5);
+  background-color: var(--glass-popover-bg);
+  transform: translateZ(0);
+}
+
+.glass-tooltip {
+  --glass-filter: blur(14px) saturate(1.25);
+  background-color: rgba(0, 0, 0, 0.82);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  isolation: isolate;
+}
+
+.glass-scrim {
+  --glass-filter: blur(10px) saturate(1.2);
+  background-color: var(--glass-scrim-bg);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root {
+    --surface-app-bg: rgba(255, 255, 255, 0.86);
+    --surface-card-bg: rgba(255, 255, 255, 0.90);
+    --surface-card-raised-bg: rgba(255, 255, 255, 0.94);
+    --surface-control-bg: rgba(255, 255, 255, 0.92);
+    --surface-toolbar-bg: rgba(255, 255, 255, 0.90);
+    --surface-sidebar-bg: rgba(244, 244, 245, 0.92);
+    --glass-window-bg: rgba(255, 255, 255, 0.92);
+    --glass-drawer-bg: rgba(255, 255, 255, 0.94);
+    --glass-popover-bg: rgba(255, 255, 255, 0.96);
+    --glass-scrim-bg: rgba(0, 0, 0, 0.46);
+  }
+
+  html.dark {
+    --surface-app-bg: rgba(24, 24, 27, 0.88);
+    --surface-card-bg: rgba(24, 24, 27, 0.92);
+    --surface-card-raised-bg: rgba(39, 39, 42, 0.94);
+    --surface-control-bg: rgba(39, 39, 42, 0.92);
+    --surface-toolbar-bg: rgba(39, 39, 42, 0.90);
+    --surface-sidebar-bg: rgba(18, 18, 20, 0.92);
+    --glass-window-bg: rgba(18, 18, 20, 0.94);
+    --glass-drawer-bg: rgba(18, 18, 20, 0.96);
+    --glass-popover-bg: rgba(18, 18, 20, 0.98);
+    --glass-scrim-bg: rgba(0, 0, 0, 0.58);
+  }
+}
+
+/* ═══════════════════════════════════════════════
    Welcome screen — cinematic "hello" + brand reveal
    ═══════════════════════════════════════════════ */
 

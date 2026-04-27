@@ -1,5 +1,5 @@
 /**
- * ChatScreen — fullscreen agent chat for the mobile shell.
+ * ChatScreen — fullscreen agent chat for the mobile desktop background.
  *
  * Reuses the Spotlight's MessageList and SpotlightInput directly.
  * These components are self-contained and depend only on useComputerStore.
@@ -15,7 +15,7 @@ export function ChatScreen() {
   const agentConnected = useComputerStore(s => s.agentConnected);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-black/60 backdrop-blur-xl">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden surface-app">
       {/* Header */}
       <div
         className="flex items-center gap-2 px-4 py-3 shrink-0"

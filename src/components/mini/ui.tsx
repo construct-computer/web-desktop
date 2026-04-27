@@ -3,7 +3,7 @@
  * Matches desktop design system aesthetics in mobile-native layouts.
  */
 
-import { useState, useEffect, useCallback, useRef, createContext, useContext, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext, type ReactNode, type TouchEvent } from 'react';
 import { X, Loader2, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 
 // ── Theme helper ──
@@ -211,6 +211,90 @@ export function ConfirmDialog({ title, message, confirmLabel, destructive, onCon
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function BottomSheet({ title, children, onClose }: {
+  title?: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      <div
+        className="w-full max-w-md rounded-t-3xl px-5 pt-3 pb-8"
+        style={{ backgroundColor: bg(), animation: 'mini-sheet-up 200ms ease-out' }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="mx-auto mb-3 block h-1.5 w-10 rounded-full"
+          style={{ backgroundColor: 'rgba(255,255,255,0.18)' }}
+        />
+        {title && <h3 className="text-[16px] font-semibold mb-3" style={{ color: textColor() }}>{title}</h3>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function PullToRefresh({ children, onRefresh }: {
+  children: ReactNode;
+  onRefresh: () => Promise<void> | void;
+}) {
+  const startY = useRef<number | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const reset = () => {
+    startY.current = null;
+    setPullDistance(0);
+  };
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) return;
+    const target = event.currentTarget as HTMLElement;
+    if (target.scrollTop > 0) return;
+    startY.current = event.touches[0].clientY;
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    if (startY.current === null || event.touches.length !== 1) return;
+    const dy = Math.max(0, event.touches[0].clientY - startY.current);
+    setPullDistance(Math.min(dy * 0.45, 72));
+  };
+
+  const handleTouchEnd = async () => {
+    if (pullDistance < 54 || refreshing) {
+      reset();
+      return;
+    }
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+      reset();
+    }
+  };
+
+  return (
+    <div
+      className="h-full overflow-y-auto overscroll-contain"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={reset}
+    >
+      <div
+        className="pointer-events-none flex h-0 items-center justify-center text-[11px] font-medium opacity-40 transition-transform"
+        style={{ transform: `translateY(${pullDistance}px)` }}
+      >
+        {refreshing ? 'Refreshing...' : pullDistance > 54 ? 'Release to refresh' : 'Pull to refresh'}
+      </div>
+      {children}
     </div>
   );
 }

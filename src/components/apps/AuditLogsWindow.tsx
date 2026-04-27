@@ -255,7 +255,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
   const selectedCategoryLabel = CATEGORY_OPTIONS.find(c => c.value === category)?.label || 'All categories';
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0 h-full bg-[var(--color-surface)]">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0 h-full surface-app">
       {/* Filters bar */}
       <div className="flex flex-col border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
         <div className="flex items-center justify-between px-4 py-3">
@@ -274,7 +274,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
             <button
               ref={categoryBtnRef}
               className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--color-border)]
-                         bg-[var(--color-surface)] hover:bg-[var(--color-accent-muted)] transition-colors shadow-sm"
+                         surface-control hover:bg-[var(--color-accent-muted)] transition-colors shadow-sm"
               onClick={() => {
                 if (showCategoryDropdown) {
                   setShowCategoryDropdown(false);
@@ -290,7 +290,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
             {showCategoryDropdown && categoryRect && createPortal(
               <div
                 id="auditlog-category-dropdown"
-                className="fixed w-48 bg-[var(--color-surface)] backdrop-blur-2xl
+                className="fixed w-48 glass-popover
                             border border-black/10 dark:border-white/15 rounded-xl shadow-xl z-[9999] p-1.5 flex flex-col gap-0.5"
                 style={{ top: categoryRect.bottom + 6, left: categoryRect.left }}
               >
@@ -312,7 +312,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
           </div>
 
           {/* Date range filter */}
-          <div className="flex items-center bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] p-0.5 shadow-sm">
+          <div className="flex items-center surface-control rounded-lg border border-[var(--color-border)] p-0.5 shadow-sm">
             {DATE_RANGE_OPTIONS.map(opt => (
               <button
                 key={opt.value}
@@ -338,7 +338,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 pr-3 py-1.5 w-full max-w-[200px] min-w-0 text-xs rounded-lg border border-[var(--color-border)]
-                         bg-[var(--color-surface)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] shadow-sm transition-all"
+                         surface-control focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] shadow-sm transition-all"
             />
           </div>
         </div>
@@ -385,10 +385,10 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
         <div className="flex-1 overflow-y-auto min-h-0 bg-[var(--color-background)]">
           {Array.from(grouped).map(([dateLabel, dayEntries]) => (
             <div key={dateLabel} className="mb-4 last:mb-0">
-              <div className="px-4 py-2 text-[11px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/5 dark:bg-white/5 backdrop-blur-md sticky top-0 z-10 border-y border-[var(--color-border)]/50">
+              <div className="px-4 py-2 text-[11px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider surface-toolbar sticky top-0 z-10 border-y border-[var(--color-border)]/50">
                 {dateLabel}
               </div>
-              <div className="bg-[var(--color-surface)]">
+              <div className="surface-app">
                 {dayEntries.map(entry => {
                   const Icon = getCategoryIcon(entry.category, entry.action);
                   const iconColor = getCategoryColor(entry.category, entry.action);
@@ -444,7 +444,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                       {/* Expanded detail */}
                       {isExpanded && (
                         <div className="px-4 pb-4 pt-1 bg-black/[0.02] dark:bg-white/[0.02]">
-                          <div className="ml-11 p-3 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3">
+                          <div className="ml-11 p-3 rounded-xl surface-card border border-[var(--color-border)] shadow-sm space-y-3">
                              {/* Full message content — scrollable fixed-height section */}
                              {entry.summary && (
                                <div>

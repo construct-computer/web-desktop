@@ -960,7 +960,7 @@ export function AgentGraphWidget() {
       <canvas ref={canvasRef} className="w-full h-full" />
       {graphTip && (
         <div
-          className="fixed max-w-sm rounded-lg border border-white/10 bg-black/80 px-3 py-2 text-left shadow-lg backdrop-blur-md pointer-events-none"
+          className="fixed max-w-sm rounded-lg border border-white/10 glass-tooltip px-3 py-2 text-left shadow-lg pointer-events-none"
           style={{
             left: graphTip.x + 12,
             top: graphTip.y + 14,

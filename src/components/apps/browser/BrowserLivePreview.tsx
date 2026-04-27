@@ -33,7 +33,7 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onManualReconnect: () => void;
 }) {
   if (!streamUrl) {
-    return <BrowserPreviewEmpty session={session} />;
+    return <BrowserPreviewEmpty session={session} requestedUrl={pageUrl} />;
   }
 
   return (
@@ -53,8 +53,14 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   );
 });
 
-function BrowserPreviewEmpty({ session }: { session?: BrowserSessionRecord }) {
+function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessionRecord; requestedUrl?: string }) {
   const message = useMemo(() => {
+    if (!session && requestedUrl) {
+      return {
+        title: 'Ready for a Browser Use session',
+        body: `Ask the agent to open ${requestedUrl}. Live previews, screenshots, and run files will appear here.`,
+      };
+    }
     if (!session) {
       return {
         title: 'Waiting for a Browser Use session',
@@ -89,7 +95,7 @@ function BrowserPreviewEmpty({ session }: { session?: BrowserSessionRecord }) {
       title: 'Waiting for live URL',
       body: 'The agent has started a remote browser. The Browser Use preview will attach as soon as the live URL arrives.',
     };
-  }, [session]);
+  }, [requestedUrl, session]);
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 text-[var(--color-text-subtle)] max-w-sm text-center px-4">

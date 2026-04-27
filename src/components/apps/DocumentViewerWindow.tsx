@@ -111,7 +111,7 @@ function ImageViewer({ blobUrl, fileName }: { blobUrl: string; fileName: string 
   const [zoom, setZoom] = useState(1);
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]/50">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)] surface-toolbar">
         <button onClick={() => setZoom(z => Math.max(0.1, z - 0.25))} className="p-1 rounded hover:bg-white/10" title="Zoom out">
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
@@ -143,7 +143,7 @@ function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
   return (
     <div className="w-full h-full flex flex-col">
       {sheets.length > 1 && (
-        <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[var(--color-border)] bg-[var(--color-surface)]/50 overflow-x-auto">
+        <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[var(--color-border)] surface-toolbar overflow-x-auto">
           {sheets.map((s, i) => (
             <button key={i} onClick={() => setActiveSheet(i)} className={`px-3 py-1 text-xs rounded-t transition-colors ${i === activeSheet ? 'bg-[var(--color-surface-raised)] text-[var(--color-text)] font-medium' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5'}`}>{s.name}</button>
           ))}
@@ -171,7 +171,7 @@ function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-4 px-3 py-1 border-t border-[var(--color-border)] bg-[var(--color-surface)]/50 text-[10px] text-[var(--color-text-muted)]">
+      <div className="flex items-center gap-4 px-3 py-1 border-t border-[var(--color-border)] surface-toolbar text-[10px] text-[var(--color-text-muted)]">
         <span>{sheet.rows.length} rows</span>
         <span>{sheet.headers.length} columns</span>
         <span>{sheets.length} sheet{sheets.length !== 1 ? 's' : ''}</span>
@@ -808,7 +808,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             )}
             {docType === 'unknown' && (
               <div className="w-full h-full flex items-center justify-center p-6">
-                <div className="w-full max-w-xs rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg overflow-hidden">
+                <div className="w-full max-w-xs rounded-xl border border-[var(--color-border)] surface-card shadow-lg overflow-hidden">
                   <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-4">
                     <div className="w-14 h-14 rounded-xl bg-[var(--color-accent)]/10 flex items-center justify-center">
                       <File className="w-7 h-7 text-[var(--color-accent)]" />

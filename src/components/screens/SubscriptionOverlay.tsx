@@ -64,7 +64,7 @@ export function SubscriptionOverlay() {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center pointer-events-none">
-      <div className="w-full max-w-[720px] bg-white/50 dark:bg-black/50 backdrop-blur-2xl saturate-150 rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300 pointer-events-auto">
+      <div className="w-full max-w-[720px] glass-popover rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300 pointer-events-auto">
 
         {/* Header */}
         <div className="text-center px-8 pt-7 pb-4">

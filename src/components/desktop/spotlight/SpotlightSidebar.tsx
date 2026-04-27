@@ -150,12 +150,7 @@ function SessionItem({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-2 top-full mt-1 z-50 min-w-[140px] rounded-lg overflow-hidden border border-white/10"
-          style={{
-            backgroundColor: 'rgba(16, 16, 20, 0.97)',
-            backdropFilter: 'blur(40px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          }}
+          className="absolute right-2 top-full mt-1 z-50 min-w-[140px] rounded-lg overflow-hidden glass-popover border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
         >
           <button
             onClick={() => {
@@ -235,13 +230,13 @@ export function SpotlightSidebar() {
     : sorted;
 
   return (
-    <div className="w-full min-w-[240px] shrink-0 flex flex-col h-full min-h-0 border-r border-white/[0.08]">
+    <div className="w-full min-w-[240px] shrink-0 flex flex-col h-full min-h-0 surface-sidebar border-r border-white/[0.08]">
       {/* New Chat — sidebar close lives in the Spotlight header */}
       <div className="px-3 pt-4 pb-2">
         <button
           type="button"
           onClick={() => createSession()}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] surface-control hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
         >
           <Plus className="w-4 h-4" />
           New Chat
@@ -258,7 +253,7 @@ export function SpotlightSidebar() {
               placeholder="Search chats..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-3 py-1.5 rounded-md text-[12px] bg-white/[0.04] border border-white/[0.06] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/20 outline-none focus:border-white/[0.12] transition-colors"
+              className="w-full pl-7 pr-3 py-1.5 rounded-md text-[12px] surface-control border border-white/[0.06] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/20 outline-none focus:border-white/[0.12] transition-colors"
             />
           </div>
         </div>
@@ -307,7 +302,7 @@ export function SpotlightSidebar() {
               type="button"
               onClick={handleUpgradeClick}
               title="Upgrade plan — opens Subscription in Settings"
-              className="relative w-full cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 bg-white/[0.06] py-2 px-2.5 text-amber-600 backdrop-blur-sm transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:bg-white/[0.05] dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+              className="relative w-full cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 surface-control py-2 px-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
             >
               <span
                 className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"

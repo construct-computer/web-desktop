@@ -6,6 +6,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { stopAllBrowserForUser } from '@/services/api';
 import { BrowserRunHistory } from '../BrowserRunHistory';
 import { BrowserScreenshotGallery } from '../BrowserScreenshotGallery';
+import { formatBytes } from '@/lib/format';
 
 type BrowserDashboardTab = 'sessions' | 'runs' | 'shots' | 'files';
 
@@ -44,7 +45,7 @@ export function BrowserDashboardPanel({
 
   if (collapsed) {
     return (
-      <div className="w-[44px] shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col items-center py-2 gap-2">
+      <div className="w-[44px] shrink-0 border-l border-[var(--color-border)] surface-sidebar flex flex-col items-center py-2 gap-2">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -70,8 +71,8 @@ export function BrowserDashboardPanel({
   }
 
   return (
-    <div className="w-[360px] shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col min-h-0">
-      <div className="px-3 py-2 border-b border-[var(--color-border)]">
+    <div className="w-[360px] shrink-0 border-l border-[var(--color-border)] surface-sidebar flex flex-col min-h-0">
+      <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
@@ -103,7 +104,7 @@ export function BrowserDashboardPanel({
         </div>
       </div>
 
-      <div className="flex border-b border-[var(--color-border)] text-[11px]">
+      <div className="flex border-b border-[var(--color-border)] surface-toolbar text-[11px]">
         {([
           ['sessions', 'Sessions'],
           ['runs', 'Runs'],
@@ -127,7 +128,7 @@ export function BrowserDashboardPanel({
         {tab === 'runs' && <BrowserRunHistory />}
         {tab === 'shots' && (
           <div className="h-full flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
+            <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2">
               <span className="text-[11px] text-[var(--color-text-subtle)]">
                 {shotsScope === 'active' ? 'Selected session screenshots' : 'All screenshots'}
               </span>
@@ -244,7 +245,7 @@ function BrowserFilesPanel({
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
+      <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2">
         <span className="text-[11px] text-[var(--color-text-subtle)]">
           {activeOnly ? 'Active session files' : 'All synced files'}
         </span>
@@ -327,10 +328,4 @@ function sessionStatusLabel(status: BrowserSessionRecord['status']): string {
   if (status === 'idle') return 'stopped';
   if (status === 'complete') return 'finished';
   return status;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -2897,15 +2897,24 @@ export const useComputerStore = create<ComputerStore>()(
     },
 
     openBrowserWindow: (url) => {
-      // Tell daemon to open a new tab — the daemon will broadcast the new tab
-      // via a 'tabs' message, and our reconciler will create the window.
-      browserWS.sendAction({ action: 'newTab', ...(url ? { url } : {}) });
-      // Create the window optimistically — the daemon tab mapping will be set
-      // once the 'tabs' broadcast arrives with the new tab.
-      const title = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : 'New Tab';
+      const title = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : 'Browser';
+
+      if (browserWS.isConnected()) {
+        // Legacy container mode: ask the daemon to open a tab and reconcile it
+        // when the tabs broadcast arrives.
+        browserWS.sendAction({ action: 'newTab', ...(url ? { url } : {}) });
+      }
+
+      // Serverless mode: Browser Use live previews arrive through agent events
+      // and /api/browser polling, not the disabled browser WebSocket.
       const windowId = useWindowStore.getState().openWindow('browser', {
         title,
-        metadata: { daemonTabId: null, pendingUrl: url || null },
+        metadata: {
+          daemonTabId: null,
+          pendingUrl: url || null,
+          browserAppWindow: !browserWS.isConnected(),
+          browserPageUrl: url || undefined,
+        },
       });
       return windowId;
     },
@@ -2917,8 +2926,8 @@ export const useComputerStore = create<ComputerStore>()(
       const daemonTabId = win.metadata?.daemonTabId as string | null;
       const browserSubagentId = win.metadata?.browserSubagentId as string | null;
 
-      // Tell daemon to close the tab
-      if (daemonTabId) {
+      // Tell daemon to close the tab when running in legacy container mode.
+      if (daemonTabId && browserWS.isConnected()) {
         browserWS.sendAction({ action: 'closeTab', tabId: daemonTabId });
         _tabBlobCache.delete(daemonTabId);
         // Clean per-tab frame marker
@@ -2990,8 +2999,10 @@ export const useComputerStore = create<ComputerStore>()(
       // (prevents unnecessary WS messages and breaks focus loops)
       if (alreadyActive) return;
 
-      // Tell daemon to switch to this tab so future frames arrive for it
-      browserWS.sendAction({ action: 'switchTab', tabId: daemonTabId });
+      // Tell daemon to switch to this tab so future frames arrive for it.
+      if (browserWS.isConnected()) {
+        browserWS.sendAction({ action: 'switchTab', tabId: daemonTabId });
+      }
 
       // Update URL bar state
       const daemonTab = browserState.tabs.find(t => t.id === daemonTabId);
@@ -3010,27 +3021,34 @@ export const useComputerStore = create<ComputerStore>()(
 
     navigateTo: (url, windowId) => {
       const { browserState } = get();
+      const title = (() => { try { return new URL(url).hostname; } catch { return url; } })();
 
       // If browser WS isn't connected or the target window has no daemon tab
-      // yet (shell window), store the URL as pendingUrl so the reconciler can
-      // navigate once the daemon tab is assigned.
+      // yet (shell window), keep the URL as metadata. In serverless mode there
+      // is no daemon to navigate; the Browser app remains a Browser Use
+      // dashboard/live-preview surface.
       if (windowId) {
         const win = useWindowStore.getState().getWindow(windowId);
         const daemonTabId = win?.metadata?.daemonTabId as string | null;
         if (!daemonTabId || !browserWS.isConnected()) {
           if (win) {
             useWindowStore.getState().updateWindow(windowId, {
-              title: (() => { try { return new URL(url).hostname; } catch { return url; } })(),
-              metadata: { ...win.metadata, pendingUrl: url },
+              title,
+              metadata: {
+                ...win.metadata,
+                pendingUrl: url,
+                browserAppWindow: !browserWS.isConnected() || !!win.metadata?.browserAppWindow,
+                browserPageUrl: url,
+              },
             });
           }
           if (!browserWS.isConnected()) {
-            logger.warn('navigateTo: browser WS not connected, stored as pendingUrl');
+            logger.info('navigateTo: browser WS disabled in serverless mode; stored URL on Browser app metadata');
             return;
           }
         }
       } else if (!browserWS.isConnected()) {
-        logger.warn('navigateTo: browser WS not connected, ignoring');
+        get().openBrowserWindow(url);
         return;
       }
 

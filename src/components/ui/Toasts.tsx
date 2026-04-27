@@ -57,7 +57,7 @@ function ToastBanner({
   return (
     <div
       className={`flex items-start gap-3 w-[min(340px,calc(100vw-32px))] px-3.5 py-3
-                 bg-white/70 dark:bg-[#1c1c2a]/85 backdrop-blur-2xl saturate-150
+                 glass-popover
                  border border-black/8 dark:border-white/10
                  rounded-xl shadow-xl shadow-black/10 dark:shadow-black/30
                  cursor-pointer select-none

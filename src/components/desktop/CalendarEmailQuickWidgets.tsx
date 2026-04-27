@@ -11,7 +11,7 @@ import { listAgentCalendarEvents, type AgentCalendarEvent } from '@/services/api
 
 const CARD =
   'flex flex-col rounded-2xl p-4 text-left min-h-[110px] min-w-0 flex-1 max-w-[240px] transition-colors active:scale-[0.98] ' +
-  'bg-white/70 dark:bg-black/70 backdrop-blur-2xl ' +
+  'glass-window ' +
   'border border-black/10 dark:border-white/10 ' +
   'shadow-[var(--shadow-window)] ' +
   'hover:bg-white/80 dark:hover:bg-black/75';

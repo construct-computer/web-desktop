@@ -66,7 +66,7 @@ function NotificationCard({ n, onRemove }: { n: Notification; onRemove: () => vo
 
   return (
     <div
-      className={`group relative bg-white/50 dark:bg-white/5 backdrop-blur-sm border border-black/5 dark:border-white/8 rounded-xl px-3.5 py-3 transition-colors hover:bg-white/70 dark:hover:bg-white/8 ${n.onClick ? 'cursor-pointer' : ''}`}
+      className={`group relative surface-card border border-black/5 dark:border-white/8 rounded-xl px-3.5 py-3 transition-colors hover:bg-white/70 dark:hover:bg-white/8 ${n.onClick ? 'cursor-pointer' : ''}`}
       onClick={() => { if (n.onClick) n.onClick(); }}
     >
       {/* Remove button (shows on hover) */}
@@ -181,7 +181,7 @@ export function NotificationCenter() {
         id="notification-center-drawer"
         ref={drawerRef}
         className="fixed flex flex-col
-                   bg-white/50 dark:bg-black/40 backdrop-blur-2xl saturate-150
+                   glass-window
                    border-l border-black/8 dark:border-white/8
                    shadow-2xl shadow-black/15 dark:shadow-black/40
                    transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"

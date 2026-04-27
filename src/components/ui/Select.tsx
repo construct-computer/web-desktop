@@ -228,7 +228,7 @@ export function Select({
         disabled={disabled}
         className={cn(
           'inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[12px]',
-          'bg-black/[0.04] dark:bg-white/[0.06]',
+          'surface-control',
           'border border-black/[0.08] dark:border-white/[0.08]',
           'text-[var(--color-text)] hover:bg-black/[0.06] dark:hover:bg-white/[0.08]',
           'focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40',
@@ -259,10 +259,9 @@ export function Select({
           }}
           className={cn(
             'rounded-lg overflow-hidden',
-            'bg-[#1a1a1a] dark:bg-[#1a1a1a]',
+            'glass-popover',
             'border border-white/[0.08]',
             'shadow-[0_8px_24px_rgba(0,0,0,0.4)]',
-            'backdrop-blur-xl',
           )}
         >
           {searchable && (

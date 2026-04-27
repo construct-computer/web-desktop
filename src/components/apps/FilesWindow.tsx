@@ -44,6 +44,7 @@ import type { FileEntry, DriveFileEntry } from '@/services/api';
 import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
 import { log } from '@/lib/logger';
+import { formatBytes } from '@/lib/format';
 
 const logger = log('Files');
 
@@ -54,13 +55,7 @@ interface FilesWindowProps {
 /** Root path for the R2-backed workspace. All files live here. */
 const WORKSPACE_PATH = '/';
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '--';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
+const formatSize = (bytes: number) => formatBytes(bytes, { zeroLabel: '--' });
 
 function formatDate(iso: string): string {
   if (!iso) return '--';
@@ -206,7 +201,7 @@ function ContextMenu({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[9999] min-w-[170px] py-1 bg-[var(--color-surface-raised)]/80 backdrop-blur-xl border border-[var(--color-border)] rounded-md shadow-lg"
+      className="fixed z-[9999] min-w-[170px] py-1 glass-popover border border-[var(--color-border)] rounded-md shadow-lg"
       style={{ left: menu.x, top: menu.y }}
     >
       {menu.kind === 'background' ? (
@@ -977,9 +972,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   ];
 
   return (
-    <div ref={filesContainerRef} tabIndex={-1} className="relative flex flex-col h-full bg-[var(--color-surface)] text-sm select-none outline-none">
+    <div ref={filesContainerRef} tabIndex={-1} className="relative flex flex-col h-full surface-app text-sm select-none outline-none">
       {/* Toolbar */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-toolbar)] backdrop-blur-md">
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         {/* Mobile sidebar toggle */}
         {isMobile && (
           <button
@@ -1037,7 +1032,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
         {/* Path bar */}
         {activeTab === 'local' ? (
-          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 bg-[var(--color-surface)] rounded border border-[var(--color-border)] overflow-x-auto text-xs">
+          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto text-xs">
             <span
               className="cursor-pointer hover:text-[var(--color-accent)] flex-shrink-0 font-medium"
               onClick={() => navigateTo('/')}
@@ -1060,7 +1055,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             })}
           </div>
         ) : (
-          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 bg-[var(--color-surface)] rounded border border-[var(--color-border)] overflow-x-auto text-xs text-[var(--color-text-muted)]">
+          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto text-xs text-[var(--color-text-muted)]">
             {driveFiles.folderStack.map((folder, i) => (
               <span key={folder.id} className="flex items-center gap-0.5 whitespace-nowrap flex-shrink-0">
                 {i > 0 && <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
@@ -1087,8 +1082,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       <div className="flex flex-1 min-h-0">
         {/* Sidebar — always visible on desktop, togglable drawer on mobile */}
         {(!isMobile || sidebarOpen) && (
-        <div className={`border-r border-[var(--color-border)] p-2 bg-[var(--color-sidebar)] flex-shrink-0 overflow-y-auto ${
-          isMobile ? 'absolute inset-y-0 left-0 z-20 w-56 shadow-lg' : 'w-48'
+        <div className={`border-r border-[var(--color-border)] p-2 flex-shrink-0 overflow-y-auto ${
+          isMobile ? 'absolute inset-y-0 left-0 z-20 w-56 shadow-lg glass-drawer' : 'w-48 surface-sidebar'
         }`}>
           <div className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
             Local Storage
@@ -1164,7 +1159,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         )}
         {/* Mobile sidebar backdrop */}
         {isMobile && sidebarOpen && (
-          <div className="absolute inset-0 z-10 bg-black/20" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute inset-0 z-10 glass-scrim" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Main file list */}
@@ -1177,7 +1172,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         >
           {/* Column headers (shared) */}
           {(!isMobile || !previewFile) && (
-            <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[11px] text-[var(--color-text-muted)] font-medium">
+            <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] surface-card-raised text-[11px] text-[var(--color-text-muted)] font-medium">
               <div className="flex-1 min-w-0">Name</div>
               {!isMobile && (
                 <>
@@ -1564,7 +1559,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           {/* Drag-and-drop overlay (scoped to the file list area) */}
           {isDraggingOver && (
             activeTab === 'local' && !isReadOnly ? (
-              <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--color-accent)]/10 backdrop-blur-[2px] border-2 border-dashed border-[var(--color-accent)] rounded-lg pointer-events-none">
+              <div className="absolute inset-0 z-50 flex items-center justify-center glass-scrim border-2 border-dashed border-[var(--color-accent)] rounded-lg pointer-events-none">
                 <div className="flex flex-col items-center gap-2 text-[var(--color-accent)]">
                   <Upload className="w-10 h-10" />
                   <span className="text-sm font-medium">Drop files to upload</span>
@@ -1572,7 +1567,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                 </div>
               </div>
             ) : (
-              <div className="absolute inset-0 z-50 flex items-center justify-center bg-red-500/10 backdrop-blur-[2px] border-2 border-dashed border-red-400 rounded-lg pointer-events-none">
+              <div className="absolute inset-0 z-50 flex items-center justify-center glass-scrim border-2 border-dashed border-red-400 rounded-lg pointer-events-none">
                 <div className="flex flex-col items-center gap-2 text-red-400">
                   <AlertCircle className="w-10 h-10" />
                   <span className="text-sm font-medium">Cannot upload here</span>

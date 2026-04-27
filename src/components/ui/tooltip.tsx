@@ -64,7 +64,7 @@ export function Tooltip({
 
   const baseClasses = cn(
     `px-2.5 py-1.5 text-xs rounded-lg
-     bg-black/90 dark:bg-[#1A1A1C]/95 backdrop-blur-md
+     glass-tooltip
      text-white
      border border-white/10
      shadow-2xl pointer-events-none`,

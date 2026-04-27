@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Check, Copy, Loader2, Package, Search, Wrench } from 'lucide-react';
+import { AlertCircle, Check, Copy, Loader2, Package, RefreshCw, Search, Wrench, X } from 'lucide-react';
 import Markdown from 'react-markdown';
 
 export function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] border border-black/[0.06] dark:border-white/[0.06]">
+    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-md surface-control text-[var(--color-text-muted)] border border-black/[0.06] dark:border-white/[0.06]">
       {children}
     </span>
   );
@@ -12,7 +12,7 @@ export function Badge({ children }: { children: React.ReactNode }) {
 
 export function PanelLoading({ label }: { label: string }) {
   return (
-    <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
+    <div className="w-full h-full flex items-center justify-center surface-app">
       <div className="text-center">
         <Loader2 className="w-6 h-6 mx-auto mb-2 opacity-40 animate-spin" />
         <p className="text-xs opacity-40">{label}</p>
@@ -21,9 +21,37 @@ export function PanelLoading({ label }: { label: string }) {
   );
 }
 
+export function PanelError({ message, onRetry, onDismiss }: {
+  message: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div className="mx-3 my-2 flex items-start gap-2 rounded-lg border border-red-500/15 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 leading-relaxed">{message}</span>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-red-500/10"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Retry
+        </button>
+      )}
+      {onDismiss && (
+        <button type="button" onClick={onDismiss} className="rounded p-0.5 hover:bg-red-500/10" aria-label="Dismiss error">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="w-full h-full flex flex-col bg-[var(--color-bg-secondary)] text-[var(--color-text)] select-none">
+    <div className="w-full h-full flex flex-col surface-app text-[var(--color-text)] select-none">
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">{children}</div>
     </div>
   );
@@ -55,7 +83,7 @@ export function AppHeroHeader({
   return (
     <div className="pb-5 border-b border-black/[0.06] dark:border-white/[0.08]">
       <div className="flex flex-col sm:flex-row items-start gap-4">
-        <div className="w-[72px] h-[72px] rounded-[16px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm">
+        <div className="w-[72px] h-[72px] rounded-[16px] surface-card border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm">
           {icon ? (
             <img src={icon} alt={name} className="w-[52px] h-[52px] object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
           ) : fallbackIcon}
@@ -159,7 +187,7 @@ export function InfoCard({
         </div>
         {right}
       </div>
-      <div className="rounded-[10px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 space-y-1">
+      <div className="rounded-[10px] surface-card border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 space-y-1">
         {children}
       </div>
     </div>
@@ -241,7 +269,7 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${tools.length} tools...`}
-            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
+            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md surface-control border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
           />
         </div>
       )}
@@ -268,8 +296,8 @@ export function ToolCard({ tool }: { tool: DisplayTool }) {
     }).catch(() => {});
   };
   return (
-    <div className="group flex items-start gap-2.5 px-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors">
-      <div className="w-[22px] h-[22px] rounded-[5px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 mt-px">
+    <div className="group flex items-start gap-2.5 px-3 py-2 rounded-[8px] surface-card border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors">
+      <div className="w-[22px] h-[22px] rounded-[5px] surface-control flex items-center justify-center flex-shrink-0 mt-px">
         <Wrench className="w-3 h-3 opacity-50" />
       </div>
       <div className="min-w-0 flex-1">
