@@ -206,18 +206,6 @@ export function BillingSection() {
                       : 'Billing portal becomes available after checkout.'}
                 </p>
               </div>
-              {canManageBilling && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={handleManage}
-                  disabled={portalLoading}
-                  className="shrink-0 gap-1.5"
-                >
-                  {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                  Manage billing
-                </Button>
-              )}
             </div>
 
             {billingNotice && (

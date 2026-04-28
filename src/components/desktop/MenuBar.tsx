@@ -15,7 +15,8 @@ import { useLatency, pickDisplayLatency, type LatencyData } from '@/hooks/useLat
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { useAuthStore } from '@/stores/authStore';
-import { Download, ExternalLink, Crown } from 'lucide-react';
+import { useBillingStore } from '@/stores/billingStore';
+import { Download, ExternalLink, Crown, AlertTriangle } from 'lucide-react';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -76,6 +77,9 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount)();
   const userPlan = useAuthStore((s) => s.user?.plan);
+  const subscriptionStatus = useBillingStore((s) => s.subscription?.status);
+  const normalizedSubscriptionStatus = (subscriptionStatus || '').toLowerCase();
+  const hasBillingIssue = ['past_due', 'on_hold', 'failed'].includes(normalizedSubscriptionStatus);
   // pendingApprovalCount available via Access Control dropdown item if needed
 
   // Slack connection state (for conditional menu items)
@@ -320,8 +324,24 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {/* Debug console toggle — staging only */}
         {!isMobile && window.location.hostname !== 'beta.construct.computer' && <DebugPanelToggle />}
 
-        {/* Upgrade Pill */}
-        {!isMobile && (!userPlan || userPlan === 'free') && (
+        {/* Billing issue / Upgrade Pill */}
+        {!isMobile && hasBillingIssue && (
+          <button
+            onClick={() => openSettingsToSection('subscription')}
+            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-red-500/35 surface-control pl-1.5 pr-2.5 text-red-600 transition-all duration-150 hover:border-red-500/50 hover:bg-red-500/10 active:scale-95 dark:border-red-400/30 dark:text-red-400 dark:hover:border-red-400/45 dark:hover:bg-red-500/15"
+            title="Payment issue - open subscription settings"
+          >
+            <span
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-red-500/15 dark:bg-red-500/20"
+              aria-hidden
+            />
+            <span className="relative flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span className="text-xs font-medium">Payment issue</span>
+            </span>
+          </button>
+        )}
+        {!isMobile && !hasBillingIssue && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
             className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
