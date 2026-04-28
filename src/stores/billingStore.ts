@@ -77,7 +77,7 @@ interface BillingState {
   fetchHistory: (days?: number) => Promise<void>;
   startCheckout: (plan?: 'starter' | 'pro', coupon?: string) => Promise<string | null>;
   switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
-  openPortal: () => Promise<string | null>;
+  openPortal: () => Promise<{ url: string } | { error: string }>;
   buyTopup: (amount: number) => Promise<string | null>;
 
   // BYOK actions
@@ -275,9 +275,17 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   openPortal: async () => {
     const result = await createPortalSession();
     if (result.success) {
-      return result.data.portalUrl;
+      return { url: result.data.portalUrl };
     }
-    return null;
+
+    const message = result.error || 'Unable to open billing portal. Please try again or contact support.';
+    useNotificationStore.getState().addNotification({
+      title: 'Could not open billing portal',
+      body: message,
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return { error: message };
   },
 
   buyTopup: async (amount: number) => {

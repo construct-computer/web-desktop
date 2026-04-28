@@ -37,6 +37,11 @@ function formatBillingDate(timestamp: number | null): string | null {
   return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatPlanName(plan: string): string {
+  if (!plan) return 'Free';
+  return plan.charAt(0).toUpperCase() + plan.slice(1);
+}
+
 function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice | null {
   if (!subscription) return null;
 
@@ -162,12 +167,16 @@ export function BillingSection() {
 
   const handleManage = useCallback(async () => {
     setPortalLoading(true);
-    const url = await openPortal();
-    if (url) window.location.href = url;
-    setPortalLoading(false);
+    try {
+      const result = await openPortal();
+      if ('url' in result) window.location.href = result.url;
+    } finally {
+      setPortalLoading(false);
+    }
   }, [openPortal]);
 
   const currentPlan = subscription?.plan || 'free';
+  const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const isDevMode = isNonProd || !subscription?.dodoSubscriptionId;
   const billingNotice = getBillingNotice(subscription);
@@ -184,24 +193,37 @@ export function BillingSection() {
           </div>
         ) : (
           <div className="px-4 pt-3.5 pb-4 space-y-3">
-            {/* Manage billing link */}
-            {!isDevMode && subscription?.dodoSubscriptionId && (
-              <div className="flex justify-end -mb-1">
-                <button
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-black/6 dark:border-white/6 bg-black/2 dark:bg-white/3 px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-text">
+                  Current plan: {currentPlanLabel}
+                </div>
+                <p className="mt-0.5 text-[11px] text-text-muted">
+                  {canManageBilling
+                    ? 'Manage invoices, payment details, and cancellation in the billing portal.'
+                    : isNonProd
+                      ? 'Plan changes are handled directly in this environment.'
+                      : 'Billing portal becomes available after checkout.'}
+                </p>
+              </div>
+              {canManageBilling && (
+                <Button
+                  size="sm"
+                  variant="default"
                   onClick={handleManage}
                   disabled={portalLoading}
-                  className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                  className="shrink-0 gap-1.5"
                 >
-                  {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                  {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
                   Manage billing
-                </button>
-              </div>
-            )}
+                </Button>
+              )}
+            </div>
 
             {billingNotice && (
               <BillingStatusBanner
                 notice={billingNotice}
-                canManage={canManageBilling}
+                canManage={canManageBilling && billingNotice.action !== 'Manage billing'}
                 portalLoading={portalLoading}
                 onManage={handleManage}
               />
