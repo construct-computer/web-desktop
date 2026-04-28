@@ -16,6 +16,7 @@ import { WindowManager } from '@/components/window';
 import { useWindowStore } from '@/stores/windowStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useBillingStore } from '@/stores/billingStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
@@ -218,7 +219,20 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   }, []);
 
   const user = useAuthStore((s) => s.user);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
+
+  // Keep subscription state fresh even when Settings is closed. This lets
+  // billing webhooks surface as desktop notifications and updates cached plan
+  // data used by paid-feature gates.
+  useEffect(() => {
+    if (!user) return;
+    void fetchSubscription();
+    const interval = setInterval(() => {
+      void fetchSubscription();
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [user?.id, fetchSubscription]);
 
   // ── Promo code modal state ──
   // Read localStorage once on mount; the "seen" flag is session-scoped so a

@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand';
+import { openSettingsToSection } from '@/lib/settingsNav';
 import {
   getSubscription,
   getCurrentUsage,
@@ -24,8 +25,11 @@ import {
   type ByokMode,
   type ByokModel,
 } from '@/services/api';
+import { useAuthStore } from '@/stores/authStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 
 const BYOK_MODELS_CACHE_MS = 5 * 60 * 1000;
+const BILLING_NOTICE_STORAGE_PREFIX = 'construct:billing-status-notice';
 
 export type EffectiveProvider =
   | { kind: 'platform'; model?: string }
@@ -94,6 +98,84 @@ interface BillingState {
   getEffectiveProvider: () => EffectiveProvider;
 }
 
+function normalizedSubscriptionStatus(subscription: SubscriptionInfo): string {
+  if (subscription.cancelAtPeriodEnd && subscription.status === 'active') return 'cancel_at_period_end';
+  return (subscription.status || '').toLowerCase();
+}
+
+function billingStatusNotice(subscription: SubscriptionInfo): { title: string; body: string; variant: 'info' | 'error' } | null {
+  const status = normalizedSubscriptionStatus(subscription);
+
+  if (status === 'past_due' || status === 'on_hold') {
+    return {
+      title: 'Payment overdue',
+      body: 'Your subscription payment failed, so paid features and usage limits have been downgraded until billing is fixed.',
+      variant: 'error',
+    };
+  }
+
+  if (status === 'failed') {
+    return {
+      title: 'Subscription payment failed',
+      body: 'Your paid subscription is inactive. Update billing to restore paid features and limits.',
+      variant: 'error',
+    };
+  }
+
+  if (status === 'expired' || status === 'cancelled' || status === 'canceled') {
+    return {
+      title: 'Subscription inactive',
+      body: 'Your paid subscription is no longer active, so your workspace is using the Free plan.',
+      variant: 'error',
+    };
+  }
+
+  if (status === 'cancel_at_period_end') {
+    return {
+      title: 'Subscription cancellation scheduled',
+      body: 'Your paid access remains active until the end of the current billing period.',
+      variant: 'info',
+    };
+  }
+
+  return null;
+}
+
+function maybeNotifyBillingStatus(previous: SubscriptionInfo | null, next: SubscriptionInfo): void {
+  const notice = billingStatusNotice(next);
+  if (!notice) return;
+
+  const prevStatus = previous ? normalizedSubscriptionStatus(previous) : null;
+  const nextStatus = normalizedSubscriptionStatus(next);
+  const becameRelevant = !previous || prevStatus !== nextStatus || previous.currentPeriodEnd !== next.currentPeriodEnd;
+  if (!becameRelevant) return;
+
+  const userId = useAuthStore.getState().user?.id || 'unknown';
+  const subscriptionId = next.dodoSubscriptionId || next.dodoCustomerId || 'no-subscription';
+  const storageKey = `${BILLING_NOTICE_STORAGE_PREFIX}:${userId}:${subscriptionId}:${nextStatus}:${next.currentPeriodEnd || ''}`;
+  try {
+    if (localStorage.getItem(storageKey) === '1') return;
+    localStorage.setItem(storageKey, '1');
+  } catch {
+    // Storage can be unavailable in privacy modes; in-memory dedup still applies
+    // through the notification store's short fingerprint window.
+  }
+
+  useNotificationStore.getState().addNotification({
+    title: notice.title,
+    body: notice.body,
+    source: 'Billing',
+    variant: notice.variant,
+    onClick: () => openSettingsToSection('subscription'),
+  }, 15_000);
+}
+
+function syncAuthPlan(plan: string): void {
+  const auth = useAuthStore.getState();
+  if (!auth.user || auth.user.plan === plan) return;
+  auth.setUser({ ...auth.user, plan });
+}
+
 export const useBillingStore = create<BillingState>((set, get) => ({
   subscription: null,
   subscriptionLoading: false,
@@ -115,6 +197,9 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     set({ subscriptionLoading: true, subscriptionError: null });
     const result = await getSubscription();
     if (result.success) {
+      const previous = get().subscription;
+      syncAuthPlan(result.data.plan);
+      maybeNotifyBillingStatus(previous, result.data);
       set({ subscription: result.data, subscriptionLoading: false });
     } else {
       set({ subscriptionError: result.error, subscriptionLoading: false });

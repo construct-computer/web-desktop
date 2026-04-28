@@ -9,9 +9,11 @@ import {
   Loader2,
   Check,
   Minus,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Tooltip } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
+import type { SubscriptionInfo } from '@/services/api';
 
 /* ── Reusable card wrapper ── */
 
@@ -19,6 +21,103 @@ function InfoCard({ children, className = '' }: { children: React.ReactNode; cla
   return (
     <div className={`rounded-lg border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.03] dark:bg-white/[0.04] ${className}`}>
       {children}
+    </div>
+  );
+}
+
+type BillingNotice = {
+  tone: 'warning' | 'danger' | 'info';
+  title: string;
+  body: string;
+  action?: string;
+};
+
+function formatBillingDate(timestamp: number | null): string | null {
+  if (!timestamp) return null;
+  return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice | null {
+  if (!subscription) return null;
+
+  const status = (subscription.status || '').toLowerCase();
+  if (status === 'past_due' || status === 'on_hold') {
+    return {
+      tone: 'danger',
+      title: 'Payment overdue',
+      body: 'Your subscription payment failed. Paid features and usage limits have been downgraded until billing is fixed.',
+      action: 'Update payment method',
+    };
+  }
+
+  if (status === 'failed') {
+    return {
+      tone: 'danger',
+      title: 'Subscription payment failed',
+      body: 'Your paid subscription is inactive. Update billing to restore paid features and limits.',
+      action: 'Manage billing',
+    };
+  }
+
+  if (status === 'expired' || status === 'cancelled' || status === 'canceled') {
+    return {
+      tone: 'danger',
+      title: 'Subscription inactive',
+      body: 'Your paid subscription is no longer active, so this workspace is using the Free plan.',
+      action: subscription.dodoSubscriptionId ? 'Manage billing' : undefined,
+    };
+  }
+
+  if (subscription.cancelAtPeriodEnd) {
+    const endDate = formatBillingDate(subscription.currentPeriodEnd);
+    return {
+      tone: 'warning',
+      title: 'Cancellation scheduled',
+      body: endDate
+        ? `Your paid access remains active until ${endDate}. After that, your workspace will move to the Free plan.`
+        : 'Your paid access remains active until the current billing period ends.',
+      action: subscription.dodoSubscriptionId ? 'Manage billing' : undefined,
+    };
+  }
+
+  return null;
+}
+
+function BillingStatusBanner({
+  notice,
+  canManage,
+  portalLoading,
+  onManage,
+}: {
+  notice: BillingNotice;
+  canManage: boolean;
+  portalLoading: boolean;
+  onManage: () => void;
+}) {
+  const toneClass = notice.tone === 'danger'
+    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+    : notice.tone === 'warning'
+      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+      : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+
+  return (
+    <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[12px] ${toneClass}`}>
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold">{notice.title}</div>
+        <p className="mt-0.5 leading-relaxed">{notice.body}</p>
+      </div>
+      {notice.action && canManage && (
+        <button
+          type="button"
+          onClick={onManage}
+          disabled={portalLoading}
+          className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/15 disabled:opacity-50"
+        >
+          {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+          {notice.action}
+        </button>
+      )}
     </div>
   );
 }
@@ -71,6 +170,8 @@ export function BillingSection() {
   const currentPlan = subscription?.plan || 'free';
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const isDevMode = isNonProd || !subscription?.dodoSubscriptionId;
+  const billingNotice = getBillingNotice(subscription);
+  const canManageBilling = !isDevMode && !!subscription?.dodoSubscriptionId;
 
   return (
     <div className="space-y-4">
@@ -95,6 +196,15 @@ export function BillingSection() {
                   Manage billing
                 </button>
               </div>
+            )}
+
+            {billingNotice && (
+              <BillingStatusBanner
+                notice={billingNotice}
+                canManage={canManageBilling}
+                portalLoading={portalLoading}
+                onManage={handleManage}
+              />
             )}
 
             <PlanSelector
