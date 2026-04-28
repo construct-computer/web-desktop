@@ -11,32 +11,26 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Check, Loader2, ExternalLink } from 'lucide-react'
-import { getComposioStatus } from '@/services/api'
+import { composioFinalize, getAppConnection, getComposioStatus } from '@/services/api'
 import { useComputerStore, authConnectNotifIds, clearAuthCard } from '@/stores/agentStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useWindowStore } from '@/stores/windowStore'
+import { agentWS } from '@/services/websocket'
 import { PlatformIcon } from './PlatformIcon'
 import { openAuthRedirect } from '@/lib/utils'
+import { formatPlatformDescription, getPlatformColor, getPlatformDisplayName } from '@/lib/platforms'
 
 // ── Types ──
 
 export interface AuthConnectPayload {
+  kind?: 'composio' | 'app'
   toolkit: string
   name: string
   description: string
-  url: string
-}
-
-// ── Toolkit colors (for the connect button) ──
-
-const TOOLKIT_COLORS: Record<string, string> = {
-  googlecalendar: '#4285F4',
-  googledrive: '#0F9D58',
-  gmail: '#EA4335',
-  notion: '#000000',
-  github: '#24292E',
-  jira: '#0052CC',
-  slack: '#4A154B',
-  linear: '#5E6AD2',
+  url?: string
+  logo?: string
+  appId?: string
+  sessionKey?: string
 }
 
 // ── Global tracker: coordinates between card instances and notifications ──
@@ -69,7 +63,11 @@ export function parseAuthMarker(content: string): { payload: AuthConnectPayload;
 // ── Component ──
 
 export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
-  const color = TOOLKIT_COLORS[payload.toolkit.toLowerCase()] || '#6B7280'
+  const displayName = getPlatformDisplayName(payload.toolkit, payload.name)
+  const description = formatPlatformDescription(payload.description, payload.toolkit, displayName)
+  const color = getPlatformColor(payload.toolkit)
+  const authKind = payload.kind || 'composio'
+  const statusKey = payload.appId || payload.toolkit
 
   const [connected, setConnected] = useState(() => connectedToolkits.has(payload.toolkit.toLowerCase()))
   const [polling, setPolling] = useState(false)
@@ -93,16 +91,19 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
     // Clear the persisted card from sessionStorage
     clearAuthCard(payload.toolkit)
 
-    // Auto-send retry message (once)
+    // Resume the blocked task without adding a fake user bubble.
     if (!sentRetryRef.current) {
       sentRetryRef.current = true
       setTimeout(() => {
-        useComputerStore.getState().sendChatMessage(
-          `I've connected ${payload.name}. Please continue with what you were doing.`
-        )
+        const sessionKey = payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default'
+        agentWS.sendAuthResume({
+          sessionKey,
+          toolkit: payload.toolkit,
+          name: payload.name,
+        })
       }, 800)
     }
-  }, [payload.toolkit, payload.name])
+  }, [payload.toolkit, payload.name, payload.sessionKey])
 
   // Listen for cross-instance connected notifications
   useEffect(() => {
@@ -120,34 +121,42 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
   useEffect(() => {
     if (connected) return
     let cancelled = false
-    getComposioStatus(payload.toolkit).then(result => {
-      if (!cancelled && result.success && result.data.connected) {
-        setConnected(true)
-        notifyAuthConnected(payload.toolkit.toLowerCase())
-        clearAuthCard(payload.toolkit)
+    const check = authKind === 'app' && payload.appId
+      ? getAppConnection(payload.appId)
+      : getComposioStatus(payload.toolkit)
+    check.then(result => {
+      if (!cancelled && result.success && result.data?.connected) {
+        onConnected()
       }
     }).catch(() => {})
     return () => { cancelled = true }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authKind, connected, payload.appId, payload.toolkit, onConnected])
 
   // Poll while waiting for auth to complete
   useEffect(() => {
     if (!polling || connected) return
     const interval = setInterval(async () => {
       try {
-        const result = await getComposioStatus(payload.toolkit)
-        if (result.success && result.data.connected) {
+        const result = authKind === 'app' && payload.appId
+          ? await getAppConnection(payload.appId)
+          : await getComposioStatus(payload.toolkit)
+        if (result.success && result.data?.connected) {
           onConnected()
         }
       } catch {}
     }, 3000)
     return () => clearInterval(interval)
-  }, [polling, connected, payload.toolkit, onConnected])
+  }, [polling, connected, authKind, payload.appId, payload.toolkit, onConnected])
 
   // Listen for postMessage from OAuth popup for instant detection
   useEffect(() => {
     if (connected) return
     const handler = (e: MessageEvent) => {
+      if (authKind === 'composio' && e.data?.type === 'composio:connected') {
+        composioFinalize(typeof e.data.connectedAccountId === 'string' ? e.data.connectedAccountId : undefined)
+          .finally(onConnected)
+        return
+      }
       if (e.data?.type === 'composio_auth_complete' && e.data.success &&
           e.data.toolkit?.toLowerCase() === payload.toolkit.toLowerCase()) {
         onConnected()
@@ -155,36 +164,63 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [connected, payload.toolkit, onConnected])
+  }, [authKind, connected, payload.toolkit, onConnected])
 
   const handleClick = () => {
-    setPolling(true)
+    const store = useWindowStore.getState()
+    store.closeSpotlight()
+
+    if (payload.url) {
+      setPolling(true)
+      openAuthRedirect(payload.url)
+      return
+    }
+
+    setPolling(false)
+    const registryMetadata = authKind === 'composio'
+      ? { view: 'integrations', search: displayName, composioSlug: payload.toolkit }
+      : { view: 'integrations', search: displayName, appId: payload.appId || statusKey }
+    const windowId = store.openWindow('app-registry', {
+      title: 'App Store',
+      metadata: {
+        ...registryMetadata,
+        authUrl: payload.url,
+      },
+    })
+    if (windowId) {
+      store.updateWindow(windowId, { title: 'App Store', metadata: { ...registryMetadata, authUrl: payload.url } })
+    }
   }
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden my-2 max-w-sm">
-      <div className="flex items-center gap-3 p-3">
+    <div className="rounded-[20px] border border-border/80 bg-surface/95 overflow-hidden my-2 w-full max-w-md shadow-xl shadow-black/10 backdrop-blur">
+      <div className="flex items-start gap-3 p-4">
         {/* Toolkit icon */}
         <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+          className="w-11 h-11 rounded-[15px] flex items-center justify-center shrink-0 overflow-hidden bg-white/95 border border-black/5 shadow-sm p-[3px]"
           style={{ backgroundColor: connected ? '#16a34a' : undefined }}
         >
           {connected ? (
             <Check className="w-5 h-5 text-white" />
           ) : (
-            <PlatformIcon platform={payload.toolkit} size={32} />
+            <PlatformIcon platform={payload.toolkit} logoUrl={payload.logo} size={38} className="rounded-[12px]" />
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[var(--color-text)]">{payload.name}</p>
-          <p className="text-xs text-[var(--color-text-muted)] truncate">
-            {connected ? 'Connected' : payload.description}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+            Account connection required
+          </p>
+          <p className="text-base font-semibold text-text mt-0.5">
+            Connect {displayName}
+          </p>
+          <p className="text-sm text-text-muted mt-1 leading-relaxed">
+            {connected ? 'Connected' : description}
           </p>
         </div>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="px-4 pb-4">
         {connected ? (
           <div className="flex items-center justify-center gap-2 w-full rounded-lg px-3 py-2 text-sm font-medium text-white bg-green-600">
             <Check className="w-4 h-4" />
@@ -192,7 +228,7 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
           </div>
         ) : (
           <button
-            onClick={() => { openAuthRedirect(payload.url); }}
+            onClick={handleClick}
             className="flex items-center justify-center gap-2 w-full rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity cursor-pointer"
             style={{ backgroundColor: color }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
@@ -206,7 +242,7 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
             ) : (
               <>
                 <ExternalLink className="w-4 h-4" />
-                Connect {payload.name}
+                {payload.url ? `Connect ${displayName}` : `Open ${displayName}`}
               </>
             )}
           </button>

@@ -578,6 +578,25 @@ class AgentWSClient {
     return false;
   }
 
+  sendAuthResume(params: { sessionKey: string; toolkit: string; name: string }): boolean {
+    const payload = JSON.stringify({
+      type: 'auth_resume',
+      session_key: params.sessionKey,
+      toolkit: params.toolkit,
+      name: params.name,
+    });
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(payload);
+      return true;
+    }
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.pendingMessages.push(payload);
+      return true;
+    }
+    agentLog.warn('Cannot resume after auth: WebSocket not connected');
+    return false;
+  }
+
   /**
    * Abort running agent lanes. Hard-stops the session loop with no restart.
    * - No options: abort ALL running lanes

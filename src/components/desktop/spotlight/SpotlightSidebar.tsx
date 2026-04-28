@@ -235,7 +235,7 @@ export function SpotlightSidebar() {
       <div className="px-3 pt-4 pb-2">
         <button
           type="button"
-          onClick={() => createSession()}
+          onClick={() => createSession(undefined, { forceNew: true })}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text)] surface-control hover:bg-white/[0.1] transition-colors border border-white/[0.06]"
         >
           <Plus className="w-4 h-4" />

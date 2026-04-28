@@ -24,11 +24,84 @@ import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 
 const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
+function getIntegrationExamples(app: UnifiedApp): string[] {
+  const slug = (app.composioSlug || app.id || app.name).toLowerCase();
+  const text = `${slug} ${app.name} ${app.description}`.toLowerCase();
+
+  if (text.includes('github') || text.includes('git hub')) {
+    return [
+      'List my open GitHub pull requests',
+      'Create a GitHub issue from this summary',
+      'Review the latest failing PR checks',
+      'Search my repos for recent issues',
+    ];
+  }
+  if (text.includes('google') && text.includes('drive')) {
+    return [
+      'Find the latest file about the launch plan',
+      'Summarize this Google Drive document',
+      'Create a project folder in Drive',
+      'List recently modified Drive files',
+    ];
+  }
+  if (text.includes('gmail') || text.includes('mail')) {
+    return [
+      'Summarize emails from today',
+      'Draft a reply to the latest customer email',
+      'Find invoices in my mailbox',
+      'Send a follow-up email',
+    ];
+  }
+  if (text.includes('calendar')) {
+    return [
+      'List my meetings tomorrow',
+      'Schedule a 30 minute follow-up',
+      'Find open time this week',
+      'Create a calendar event from this plan',
+    ];
+  }
+  if (text.includes('notion')) {
+    return [
+      'Search my Notion workspace',
+      'Create a Notion page from this summary',
+      'Find notes about the roadmap',
+      'Add these action items to Notion',
+    ];
+  }
+  if (text.includes('linear') || text.includes('jira')) {
+    return [
+      'List my assigned issues',
+      'Create a bug from this report',
+      'Move this issue to in progress',
+      'Summarize open project work',
+    ];
+  }
+  if (app.source === 'installed' || app.source === 'smithery' || text.includes('mcp') || text.includes('pipedream')) {
+    return [
+      `Check what ${app.name} can do`,
+      `Call a read-only ${app.name} tool`,
+      `Use ${app.name} for this task`,
+      `Show me the tools available in ${app.name}`,
+    ];
+  }
+  if (app.source === 'composio') {
+    return [
+      `Use ${app.name} to help with this task`,
+      `Search ${app.name} for relevant items`,
+      `Create something in ${app.name}`,
+      `Show me what ${app.name} tools are available`,
+    ];
+  }
+  return [];
+}
+
 // ── Main Component ──
 
-export function AppRegistryWindow({ config: _config }: { config: WindowConfig }) {
-  void _config;
+export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   const openWindow = useWindowStore((s) => s.openWindow);
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'integrations'>('all');
+  const deepLinkRef = useRef<string | null>(null);
+  const targetComposioSlugRef = useRef<string | null>(null);
   
   // Use the unified app discovery hook
   const {
@@ -36,6 +109,21 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
     installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected
   } = useAppDiscovery();
+
+  useEffect(() => {
+    const meta = (config.metadata || {}) as { view?: string; category?: string; search?: string; tab?: string; composioSlug?: string };
+    const key = JSON.stringify(meta);
+    if (deepLinkRef.current === key) return;
+    deepLinkRef.current = key;
+
+    if (meta.view === 'integrations') {
+      targetComposioSlugRef.current = meta.composioSlug?.toLowerCase() || null;
+      setSourceFilter('integrations');
+      setTab('discover');
+      setCategory((meta.category as any) || 'all');
+      handleSearch(meta.search || meta.composioSlug || '');
+    }
+  }, [config.metadata, handleSearch, setCategory, setTab]);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +226,19 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     setDetailLoading(false);
     setError(null);
   };
+
+  useEffect(() => {
+    const targetSlug = targetComposioSlugRef.current;
+    if (!targetSlug || loading || searching) return;
+
+    const match = searchResults.find((app) =>
+      app.source === 'composio' && app.composioSlug?.toLowerCase() === targetSlug
+    );
+    if (!match) return;
+
+    targetComposioSlugRef.current = null;
+    void openDetail(match);
+  }, [loading, searchResults, searching]);
 
   // ── Actions ──
 
@@ -381,6 +482,11 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     } as Partial<WindowConfig>);
   };
 
+  const visibleSearchResults = sourceFilter === 'integrations'
+    ? searchResults.filter((app) => app.source === 'composio')
+    : searchResults;
+  const visibleRegistryList = sourceFilter === 'integrations' ? [] : registryList;
+
   // ── Detail view ──
 
   if (detail) {
@@ -391,6 +497,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
     const isSkill = !!detail.isSkill;
     const toolCount = detail.tools?.length || 0;
     const hasConfig = !!(detail.configSchema?.properties && Object.keys(detail.configSchema.properties).length > 0);
+    const examples = getIntegrationExamples(detail);
 
     const getUninstallTarget = (): string | null => {
       if (detail.installedApp && detail.installedApp.id !== 'app-registry') return detail.installedApp.id;
@@ -519,6 +626,45 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             </div>
           )}
 
+          {examples.length > 0 && (
+            <InfoCard
+              title={installed ? 'Ready to try' : 'What you can do'}
+              subtitle={installed ? `${toolCount || 'Multiple'} tool${toolCount === 1 ? '' : 's'} available to the agent.` : 'Connect once, then ask the agent in plain English.'}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {examples.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(example).catch(() => {})}
+                    className="text-left text-[11px] px-2.5 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.05] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/5 transition-colors"
+                    title="Copy example prompt"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </InfoCard>
+          )}
+
+          {installed && (isComposio || detail.source === 'installed' || detail.registryApp) && (
+            <InfoCard title="Connection status" subtitle="The agent can use this from chat.">
+              <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
+                <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    {isComposio ? 'Integration connected' : 'App installed'}
+                  </p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                    {toolCount > 0
+                      ? `${toolCount} tool${toolCount === 1 ? '' : 's'} discovered. Try one of the prompts above.`
+                      : 'Tools are available to the agent; refresh the tool list if this panel looks stale.'}
+                  </p>
+                </div>
+              </div>
+            </InfoCard>
+          )}
+
           {detail.requiresUpgrade && (
             <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
               <Lock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
@@ -543,7 +689,13 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             <InfoCard title="Connect this integration" subtitle="Choose how you'd like to sign in.">
               <ComposioAuthPanel
                 slug={detail.composioSlug}
-                onConnected={() => { fetchConnected(); }}
+                onConnected={() => {
+                  fetchConnected();
+                  setDetail(prev => {
+                    if (!prev) return prev;
+                    return prev.composioSlug === detail.composioSlug ? { ...prev, status: 'connected' } : prev;
+                  });
+                }}
               />
             </InfoCard>
           )}
@@ -665,7 +817,20 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
       {/* Header */}
       <div className="flex-shrink-0 px-5 pt-4 pb-0">
         <div className="flex items-center justify-between mb-3 gap-2">
-          <h1 className="text-lg font-bold">App Store</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg font-bold">App Store</h1>
+            {sourceFilter === 'integrations' && (
+              <button
+                type="button"
+                onClick={() => { setSourceFilter('all'); handleSearch(''); }}
+                className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] px-2 py-0.5 text-[10px] font-semibold hover:bg-[var(--color-accent)]/15"
+                title="Show all apps"
+              >
+                Integrations
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             <a
               href={PUBLISH_URL}
@@ -746,7 +911,9 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
                 ? 'Search is on Discover / Installed…'
                 : tab === 'installed'
                   ? 'Filter installed apps...'
-                  : 'Search all apps, integrations, servers...'
+                  : sourceFilter === 'integrations'
+                    ? 'Search integrations (GitHub, Gmail, Notion...)'
+                    : 'Search all apps, integrations, servers...'
             }
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
@@ -796,22 +963,7 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
             <span className="text-[12px]">Loading apps...</span>
           </div>
         ) : tab === 'from_url' ? (
-          <div className="space-y-4">
-            <div className="relative overflow-hidden rounded-[16px] border border-black/[0.06] dark:border-white/[0.08] bg-gradient-to-br from-[var(--color-accent)]/12 via-black/[0.02] to-transparent dark:via-white/[0.03] px-4 py-4">
-              <div className="absolute right-4 top-4 w-28 h-28 rounded-full bg-[var(--color-accent)]/10 blur-2xl pointer-events-none" />
-              <div className="relative flex items-start gap-3">
-                <div className="w-11 h-11 rounded-[14px] bg-[var(--color-accent)]/12 text-[var(--color-accent)] flex items-center justify-center border border-[var(--color-accent)]/15">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-[17px] font-bold leading-tight">Install any remote MCP</h2>
-                  <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed mt-1">
-                    Paste a URL and Construct will auto-check reachability, supported transport, tools, and whether there is a web UI to open later.
-                  </p>
-                </div>
-              </div>
-            </div>
-
+          <div className="space-y-3">
             {lastInstalledName && (
               <div className="flex items-center gap-2 text-[12px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 rounded-[12px] px-3 py-2">
                 <Check className="w-4 h-4 shrink-0" />
@@ -822,7 +974,19 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
               </div>
             )}
 
-            <InfoCard title="Server" subtitle="Paste once. We will check it automatically.">
+            <InfoCard
+              title="Server"
+              subtitle="Paste once. Auto-checks reachability, transport, tools, and UI."
+              right={
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full border border-(--color-accent)/15 bg-(--color-accent)/8 px-2 py-1 text-[10px] font-medium text-(--color-accent)/90"
+                  title="Install any remote MCP"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Remote MCP
+                </span>
+              }
+            >
               <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP URL</label>
               <div className="relative mb-2">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]/60 pointer-events-none" />
@@ -1010,11 +1174,11 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
               <div className="flex items-center justify-center gap-2 py-12 opacity-30">
                 <Loader2 className="w-4 h-4 animate-spin" /> <span className="text-[12px]">Searching...</span>
               </div>
-            ) : searchResults.length === 0 ? (
+            ) : visibleSearchResults.length === 0 ? (
               <EmptyState message={`No results for "${search}"`} />
             ) : (
               <AppGrid>
-                {searchResults.map(app => (
+                {visibleSearchResults.map(app => (
                   <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
                 ))}
               </AppGrid>
@@ -1022,11 +1186,11 @@ export function AppRegistryWindow({ config: _config }: { config: WindowConfig })
           </div>
         ) : (
           <>
-            {registryList.length > 0 && (
+            {visibleRegistryList.length > 0 && (
               <section>
                 <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">Made for Construct</p>
                 <AppGrid>
-                  {registryList.map(app => (
+                  {visibleRegistryList.map(app => (
                     <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
                   ))}
                 </AppGrid>

@@ -498,10 +498,10 @@ export async function getActiveAgentSessions(): Promise<ApiResult<{
 /**
  * Create a new chat session.
  */
-export async function createAgentSession(_instanceId: string, title?: string): Promise<ApiResult<SessionInfo>> {
+export async function createAgentSession(_instanceId: string, title?: string, key?: string): Promise<ApiResult<SessionInfo>> {
   return request(`/agent/sessions`, {
     method: 'POST',
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, key }),
   });
 }
 

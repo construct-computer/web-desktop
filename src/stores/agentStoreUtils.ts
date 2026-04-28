@@ -17,10 +17,14 @@ import { STORAGE_KEYS } from '@/lib/config';
 const AUTH_CARDS_STORAGE_KEY = STORAGE_KEYS.authConnectCards;
 
 interface StoredAuthCard {
+  kind?: 'composio' | 'app';
   toolkit: string;
   name: string;
   description: string;
-  url: string;
+  url?: string;
+  logo?: string;
+  appId?: string;
+  sessionKey?: string;
   timestamp: number;
 }
 

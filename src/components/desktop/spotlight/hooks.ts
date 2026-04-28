@@ -28,7 +28,7 @@ export function useSlashCommands(): SlashCommand[] {
   const createSession = useComputerStore(s => s.createSession);
 
   return [
-    { name: '/new', description: 'Start a new chat session', action: () => createSession() },
+    { name: '/new', description: 'Start a new chat session', action: () => createSession(undefined, { forceNew: true }) },
     { name: '/clear', description: 'Clear chat history', action: () => clearChat() },
   ];
 }

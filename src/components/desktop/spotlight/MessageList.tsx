@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, Globe, Terminal, FileSearch, Reply, AlertTriangle, AlertCircle } from 'lucide-react';
+import { ArrowDown, Globe, Terminal, FileSearch, AlertTriangle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
@@ -30,20 +30,19 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
 
   return (
     <div className="pointer-events-none flex min-h-6 items-center gap-1.5 opacity-0 transition-opacity duration-150 group-hover/reply:pointer-events-auto group-hover/reply:opacity-100">
+      <button
+        type="button"
+        onClick={onReply}
+        className="text-[11px] font-medium text-[var(--color-text-muted)]/70 hover:text-[var(--color-text-muted)] active:text-[var(--color-text)] py-0.5"
+        aria-label="Reply to this message"
+      >
+        Reply
+      </button>
       {label && (
-        <span className="text-[10px] text-[var(--color-text-muted)]/40 whitespace-nowrap select-none">
+        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none">
           {label}
         </span>
       )}
-      <button
-        onClick={onReply}
-        className="p-1.5 rounded-lg surface-control hover:bg-white/[0.1] border border-transparent hover:border-white/[0.08] transition-all duration-150 active:scale-90 opacity-50 hover:!opacity-100"
-        title="Reply"
-        type="button"
-        aria-label="Reply to this message"
-      >
-        <Reply className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-      </button>
     </div>
   );
 }
@@ -278,15 +277,16 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   }
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className={cn(
-        "relative flex-1 min-h-0 overflow-y-auto scroll-smooth scrollbar-none pb-3",
-        paddingTopClass || "pt-14",
-      )}
-      style={{ overscrollBehavior: 'contain' }}
-    >
+    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn(
+          'flex-1 min-h-0 overflow-y-auto scroll-smooth scrollbar-none pb-3',
+          paddingTopClass || 'pt-14',
+        )}
+        style={{ overscrollBehavior: 'contain' }}
+      >
       {alertsForThisChat.length > 0 && (
         <div className="px-4 pt-2 pb-3 flex flex-col gap-1.5">
           {alertsForThisChat.slice().reverse().map(alert => {
@@ -327,14 +327,15 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
         <div key={key}>{node}</div>
       ))}
       <ThinkingIndicator />
+      </div>
 
       {showScrollBtn && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
+        <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
           <Tooltip content="Scroll to bottom" side="top">
             <button
               type="button"
               onClick={scrollToBottom}
-              className="w-7 h-7 rounded-full surface-card-raised border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+              className="pointer-events-auto w-7 h-7 rounded-full surface-card-raised border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
               aria-label="Scroll to latest messages"
             >
               <ArrowDown className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />

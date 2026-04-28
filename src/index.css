@@ -313,7 +313,7 @@ html.dark {
   --surface-control-bg: rgba(255, 255, 255, 0.095);
   --surface-toolbar-bg: rgba(255, 255, 255, 0.075);
   --surface-sidebar-bg: rgba(9, 9, 11, 0.56);
-  --glass-window-bg: rgba(8, 10, 16, 0.74);
+  --glass-window-bg: rgba(0, 0, 0, 0.55);
   --glass-drawer-bg: rgba(9, 9, 11, 0.82);
   --glass-popover-bg: rgba(12, 12, 14, 0.90);
   --glass-scrim-bg: rgba(0, 0, 0, 0.42);
@@ -427,7 +427,7 @@ html.dark .spotlight-glass-window {
   --glass-filter: blur(8px) saturate(1.1);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
-  background-color: rgba(0, 0, 0, 0.26);
+  background-color: rgba(0, 0, 0, 0.65);
   isolation: isolate;
 }
 
@@ -497,7 +497,7 @@ html.dark .soft-popover {
     --surface-control-bg: rgba(39, 39, 42, 0.92);
     --surface-toolbar-bg: rgba(39, 39, 42, 0.90);
     --surface-sidebar-bg: rgba(18, 18, 20, 0.92);
-    --glass-window-bg: rgba(18, 18, 20, 0.94);
+    --glass-window-bg: rgba(0, 0, 0, 0.85);
     --glass-drawer-bg: rgba(18, 18, 20, 0.96);
     --glass-popover-bg: rgba(18, 18, 20, 0.98);
     --glass-scrim-bg: rgba(0, 0, 0, 0.58);

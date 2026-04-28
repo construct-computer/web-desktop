@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Button, Input, Label, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
+import { getPlatformDisplayName } from '@/lib/platforms';
 import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } from '@/stores/settingsStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -483,10 +484,6 @@ function AuthBadge({ type }: { type: AuthType }) {
   );
 }
 
-function composioLogoUrl(slug: string, logo?: string): string {
-  return logo || `https://logos.composio.dev/api/${slug}`;
-}
-
 function ConnectionsSection() {
   const userPlan = useAuthStore((s) => s.user?.plan);
   const isSubscribed = hasPaidAccess(userPlan);
@@ -875,12 +872,29 @@ function ConnectionsSection() {
 
       {/* ── Third-party integrations (Composio) ── */}
       <div className="h-6" />
-      <div className="flex items-center gap-2 mb-2 px-1">
-        <Plug className="w-4 h-4 text-[var(--color-text-muted)]" />
-        <span className="text-[13px] font-semibold">Third-party integrations</span>
+      <div className="flex items-center justify-between gap-2 mb-2 px-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <Plug className="w-4 h-4 text-[var(--color-text-muted)]" />
+          <span className="text-[13px] font-semibold">Integrations</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            import('@/stores/windowStore').then(({ useWindowStore }) => {
+              useWindowStore.getState().openWindow('app-registry', {
+                title: 'App Store',
+                metadata: { view: 'integrations' },
+              });
+            });
+          }}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-[7px] bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-black/[0.07] dark:hover:bg-white/[0.09] transition-colors"
+        >
+          Browse all
+          <ChevronRight className="w-3 h-3" />
+        </button>
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
-        Connect services so your agent can read your email, manage files, and more.
+        Connect services your agent can use from chat. Browse the App Store for the full integration catalog.
       </p>
 
       {/* Search */}
@@ -925,14 +939,9 @@ function ConnectionsSection() {
                     <ConnectionRow
                       key={r.slug}
                       icon={
-                        <img
-                          src={composioLogoUrl(r.slug, r.logo)}
-                          alt={r.name}
-                          className="w-[20px] h-[20px] object-contain"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
+                        <PlatformIcon platform={r.slug} logoUrl={r.logo} size={20} />
                       }
-                      name={r.name}
+                      name={getPlatformDisplayName(r.slug, r.name)}
                       description={r.description || r.slug}
                       authType={at}
                       isConnected={composioConnected.has(r.slug)}
@@ -1024,14 +1033,9 @@ function ConnectionsSection() {
                     <ConnectionRow
                       key={def.slug}
                       icon={
-                        <img
-                          src={composioLogoUrl(def.slug)}
-                          alt={def.name}
-                          className="w-[20px] h-[20px] object-contain"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
+                        <PlatformIcon platform={def.slug} size={20} />
                       }
-                      name={def.name}
+                      name={getPlatformDisplayName(def.slug, def.name)}
                       description={def.description}
                       authType={def.authType}
                       isConnected={composioConnected.has(def.slug)}

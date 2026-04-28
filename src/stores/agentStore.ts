@@ -30,6 +30,7 @@ import {
 } from './agentStoreUtils';
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
+import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
 
 // Auth card persistence moved to agentStoreUtils.ts
 
@@ -527,7 +528,7 @@ interface ComputerStore {
 
   // Sessions
   loadSessions: () => Promise<void>;
-  createSession: (title?: string) => Promise<void>;
+  createSession: (title?: string, options?: { forceNew?: boolean }) => Promise<void>;
   switchSession: (key: string) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
   renameSession: (key: string, title: string) => Promise<void>;
@@ -2125,7 +2126,7 @@ export const useComputerStore = create<ComputerStore>()(
         // Re-inject any pending auth_connect cards that were persisted to sessionStorage.
         const pendingCards = loadAuthCards();
         for (const [, card] of pendingCards) {
-          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ toolkit: card.toolkit, name: card.name, description: card.description, url: card.url })}-->`;
+          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: card.kind, toolkit: card.toolkit, name: card.name, description: card.description, url: card.url, logo: card.logo, appId: card.appId, sessionKey: card.sessionKey })}-->`;
           history.push({
             role: 'agent',
             content: `${marker}\n\nI'll automatically continue once you've connected.`,
@@ -2638,35 +2639,21 @@ export const useComputerStore = create<ComputerStore>()(
       }
     },
 
-    createSession: async (title?: string) => {
+    createSession: async (title?: string, options?: { forceNew?: boolean }) => {
       const { instanceId, activeSessionKey, chatMessages, chatSessions } = get();
       if (!instanceId) return;
+      const forceNew = options?.forceNew === true;
 
       // If current session is already empty, just stay on it
-      if (!title && activeSessionKey && chatMessages.length === 0) {
+      if (!forceNew && !title && activeSessionKey && chatMessages.length === 0) {
         return;
       }
 
-      // Check if there's another empty "New Chat" session we can reuse.
-      // Check both the in-memory cache AND uncached sessions (which are
-      // likely empty if never visited). The backend also deduplicates as
-      // a safety net, but catching it here avoids an unnecessary API call.
-      if (!title) {
-        for (const session of chatSessions) {
-          if (session.key === activeSessionKey) continue;
-          const isNewChat = !session.title || session.title === 'New Chat';
-          if (!isNewChat) continue;
-          const cached = sessionMessageCache.get(session.key);
-          // If cached and empty → reuse. If never visited (no cache) → also likely empty.
-          if (!cached || cached.length === 0) {
-            get().switchSession(session.key);
-            return;
-          }
-        }
-      }
-
       try {
-        const result = await api.createAgentSession(instanceId, title);
+        const explicitKey = forceNew && typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : undefined;
+        const result = await api.createAgentSession(instanceId, title, explicitKey);
         if (result.success) {
           const session = result.data;
           const existing = get().chatSessions;
@@ -3204,6 +3191,9 @@ export const useComputerStore = create<ComputerStore>()(
           // from Telegram/Slack/Email redirected to the active desktop session).
           const msgRole = event.data?.role as string;
           const msgContent = event.data?.content as string;
+          if (msgRole === 'user' && msgContent && msgContent.startsWith('[System]')) {
+            break;
+          }
           if (msgRole === 'user' && msgContent && isActiveSession) {
             const current = get().chatMessages;
             const lastUser = [...current].reverse().find(m => m.role === 'user');
@@ -4309,42 +4299,47 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'auth_connect': {
           // A tool requires OAuth — show a connect card in the main chat + a clickable notification
+          const acKind = (event.data?.kind as 'composio' | 'app' | undefined) || 'composio';
           const acToolkit = event.data?.toolkit as string || 'service';
-          const acName = event.data?.name as string || acToolkit;
-          const acDesc = event.data?.description as string || 'Connect your account to continue';
+          const rawName = event.data?.name as string | undefined;
+          const acName = getPlatformDisplayName(acToolkit, rawName || acToolkit);
+          const acDesc = formatPlatformDescription(event.data?.description as string || 'Connect your account to continue', acToolkit, acName);
           const acUrl = event.data?.url as string || '';
+          const acLogo = event.data?.logo as string | undefined;
+          const acAppId = event.data?.appId as string | undefined;
+          const acSessionKey = (event.data?.sessionKey as string | undefined) || get().activeSessionKey || 'default';
+          const authCardKey = acToolkit.toLowerCase();
+          const alreadyPending = pendingAuthCards.has(authCardKey);
 
-          if (acUrl) {
-            // 1. Persist the card to sessionStorage so it survives page refresh
-            pendingAuthCards.set(acToolkit.toLowerCase(), {
-              toolkit: acToolkit, name: acName, description: acDesc, url: acUrl, timestamp: Date.now(),
-            });
-            saveAuthCards(pendingAuthCards);
+          // 1. Persist the card to sessionStorage so it survives page refresh
+          pendingAuthCards.set(authCardKey, {
+            kind: acKind, toolkit: acToolkit, name: acName, description: acDesc, url: acUrl || undefined, logo: acLogo, appId: acAppId, sessionKey: acSessionKey, timestamp: Date.now(),
+          });
+          saveAuthCards(pendingAuthCards);
 
-            // 2. Add a chat message with the AUTH_CONNECT marker so the card renders
-            const marker = `<!--AUTH_CONNECT:${JSON.stringify({ toolkit: acToolkit, name: acName, description: acDesc, url: acUrl })}-->`;
-            const authChatMsg: ChatMessage = {
-              role: 'agent',
-              content: `${marker}\n\nI'll automatically continue once you've connected.`,
-              timestamp: new Date(),
-            };
-            if (isActiveSession) {
-              set(state => ({
-                chatMessages: appendMessage(state.chatMessages, authChatMsg),
-              }));
-            }
+          if (alreadyPending) {
+            break;
+          }
 
-            // 3. Show a clickable desktop notification (30s so user doesn't miss it)
-            const notifId = useNotificationStore.getState().addNotification({
-              title: `Connect ${acName}`,
-              body: acDesc,
-              source: acName,
-              variant: 'info',
-              onClick: () => openAuthRedirect(acUrl),
-            }, 30_000);
-            if (notifId) {
-              authConnectNotifIds.set(acToolkit.toLowerCase(), notifId);
-            }
+          // 2. Add a chat message with the AUTH_CONNECT marker so the card renders
+          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: acKind, toolkit: acToolkit, name: acName, description: acDesc, url: acUrl || undefined, logo: acLogo, appId: acAppId, sessionKey: acSessionKey })}-->`;
+          const authChatMsg: ChatMessage = {
+            role: 'agent',
+            content: `${marker}\n\nI'll automatically continue once you've connected.`,
+            timestamp: new Date(),
+          };
+          appendToAgentChat(authChatMsg);
+
+          // 3. Show a clickable desktop notification (30s so user doesn't miss it)
+          const notifId = useNotificationStore.getState().addNotification({
+            title: `Connect ${acName}`,
+            body: acDesc,
+            source: acName,
+            variant: 'info',
+            onClick: acUrl ? () => openAuthRedirect(acUrl) : undefined,
+          }, 30_000);
+          if (notifId) {
+            authConnectNotifIds.set(authCardKey, notifId);
           }
           break;
         }
