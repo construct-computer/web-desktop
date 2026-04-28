@@ -1,25 +1,32 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
-import { useWindowStore } from '@/stores/windowStore';
-import { downloadContainerFile, downloadDriveFile, writeFile } from '@/services/api';
+import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, previewContainerFile, writeFile } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
+import { type ViewerDocType } from '@/lib/fileTypes';
 import { useEditorStore } from '@/stores/editorStore';
 import { useDocViewerSignalStore } from '@/stores/documentViewerStore';
-import Markdown from 'react-markdown';
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import type { WindowConfig } from '@/types';
-import { FileText, Table, Presentation, Image, File, Download, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Code, Eye, Save } from 'lucide-react';
+import { FileText, Table, Presentation, Image, File, Download, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Code, Eye, Save, Volume2, Film, Archive, Maximize2 } from 'lucide-react';
 
 import MonacoEditor, { type OnMount } from '@monaco-editor/react';
 import type { editor as monacoEditor } from 'monaco-editor';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-type DocType = 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'csv' | 'image' | 'markdown' | 'html' | 'text' | 'unknown';
+type DocType = ViewerDocType;
 
 interface SheetData {
   name: string;
   headers: string[];
   rows: string[][];
+}
+
+interface ConversionFrame {
+  previewPath: string;
+  contentType?: string;
+  label?: string;
+  pageIndex?: number;
 }
 
 // ── Monaco language detection (ported from EditorWindow) ─────────────────
@@ -109,6 +116,11 @@ function PdfViewer({ blobUrl }: { blobUrl: string }) {
 
 function ImageViewer({ blobUrl, fileName }: { blobUrl: string; fileName: string }) {
   const [zoom, setZoom] = useState(1);
+  const [fit, setFit] = useState<'contain' | 'actual'>('contain');
+  const [checkerboard, setCheckerboard] = useState(false);
+  const background = checkerboard
+    ? 'repeating-conic-gradient(rgba(255,255,255,.12) 0% 25%, rgba(255,255,255,.04) 0% 50%) 50% / 20px 20px'
+    : undefined;
   return (
     <div className="w-full h-full flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)] surface-toolbar">
@@ -120,9 +132,26 @@ function ImageViewer({ blobUrl, fileName }: { blobUrl: string; fileName: string 
           <ZoomIn className="w-3.5 h-3.5" />
         </button>
         <button onClick={() => setZoom(1)} className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] px-2">Reset</button>
+        <button onClick={() => setFit(f => f === 'contain' ? 'actual' : 'contain')} className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] px-2">
+          {fit === 'contain' ? 'Fit' : 'Actual'}
+        </button>
+        <button onClick={() => setCheckerboard(v => !v)} className={`text-xs px-2 ${checkerboard ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}>
+          Transparency
+        </button>
       </div>
-      <div className="flex-1 overflow-auto flex items-center justify-center bg-black/30 p-4">
-        <img src={blobUrl} alt={fileName} style={{ transform: `scale(${zoom})`, transformOrigin: 'center', maxWidth: zoom <= 1 ? '100%' : 'none' }} className="transition-transform duration-150" draggable={false} />
+      <div className="flex-1 overflow-auto flex items-center justify-center bg-black/30 p-4" style={{ background }}>
+        <img
+          src={blobUrl}
+          alt={fileName}
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: 'center',
+            maxWidth: fit === 'contain' && zoom <= 1 ? '100%' : 'none',
+            maxHeight: fit === 'contain' && zoom <= 1 ? '100%' : 'none',
+          }}
+          className="transition-transform duration-150"
+          draggable={false}
+        />
       </div>
     </div>
   );
@@ -175,6 +204,215 @@ function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
         <span>{sheet.rows.length} rows</span>
         <span>{sheet.headers.length} columns</span>
         <span>{sheets.length} sheet{sheets.length !== 1 ? 's' : ''}</span>
+      </div>
+    </div>
+  );
+}
+
+function MediaViewer({ blobUrl, type, fileName }: { blobUrl: string; type: 'audio' | 'video'; fileName: string }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-black/40 p-8">
+      <div className="w-full max-w-3xl rounded-xl border border-white/10 bg-black/30 p-5">
+        <div className="flex items-center gap-3 mb-4 text-[var(--color-text)]">
+          {type === 'audio' ? <Volume2 className="w-5 h-5 text-[var(--color-accent)]" /> : <Film className="w-5 h-5 text-[var(--color-accent)]" />}
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">{fileName}</div>
+            <div className="text-xs text-[var(--color-text-muted)]">{type === 'audio' ? 'Audio preview' : 'Video preview'}</div>
+          </div>
+        </div>
+        {type === 'audio' ? (
+          <audio src={blobUrl} controls className="w-full" />
+        ) : (
+          <video src={blobUrl} controls className="w-full max-h-[70vh] bg-black rounded" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JsonViewer({ text }: { text: string }) {
+  const parsed = useMemo(() => {
+    try {
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+      if (trimmed.includes('\n') && !trimmed.startsWith('[') && !trimmed.startsWith('{')) {
+        return trimmed.split(/\n+/).map(line => JSON.parse(line));
+      }
+      return JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }, [text]);
+
+  const tableRows = useMemo(() => {
+    if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every(item => item && typeof item === 'object' && !Array.isArray(item))) return null;
+    const headers = Array.from(new Set(parsed.flatMap(item => Object.keys(item as Record<string, unknown>)))).slice(0, 50);
+    return {
+      headers,
+      rows: parsed.slice(0, 1000).map(item => headers.map(header => {
+        const value = (item as Record<string, unknown>)[header];
+        return typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
+      })),
+    };
+  }, [parsed]);
+
+  if (tableRows) {
+    return <XlsxViewer sheets={[{ name: 'JSON', headers: tableRows.headers, rows: tableRows.rows }]} />;
+  }
+
+  return (
+    <pre className="w-full h-full overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
+      {parsed === undefined ? text : JSON.stringify(parsed, null, 2)}
+    </pre>
+  );
+}
+
+function DiagramViewer({ text, fileName }: { text: string; fileName: string }) {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  return (
+    <div className="w-full h-full grid grid-rows-[auto_minmax(0,1fr)]">
+      <div className="px-4 py-2 border-b border-white/[0.06] text-xs text-[var(--color-text-muted)]">
+        {ext === 'dot' || ext === 'gv' ? 'Graphviz source. If the agent generated SVG/PNG/PDF output next to this file, open that artifact for the rendered diagram.' : 'Mermaid source. Rendered SVG/PNG artifacts open as images.'}
+      </div>
+      <pre className="overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">{text}</pre>
+    </div>
+  );
+}
+
+function ExcalidrawViewer({ text }: { text: string }) {
+  const scene = useMemo(() => {
+    try {
+      return JSON.parse(text) as { elements?: Array<Record<string, unknown>>; appState?: { viewBackgroundColor?: string } };
+    } catch {
+      return null;
+    }
+  }, [text]);
+
+  const elements: Array<Record<string, unknown>> = scene?.elements?.filter(el => !el.isDeleted) || [];
+  if (!scene) return <JsonViewer text={text} />;
+  if (elements.length === 0) return <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)]">Empty Excalidraw scene</div>;
+
+  const bounds = elements.reduce<{ minX: number; minY: number; maxX: number; maxY: number }>((acc, el) => {
+    const x = Number(el.x || 0);
+    const y = Number(el.y || 0);
+    const w = Number(el.width || 0);
+    const h = Number(el.height || 0);
+    return {
+      minX: Math.min(acc.minX, x),
+      minY: Math.min(acc.minY, y),
+      maxX: Math.max(acc.maxX, x + w),
+      maxY: Math.max(acc.maxY, y + h),
+    };
+  }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  const pad = 80;
+  const viewBox = `${bounds.minX - pad} ${bounds.minY - pad} ${Math.max(100, bounds.maxX - bounds.minX + pad * 2)} ${Math.max(100, bounds.maxY - bounds.minY + pad * 2)}`;
+
+  return (
+    <div className="w-full h-full overflow-auto bg-black/30 p-4">
+      <svg viewBox={viewBox} className="w-full h-full bg-white rounded">
+        {elements.map((el, index) => {
+          const type = String(el.type || '');
+          const x = Number(el.x || 0);
+          const y = Number(el.y || 0);
+          const width = Number(el.width || 0);
+          const height = Number(el.height || 0);
+          const stroke = String(el.strokeColor || '#1e1e1e');
+          const fill = String(el.backgroundColor || 'transparent');
+          const strokeWidth = Number(el.strokeWidth || 2);
+          if (type === 'rectangle') return <rect key={index} x={x} y={y} width={width} height={height} rx={8} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+          if (type === 'ellipse') return <ellipse key={index} cx={x + width / 2} cy={y + height / 2} rx={Math.abs(width / 2)} ry={Math.abs(height / 2)} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+          if (type === 'diamond') return <polygon key={index} points={`${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+          if (type === 'text') return <text key={index} x={x} y={y + Number(el.fontSize || 20)} fill={stroke} fontSize={Number(el.fontSize || 20)} fontFamily="Arial">{String(el.text || '')}</text>;
+          if (type === 'line' || type === 'arrow') {
+            const points = Array.isArray(el.points) ? el.points as number[][] : [[0, 0], [width, height]];
+            const d = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${x + Number(point[0] || 0)} ${y + Number(point[1] || 0)}`).join(' ');
+            return <path key={index} d={d} fill="none" stroke={stroke} strokeWidth={strokeWidth} />;
+          }
+          return null;
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function ArchiveViewer({ fileName, fileSize, fileModified, onDownload }: { fileName: string; fileSize?: number; fileModified?: string; onDownload: () => void }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center p-6">
+      <div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] surface-card overflow-hidden">
+        <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-4">
+          <div className="w-14 h-14 rounded-xl bg-[var(--color-accent)]/10 flex items-center justify-center">
+            <Archive className="w-7 h-7 text-[var(--color-accent)]" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-medium text-[var(--color-text)] break-all leading-tight">{fileName}</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Archive inspection is planned; download the original bundle for now.</p>
+          </div>
+        </div>
+        <div className="border-t border-[var(--color-border)] divide-y divide-[var(--color-border)] text-xs">
+          {fileSize != null && <div className="flex justify-between px-5 py-2"><span className="text-[var(--color-text-muted)]">Size</span><span>{formatFileSize(fileSize)}</span></div>}
+          {fileModified && <div className="flex justify-between px-5 py-2"><span className="text-[var(--color-text-muted)]">Modified</span><span>{new Date(fileModified).toLocaleString()}</span></div>}
+        </div>
+        <div className="p-4 border-t border-[var(--color-border)]">
+          <button onClick={onDownload} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-xs font-medium rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity">
+            <Download className="w-3.5 h-3.5" />
+            Download archive
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConversionPreviewViewer({ frames, fileName }: { frames: ConversionFrame[]; fileName: string }) {
+  const [active, setActive] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const frame = frames[active];
+
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    if (!frame?.previewPath) return;
+    previewContainerFile('', frame.previewPath)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Preview frame unavailable');
+        const blob = await response.blob();
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setBlobUrl(null);
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [frame?.previewPath]);
+
+  if (frames.length === 0) return null;
+  return (
+    <div className="w-full h-full grid grid-cols-[140px_minmax(0,1fr)]">
+      <div className="border-r border-white/[0.06] overflow-y-auto p-2 space-y-2">
+        {frames.map((item, index) => (
+          <button
+            key={item.previewPath}
+            onClick={() => setActive(index)}
+            className={`w-full rounded border p-1.5 text-left ${index === active ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+          >
+            <div className="aspect-video bg-black/30 rounded flex items-center justify-center mb-1">
+              <FileText className="w-5 h-5 text-white/30" />
+            </div>
+            <div className="text-[11px] text-[var(--color-text)] truncate">{item.label || `Page ${index + 1}`}</div>
+          </button>
+        ))}
+      </div>
+      <div className="min-w-0 min-h-0 flex flex-col">
+        <div className="px-3 py-1.5 border-b border-white/[0.06] text-xs text-[var(--color-text-muted)]">
+          Conversion preview for {fileName}
+        </div>
+        <div className="flex-1 min-h-0 overflow-auto bg-black/40 flex items-center justify-center p-5">
+          {blobUrl ? <img src={blobUrl} alt={frame?.label || fileName} className="max-w-full max-h-full bg-white rounded" /> : <RefreshCw className="w-6 h-6 animate-spin text-[var(--color-accent)]" />}
+        </div>
       </div>
     </div>
   );
@@ -290,10 +528,14 @@ function PptxViewer({ slides }: { slides: string[] }) {
 function DocTypeIcon({ type, className = 'w-4 h-4' }: { type: DocType; className?: string }) {
   switch (type) {
     case 'pdf': return <FileText className={`${className} text-red-400`} />;
-    case 'docx': return <FileText className={`${className} text-blue-400`} />;
-    case 'xlsx': case 'csv': return <Table className={`${className} text-green-400`} />;
+    case 'docx': case 'convertible': return <FileText className={`${className} text-blue-400`} />;
+    case 'xlsx': case 'csv': case 'tsv': case 'json': return <Table className={`${className} text-green-400`} />;
     case 'pptx': return <Presentation className={`${className} text-orange-400`} />;
     case 'image': return <Image className={`${className} text-purple-400`} />;
+    case 'audio': return <Volume2 className={`${className} text-purple-400`} />;
+    case 'video': return <Film className={`${className} text-purple-400`} />;
+    case 'archive': return <Archive className={`${className} text-yellow-400`} />;
+    case 'diagram': case 'excalidraw': return <Maximize2 className={`${className} text-cyan-400`} />;
     case 'html': return <Code className={`${className} text-orange-400`} />;
     case 'text': return <Code className={`${className} text-[var(--color-accent)]`} />;
     case 'markdown': return <FileText className={`${className} text-[var(--color-accent)]`} />;
@@ -330,13 +572,45 @@ function getMimeLabel(ext: string): string {
   return map[ext] || `${ext} File`;
 }
 
+function parseDelimitedRows(text: string, delimiter: ',' | '\t'): SheetData[] {
+  const XLSX = { rows: text.split(/\r?\n/).filter((line, index, lines) => line.length > 0 || index < lines.length - 1) };
+  const parsed = XLSX.rows.map((line) => {
+    const cells: string[] = [];
+    let current = '';
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (quoted && line[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (ch === delimiter && !quoted) {
+        cells.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current);
+    return cells;
+  });
+  return [{
+    name: delimiter === '\t' ? 'TSV' : 'CSV',
+    headers: (parsed[0] || []).map(String),
+    rows: parsed.slice(1),
+  }];
+}
+
 // ── Detect effective doc type ────────────────────────────────────────────
 // Check extension-based document type first (markdown, csv, pdf, etc.)
 // Fall back to 'text' for text-editable files, 'unknown' for binaries.
-function resolveDocType(filePath: string | undefined, _windowType?: string): DocType {
+function resolveDocType(filePath: string | undefined): DocType {
   if (!filePath) return 'unknown';
   const docType = getDocumentType(filePath);
-  if (docType !== 'unknown') return docType as DocType;
+  if (docType !== 'unknown') return docType;
   if (isTextFile(filePath)) return 'text';
   return 'unknown';
 }
@@ -351,7 +625,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const fileSize = config.metadata?.fileSize as number | undefined;
   const fileModified = config.metadata?.fileModified as string | undefined;
   const fileName = filePath?.split('/').pop() ?? 'Document';
-  const docType = useMemo(() => resolveDocType(filePath, config.type), [filePath, config.type]);
+  const docType = useMemo(() => resolveDocType(filePath), [filePath]);
 
   // ── Text/code editing via editorStore ──
   const isTextMode = docType === 'text';
@@ -375,12 +649,12 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [editedText, setEditedText] = useState<string | null>(null);
   const [rawMode, setRawMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [conversionFrames, setConversionFrames] = useState<ConversionFrame[] | null>(null);
 
-  const hasRawToggle = docType === 'markdown' || docType === 'csv' || docType === 'html';
+  const hasRawToggle = ['markdown', 'csv', 'tsv', 'html', 'json', 'diagram', 'excalidraw'].includes(docType);
   const canEdit = (hasRawToggle || isTextMode) && !driveFileId && !!instanceId && !!filePath;
   const isDirtyDoc = editedText !== null && editedText !== rawText;
   const isDirtyText = isTextMode && editorFile ? editorFile.content !== editorFile.savedContent : false;
-  const isDirty = isTextMode ? isDirtyText : isDirtyDoc;
 
   // Editor cursor/selection tracking
   const [cursorInfo, setCursorInfo] = useState({ ln: 1, col: 1, selected: 0, selectedLines: 0 });
@@ -457,8 +731,19 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
 
       const blob = await response.blob();
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      setConversionFrames(null);
 
       switch (docType) {
+        case 'convertible': {
+          if (driveFileId) {
+            setError('Conversion previews are not available for Drive files yet. Download the original to view externally.');
+            break;
+          }
+          const result = await convertContainerFilePreview(instanceId!, filePath!, 12);
+          if (!result.success) throw new Error(result.error || 'Failed to create conversion preview');
+          setConversionFrames(result.data.frames);
+          break;
+        }
         case 'pdf': {
           const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
           blobUrlRef.current = url;
@@ -466,6 +751,13 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           break;
         }
         case 'image': {
+          const url = URL.createObjectURL(blob);
+          blobUrlRef.current = url;
+          setBlobUrl(url);
+          break;
+        }
+        case 'audio':
+        case 'video': {
           const url = URL.createObjectURL(blob);
           blobUrlRef.current = url;
           setBlobUrl(url);
@@ -494,6 +786,12 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           setXlsxSheets(sheets);
           break;
         }
+        case 'tsv': {
+          const text = await blob.text();
+          setRawText(text);
+          setXlsxSheets(parseDelimitedRows(text, '\t'));
+          break;
+        }
         case 'pptx': {
           try {
             const { pptxToHtml } = await import('@jvmr/pptx-to-html');
@@ -520,6 +818,19 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           const text = await blob.text();
           setHtmlContent(text);
           setRawText(text);
+          break;
+        }
+        case 'json':
+        case 'diagram':
+        case 'excalidraw': {
+          const text = await blob.text();
+          setRawText(text);
+          break;
+        }
+        case 'archive': {
+          const url = URL.createObjectURL(blob);
+          blobUrlRef.current = url;
+          setBlobUrl(url);
           break;
         }
         default: {
@@ -575,6 +886,8 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
         setRawText(editedText);
         if (docType === 'markdown') setMarkdownText(editedText);
         else if (docType === 'html') setHtmlContent(editedText);
+        else if (docType === 'tsv') setXlsxSheets(parseDelimitedRows(editedText, '\t'));
+        else if (docType === 'json' || docType === 'diagram' || docType === 'excalidraw') setRawText(editedText);
         else if (docType === 'csv') {
           const XLSX = await import('xlsx');
           const workbook = XLSX.read(editedText, { type: 'string' });
@@ -594,7 +907,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     }
   }, [canEdit, editedText, isDirtyDoc, instanceId, filePath, docType]);
 
-  // Cmd/Ctrl+S for markdown/CSV raw editing
+  // Cmd/Ctrl+S for raw document editing
   useEffect(() => {
     if (isTextMode) return; // text mode uses Monaco's built-in keybinding
     const handler = (e: KeyboardEvent) => {
@@ -771,7 +1084,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
               {canEdit ? (
                 <MonacoEditor
                   height="100%"
-                  language={docType === 'markdown' ? 'markdown' : 'plaintext'}
+                  language={docType === 'markdown' ? 'markdown' : docType === 'html' ? 'html' : docType === 'json' || docType === 'excalidraw' ? 'json' : 'plaintext'}
                   value={editedText ?? rawText}
                   onChange={(v) => setEditedText(v ?? '')}
                   onMount={handleEditorMount}
@@ -787,14 +1100,16 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             </div>
           ) : (<>
             {docType === 'pdf' && blobUrl && <PdfViewer blobUrl={blobUrl} />}
+            {docType === 'convertible' && conversionFrames && <ConversionPreviewViewer frames={conversionFrames} fileName={fileName} />}
             {docType === 'image' && blobUrl && <ImageViewer blobUrl={blobUrl} fileName={fileName} />}
+            {(docType === 'audio' || docType === 'video') && blobUrl && <MediaViewer blobUrl={blobUrl} type={docType} fileName={fileName} />}
             {docType === 'docx' && docxHtml !== null && <DocxViewer htmlContent={docxHtml} />}
-            {(docType === 'xlsx' || docType === 'csv') && xlsxSheets !== null && <XlsxViewer sheets={xlsxSheets} />}
+            {(docType === 'xlsx' || docType === 'csv' || docType === 'tsv') && xlsxSheets !== null && <XlsxViewer sheets={xlsxSheets} />}
             {docType === 'pptx' && pptxSlides !== null && <PptxViewer slides={pptxSlides} />}
             {docType === 'markdown' && markdownText !== null && (
               <div className="w-full h-full overflow-auto px-6 py-3">
                 <div className="max-w-3xl mx-auto markdown-rendered [&>*:first-child]:mt-0">
-                  <Markdown>{markdownText}</Markdown>
+                  <MarkdownRenderer content={markdownText} />
                 </div>
               </div>
             )}
@@ -806,6 +1121,10 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
                 title={fileName}
               />
             )}
+            {docType === 'json' && rawText !== null && <JsonViewer text={rawText} />}
+            {docType === 'diagram' && rawText !== null && <DiagramViewer text={rawText} fileName={fileName} />}
+            {docType === 'excalidraw' && rawText !== null && <ExcalidrawViewer text={rawText} />}
+            {docType === 'archive' && <ArchiveViewer fileName={fileName} fileSize={fileSize} fileModified={fileModified} onDownload={handleDownload} />}
             {docType === 'unknown' && (
               <div className="w-full h-full flex items-center justify-center p-6">
                 <div className="w-full max-w-xs rounded-xl border border-[var(--color-border)] surface-card shadow-lg overflow-hidden">

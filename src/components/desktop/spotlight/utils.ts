@@ -51,7 +51,7 @@ export function groupMessages(messages: ChatMessage[], isAgentRunning: boolean):
 
     if (isOp) { flush(); groups.push({ type: 'operation', msg, index: i }); }
     else if (msg.role === 'activity') { if (msg.content) actBuf.push(msg); }
-    else if (msg.role === 'system') { /* skip */ }
+    else if (msg.role === 'system' && !msg.askUser) { /* skip */ }
     else if (msg.role === 'agent' && !msg.isError && !msg.content.trim()) { /* skip empty */ }
     else if (msg.role === 'agent' && !msg.isError && !msg.isStopped && i !== lastAgentIdx && isLikelyThinkingText(msg.content)) { /* filter thinking */ }
     else if (msg.role === 'user' && msg.content.startsWith('[App | ')) { /* skip internal app messages */ }

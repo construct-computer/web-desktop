@@ -1,5 +1,12 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import {
+  getFileType,
+  getViewerDocType,
+  isTextLikeFile,
+  isViewerFile,
+  type ViewerDocType,
+} from './fileTypes';
 
 /**
  * Merge class names with Tailwind CSS conflict resolution
@@ -40,74 +47,21 @@ export function formatDate(date: Date = new Date()): string {
   });
 }
 
-/**
- * Returns true if the file at the given path/name is likely a text file.
- * Uses a blocklist of known binary extensions — anything not in the list is
- * assumed to be text.  This is the single source of truth; used by both the
- * agent store (to decide whether to open a file in the editor) and the Files
- * window (to decide double-click behaviour).
- */
-const BINARY_EXTENSIONS = new Set([
-  // Office / document formats
-  'pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'odt', 'ods', 'odp',
-  // Images
-  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'tiff', 'tif',
-  'psd', 'ai', 'eps', 'raw', 'cr2', 'nef', 'heic', 'heif', 'avif',
-  // Audio
-  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus', 'mid', 'midi',
-  // Video
-  'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'ogv', 'm4v',
-  // Archives
-  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst',
-  // Executables / binaries
-  'exe', 'dll', 'so', 'dylib', 'bin', 'o', 'a', 'class', 'pyc', 'wasm',
-  // Fonts
-  'ttf', 'otf', 'woff', 'woff2', 'eot',
-  // Databases
-  'db', 'sqlite', 'sqlite3',
-  // Misc binary
-  'iso', 'dmg', 'img', 'dat',
-]);
-
 export function isTextFile(filePathOrName: string): boolean {
-  const name = filePathOrName.split('/').pop() ?? filePathOrName;
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return !BINARY_EXTENSIONS.has(ext);
+  return isTextLikeFile(filePathOrName);
 }
-
-/** Document file extensions that should open in the document viewer. */
-const DOCUMENT_EXTENSIONS = new Set([
-  'pdf',
-  'docx', 'doc', 'odt',
-  'xlsx', 'xls', 'ods', 'csv',
-  'pptx', 'ppt', 'odp',
-  'md', 'markdown', 'mdx',
-]);
-
-/** Image extensions that should open in the document viewer. */
-const IMAGE_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico', 'avif', 'heic', 'heif',
-]);
 
 /** Returns true if the file should be opened in the document viewer. */
 export function isDocumentFile(filePathOrName: string): boolean {
-  const ext = (filePathOrName.split('/').pop() ?? filePathOrName).split('.').pop()?.toLowerCase() ?? '';
-  return DOCUMENT_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext);
+  return isViewerFile(filePathOrName);
 }
 
 /** Returns the document type category for the viewer. */
-export function getDocumentType(filePathOrName: string): 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'image' | 'csv' | 'markdown' | 'html' | 'text' | 'unknown' {
-  const ext = (filePathOrName.split('/').pop() ?? filePathOrName).split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'pdf') return 'pdf';
-  if (['docx', 'doc', 'odt'].includes(ext)) return 'docx';
-  if (['xlsx', 'xls', 'ods'].includes(ext)) return 'xlsx';
-  if (ext === 'csv') return 'csv';
-  if (['pptx', 'ppt', 'odp'].includes(ext)) return 'pptx';
-  if (['md', 'markdown', 'mdx'].includes(ext)) return 'markdown';
-  if (['html', 'htm'].includes(ext)) return 'html';
-  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
-  return 'unknown';
+export function getDocumentType(filePathOrName: string): ViewerDocType {
+  return getViewerDocType(filePathOrName);
 }
+
+export { getFileType };
 
 /**
  * Open a URL in a centered popup window (for OAuth flows like Slack).

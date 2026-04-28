@@ -35,7 +35,6 @@ import {
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import { useComputerStore } from '@/stores/agentStore';
-import { useWindowStore } from '@/stores/windowStore';
 import { useEditorStore } from '@/stores/editorStore';
 import { useAppStore } from '@/stores/appStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -45,6 +44,7 @@ import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
+import { getFileType } from '@/lib/fileTypes';
 
 const logger = log('Files');
 
@@ -74,11 +74,12 @@ function getFileIcon(entry: FileEntry) {
   if (entry.type === 'directory') return Folder;
   if (entry.type === 'symlink') return Link;
 
+  const fileType = getFileType(entry.name);
+  if (fileType?.category === 'image') return FileImage;
+  if (fileType?.renderer === 'audio') return FileAudio;
+  if (fileType?.renderer === 'video') return FileVideo;
+  if (fileType?.category === 'archive') return FileArchive;
   const ext = entry.name.split('.').pop()?.toLowerCase() ?? '';
-  if (IMAGE_EXTENSIONS.has(ext)) return FileImage;
-  if (AUDIO_EXTENSIONS.has(ext)) return FileAudio;
-  if (VIDEO_EXTENSIONS.has(ext)) return FileVideo;
-  if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar'].includes(ext)) return FileArchive;
   if (['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'sh', 'bash', 'yaml', 'yml', 'toml', 'json', 'xml', 'html', 'css', 'scss'].includes(ext)) return FileCode;
   if (['txt', 'md', 'log', 'csv', 'env', 'cfg', 'ini', 'conf'].includes(ext)) return FileText;
   return File;
@@ -91,16 +92,12 @@ import { openDocumentViewer, openCloudDocumentViewer } from '../../stores/docume
 
 type FileCategory = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'binary';
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp']);
-const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus']);
-const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogv', 'mov', 'avi', 'mkv']);
-
 function getFileCategory(name: string): FileCategory {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'pdf') return 'pdf';
-  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
-  if (AUDIO_EXTENSIONS.has(ext)) return 'audio';
-  if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+  const fileType = getFileType(name);
+  if (fileType?.renderer === 'pdf') return 'pdf';
+  if (fileType?.renderer === 'image') return 'image';
+  if (fileType?.renderer === 'audio') return 'audio';
+  if (fileType?.renderer === 'video') return 'video';
   if (isTextFile(name)) return 'text';
   return 'binary';
 }
@@ -108,13 +105,6 @@ function getFileCategory(name: string): FileCategory {
 function isPreviewable(name: string): boolean {
   const cat = getFileCategory(name);
   return cat === 'image' || cat === 'audio' || cat === 'video' || cat === 'pdf';
-}
-
-const HTML_EXTENSIONS = new Set(['html', 'htm']);
-
-function isHtmlFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return HTML_EXTENSIONS.has(ext);
 }
 
 function joinPath(base: string, name: string): string {
@@ -145,6 +135,8 @@ let nextTransferId = 0;
 function ContextMenu({
   menu,
   onClose,
+  onOpenLocalItem,
+  onOpenCloudItem,
   onEditFile,
   onRename,
   onDelete,
@@ -160,6 +152,8 @@ function ContextMenu({
 }: {
   menu: ContextMenuType;
   onClose: () => void;
+  onOpenLocalItem: (entry: FileEntry) => void;
+  onOpenCloudItem: (file: DriveFileEntry) => void;
   onEditFile: (entry: FileEntry) => void;
   onRename: (entry: FileEntry) => void;
   onDelete: (entry: FileEntry) => void;
@@ -221,12 +215,20 @@ function ContextMenu({
         )
       ) : menu.kind === 'local-item' ? (
         <>
+          <button className={itemClass} onClick={() => onOpenLocalItem(menu.entry)}>
+            {menu.entry.type === 'directory' || menu.entry.type === 'symlink'
+              ? <Folder className="w-3.5 h-3.5" />
+              : <Eye className="w-3.5 h-3.5" />}
+            Open
+          </button>
           {menu.entry.type === 'file' && (
             <>
-              <button className={itemClass} onClick={() => onEditFile(menu.entry)}>
-                <FileEdit className="w-3.5 h-3.5" />
-                {readOnly ? 'View File' : 'Edit File'}
-              </button>
+              {isTextFile(menu.entry.name) && (
+                <button className={itemClass} onClick={() => onEditFile(menu.entry)}>
+                  <FileEdit className="w-3.5 h-3.5" />
+                  {readOnly ? 'View Source' : 'Edit Source'}
+                </button>
+              )}
               {onDownloadLocalFile && (
                 <button className={itemClass} onClick={() => onDownloadLocalFile(menu.entry)}>
                   <Download className="w-3.5 h-3.5" />
@@ -265,6 +267,12 @@ function ContextMenu({
       ) : (
         /* cloud-item */
         <>
+          <button className={itemClass} onClick={() => onOpenCloudItem(menu.file)}>
+            {menu.file.type === 'directory'
+              ? <Folder className="w-3.5 h-3.5" />
+              : <Eye className="w-3.5 h-3.5" />}
+            Open
+          </button>
           {onDownloadToWorkspace && (
             <button className={itemClass} onClick={() => onDownloadToWorkspace(menu.file)}>
               <CloudDownload className="w-3.5 h-3.5" />
@@ -356,8 +364,8 @@ function InlineNameInput({
 // ─── Main component ────────────────────────────────────────────────────────
 
 export function FilesWindow({ config: _config }: FilesWindowProps) {
+  void _config;
   const instanceId = useComputerStore((s) => s.instanceId);
-  const navigateBrowser = useComputerStore((s) => s.navigateTo);
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'local' | 'cloud'>('local');
@@ -573,22 +581,19 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     [],
   );
 
-  const ensureWindowOpen = useWindowStore((s) => s.ensureWindowOpen);
   const openFile = useEditorStore((s) => s.openFile);
 
-  const handleItemDoubleClick = useCallback(
+  const handleOpenLocalItem = useCallback(
     (entry: FileEntry) => {
       if (renamingName) return;
+      setContextMenu(null);
       if (entry.type === 'directory' || entry.type === 'symlink') {
         navigateTo(joinPath(currentPath, entry.name));
         return;
       }
       if (entry.type === 'file') {
         const fullPath = joinPath(currentPath, entry.name);
-        if (isHtmlFile(entry.name)) {
-          navigateBrowser(`file://${fullPath}`);
-          ensureWindowOpen('browser');
-        } else if (isDocumentFile(entry.name)) {
+        if (isDocumentFile(entry.name)) {
           openDocumentViewer(fullPath);
         } else if (isPreviewable(entry.name)) {
           openPreview(entry.name, fullPath);
@@ -600,8 +605,28 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         }
       }
     },
-    [currentPath, navigateTo, navigateBrowser, openFile, renamingName, openPreview],
+    [currentPath, navigateTo, openFile, renamingName, openPreview],
   );
+
+  const handleOpenCloudItem = useCallback(
+    (file: DriveFileEntry) => {
+      setContextMenu(null);
+      if (file.type === 'directory') {
+        driveFiles.navigateInto(file);
+        return;
+      }
+      if (isDocumentFile(file.name)) {
+        openCloudDocumentViewer(file.id, file.name, undefined, { fileSize: file.size, fileModified: file.modified });
+      } else if (isPreviewable(file.name)) {
+        openCloudPreview(file.name, file.id);
+      } else {
+        openCloudDocumentViewer(file.id, file.name, undefined, { fileSize: file.size, fileModified: file.modified });
+      }
+    },
+    [driveFiles, openCloudPreview],
+  );
+
+  const handleItemDoubleClick = handleOpenLocalItem;
 
   // ─── Context menu handlers ──────────────────────────────────────────────
 
@@ -929,9 +954,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
       if (e.key === 'Enter' && selectedName) {
         const entry = entries.find((en) => en.name === selectedName);
-        if (entry && (entry.type === 'directory' || entry.type === 'symlink')) {
-          navigateTo(joinPath(currentPath, entry.name));
-        }
+        if (entry) handleOpenLocalItem(entry);
         return;
       }
       if (e.key === 'Backspace') {
@@ -963,7 +986,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [entries, selectedName, currentPath, navigateTo, goUp, renamingName, creatingType, handleDelete, previewFile, closePreview]);
+  }, [entries, selectedName, goUp, renamingName, creatingType, handleDelete, handleOpenLocalItem, previewFile, closePreview]);
 
   const pathParts = currentPath.split('/').filter(Boolean);
 
@@ -1159,7 +1182,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         )}
         {/* Mobile sidebar backdrop */}
         {isMobile && sidebarOpen && (
-          <div className="absolute inset-0 z-10 glass-scrim" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute inset-0 z-10 contained-scrim" onClick={() => setSidebarOpen(false)} />
         )}
 
         {/* Main file list */}
@@ -1364,18 +1387,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                           e.stopPropagation();
                           driveFiles.navigateInto(file);
                         }}
-                        onDoubleClick={async () => {
-                          if (file.type === 'directory') {
-                            driveFiles.navigateInto(file);
-                          } else if (isDocumentFile(file.name)) {
-                            openCloudDocumentViewer(file.id, file.name);
-                          } else if (isPreviewable(file.name)) {
-                            openCloudPreview(file.name, file.id);
-                          } else {
-                            // Unsupported — open file details window
-                            openCloudDocumentViewer(file.id, file.name, undefined, { fileSize: file.size, fileModified: file.modified });
-                          }
-                        }}
+                        onDoubleClick={() => handleOpenCloudItem(file)}
                         onContextMenu={(e) => handleCloudItemContextMenu(file, e)}
                         onTouchStart={handleCloudItemLongPressStart(file)}
                         onTouchMove={trackLongPressMove}
@@ -1559,7 +1571,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           {/* Drag-and-drop overlay (scoped to the file list area) */}
           {isDraggingOver && (
             activeTab === 'local' && !isReadOnly ? (
-              <div className="absolute inset-0 z-50 flex items-center justify-center glass-scrim border-2 border-dashed border-[var(--color-accent)] rounded-lg pointer-events-none">
+              <div className="absolute inset-0 z-50 flex items-center justify-center contained-scrim border-2 border-dashed border-[var(--color-accent)] rounded-lg pointer-events-none">
                 <div className="flex flex-col items-center gap-2 text-[var(--color-accent)]">
                   <Upload className="w-10 h-10" />
                   <span className="text-sm font-medium">Drop files to upload</span>
@@ -1567,7 +1579,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                 </div>
               </div>
             ) : (
-              <div className="absolute inset-0 z-50 flex items-center justify-center glass-scrim border-2 border-dashed border-red-400 rounded-lg pointer-events-none">
+              <div className="absolute inset-0 z-50 flex items-center justify-center contained-scrim border-2 border-dashed border-red-400 rounded-lg pointer-events-none">
                 <div className="flex flex-col items-center gap-2 text-red-400">
                   <AlertCircle className="w-10 h-10" />
                   <span className="text-sm font-medium">Cannot upload here</span>
@@ -1584,6 +1596,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         <ContextMenu
           menu={contextMenu}
           onClose={closeContextMenu}
+          onOpenLocalItem={handleOpenLocalItem}
+          onOpenCloudItem={handleOpenCloudItem}
           onEditFile={handleEditFile}
           onRename={handleStartRename}
           onDelete={handleDelete}

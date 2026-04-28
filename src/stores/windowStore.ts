@@ -308,6 +308,15 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxWidth: 1600,
     maxHeight: 1200,
   },
+  'document-workbench': {
+    title: 'Document Workbench',
+    width: 980,
+    height: 700,
+    minWidth: 560,
+    minHeight: 420,
+    maxWidth: 1800,
+    maxHeight: 1200,
+  },
   app: {
     title: 'App',
     width: 600,

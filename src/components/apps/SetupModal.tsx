@@ -208,8 +208,8 @@ export function SetupModal() {
     && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center glass-scrim">
-      <div data-tour="setup" className="w-full max-w-md glass-popover rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-scrim">
+      <div data-tour="setup" className="w-full max-w-md soft-popover rounded-2xl shadow-2xl shadow-black/18 dark:shadow-black/32 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         {/* Header */}
         <div className="text-center px-8 pt-7 pb-2 space-y-2">
           {user?.avatarUrl ? (

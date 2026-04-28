@@ -15,10 +15,13 @@ export function getFileIcon(filePath: string): string {
   switch (docType) {
     case 'pdf': return iconDocs;
     case 'docx': return iconDocs;
-    case 'xlsx': case 'csv': return iconSheet;
+    case 'convertible': return iconDocs;
+    case 'xlsx': case 'csv': case 'tsv': case 'json': return iconSheet;
     case 'pptx': return iconSlides;
-    case 'image': return iconPreview;
-    case 'markdown': case 'text': return iconText;
+    case 'image': case 'diagram': case 'excalidraw': return iconPreview;
+    case 'audio': case 'video': return iconPreview;
+    case 'archive': return iconGeneric;
+    case 'html': case 'markdown': case 'text': return iconText;
     default:
       if (isTextFile(filePath)) return iconText;
       return iconGeneric;

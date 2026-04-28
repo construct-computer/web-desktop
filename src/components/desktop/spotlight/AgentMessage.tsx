@@ -5,7 +5,6 @@ import { AskUserCard } from '@/components/ui/AskUserCard';
 import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
-import constructGif from '@/assets/construct/loader.gif';
 import constructStatic from '@/assets/construct/loader-static.png';
 import type { ChatMessage } from '@/stores/agentStore';
 
@@ -126,25 +125,27 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
       ) : (
         <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
       )}
-      <div className={`min-w-0 max-w-full sm:max-w-[90%] text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
-        {(() => {
-          if (msg.askUser) return <AskUserCard data={msg.askUser} />;
-          if (isError) return <ErrorCard content={msg.content} />;
-          const auth = parseAuthMarker(msg.content);
-          if (auth) return <><AuthConnectCard payload={auth.payload} />{auth.rest && <MarkdownRenderer content={auth.rest} />}</>;
-          return <MarkdownRenderer content={msg.content} />;
-        })()}
+      <div className="flex min-w-0 max-w-full sm:max-w-[90%] flex-col items-start gap-0.5">
+        <div className={`w-full text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
+          {(() => {
+            if (msg.askUser) return <AskUserCard data={msg.askUser} />;
+            if (isError) return <ErrorCard content={msg.content} />;
+            const auth = parseAuthMarker(msg.content);
+            if (auth) return <><AuthConnectCard payload={auth.payload} />{auth.rest && <MarkdownRenderer content={auth.rest} />}</>;
+            return <MarkdownRenderer content={msg.content} />;
+          })()}
 
-        {/* File attachments */}
-        {msg.attachments && msg.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {msg.attachments.map((filePath, i) => (
-              <AttachmentChip key={i} filePath={filePath} />
-            ))}
-          </div>
-        )}
+          {/* File attachments */}
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {msg.attachments.map((filePath, i) => (
+                <AttachmentChip key={i} filePath={filePath} />
+              ))}
+            </div>
+          )}
+        </div>
+        {replySlot}
       </div>
-      {replySlot}
     </div>
   );
 }

@@ -47,20 +47,19 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
 
   // Boot step cycling during provisioning
   const [stepIndex, setStepIndex] = useState(0);
+  const awake = woken || isProvisioning || !!provisionError || !isLocked;
 
   useEffect(() => {
     if (!isProvisioning) return;
-    setWoken(true); // force wake state during provisioning
-    setStepIndex(0);
+    const resetTimer = setTimeout(() => setStepIndex(0), 0);
     const interval = setInterval(() => {
       setStepIndex((i) => Math.min(i + 1, BOOT_STEPS.length - 1));
     }, 2500);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(resetTimer);
+      clearInterval(interval);
+    };
   }, [isProvisioning]);
-
-  useEffect(() => {
-    if (provisionError) setWoken(true); // force wake mode on error
-  }, [provisionError]);
 
   return (
     <div
@@ -81,23 +80,23 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
           backgroundImage: `url(${getWallpaperSrc(useSettingsStore((s) => s.wallpaperId))})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: woken || !isLocked ? 'blur(24px) saturate(1.5)' : 'blur(0px) saturate(1)',
-          transform: woken || !isLocked ? 'scale(1.03)' : 'scale(1)'
+          filter: awake ? 'blur(18px) saturate(1.25)' : 'blur(0px) saturate(1)',
+          transform: awake ? 'scale(1.02)' : 'scale(1)'
         }}
       />
       
       {/* Dark overlay that fades in upon wake */}
       <div 
-        className="absolute inset-0 transition-opacity duration-700 bg-black/20" 
-        style={{ opacity: woken || !isLocked ? 1 : 0 }} 
+        className="absolute inset-0 transition-opacity duration-700 bg-black/10" 
+        style={{ opacity: awake ? 1 : 0 }} 
       />
 
       {/* Clock at top (visible when sleeping) */}
       <div 
         className="absolute top-24 flex flex-col items-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] transition-all duration-700 ease-in-out select-none"
         style={{ 
-          opacity: woken || !isLocked ? 0 : 1,
-          transform: woken || !isLocked ? 'translateY(-20px)' : 'translateY(0)',
+          opacity: awake ? 0 : 1,
+          transform: awake ? 'translateY(-20px)' : 'translateY(0)',
           pointerEvents: 'none'
         }}
       >
@@ -109,9 +108,9 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
       <div 
         className="relative z-10 flex flex-col items-center select-none transition-all duration-700 ease-out"
         style={{
-          opacity: woken || !isLocked ? 1 : 0,
-          transform: woken || !isLocked ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.95)',
-          pointerEvents: woken || !isLocked ? 'auto' : 'none'
+          opacity: awake ? 1 : 0,
+          transform: awake ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.95)',
+          pointerEvents: awake ? 'auto' : 'none'
         }}
       >
         {/* Profile Avatar */}

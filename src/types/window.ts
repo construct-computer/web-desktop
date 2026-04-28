@@ -4,6 +4,7 @@ export type WindowType =
   | 'files'
   | 'editor'
   | 'document-viewer'
+  | 'document-workbench'
   | 'settings'
   | 'about'
   | 'calendar'

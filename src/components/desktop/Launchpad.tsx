@@ -246,7 +246,7 @@ export function Launchpad() {
         className={cn(
           'absolute inset-0 transition-all duration-300',
           animIn
-            ? 'glass-scrim'
+            ? 'launchpad-scrim'
             : 'bg-black/0 backdrop-blur-0',
         )}
         onClick={closeLaunchpad}

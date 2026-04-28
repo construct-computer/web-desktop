@@ -294,28 +294,28 @@ html, body {
    ═══════════════════════════════════════════════ */
 
 :root {
-  --surface-app-bg: rgba(255, 255, 255, 0.28);
-  --surface-card-bg: rgba(255, 255, 255, 0.42);
-  --surface-card-raised-bg: rgba(255, 255, 255, 0.52);
-  --surface-control-bg: rgba(255, 255, 255, 0.48);
-  --surface-toolbar-bg: rgba(255, 255, 255, 0.56);
-  --surface-sidebar-bg: rgba(244, 244, 245, 0.62);
-  --glass-window-bg: rgba(255, 255, 255, 0.64);
-  --glass-drawer-bg: rgba(255, 255, 255, 0.72);
-  --glass-popover-bg: rgba(255, 255, 255, 0.82);
+  --surface-app-bg: rgba(255, 255, 255, 0.36);
+  --surface-card-bg: rgba(255, 255, 255, 0.52);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.62);
+  --surface-control-bg: rgba(255, 255, 255, 0.58);
+  --surface-toolbar-bg: rgba(255, 255, 255, 0.66);
+  --surface-sidebar-bg: rgba(244, 244, 245, 0.74);
+  --glass-window-bg: rgba(255, 255, 255, 0.74);
+  --glass-drawer-bg: rgba(255, 255, 255, 0.80);
+  --glass-popover-bg: rgba(255, 255, 255, 0.88);
   --glass-scrim-bg: rgba(0, 0, 0, 0.28);
 }
 
 html.dark {
-  --surface-app-bg: rgba(255, 255, 255, 0.035);
-  --surface-card-bg: rgba(255, 255, 255, 0.055);
-  --surface-card-raised-bg: rgba(255, 255, 255, 0.075);
-  --surface-control-bg: rgba(255, 255, 255, 0.065);
-  --surface-toolbar-bg: rgba(255, 255, 255, 0.045);
-  --surface-sidebar-bg: rgba(9, 9, 11, 0.42);
-  --glass-window-bg: rgba(0, 0, 0, 0.62);
-  --glass-drawer-bg: rgba(9, 9, 11, 0.74);
-  --glass-popover-bg: rgba(12, 12, 14, 0.84);
+  --surface-app-bg: rgba(255, 255, 255, 0.06);
+  --surface-card-bg: rgba(255, 255, 255, 0.085);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.11);
+  --surface-control-bg: rgba(255, 255, 255, 0.095);
+  --surface-toolbar-bg: rgba(255, 255, 255, 0.075);
+  --surface-sidebar-bg: rgba(9, 9, 11, 0.56);
+  --glass-window-bg: rgba(8, 10, 16, 0.74);
+  --glass-drawer-bg: rgba(9, 9, 11, 0.82);
+  --glass-popover-bg: rgba(12, 12, 14, 0.90);
   --glass-scrim-bg: rgba(0, 0, 0, 0.42);
 }
 
@@ -404,6 +404,76 @@ html.dark {
 .glass-scrim {
   --glass-filter: blur(10px) saturate(1.2);
   background-color: var(--glass-scrim-bg);
+}
+
+.spotlight-scrim {
+  --glass-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(0, 0, 0, 0.26);
+  isolation: isolate;
+}
+
+.spotlight-glass-window {
+  --glass-filter: blur(24px) saturate(1.25);
+  background-color: rgba(255, 255, 255, 0.62);
+}
+
+html.dark .spotlight-glass-window {
+  background-color: rgba(8, 10, 16, 0.64);
+}
+
+.launchpad-scrim {
+  --glass-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(0, 0, 0, 0.26);
+  isolation: isolate;
+}
+
+.soft-scrim {
+  --glass-filter: blur(8px) saturate(1.12);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(0, 0, 0, 0.18);
+  isolation: isolate;
+}
+
+.modal-scrim {
+  --glass-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(0, 0, 0, 0.22);
+  isolation: isolate;
+}
+
+.contained-scrim {
+  --glass-filter: blur(8px) saturate(1.12);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(0, 0, 0, 0.16);
+  isolation: isolate;
+}
+
+.notification-glass-window {
+  --glass-filter: blur(24px) saturate(1.25);
+  background-color: rgba(255, 255, 255, 0.58);
+}
+
+html.dark .notification-glass-window {
+  background-color: rgba(10, 12, 18, 0.50);
+}
+
+.soft-popover {
+  --glass-filter: blur(24px) saturate(1.25);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(255, 255, 255, 0.78);
+  isolation: isolate;
+}
+
+html.dark .soft-popover {
+  background-color: rgba(14, 16, 22, 0.68);
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {

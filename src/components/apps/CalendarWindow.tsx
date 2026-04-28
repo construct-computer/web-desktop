@@ -1123,12 +1123,12 @@ function EventDialog({
     // Overlay contained inside the calendar window (absolute, not fixed)
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-50 flex items-center justify-center glass-scrim rounded-b-xl"
+      className="absolute inset-0 z-50 flex items-center justify-center contained-scrim rounded-b-xl"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="glass-popover
+      <div className="soft-popover
                       border border-black/10 dark:border-white/15 rounded-xl
-                      shadow-[0_8px_24px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]
+                      shadow-[0_8px_24px_rgba(0,0,0,0.14)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.32)]
                       w-[96%] max-w-[620px] max-h-[92%] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-black/10 dark:border-white/10 select-none">
@@ -1392,12 +1392,12 @@ function ConfirmDialog({
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-[60] flex items-center justify-center glass-scrim rounded-b-xl"
+      className="absolute inset-0 z-[60] flex items-center justify-center contained-scrim rounded-b-xl"
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
     >
-      <div className="glass-popover
+      <div className="soft-popover
                       border border-black/10 dark:border-white/15 rounded-xl
-                      shadow-[0_8px_24px_rgba(0,0,0,0.2)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5)]
+                      shadow-[0_8px_24px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.36)]
                       w-[280px] overflow-hidden">
         <div className="px-5 pt-5 pb-4 text-center">
           <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-red-500/10 flex items-center justify-center">

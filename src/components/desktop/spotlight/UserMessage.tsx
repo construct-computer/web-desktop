@@ -131,27 +131,29 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     const Icon = PLATFORM_ICONS[parsed.platform] || Send;
 
     return (
-      <div className="flex items-center justify-end gap-1.5 px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
-        {replySlot}
-        <div className="max-w-[95%] sm:max-w-[80%] rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
-          <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-white/60" style={{ background: 'rgba(0,0,0,0.15)' }}>
-            {appIcon ? (
-              <img src={appIcon} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
-            ) : (
-              <Icon className="w-2.5 h-2.5" />
-            )}
-            <span>via {parsed.platform}</span>
-            <span className="text-white/40">·</span>
-            <span className="text-white/80">{parsed.user}</span>
-          </div>
-          {parsed.subject && (
-            <div className="px-3 py-1 text-[11px] font-medium text-white/70 border-b border-white/10">
-              {parsed.subject}
+      <div className="flex justify-end px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
+        <div className="flex max-w-[95%] sm:max-w-[80%] min-w-0 flex-col items-end gap-0.5">
+          <div className="w-full rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
+            <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-white/60" style={{ background: 'rgba(0,0,0,0.15)' }}>
+              {appIcon ? (
+                <img src={appIcon} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
+              ) : (
+                <Icon className="w-2.5 h-2.5" />
+              )}
+              <span>via {parsed.platform}</span>
+              <span className="text-white/40">·</span>
+              <span className="text-white/80">{parsed.user}</span>
             </div>
-          )}
-          <div className="px-4 py-2 text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
-            <p className="whitespace-pre-wrap">{parsed.message}</p>
+            {parsed.subject && (
+              <div className="px-3 py-1 text-[11px] font-medium text-white/70 border-b border-white/10">
+                {parsed.subject}
+              </div>
+            )}
+            <div className="px-4 py-2 text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
+              <p className="whitespace-pre-wrap">{parsed.message}</p>
+            </div>
           </div>
+          {replySlot}
         </div>
       </div>
     );
@@ -159,10 +161,9 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
 
   return (
     <div
-      className="flex items-center justify-end gap-1.5 px-3 sm:px-5 py-1.5"
+      className="flex justify-end px-3 sm:px-5 py-1.5"
       style={{ animation: 'spt-in 150ms ease-out' }}
     >
-      {replySlot}
       <div
         className="flex max-w-[95%] sm:max-w-[80%] min-w-0 flex-col items-end gap-0.5"
       >
@@ -222,6 +223,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             </button>
           </div>
         )}
+        {replySlot}
       </div>
     </div>
   );

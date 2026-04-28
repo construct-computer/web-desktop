@@ -24,12 +24,12 @@ function timeLabel(ts?: Date) {
   return isToday(ts) ? timeStr : `${dateStr}, ${timeStr}`;
 }
 
-/** Hover-reveal slot with timestamp and reply button (desktop). */
+/** Hover-reveal metadata row shown below a message bubble (desktop). */
 function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: () => void }) {
   const label = timeLabel(timestamp);
 
   return (
-    <div className="flex items-center gap-1.5 opacity-0 group-hover/reply:opacity-100 transition-opacity duration-150 shrink-0">
+    <div className="pointer-events-none flex min-h-6 items-center gap-1.5 opacity-0 transition-opacity duration-150 group-hover/reply:pointer-events-auto group-hover/reply:opacity-100">
       {label && (
         <span className="text-[10px] text-[var(--color-text-muted)]/40 whitespace-nowrap select-none">
           {label}
@@ -48,11 +48,11 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
   );
 }
 
-/** Always-visible reply (touch) — no hover. */
+/** Always-visible metadata row shown below a message bubble (touch). */
 function MessageTouchReply({ timestamp, onReply }: { timestamp?: Date; onReply: () => void }) {
   const label = timeLabel(timestamp);
   return (
-    <div className="flex flex-col items-end justify-center gap-0.5 shrink-0 min-w-0 max-w-[88px]">
+    <div className="flex min-h-5 items-center gap-1.5 min-w-0">
       <button
         type="button"
         onClick={onReply}
@@ -62,7 +62,7 @@ function MessageTouchReply({ timestamp, onReply }: { timestamp?: Date; onReply: 
         Reply
       </button>
       {label && (
-        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none text-right w-full">
+        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none">
           {label}
         </span>
       )}
@@ -278,60 +278,55 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   }
 
   return (
-    <div className="relative flex-1 min-h-0">
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className={cn(
-          "h-full overflow-y-auto scroll-smooth scrollbar-none pb-3",
-          paddingTopClass || (isMobile ? "pt-14" : "pt-14")
-        )}
-        style={{ overscrollBehavior: 'contain' }}
-      >
-        {alertsForThisChat.length > 0 && (
-          <div className="px-4 pt-2 pb-3 flex flex-col gap-1.5">
-            {alertsForThisChat.slice().reverse().map(alert => {
-              const icon = alert.severity === 'error'
-                ? <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                : alert.severity === 'warn'
-                  ? <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  : <AlertCircle className="w-3.5 h-3.5 text-[var(--color-text-muted)]/50 shrink-0" />;
-              const bg = alert.severity === 'error'
-                ? 'bg-red-500/5 border-red-500/15'
-                : alert.severity === 'warn'
-                  ? 'bg-amber-500/5 border-amber-500/15'
-                  : 'bg-white/[0.03] border-white/[0.08]';
-              const when = new Date(alert.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-              return (
-                <div
-                  key={alert.id}
-                  className={cn(
-                    'flex items-start gap-2 px-3 py-2 rounded-lg border text-[12px] text-[var(--color-text-muted)]',
-                    bg,
-                  )}
-                >
-                  <div className="pt-0.5">{icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]/50 mb-0.5">
-                      <span>Status</span>
-                      {alert.sessionKey && <span>· {alert.sessionKey}</span>}
-                      <span className="ml-auto">{when}</span>
-                    </div>
-                    <p className="leading-snug whitespace-pre-wrap break-words">{alert.text}</p>
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className={cn(
+        "relative flex-1 min-h-0 overflow-y-auto scroll-smooth scrollbar-none pb-3",
+        paddingTopClass || "pt-14",
+      )}
+      style={{ overscrollBehavior: 'contain' }}
+    >
+      {alertsForThisChat.length > 0 && (
+        <div className="px-4 pt-2 pb-3 flex flex-col gap-1.5">
+          {alertsForThisChat.slice().reverse().map(alert => {
+            const icon = alert.severity === 'error'
+              ? <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              : alert.severity === 'warn'
+                ? <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                : <AlertCircle className="w-3.5 h-3.5 text-[var(--color-text-muted)]/50 shrink-0" />;
+            const bg = alert.severity === 'error'
+              ? 'bg-red-500/5 border-red-500/15'
+              : alert.severity === 'warn'
+                ? 'bg-amber-500/5 border-amber-500/15'
+                : 'bg-white/[0.03] border-white/[0.08]';
+            const when = new Date(alert.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            return (
+              <div
+                key={alert.id}
+                className={cn(
+                  'flex items-start gap-2 px-3 py-2 rounded-lg border text-[12px] text-[var(--color-text-muted)]',
+                  bg,
+                )}
+              >
+                <div className="pt-0.5">{icon}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]/50 mb-0.5">
+                    <span>Status</span>
+                    {alert.sessionKey && <span>· {alert.sessionKey}</span>}
+                    <span className="ml-auto">{when}</span>
                   </div>
+                  <p className="leading-snug whitespace-pre-wrap break-words">{alert.text}</p>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        {renderGroups.map(({ key, node }) => (
-          <div key={key}>{node}</div>
-        ))}
-        <ThinkingIndicator />
-      </div>
-
-      {/* Top scroll-fade mask so messages don't collide with the rounded corner / floating toggle */}
-      <div className="pointer-events-none absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-white/60 dark:from-[#111113]/80 to-transparent z-[5]" />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {renderGroups.map(({ key, node }) => (
+        <div key={key}>{node}</div>
+      ))}
+      <ThinkingIndicator />
 
       {showScrollBtn && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">

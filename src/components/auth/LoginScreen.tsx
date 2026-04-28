@@ -127,11 +127,14 @@ export function LoginScreen() {
         className="absolute inset-0 transition-all duration-1000"
         style={{
           background: showLogin
-            ? 'rgba(0,0,0,0.3)'
-            : 'rgba(0,0,0,0.7)',
+            ? 'rgba(0,0,0,0.18)'
+            : 'rgba(0,0,0,0.36)',
         }}
       />
-      <div className="absolute inset-0 glass-scrim" />
+      <div
+        className="absolute inset-0 glass-scrim transition-opacity duration-1000"
+        style={{ opacity: showLogin ? 0.35 : 0.25 }}
+      />
 
       {/* ── Phase 0: Power button (centered) ── */}
       {!poweredOn && (
@@ -145,12 +148,12 @@ export function LoginScreen() {
         >
           <div className="flex flex-col items-center gap-4">
             <button
-              className="group flex items-center justify-center w-16 h-16 rounded-full border border-white/10 glass-tooltip hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+              className="group flex items-center justify-center w-16 h-16 rounded-full border border-white/20 bg-white/[0.08] hover:bg-white/[0.16] hover:border-white/35 backdrop-blur-xl shadow-[0_18px_50px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] transition-all duration-300"
               onClick={handlePowerOn}
             >
-              <svg className="w-6 h-6 text-white/50 group-hover:text-white/90 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <svg className="w-6 h-6 text-white/65 group-hover:text-white/95 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
             </button>
-            <span className="text-[11px] font-medium text-white/30 tracking-widest uppercase mt-2">Power on</span>
+            <span className="text-[11px] font-medium text-white/45 tracking-widest uppercase mt-2">Power on</span>
             {hasPromo && (
               <div className="mt-8 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[11px] font-semibold tracking-widest uppercase px-4 drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">
                 <span className="text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]">{activePromoCode}</span>

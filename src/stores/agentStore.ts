@@ -7,6 +7,7 @@ import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
 import { useEditorStore } from './editorStore';
 import { openDocumentViewer } from './documentViewerStore';
+import { useDocumentPreviewStore } from './documentPreviewStore';
 import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
@@ -112,6 +113,7 @@ const WINDOW_CLOSE_GRACE: Record<string, number> = {
   editor: 5000,
   files: 5000,
   'document-viewer': 5000,
+  'document-workbench': 30000,
   email: 10000,
   calendar: 5000,
 };
@@ -477,6 +479,8 @@ interface ComputerStore {
 
   /** Real-time terminal output chunks from sandbox execStream. */
   terminalOutputSeq: number;
+  /** Latest backend execution status per tool call. */
+  toolStatuses: Record<string, { tool: string; status: string; updatedAt: number; sessionKey?: string }>;
 
   // Chat sessions
   chatSessions: SessionInfo[];
@@ -991,6 +995,7 @@ export const useComputerStore = create<ComputerStore>()(
     emailUnreadCount: 0,
     pendingApprovalCount: 0,
     terminalOutputSeq: 0,
+    toolStatuses: {},
     chatSessions: [],
     activeSessionKey: 'default',
     browserRuns: [],
@@ -1953,6 +1958,11 @@ export const useComputerStore = create<ComputerStore>()(
                   });
                   continue;
                 }
+
+                // ask_user is represented by its interactive card when live.
+                // Replaying only the tool_call row would produce a stale
+                // "Asking..." activity without a usable response card.
+                if (tool === 'ask_user') continue;
 
                 const { text, activityType } = describeToolCall(tool, params);
                 history.push({
@@ -3483,7 +3493,8 @@ export const useComputerStore = create<ComputerStore>()(
               || tool === 'respond_directly' || tool === 'respond_to_user'
               || tool === 'spawn_agent' || tool === 'wait_for_agents' || tool === 'check_agent_status'
               || tool === 'cancel_agent' || tool === 'list_active_agents'
-              || tool === 'browser' || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start event handles the activity + window
+              || tool === 'ask_user'
+              || tool === 'browser' || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start/ask_user events handle their own UI
             break;
           }
           // Skip tools with empty descriptions (e.g. respond_directly fallback)
@@ -4700,21 +4711,22 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'terminal_command': {
           const cmd = event.data?.command as string || '';
-          window.dispatchEvent(new CustomEvent('terminal_command', { detail: cmd }));
+          window.dispatchEvent(new CustomEvent('terminal_command', { detail: { ...(event.data || {}), command: cmd } }));
           break;
         }
 
         case 'terminal_output': {
           const _chunk = event.data?.data as string || '';
           set((s) => ({ terminalOutputSeq: s.terminalOutputSeq + 1 }));
-          window.dispatchEvent(new CustomEvent('terminal_output', { detail: _chunk }));
+          useDocumentPreviewStore.getState().appendTerminalOutput(event.data || {});
+          window.dispatchEvent(new CustomEvent('terminal_output', { detail: { ...(event.data || {}), data: _chunk } }));
           break;
         }
 
         case 'terminal_exit': {
           const exitCode = (event.data?.exitCode as number) ?? 0;
           const exitCmd = event.data?.command as string || '';
-          window.dispatchEvent(new CustomEvent('terminal_exit', { detail: { exitCode, command: exitCmd } }));
+          window.dispatchEvent(new CustomEvent('terminal_exit', { detail: { ...(event.data || {}), exitCode, command: exitCmd } }));
           // Notify on command failure
           if (exitCode !== 0) {
             const shortCmd = exitCmd.length > 60 ? exitCmd.slice(0, 60) + '...' : exitCmd;
@@ -4725,6 +4737,37 @@ export const useComputerStore = create<ComputerStore>()(
               variant: 'error',
             });
           }
+          break;
+        }
+
+        case 'document_session_started': {
+          const previewId = useDocumentPreviewStore.getState().startSession(event.data || {});
+          useWindowStore.getState().ensureWindowOpen('document-workbench', 'main', { documentSessionId: previewId });
+          break;
+        }
+
+        case 'document_step': {
+          useDocumentPreviewStore.getState().addStep(event.data || {});
+          break;
+        }
+
+        case 'document_preview_frame': {
+          useDocumentPreviewStore.getState().addFrame(event.data || {});
+          break;
+        }
+
+        case 'document_artifact_updated': {
+          useDocumentPreviewStore.getState().updateArtifact(event.data || {});
+          break;
+        }
+
+        case 'document_session_completed': {
+          useDocumentPreviewStore.getState().completeSession(event.data || {});
+          break;
+        }
+
+        case 'document_session_failed': {
+          useDocumentPreviewStore.getState().failSession(event.data || {});
           break;
         }
 
@@ -5549,8 +5592,37 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'tool_status': {
           // Per-tool execution status (queued/executing/completed/failed)
-          // Logged for debugging; tracker integration deferred to when TrackerStore adds the method
-          logger.debug('Tool status:', event.data?.tool, event.data?.status);
+          const tool = event.data?.tool as string || 'tool';
+          const status = event.data?.status as string || 'unknown';
+          const toolCallId = event.data?.toolCallId as string | undefined;
+          if (toolCallId) {
+            set((state) => ({
+              toolStatuses: {
+                ...state.toolStatuses,
+                [toolCallId]: { tool, status, updatedAt: Date.now(), sessionKey: event.data?.sessionKey as string | undefined },
+              },
+            }));
+          }
+          logger.debug('Tool status:', tool, status);
+          break;
+        }
+
+        case 'tool_validation_failed': {
+          const tool = event.data?.tool as string || 'tool';
+          const toolCallId = event.data?.toolCallId as string | undefined;
+          const error = event.data?.error as string || 'Invalid tool input';
+          if (toolCallId) {
+            set((state) => ({
+              toolStatuses: {
+                ...state.toolStatuses,
+                [toolCallId]: { tool, status: 'failed', updatedAt: Date.now(), sessionKey: event.data?.sessionKey as string | undefined },
+              },
+              agentThinking: null,
+            }));
+          } else {
+            set({ agentThinking: null });
+          }
+          logger.warn('Tool validation failed:', tool, error);
           break;
         }
 
@@ -5561,7 +5633,7 @@ export const useComputerStore = create<ComputerStore>()(
           const permArgs = event.data?.args as Record<string, unknown> || {};
           const permReason = event.data?.reason as string || `${permTool} requires your approval`;
           const permMsg: ChatMessage = {
-            role: 'system',
+            role: 'agent',
             content: `**Permission Required**: ${permReason}\n\nTool: \`${permTool}\`\nArguments: \`${JSON.stringify(permArgs).slice(0, 200)}\``,
             timestamp: new Date(),
             askUser: {

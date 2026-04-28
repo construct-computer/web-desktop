@@ -662,6 +662,43 @@ export async function downloadContainerFile(_instanceId: string, path: string): 
 }
 
 /**
+ * Fetch a generated preview object inline. Falls back to the same auth refresh
+ * handling as downloads, but uses the preview route for hidden frame assets.
+ */
+export async function previewContainerFile(_instanceId: string, path: string): Promise<Response> {
+  const url = `${API_BASE_URL}/files/preview?path=${encodeURIComponent(path)}`;
+  const doFetch = () => {
+    const token = getToken();
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
+  const res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await ensureTokenRefreshed();
+    if (refreshed) return doFetch();
+  }
+  return res;
+}
+
+export interface ConvertedPreviewFrame {
+  previewPath: string;
+  contentType?: string;
+  pageIndex?: number;
+  label?: string;
+  size?: number;
+}
+
+export async function convertContainerFilePreview(
+  _instanceId: string,
+  path: string,
+  maxPages = 12,
+): Promise<ApiResult<{ path: string; frames: ConvertedPreviewFrame[] }>> {
+  return request('/files/convert-preview', {
+    method: 'POST',
+    body: JSON.stringify({ path, maxPages }),
+  });
+}
+
+/**
  * Upload a binary file (e.g. from drag-and-drop) into the container.
  * Sends the raw bytes as the request body, file path in the query string.
  * Handles 401 with a single token refresh retry (M19).

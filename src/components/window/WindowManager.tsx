@@ -5,7 +5,7 @@ import { MobileWindow } from './MobileWindow';
 import { ErrorBoundary } from '@/components/ui';
 import { log } from '@/lib/logger';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { MENUBAR_HEIGHT, DOCK_HEIGHT, STAGE_STRIP_WIDTH } from '@/lib/constants';
+import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH } from '@/lib/constants';
 import { MC_WORKSPACE_BAR_HEIGHT } from '@/components/desktop/MissionControl';
 import type { WindowConfig, WindowType } from '@/types';
 
@@ -22,6 +22,7 @@ import { MemoryWindow } from '@/components/apps/MemoryWindow';
 import { EmailWindow } from '@/components/apps/EmailWindow';
 import { AccessControlWindow } from '../apps/AccessControlWindow';
 import { DocumentViewerWindow } from '../apps/DocumentViewerWindow';
+import { DocumentWorkbenchWindow } from '../apps/DocumentWorkbenchWindow';
 import { AppRegistryWindow } from '../apps/AppRegistryWindow';
 import { AppWindow } from '../apps/AppWindow';
 
@@ -33,6 +34,7 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   files: FilesWindow,
   editor: DocumentViewerWindow,
   'document-viewer': DocumentViewerWindow,
+  'document-workbench': DocumentWorkbenchWindow,
   settings: SettingsWindow,
   about: AboutWindow,
   calendar: CalendarWindow,

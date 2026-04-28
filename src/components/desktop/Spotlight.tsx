@@ -65,6 +65,76 @@ function listFocusableInPanel(root: HTMLElement | null): HTMLElement[] {
   );
 }
 
+/**
+ * Mobile bottom-sheet grab handle — pointer drives sheet translateY to dismiss.
+ * Not shown on desktop (close via backdrop, Escape, or window chrome).
+ * Release past threshold animates off-screen then closes; otherwise springs back.
+ */
+function SpotlightDragHandle({
+  onDragStart,
+  onDragY,
+  onDragEnd,
+}: {
+  onDragStart: () => void;
+  onDragY: (dy: number) => void;
+  onDragEnd: (dy: number) => void;
+}) {
+  const startY = useRef<number | null>(null);
+  const lastDy = useRef(0);
+
+  const finish = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startY.current === null) return;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* not capturing */
+      }
+      startY.current = null;
+      onDragEnd(lastDy.current);
+    },
+    [onDragEnd],
+  );
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      startY.current = e.clientY;
+      lastDy.current = 0;
+      onDragStart();
+      onDragY(0);
+    },
+    [onDragStart, onDragY],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startY.current === null) return;
+      const dy = Math.max(0, e.clientY - startY.current);
+      lastDy.current = dy;
+      onDragY(dy);
+    },
+    [onDragY],
+  );
+
+  return (
+    <div
+      className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 touch-none cursor-grab active:cursor-grabbing select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+    >
+      <div
+        className="pointer-events-none h-[5px] w-11 rounded-full border border-white/20 bg-white/35 dark:border-white/15 dark:bg-white/25"
+        aria-hidden
+      />
+    </div>
+  );
+}
+
 export function Spotlight() {
   const open = useWindowStore(s => s.spotlightOpen);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
@@ -272,7 +342,7 @@ export function Spotlight() {
 
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 glass-scrim transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 spotlight-scrim transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
         onClick={requestClose}
       />
 
@@ -290,7 +360,7 @@ export function Spotlight() {
         className={cn(
           "pointer-events-auto flex flex-col overflow-hidden transition-all duration-300 ease-out",
           isMobile
-            ? "w-full rounded-t-[32px]"
+              ? "w-full rounded-t-lg"
             : "rounded-2xl max-w-[min(1200px,calc(100vw-48px))]",
           animating 
             ? (isMobile ? "translate-y-0 opacity-100" : "opacity-100 scale-100")
@@ -325,10 +395,10 @@ export function Spotlight() {
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
           className={cn(
-            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window shadow-[0_24px_80px_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.15)] ring-1 ring-black/5 dark:ring-white/5',
+            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window spotlight-glass-window ring-1 ring-black/5 dark:ring-white/8',
             isMobile
-              ? 'rounded-t-[32px] rounded-b-none border border-b-0 border-white/30 dark:border-white/[0.1]'
-              : 'rounded-2xl border border-white/30 dark:border-white/[0.1]',
+              ? 'rounded-t-lg rounded-b-none border border-b-0 border-white/30 shadow-none dark:border-white/[0.1]'
+              : 'rounded-2xl border border-white/30 shadow-[0_24px_80px_rgba(0,0,0,0.22),0_12px_24px_rgba(0,0,0,0.12)] dark:border-white/[0.1]',
           )}
         >
           {isMobile && (
@@ -344,7 +414,7 @@ export function Spotlight() {
             <div
               className={cn(
                 'absolute inset-0 z-50 glass-drawer border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none',
-                isMobile ? 'rounded-t-[32px]' : 'rounded-2xl',
+                isMobile ? 'rounded-t-lg' : 'rounded-2xl',
               )}
             >
               <div className="flex flex-col items-center gap-1.5 text-[var(--color-accent)]">
@@ -398,7 +468,7 @@ export function Spotlight() {
                   <div
                     className="shrink-0 z-30 flex min-h-0 items-center gap-2 border-b border-white/[0.08] bg-white/[0.02] pl-1 pr-3"
                     style={{
-                      // Drag handle is absolutely positioned; reserve space for pill + status bar
+                      // Drag handle is absolutely positioned; reserve space for pill + status bar.
                       paddingTop: 'max(0.4rem, calc(2.25rem + env(safe-area-inset-top, 0px)))',
                     }}
                   >
@@ -551,72 +621,3 @@ export function Spotlight() {
   );
 }
 
-/**
- * Mobile bottom-sheet grab handle — pointer drives sheet translateY to dismiss.
- * Not shown on desktop (close via backdrop, Escape, or window chrome).
- * Release past threshold animates off-screen then closes; otherwise springs back.
- */
-function SpotlightDragHandle({
-  onDragStart,
-  onDragY,
-  onDragEnd,
-}: {
-  onDragStart: () => void;
-  onDragY: (dy: number) => void;
-  onDragEnd: (dy: number) => void;
-}) {
-  const startY = useRef<number | null>(null);
-  const lastDy = useRef(0);
-
-  const finish = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (startY.current === null) return;
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        /* not capturing */
-      }
-      startY.current = null;
-      onDragEnd(lastDy.current);
-    },
-    [onDragEnd],
-  );
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
-      startY.current = e.clientY;
-      lastDy.current = 0;
-      onDragStart();
-      onDragY(0);
-    },
-    [onDragStart, onDragY],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (startY.current === null) return;
-      const dy = Math.max(0, e.clientY - startY.current);
-      lastDy.current = dy;
-      onDragY(dy);
-    },
-    [onDragY],
-  );
-
-  return (
-    <div
-      className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 touch-none cursor-grab active:cursor-grabbing select-none"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-    >
-      <div
-        className="pointer-events-none w-11 h-[5px] rounded-full bg-zinc-600 border border-zinc-700 shadow-sm dark:bg-zinc-800 dark:border-zinc-600"
-        aria-hidden
-      />
-    </div>
-  );
-}

@@ -27,7 +27,7 @@ export function DuplicateTabScreen() {
           backgroundPosition: 'center',
         }}
       />
-      <div className="absolute inset-0 glass-scrim" />
+      <div className="absolute inset-0 soft-scrim" />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center select-none w-full max-w-xs">
@@ -58,7 +58,7 @@ export function DuplicateTabScreen() {
         <button
           onClick={handleOpenHere}
           className="flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg
-                     glass-popover
+                     soft-popover
                      border border-black/10 dark:border-white/15
                      text-black/80 dark:text-white/90
                      hover:bg-white/80 dark:hover:bg-white/20

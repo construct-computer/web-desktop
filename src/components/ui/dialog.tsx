@@ -30,7 +30,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 glass-scrim flex items-center justify-center"
+      className="fixed inset-0 modal-scrim flex items-center justify-center"
       style={{ zIndex: Z_INDEX.modal }}
       onClick={(e) => {
         if (e.target === overlayRef.current) {
@@ -40,7 +40,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
     >
       <div
         className={cn(
-          `glass-popover
+          `soft-popover
            border border-[var(--color-border)] rounded-xl
            shadow-[var(--shadow-window)] min-w-[300px] max-w-[90vw] max-h-[90vh]
            flex flex-col overflow-hidden`,

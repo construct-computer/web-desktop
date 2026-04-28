@@ -696,8 +696,9 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
             return null;
           }
 
-          // Skip system sentinel messages (used as message boundary markers)
-          if (msg.role === 'system') {
+          // Skip system sentinel messages (used as message boundary markers),
+          // but still render interactive approval cards.
+          if (msg.role === 'system' && !msg.askUser) {
             return null;
           }
 

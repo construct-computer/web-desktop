@@ -165,7 +165,7 @@ export function NotificationCenter() {
     <>
       {/* Backdrop overlay */}
       <div
-        className="fixed inset-0 bg-black/12 transition-opacity duration-300 ease-out"
+        className="fixed inset-0 soft-scrim transition-opacity duration-300 ease-out"
         style={{
           top: topOffset,
           bottom: bottomOffset,
@@ -181,9 +181,9 @@ export function NotificationCenter() {
         id="notification-center-drawer"
         ref={drawerRef}
         className="fixed flex flex-col
-                   glass-window
+                   glass-window notification-glass-window
                    border-l border-black/8 dark:border-white/8
-                   shadow-2xl shadow-black/15 dark:shadow-black/40
+                   shadow-2xl shadow-black/12 dark:shadow-black/30
                    transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
           top: topOffset,

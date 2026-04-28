@@ -11,3 +11,4 @@ export { TrackerWindow } from './TrackerWindow';
 export { EmailWindow } from './EmailWindow';
 export { AccessControlWindow } from './AccessControlWindow';
 export { DocumentViewerWindow } from './DocumentViewerWindow';
+export { DocumentWorkbenchWindow } from './DocumentWorkbenchWindow';

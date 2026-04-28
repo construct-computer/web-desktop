@@ -162,7 +162,7 @@ export function MissionControlScrim() {
     <div
       className={cn(
         'absolute inset-0 transition-[background-color,backdrop-filter] duration-400 ease-[cubic-bezier(0.16,1,0.3,1)]',
-        animIn ? 'glass-scrim' : 'bg-black/0 backdrop-blur-0 saturate-100',
+        animIn ? 'soft-scrim' : 'bg-black/0 backdrop-blur-0 saturate-100',
       )}
       style={{ zIndex: Z_INDEX.missionControlScrim, pointerEvents: 'none' }}
     />
