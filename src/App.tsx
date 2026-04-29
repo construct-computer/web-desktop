@@ -31,6 +31,10 @@ const DeviceLinkPage = lazy(() =>
   import('@/components/auth/DeviceLinkPage').then((m) => ({ default: m.DeviceLinkPage })),
 );
 
+const AdminDashboard = lazy(() =>
+  import('@/components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })),
+);
+
 type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
 
 /**
@@ -69,6 +73,14 @@ function App() {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
         <DeviceLinkPage />
+      </Suspense>
+    );
+  }
+
+  if (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/')) {
+    return (
+      <Suspense fallback={<div className="fixed inset-0 bg-[#05070b]" />}>
+        <AdminDashboard />
       </Suspense>
     );
   }
