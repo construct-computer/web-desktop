@@ -4,12 +4,14 @@ import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore'
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { EXTERNAL_PLATFORM_META, inferExternalPlatform } from '@/lib/externalPlatforms';
 import { formatRelativeTime } from './utils';
 
 function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
-  if (key.startsWith('telegram_')) return { platform: 'Telegram', icon: Send, color: '#2AABEE' };
-  if (key.startsWith('slack_')) return { platform: 'Slack', icon: Hash, color: '#4A154B' };
-  if (key.startsWith('email_')) return { platform: 'Email', icon: Mail, color: '#EA4335' };
+  const platform = inferExternalPlatform(key);
+  if (platform === 'telegram') return { platform: 'Telegram', icon: Send, color: EXTERNAL_PLATFORM_META.telegram.color };
+  if (platform === 'slack') return { platform: 'Slack', icon: Hash, color: EXTERNAL_PLATFORM_META.slack.color };
+  if (platform === 'email') return { platform: 'Email', icon: Mail, color: EXTERNAL_PLATFORM_META.email.color };
   return null;
 }
 
@@ -132,7 +134,7 @@ function SessionItem({
           )}
         </div>
         {!editing && (
-          <span className="text-[10px] text-[var(--color-text-muted)]/30 shrink-0 hidden group-hover:hidden">
+          <span className="text-[10px] text-[var(--color-text-muted)]/30 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity">
             {formatRelativeTime(session.lastActivity)}
           </span>
         )}
@@ -189,7 +191,7 @@ export function SpotlightSidebar() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
-  const [initialized, setInitialized] = useState(false);
+  const initializedRef = useRef(false);
   const userPlan = useAuthStore(s => s.user?.plan);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
   const showUpgradeCta = !userPlan || userPlan === 'free';
@@ -203,20 +205,22 @@ export function SpotlightSidebar() {
 
   // On first load, mark all existing sessions as read so they don't show unread dots
   useEffect(() => {
-    if (!initialized && sessions.length > 0) {
+    if (!initializedRef.current && sessions.length > 0) {
+      initializedRef.current = true;
       const map: Record<string, number> = {};
       for (const s of sessions) {
         map[s.key] = s.lastActivity;
       }
-      setLastReadMap(map);
-      setInitialized(true);
+      queueMicrotask(() => setLastReadMap(map));
     }
-  }, [sessions, initialized]);
+  }, [sessions]);
 
   // Track when user switches sessions — mark current as read
   useEffect(() => {
     if (activeKey) {
-      setLastReadMap(prev => ({ ...prev, [activeKey]: Date.now() }));
+      queueMicrotask(() => {
+        setLastReadMap(prev => ({ ...prev, [activeKey]: Date.now() }));
+      });
     }
   }, [activeKey, chatMessages.length]);
 

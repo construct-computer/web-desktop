@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Shield, RefreshCw, Check, X, UserPlus, Trash2, Ban,
-  MessageSquare, Mail, Hash, Loader2, ChevronDown, Settings,
+  Shield, RefreshCw, Check, X, UserPlus, Trash2,
+  MessageSquare, Mail, Hash, Loader2,
   Link2, Plus,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
@@ -51,7 +51,8 @@ function formatTime(ts: number | null): string {
   return new Date(ts).toLocaleDateString();
 }
 
-export function AccessControlWindow({ config: _config }: { config: WindowConfig }) {
+export function AccessControlWindow(props: { config: WindowConfig }) {
+  void props;
   const [tab, setTab] = useState<Tab>('queue');
   const [queue, setQueue] = useState<ApprovalQueueEntry[]>([]);
   const [accessList, setAccessList] = useState<AccessListEntry[]>([]);
@@ -74,7 +75,7 @@ export function AccessControlWindow({ config: _config }: { config: WindowConfig 
       ]);
       setQueue(q);
       // Sync pendingApprovalCount with actual pending count
-      const actualPending = q.filter((r: any) => r.status === 'pending').length;
+      const actualPending = q.filter((r: ApprovalQueueEntry) => r.status === 'pending').length;
       useComputerStore.setState({ pendingApprovalCount: actualPending });
       setAccessList(l);
       setSettings(s);
@@ -233,19 +234,19 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
         <div className="flex gap-1.5 mt-1">
           <button disabled={busy} onClick={() => handleAction('approve')}
             className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
-            Approve
+            Allow once
           </button>
           <button disabled={busy} onClick={() => handleAction('approve', true)}
             className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
-            Approve & Trust
+            Trust sender
           </button>
           <button disabled={busy} onClick={() => handleAction('deny')}
             className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
-            Deny
+            Deny once
           </button>
           <button disabled={busy} onClick={() => handleAction('deny', true)}
             className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
-            Deny & Block
+            Block sender
           </button>
         </div>
       ) : (
@@ -440,7 +441,8 @@ function SettingsTab({ settings, bindings, onRefresh }: {
 
   const modes = [
     { value: 'open', label: 'Open' },
-    { value: 'block', label: 'Approval Required' },
+    { value: 'approval_required', label: 'Approval Required' },
+    { value: 'block', label: 'Block Unknown' },
     { value: 'closed', label: 'Closed' },
   ];
 
@@ -464,7 +466,7 @@ function SettingsTab({ settings, bindings, onRefresh }: {
           </div>
         ))}
         <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
-          Open — anyone can message your agent. Approval Required — unknown senders are held for your review. Closed — only trusted contacts can reach your agent.
+          Open — anyone can message your agent. Approval Required — unknown senders are held for review. Block Unknown — unknown senders are dropped. Closed — only trusted contacts can reach your agent.
         </p>
       </div>
 

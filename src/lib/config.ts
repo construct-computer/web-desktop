@@ -57,6 +57,19 @@ export const MAX_CHAT_MESSAGES = 2_000;
 /** Safety timeout: reset agentRunning if no events arrive within this period. */
 export const AGENT_RUNNING_TIMEOUT_MS = 180_000;
 
+/**
+ * Threshold (in ms of idle since last heartbeat) at which a session is
+ * considered "stuck" by the backend overseer watchdog. Mirrors
+ * `STUCK_THRESHOLD_MS` in worker/src/config/limits.ts — kept in sync because
+ * the `/active-sessions` snapshot returns raw `idleMs` and we derive the
+ * dot colour client-side on initial hydration. If you change this, also
+ * change the worker constant (or vice versa).
+ */
+export const SESSION_STUCK_THRESHOLD_MS = 120_000;
+
+/** Per-session cap on retained overseer/watchdog alerts (oldest evicted). */
+export const OVERSEER_ALERTS_PER_SESSION = 5;
+
 /** Max file upload size (bytes). */
 export const MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 

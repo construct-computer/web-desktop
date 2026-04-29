@@ -160,8 +160,9 @@ export function Spotlight() {
   const closeAfterSlideRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const [panelW] = useState(() => readDesktopPanelSize().w);
-  const [panelH] = useState<number | null>(() => readDesktopPanelSize().h);
+  const [panelW, setPanelW] = useState(() => readDesktopPanelSize().w);
+  const [panelH, setPanelH] = useState<number | null>(() => readDesktopPanelSize().h);
+  const pushedHistoryRef = useRef(false);
 
   const wClampedDesktop = useMemo(() => {
     if (typeof globalThis.window === 'undefined') return Math.max(480, Math.min(1200, panelW));
@@ -251,19 +252,73 @@ export function Spotlight() {
     }
   }, [isMobile, closeSpotlight]);
 
+  const closeAndOpenSubscription = useCallback(() => {
+    requestClose();
+    queueMicrotask(() => openSettingsToSection('subscription'));
+  }, [requestClose]);
+
+  const onDesktopResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (isMobile) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startW = wClampedDesktop;
+      const startH = panelRef.current?.offsetHeight ?? panelH ?? 520;
+
+      const onMove = (ev: PointerEvent) => {
+        const maxW =
+          typeof globalThis.window === 'undefined'
+            ? 1200
+            : Math.min(1200, globalThis.window.innerWidth - 48);
+        const maxH =
+          typeof globalThis.window === 'undefined'
+            ? 900
+            : Math.min(900, globalThis.window.innerHeight - 48);
+        setPanelW(Math.round(Math.min(maxW, Math.max(480, startW + ev.clientX - startX))));
+        setPanelH(Math.round(Math.min(maxH, Math.max(400, startH + ev.clientY - startY))));
+      };
+      const onUp = () => {
+        globalThis.window.removeEventListener('pointermove', onMove);
+        globalThis.window.removeEventListener('pointerup', onUp);
+      };
+      globalThis.window.addEventListener('pointermove', onMove);
+      globalThis.window.addEventListener('pointerup', onUp, { once: true });
+    },
+    [isMobile, panelH, wClampedDesktop],
+  );
+
   // Mobile: one history entry so the OS / browser "back" closes the sheet like a modal.
   useEffect(() => {
     if (!isMobile || !open) return;
+    if ((globalThis.window.history.state as { __constructSpotlight?: number } | null)?.__constructSpotlight) {
+      pushedHistoryRef.current = false;
+      return;
+    }
     const state: { __constructSpotlight: number } = { __constructSpotlight: 1 };
     globalThis.window.history.pushState(
       state,
       '',
       globalThis.window.location.href,
     );
-    const onPop = () => { closeSpotlight(); };
+    pushedHistoryRef.current = true;
+    const onPop = () => {
+      pushedHistoryRef.current = false;
+      closeSpotlight();
+    };
     globalThis.window.addEventListener('popstate', onPop);
     return () => { globalThis.window.removeEventListener('popstate', onPop); };
   }, [isMobile, open, closeSpotlight]);
+
+  useEffect(() => {
+    if (typeof globalThis.window === 'undefined') return;
+    try {
+      globalThis.localStorage.setItem(
+        SPOTLIGHT_DESKTOP_SIZE_KEY,
+        JSON.stringify({ w: panelW, h: panelH }),
+      );
+    } catch { /* storage can be unavailable */ }
+  }, [panelW, panelH]);
 
   const focusReturnRef = useRef<HTMLElement | null>(null);
   // Capture the opener *before* children auto-focus the textarea (layout, before useEffect in children).
@@ -426,6 +481,16 @@ export function Spotlight() {
             </div>
           )}
 
+          {!isMobile && (
+            <div
+              className="absolute bottom-1.5 right-1.5 z-40 h-4 w-4 cursor-nwse-resize rounded-sm opacity-25 hover:opacity-60"
+              onPointerDown={onDesktopResizePointerDown}
+              aria-hidden
+            >
+              <div className="absolute bottom-0 right-0 h-2.5 w-2.5 border-b border-r border-[var(--color-text-muted)]/60" />
+            </div>
+          )}
+
           {/* Sidebar — collapsible.
               Mobile: full-width overlay that slides over the chat (the sidebar
               dwarfs the chat area at 240/~375px otherwise).
@@ -489,16 +554,7 @@ export function Spotlight() {
                     {(!userPlan || userPlan === 'free') && (
                       <button
                         type="button"
-                        onClick={() => {
-                          closeSpotlight();
-                          if (
-                            (globalThis.window.history.state as { __constructSpotlight?: number } | null)
-                              ?.__constructSpotlight
-                          ) {
-                            globalThis.window.history.back();
-                          }
-                          openSettingsToSection('subscription');
-                        }}
+                        onClick={closeAndOpenSubscription}
                         className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2 text-amber-600 transition-all active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
                         aria-label="Upgrade plan (opens settings)"
                       >
@@ -517,7 +573,7 @@ export function Spotlight() {
 
                 {!isMobile && (
                   <div
-                    className="flex h-10 shrink-0 z-30 items-center gap-2 border-b border-white/[0.08] bg-white/[0.02] px-2 pl-1.5"
+                    className="flex h-12 shrink-0 z-30 items-center gap-2.5 border-b border-white/8 bg-white/2 px-3"
                     role="toolbar"
                     aria-label="Spotlight header"
                   >
@@ -528,7 +584,7 @@ export function Spotlight() {
                       <button
                         type="button"
                         onClick={() => { setSidebarOpen(s => !s); }}
-                        className="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] transition-all duration-150"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent text-text-muted/70 transition-all duration-150 hover:border-white/8 hover:bg-white/6 hover:text-text"
                         aria-expanded={sidebarOpen}
                         aria-label={sidebarOpen ? 'Hide session list' : 'Show session list'}
                       >
@@ -536,7 +592,7 @@ export function Spotlight() {
                       </button>
                     </Tooltip>
                     <span
-                      className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[var(--color-text)]"
+                      className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-text"
                       title={sessionTitle}
                     >
                       {sessionTitle}
@@ -545,17 +601,8 @@ export function Spotlight() {
                       <Tooltip content="Upgrade plan" side="bottom">
                         <button
                           type="button"
-                          onClick={() => {
-                            closeSpotlight();
-                            if (
-                              (globalThis.window.history.state as { __constructSpotlight?: number } | null)
-                                ?.__constructSpotlight
-                            ) {
-                              globalThis.window.history.back();
-                            }
-                            openSettingsToSection('subscription');
-                          }}
-                          className="relative flex h-6 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
+                          onClick={closeAndOpenSubscription}
+                          className="relative flex h-8 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-amber-500/30 surface-control pl-2 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/10 active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
                           aria-label="Upgrade plan (opens settings)"
                         >
                           <span
@@ -573,7 +620,7 @@ export function Spotlight() {
                       <button
                         type="button"
                         onClick={requestClose}
-                        className="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/10"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-muted/70 transition-all duration-150 hover:bg-white/10 hover:text-text"
                         aria-label="Close"
                       >
                         <X className="h-4 w-4" />

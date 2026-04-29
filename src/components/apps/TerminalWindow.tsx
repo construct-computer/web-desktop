@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import type { WindowConfig } from '@/types';
 
+export { AgentTerminalWindow as TerminalWindow } from './AgentTerminalWindow';
+
 // ── Theme ─────────────────────────────────────────────────────────
 
 const TERMINAL_THEME = {
@@ -172,7 +174,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${seconds}s`;
 }
 
-export function TerminalWindow({ config }: TerminalWindowProps) {
+export function LegacyTerminalWindow({ config }: TerminalWindowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalId = (config.metadata?.terminalId as string) || 'main';
   const [commandCount, setCommandCount] = useState(0);

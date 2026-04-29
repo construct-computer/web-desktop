@@ -105,6 +105,16 @@ function ErrorCard({ content }: { content: string }) {
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
 
+  if (msg.role === 'notice') {
+    return (
+      <div className="px-4 sm:px-6 py-1.5">
+        <div className="mx-auto max-w-[560px] rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-center text-[12px] leading-relaxed text-[var(--color-text-muted)]">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
   // Stopped message — centered divider
   if (msg.isStopped) {
     return (

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import * as api from '@/services/api';
 import type { SessionInfo, BrowserRunSummary, BrowserScreenshotSummary } from '@/services/api';
-import { browserWS, agentWS, type AgentEvent } from '@/services/websocket';
+import { browserWS, agentWS, type AgentEvent, type AgentFrontendContext } from '@/services/websocket';
 import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
 import { useEditorStore } from './editorStore';
@@ -10,6 +10,7 @@ import { openDocumentViewer } from './documentViewerStore';
 import { useDocumentPreviewStore } from './documentPreviewStore';
 import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
+import { useTerminalStore } from './terminalStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
@@ -31,23 +32,70 @@ import {
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
+import {
+  coerceExternalAccess,
+  coerceExternalSource,
+  inferExternalPlatform,
+  isExternalPlatform,
+  type ExternalAccessMeta,
+  type ExternalSourceMeta,
+} from '@/lib/externalPlatforms';
 
 // Auth card persistence moved to agentStoreUtils.ts
 
 const logger = log('Store');
 
+function createClientId(prefix = 'msg'): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export interface AskUserOption {
   label: string;
   description?: string;
-  value: string;
+  /** Stable value for the agent's tool result. Defaults to label when omitted. */
+  value?: string;
+  /** Optional preview content (text/markdown) shown when this option is focused. */
+  preview?: string;
+}
+
+export interface AskUserQuestion {
+  /** The question text. Should end with "?". */
+  question: string;
+  /** Short chip label (max ~20 chars), e.g. "Library", "Auth method". */
+  header: string;
+  /** 2-5 options (the system may auto-inject an "Other" option as the 5th). */
+  options: AskUserOption[];
+  /** Allow picking multiple options instead of one. */
+  multiSelect?: boolean;
+}
+
+export interface AskUserField {
+  id: string;
+  label: string;
+  required?: boolean;
+  placeholder?: string;
 }
 
 export interface AskUserData {
   questionId: string;
-  question: string;
-  options: AskUserOption[];
+  /** Canonical multi-question MCQ shape (preferred). */
+  questions?: AskUserQuestion[];
+  /** Legacy single-question text (kept so old persisted messages still render). */
+  question?: string;
+  /** Legacy single-question options. */
+  options?: AskUserOption[];
+  /** Legacy free-text fields path. */
+  fields?: AskUserField[];
   allowCustom: boolean;
-  /** Set after the user picks an option */
+  /**
+   * Set after the user submits — map of questionText/fieldLabel → answer string.
+   * For multiSelect questions the answer is a comma-joined list of option labels.
+   */
+  answers?: Record<string, string>;
+  /** Legacy single-value flag (kept so old persisted messages still render). */
   selectedValue?: string;
 }
 
@@ -71,6 +119,10 @@ export interface ChatMessage {
   attachments?: string[];
   /** Source platform for external messages (used to render platform-specific UI). */
   source?: 'telegram' | 'slack' | 'email';
+  /** Structured source details for external-platform messages. */
+  sourceMeta?: ExternalSourceMeta;
+  /** Access role/grant that allowed this external-platform message. */
+  access?: ExternalAccessMeta;
   /**
    * User message sent while the agent was still running (soft-inject) — not yet
    * merged at the next iteration. Cleared when `injection_acknowledged` fires.
@@ -430,6 +482,8 @@ interface ComputerStore {
   agentThinkingStream: string | null;
   /** Base64 data URLs for image attachments pending send (cleared on send). */
   pendingImageData: string[];
+  /** Session-scoped image attachment previews; `pendingImageData` mirrors the active session for legacy callers. */
+  pendingImageDataBySession: Record<string, string[]>;
   /** Session-level token usage tracking */
   sessionTokens: { prompt: number; completion: number; total: number; cost: number };
   /** True while the agent loop is actively running (may span many tool iterations) */
@@ -445,12 +499,16 @@ interface ComputerStore {
    */
   activeSessions: Record<string, ActiveSessionStatus>;
   /**
-   * Rolling log of background health / status alerts (most recent last).
-   * Capped at 20 entries; shown in the relevant session’s chat, not a
-   * separate channel.
+   * Rolling log of background health / status alerts (most recent last),
+   * keyed by sessionKey. Alerts emitted without a sessionKey land under
+   * the empty string bucket (rare; today only the legacy queue-recovery
+   * info alert hits this path). Each bucket is capped at
+   * `OVERSEER_ALERTS_PER_SESSION` so chatty sessions can't evict alerts
+   * from quiet peers.
    */
-  overseerAlerts: OverseerAlert[];
+  overseerAlertsBySession: Record<string, OverseerAlert[]>;
   agentConnected: boolean;
+  agentConnecting: boolean;
   /** True when usage cap exceeded and agent is on the lite fallback model. */
   isOnLiteModel: boolean;
   agentActivity: Record<string, boolean>; // which apps the agent is actively using
@@ -499,8 +557,21 @@ interface ComputerStore {
   // Chat
   loadChatHistory: () => Promise<void>;
   sendChatMessage: (content: string, attachments?: string[]) => void;
-  /** Respond to an ask_user interactive question. */
-  respondToAskUser: (questionId: string, value: string, label: string) => void;
+  /**
+   * Respond to an ask_user interactive question.
+   *
+   * `valueOrAnswers` can be:
+   *   - `'allow' | 'deny'` for permission prompts
+   *   - `Record<string, string>` (preferred) for the new multi-question shape;
+   *     keys are question texts (or field labels), values are the selected
+   *     option labels (or comma-joined for multiSelect, or typed text for Other).
+   *   - `string` (legacy) — single-value answer for backward compat.
+   */
+  respondToAskUser: (
+    questionId: string,
+    valueOrAnswers: string | Record<string, string>,
+    label?: string,
+  ) => void;
   /** Set the message being replied to (shown as quote above input). */
   setReplyingTo: (msg: ChatMessage | null) => void;
   /** The message being replied to. */
@@ -575,7 +646,15 @@ interface ComputerStore {
  * "Working..." forever when a message was sent but the response never came
  * (e.g. WS reconnection lost the events).
  */
-import { AGENT_RUNNING_TIMEOUT_MS, MAX_CHAT_MESSAGES, STORAGE_KEYS as CONFIG_STORAGE_KEYS, TOAST_DURATION_MS, TOAST_DURATION_LONG_MS } from '@/lib/config';
+import {
+  AGENT_RUNNING_TIMEOUT_MS,
+  MAX_CHAT_MESSAGES,
+  OVERSEER_ALERTS_PER_SESSION,
+  SESSION_STUCK_THRESHOLD_MS,
+  STORAGE_KEYS as CONFIG_STORAGE_KEYS,
+  TOAST_DURATION_MS,
+  TOAST_DURATION_LONG_MS,
+} from '@/lib/config';
 
 /** Append a message and trim the array if it exceeds the cap. */
 /**
@@ -682,6 +761,54 @@ function humanizeActionLabel(
     default:
       return trimmed || actionType || 'Step';
   }
+}
+
+function toPlainMetadata(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
+  const windowState = useWindowStore.getState();
+  const appState = useAppStore.getState();
+  const focusedWindow = windowState.getFocusedWindow();
+  const focusedMetadata = toPlainMetadata(focusedWindow?.metadata);
+  const appId = typeof focusedMetadata?.appId === 'string' ? focusedMetadata.appId : undefined;
+  const composioSlug = typeof focusedMetadata?.composioSlug === 'string' ? focusedMetadata.composioSlug : undefined;
+  const selectedIntegrationSlug = typeof focusedMetadata?.selectedIntegrationSlug === 'string'
+    ? focusedMetadata.selectedIntegrationSlug
+    : composioSlug;
+  const installedApp = appId ? appState.installedApps.find((app) => app.id === appId) : undefined;
+  const connectedToolkit = selectedIntegrationSlug
+    ? appState.connectedToolkits.find((toolkit) => toolkit.toolkit === selectedIntegrationSlug)
+    : undefined;
+
+  return {
+    activeWindow: focusedWindow ? {
+      id: focusedWindow.id,
+      type: focusedWindow.type,
+      title: focusedWindow.title,
+      metadata: focusedMetadata,
+    } : null,
+    openWindows: windowState.windows
+      .filter((win) => win.state !== 'minimized')
+      .slice(0, 12)
+      .map((win) => ({ id: win.id, type: win.type, title: win.title })),
+    activeApp: (appId || selectedIntegrationSlug || focusedWindow?.type === 'app-registry') ? {
+      id: appId,
+      name: installedApp?.name || connectedToolkit?.name || focusedWindow?.title,
+      source: selectedIntegrationSlug ? 'composio' : focusedWindow?.type,
+      selectedCapability: typeof focusedMetadata?.selectedCapability === 'string' ? focusedMetadata.selectedCapability : undefined,
+      metadata: focusedMetadata,
+    } : null,
+    selectedIntegrationSlug,
+    selectedFiles,
+    launchedFrom: typeof focusedMetadata?.launchedFrom === 'string' ? focusedMetadata.launchedFrom : undefined,
+  };
 }
 
 function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
@@ -805,6 +932,9 @@ function mergeInflightAssistantIntoHistory(
 let agentRunningTimer: ReturnType<typeof setTimeout> | null = null;
 /** Guard: true while loadChatHistory is in-flight (concurrent fetch coalescing). */
 let chatHistoryLoading = false;
+let sessionsLoading: Promise<void> | null = null;
+let sessionsLoadedAt = 0;
+const SESSION_LIST_STALE_MS = 10_000;
 /** In-memory cache of chat messages per session for instant switching. */
 const sessionMessageCache = new Map<string, ChatMessage[]>();
 /** Guard: collapse concurrent instance provisioning/refresh fetches. */
@@ -979,13 +1109,15 @@ export const useComputerStore = create<ComputerStore>()(
     agentThinking: null,
     agentThinkingStream: null,
     pendingImageData: [],
+    pendingImageDataBySession: {},
     sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
     agentRunning: false,
     agentStatusLabel: null,
     runningSessions: new Set<string>(),
     activeSessions: {},
-    overseerAlerts: [],
+    overseerAlertsBySession: {},
     agentConnected: false,
+    agentConnecting: false,
     isOnLiteModel: false,
     agentActivity: {},
     systemStats: null,
@@ -1157,6 +1289,7 @@ export const useComputerStore = create<ComputerStore>()(
       // Connect agent WebSocket only.
       // Browser/terminal WS are disabled in serverless mode (no container).
       // browserWS.connect(instanceId);
+      set({ agentConnecting: true });
       agentWS.connect(instanceId);
 
       const alreadySubscribed = subscribedInstanceId === instanceId;
@@ -1566,7 +1699,10 @@ export const useComputerStore = create<ComputerStore>()(
       });
 
       agentWS.onConnection((connected) => {
-        set({ agentConnected: connected });
+        set({
+          agentConnected: connected,
+          agentConnecting: !connected && Boolean(get().instanceId),
+        });
         if (connected) {
           import('@/services/api').then(({ getActiveAgentSessions }) => {
             getActiveAgentSessions().then((res) => {
@@ -1577,7 +1713,7 @@ export const useComputerStore = create<ComputerStore>()(
                 liveSessionKeys.add(s.sessionKey);
                 hydrated[s.sessionKey] = {
                   sessionKey: s.sessionKey,
-                  status: s.idleMs > 120_000 ? 'stuck' : 'thinking',
+                  status: s.idleMs > SESSION_STUCK_THRESHOLD_MS ? 'stuck' : 'thinking',
                   rawStatus: 'running',
                   lastToolName: s.lastToolName,
                   startedAt: s.startedAt,
@@ -1634,6 +1770,7 @@ export const useComputerStore = create<ComputerStore>()(
       set({
         browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
         agentConnected: false,
+        agentConnecting: false,
         agentRunning: false,
         agentThinking: null,
         agentActivity: {},
@@ -1681,7 +1818,10 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
 
-        const { messages, operation_metadata, events } = result.data;
+        const { messages, operation_metadata, events, terminal_runs } = result.data;
+        if (terminal_runs?.length) {
+          useTerminalStore.getState().hydrateRuns(terminal_runs);
+        }
         // Do not return without updating the UI: an empty table must still
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
@@ -1806,19 +1946,23 @@ export const useComputerStore = create<ComputerStore>()(
             // Extract source platform from metadata (set by cross-platform redirect)
             // or infer from session key (for messages in native platform sessions)
             let source: ChatMessage['source'];
+            let sourceMeta: ExternalSourceMeta | undefined;
+            let access: ExternalAccessMeta | undefined;
+            let clientId: string | undefined;
             if (msg.metadata) {
               try {
                 const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
                 const p = meta?.platformReply?.platform;
-                if (p === 'telegram' || p === 'slack' || p === 'email') source = p;
+                if (isExternalPlatform(p)) source = p;
+                sourceMeta = coerceExternalSource(meta?.source) || coerceExternalSource(meta?.platformReply?.source);
+                access = coerceExternalAccess(meta?.access) || coerceExternalAccess(meta?.platformReply?.access);
+                if (typeof meta?.clientId === 'string') clientId = meta.clientId;
               } catch { /* */ }
             }
             if (!source) {
-              if (requestedSessionKey.startsWith('telegram_')) source = 'telegram';
-              else if (requestedSessionKey.startsWith('slack_')) source = 'slack';
-              else if (requestedSessionKey.startsWith('email_')) source = 'email';
+              source = sourceMeta?.platform || inferExternalPlatform(requestedSessionKey) || undefined;
             }
-            history.push({ role: 'user', content, timestamp: new Date(msg.created_at), source });
+            history.push({ role: 'user', content, timestamp: new Date(msg.created_at), source, sourceMeta, access, clientId });
           } else if (msg.role === 'assistant' || msg.role === 'tool_call') {
             // Emit activity entries for each tool_call before the text content.
             // The DO writes tool invocations to role='tool_call' rows with the
@@ -2161,9 +2305,25 @@ export const useComputerStore = create<ComputerStore>()(
     },
 
     sendChatMessage: async (content, attachments) => {
-      let { instanceId, activeSessionKey, chatMessages, chatSessions } = get();
+      const initialState = get();
+      const { instanceId, chatSessions } = initialState;
+      let { activeSessionKey, chatMessages } = initialState;
       if (!instanceId) return;
+      if (inferExternalPlatform(activeSessionKey)) {
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'External session is read-only',
+            body: 'Reply from the source platform or manage sender access from Access Control.',
+            source: 'Agent',
+            variant: 'info',
+            onClick: () => useWindowStore.getState().ensureWindowOpen('access-control'),
+          },
+          8_000,
+        );
+        return;
+      }
       const injectWhileAgentRunning = get().agentRunning;
+      const clientId = createClientId('chat');
 
       // Auto-create a session if none exist (e.g. user deleted all chats)
       if (chatSessions.length === 0) {
@@ -2193,13 +2353,10 @@ export const useComputerStore = create<ComputerStore>()(
         content,
         timestamp: new Date(),
         attachments,
+        clientId,
         ...(injectWhileAgentRunning
           ? {
               pendingInjection: true,
-              clientId:
-                typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                  ? crypto.randomUUID()
-                  : `q-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
             }
           : {}),
       };
@@ -2232,10 +2389,16 @@ export const useComputerStore = create<ComputerStore>()(
       // user knows to retry.
       // Collect base64 image data for any image attachments (for multimodal/vision)
       const imageDataUrls: string[] = [];
-      const pendingImages = get().pendingImageData;
+      const pendingImages =
+        get().pendingImageDataBySession[activeSessionKey] ??
+        get().pendingImageData;
       if (pendingImages && pendingImages.length > 0) {
         imageDataUrls.push(...pendingImages);
-        set({ pendingImageData: [] });
+        set(state => {
+          const nextBySession = { ...state.pendingImageDataBySession };
+          delete nextBySession[activeSessionKey];
+          return { pendingImageData: [], pendingImageDataBySession: nextBySession };
+        });
       }
 
       // If there are attachments, prepend file paths to the message so the agent has context.
@@ -2254,7 +2417,14 @@ export const useComputerStore = create<ComputerStore>()(
         }
       }
 
-      const sent = agentWS.sendChat(messageForAgent, activeSessionKey, imageDataUrls.length > 0 ? imageDataUrls : undefined);
+      const frontendContext = buildFrontendContext(attachments);
+      const sent = agentWS.sendChat(
+        messageForAgent,
+        activeSessionKey,
+        imageDataUrls.length > 0 ? imageDataUrls : undefined,
+        frontendContext,
+        clientId,
+      );
       if (!sent) {
         set(state => ({
           chatMessages: appendMessage(state.chatMessages, {
@@ -2266,6 +2436,16 @@ export const useComputerStore = create<ComputerStore>()(
           agentThinking: null,
           agentRunning: false,
         }));
+        useNotificationStore.getState().addNotification(
+          {
+            title: 'Agent reconnecting',
+            body: 'Your message was not delivered. Reconnect, then send it again.',
+            source: 'Agent',
+            variant: 'error',
+          },
+          8000,
+        );
+        agentWS.forceReconnect();
       } else {
         // Start a safety timeout — if no agent events arrive within the
         // timeout window, reset agentRunning so the UI doesn't get stuck.
@@ -2273,8 +2453,47 @@ export const useComputerStore = create<ComputerStore>()(
       }
     },
 
-    respondToAskUser: (questionId, value, _label) => {
-      // 1. Mark the question as answered in chat messages
+    respondToAskUser: (questionId, valueOrAnswers, _label) => {
+      const isPermission = valueOrAnswers === 'allow' || valueOrAnswers === 'deny';
+      const isAnswersMap =
+        typeof valueOrAnswers === 'object' && valueOrAnswers !== null && !Array.isArray(valueOrAnswers);
+
+      if (isPermission) {
+        agentWS.send({
+          type: 'ask_user_response',
+          toolCallId: questionId,
+          approved: valueOrAnswers === 'allow',
+        });
+        set(state => ({
+          chatMessages: state.chatMessages.map(m =>
+            m.askUser?.questionId === questionId
+              ? { ...m, askUser: { ...m.askUser, selectedValue: valueOrAnswers as string } }
+              : m
+          ),
+        }));
+        return;
+      }
+
+      if (isAnswersMap) {
+        const answers = valueOrAnswers as Record<string, string>;
+        const value = JSON.stringify(answers);
+        const firstAnswer = Object.values(answers).find((a) => typeof a === 'string' && a.length > 0) || '';
+        set(state => ({
+          chatMessages: state.chatMessages.map(m =>
+            m.askUser?.questionId === questionId
+              ? { ...m, askUser: { ...m.askUser, answers, selectedValue: firstAnswer } }
+              : m
+          ),
+        }));
+        agentWS.send({
+          type: 'ask_user_response',
+          questionId,
+          value,
+        });
+        return;
+      }
+
+      const value = String(valueOrAnswers ?? '');
       set(state => ({
         chatMessages: state.chatMessages.map(m =>
           m.askUser?.questionId === questionId
@@ -2282,22 +2501,11 @@ export const useComputerStore = create<ComputerStore>()(
             : m
         ),
       }));
-
-      // 2. Send the response to the agent via WebSocket
-      // Check if this is a permission request (value is 'allow' or 'deny')
-      if (value === 'allow' || value === 'deny') {
-        agentWS.send({
-          type: 'ask_user_response',
-          toolCallId: questionId,
-          approved: value === 'allow',
-        });
-      } else {
-        agentWS.send({
-          type: 'ask_user_response',
-          questionId,
-          value,
-        });
-      }
+      agentWS.send({
+        type: 'ask_user_response',
+        questionId,
+        value,
+      });
     },
 
     stopAgent: () => {
@@ -2516,7 +2724,7 @@ export const useComputerStore = create<ComputerStore>()(
           },
         });
       }
-      const sent = agentWS.sendInterrupt({ sessionKey, message });
+      const sent = agentWS.sendInterrupt({ sessionKey, message, clientId });
       void api.stopAllBrowserForSession(sessionKey).catch(() => {});
       if (sent && message?.trim()) {
         // Clear the matching soft-queued bubble immediately on force-inject so
@@ -2619,9 +2827,13 @@ export const useComputerStore = create<ComputerStore>()(
     loadSessions: async () => {
       const { instanceId } = get();
       if (!instanceId) return;
+      if (sessionsLoading) return sessionsLoading;
+      if (Date.now() - sessionsLoadedAt < SESSION_LIST_STALE_MS && get().chatSessions.length > 0) {
+        return;
+      }
 
       const RESERVED = 'overseer';
-      try {
+      sessionsLoading = (async () => {
         const result = await api.getAgentSessions(instanceId);
         if (result.success) {
           const raw = result.data.sessions.filter(s => s.key !== RESERVED);
@@ -2632,15 +2844,22 @@ export const useComputerStore = create<ComputerStore>()(
           set({
             chatSessions: raw,
             activeSessionKey: activeKey,
+            pendingImageData: get().pendingImageDataBySession[activeKey] ?? [],
           });
+          sessionsLoadedAt = Date.now();
         }
-      } catch (err) {
-        logger.warn('Error loading sessions:', err);
-      }
+      })()
+        .catch((err) => {
+          logger.warn('Error loading sessions:', err);
+        })
+        .finally(() => {
+          sessionsLoading = null;
+        });
+      return sessionsLoading;
     },
 
     createSession: async (title?: string, options?: { forceNew?: boolean }) => {
-      const { instanceId, activeSessionKey, chatMessages, chatSessions } = get();
+      const { instanceId, activeSessionKey, chatMessages } = get();
       if (!instanceId) return;
       const forceNew = options?.forceNew === true;
 
@@ -2663,6 +2882,8 @@ export const useComputerStore = create<ComputerStore>()(
             chatSessions: alreadyInList ? existing : [session, ...existing],
             activeSessionKey: session.key,
             chatMessages: [],
+            replyingTo: null,
+            pendingImageData: get().pendingImageDataBySession[session.key] ?? [],
             agentThinking: null,
             agentRunning: false,
           });
@@ -2691,6 +2912,8 @@ export const useComputerStore = create<ComputerStore>()(
           set({
             activeSessionKey: key,
             chatMessages: cached || [],
+            replyingTo: null,
+            pendingImageData: get().pendingImageDataBySession[key] ?? [],
             agentThinking: null,
             agentRunning: isTargetRunning,
             sessionSwitching: !cached, // only show loading if no cache
@@ -2698,10 +2921,13 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Silently refresh from API (updates cache with latest)
           await get().loadChatHistory();
-          set({ sessionSwitching: false });
         }
       } catch (err) {
         logger.warn('Error switching session:', err);
+      } finally {
+        if (get().activeSessionKey === key) {
+          set({ sessionSwitching: false });
+        }
       }
     },
 
@@ -2715,6 +2941,8 @@ export const useComputerStore = create<ComputerStore>()(
           set({
             activeSessionKey: result.data.active_key,
             chatMessages: [],
+            replyingTo: null,
+            pendingImageData: get().pendingImageDataBySession[result.data.active_key] ?? [],
             agentThinking: null,
           });
           // Reload full session list (a fresh session may have been created
@@ -3117,7 +3345,7 @@ export const useComputerStore = create<ComputerStore>()(
       // to the currently active session. Without this check, events from a
       // background session's agent loop leak into whichever session the user
       // is currently viewing.
-      const isActiveSession = isDesktop && eventSessionKey === get().activeSessionKey;
+      const isActiveSession = eventSessionKey === get().activeSessionKey;
 
       /**
        * Get or create the platformAgent entry for this event's platform.
@@ -3167,7 +3395,7 @@ export const useComputerStore = create<ComputerStore>()(
           };
           if (isActiveSession) {
             updates.chatMessages = appendMessage(state.chatMessages, msg);
-          } else if (isDesktop && eventSessionKey && eventSessionKey !== 'default') {
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
             // Background session — buffer into its per-session cache so
             // tool-call / activity bubbles don't vanish on switch-back.
             const cached = sessionMessageCache.get(eventSessionKey) || [];
@@ -3197,14 +3425,23 @@ export const useComputerStore = create<ComputerStore>()(
           if (msgRole === 'user' && msgContent && isActiveSession) {
             const current = get().chatMessages;
             const lastUser = [...current].reverse().find(m => m.role === 'user');
+            const incomingClientId = event.data?.clientId as string | undefined;
+            const hasSameClientId = incomingClientId
+              ? current.some(m => m.role === 'user' && m.clientId === incomingClientId)
+              : false;
             // Skip if the last user message already matches (optimistic add from desktop input)
-            if (!lastUser || lastUser.content !== msgContent) {
+            if (!hasSameClientId && (!lastUser || lastUser.content !== msgContent)) {
               const msgSource = event.data?.source as ChatMessage['source'];
+              const sourceMeta = coerceExternalSource(event.data?.sourceMeta);
+              const access = coerceExternalAccess(event.data?.access);
               appendToAgentChat({
                 role: 'user',
                 content: msgContent,
                 timestamp: new Date(),
+                ...(incomingClientId && { clientId: incomingClientId }),
                 ...(msgSource && { source: msgSource }),
+                ...(sourceMeta && { sourceMeta }),
+                ...(access && { access }),
               });
             }
           }
@@ -3673,9 +3910,14 @@ export const useComputerStore = create<ComputerStore>()(
               delete next[eventSessionKey];
             } else {
               const existing = prev[eventSessionKey];
+              // Any non-idle status_change means the loop made progress, so
+              // demote a previously-latched 'stuck' (set by overseer_alert
+              // warn) back to 'thinking'. The backend never sends
+              // `status: 'stuck'` over the wire — the only stuck signal is
+              // the watchdog overseer_alert, handled separately.
               next[eventSessionKey] = {
                 sessionKey: eventSessionKey,
-                status: status === 'stuck' ? 'stuck' : 'thinking',
+                status: 'thinking',
                 rawStatus: status,
                 lastToolName: statusToolName ?? existing?.lastToolName ?? null,
                 startedAt: existing?.startedAt ?? statusStartedAt ?? Date.now(),
@@ -3684,7 +3926,21 @@ export const useComputerStore = create<ComputerStore>()(
                 pendingInjectionCount: existing?.pendingInjectionCount,
               };
             }
-            set({ activeSessions: next });
+            // Prune watchdog alerts for sessions that just went idle —
+            // otherwise stale "may be stuck" banners linger after the work
+            // already finished, scaring the user when they return to the
+            // chat later.
+            if (status === 'idle') {
+              const prevAlerts = get().overseerAlertsBySession;
+              if (prevAlerts[eventSessionKey]?.length) {
+                const { [eventSessionKey]: _dropped, ...remainingAlerts } = prevAlerts;
+                set({ activeSessions: next, overseerAlertsBySession: remainingAlerts });
+              } else {
+                set({ activeSessions: next });
+              }
+            } else {
+              set({ activeSessions: next });
+            }
           }
 
           if (statusPlatform && statusPlatform !== 'desktop') break;
@@ -3790,20 +4046,45 @@ export const useComputerStore = create<ComputerStore>()(
         case 'overseer_alert': {
           const text = (event.data?.text as string | undefined) ?? '';
           const severity = ((event.data?.severity as string | undefined) ?? 'info') as OverseerAlert['severity'];
-          const relatedSession = (event.data?.relatedSession ?? event.data?.sessionKey) as string | undefined;
+          // `relatedSession` is a legacy alias kept for backwards compat with
+          // older worker builds; the trimmed contract uses `sessionKey` only.
+          const alertSessionKey = (event.data?.sessionKey ?? event.data?.relatedSession) as string | undefined;
           const origin = event.data?.origin as string | undefined;
           if (!text) break;
-          const prevAlerts = get().overseerAlerts;
           const alert: OverseerAlert = {
             id: Date.now() + Math.floor(Math.random() * 1000),
             timestamp: Date.now(),
             severity,
             text,
-            sessionKey: relatedSession,
+            sessionKey: alertSessionKey,
             origin,
           };
-          const nextAlerts = [...prevAlerts, alert].slice(-20);
-          set({ overseerAlerts: nextAlerts });
+          set(state => {
+            // Bucket alerts by sessionKey ('' for unscoped) and cap per bucket
+            // so noisy sessions can't evict alerts from quiet peers.
+            const bucketKey = alertSessionKey ?? '';
+            const bucket = state.overseerAlertsBySession[bucketKey] ?? [];
+            const nextBucket = [...bucket, alert].slice(-OVERSEER_ALERTS_PER_SESSION);
+            const nextBuckets = { ...state.overseerAlertsBySession, [bucketKey]: nextBucket };
+
+            // Promote the live status dot to 'stuck' when the watchdog warns
+            // about a specific session, so the sidebar dot turns red live (not
+            // just on initial /active-sessions hydration). The next non-idle
+            // status_change demotes back to 'thinking'.
+            let nextActive = state.activeSessions;
+            if (
+              severity === 'warn'
+              && origin === 'watchdog'
+              && alertSessionKey
+              && state.activeSessions[alertSessionKey]
+            ) {
+              nextActive = {
+                ...state.activeSessions,
+                [alertSessionKey]: { ...state.activeSessions[alertSessionKey], status: 'stuck' },
+              };
+            }
+            return { overseerAlertsBySession: nextBuckets, activeSessions: nextActive };
+          });
           // In-chat banners carry warn/info; toast only on hard failures so the
           // watchdog stays quiet by default.
           if (severity === 'error') {
@@ -3819,12 +4100,20 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'injection_acknowledged': {
           const count = Math.max(0, (event.data?.count as number | undefined) ?? 0);
+          const clientIdList = Array.isArray(event.data?.clientIds)
+            ? (event.data.clientIds as unknown[]).filter((id): id is string => typeof id === 'string')
+            : [];
+          const clientIds = clientIdList.length > 0
+            ? new Set(clientIdList)
+            : null;
           if (count === 0) break;
           set(state => {
             const clearPending = (messages: typeof state.chatMessages) => {
               let rem = count;
               return messages.map(m => {
-                if (rem > 0 && m.role === 'user' && m.pendingInjection) {
+                const matchesClientId = clientIds && m.clientId ? clientIds.has(m.clientId) : false;
+                const matchesCountFallback = !clientIds && rem > 0;
+                if (m.role === 'user' && m.pendingInjection && (matchesClientId || matchesCountFallback)) {
                   rem -= 1;
                   return { ...m, pendingInjection: false };
                 }
@@ -3857,6 +4146,19 @@ export const useComputerStore = create<ComputerStore>()(
                 : prev;
             return { chatMessages: nextMessages, platformAgents: nextPlatform, activeSessions: nextActive };
           });
+          break;
+        }
+
+        case 'session_title': {
+          const sessionKey = event.data?.sessionKey as string | undefined;
+          const title = event.data?.title as string | undefined;
+          if (sessionKey && title) {
+            set(state => ({
+              chatSessions: state.chatSessions.map(s =>
+                s.key === sessionKey ? { ...s, title } : s
+              ),
+            }));
+          }
           break;
         }
 
@@ -4262,18 +4564,30 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'ask_user': {
-          // Agent is asking the user a question with clickable options
           const questionId = event.data?.questionId as string;
-          const question = event.data?.question as string;
-          const options = event.data?.options as AskUserOption[] || [];
+          const question = event.data?.question as string | undefined;
+          const questions = event.data?.questions as AskUserQuestion[] | undefined;
+          const options = event.data?.options as AskUserOption[] | undefined;
+          const fields = event.data?.fields as AskUserField[] | undefined;
           const allowCustom = !!event.data?.allowCustom;
 
-          if (questionId && question) {
+          const hasQuestions = Array.isArray(questions) && questions.length > 0;
+          const hasFields = Array.isArray(fields) && fields.length > 0;
+          const displayQuestion = question || (hasQuestions ? questions![0].question : '');
+
+          if (questionId && (hasQuestions || hasFields || displayQuestion)) {
             const askMsg: ChatMessage = {
               role: 'agent',
-              content: question,
+              content: displayQuestion,
               timestamp: new Date(),
-              askUser: { questionId, question, options, allowCustom },
+              askUser: {
+                questionId,
+                ...(hasQuestions ? { questions } : {}),
+                ...(displayQuestion ? { question: displayQuestion } : {}),
+                ...(options && options.length > 0 ? { options } : {}),
+                ...(hasFields ? { fields } : {}),
+                allowCustom,
+              },
             };
             if (isActiveSession) {
               set(state => ({
@@ -4391,11 +4705,26 @@ export const useComputerStore = create<ComputerStore>()(
           const accessUserName = (event.data?.senderName as string) || (event.data?.displayName as string) || (event.data?.senderHandle as string) || (event.data?.username as string) || 'A user';
           const accessPlatform = event.data?.platform as string || '';
           const accessToolName = event.data?.toolName as string;
+          const approvalSessionKey = event.data?.sessionKey as string | undefined;
           const accessBody = accessPlatform === 'email'
             ? `${accessUserName} sent your agent an email`
             : accessToolName
               ? `${accessUserName} wants to use ${accessToolName}`
               : `${accessUserName} is requesting access via ${accessPlatform || 'an external platform'}`;
+          const approvalNotice: ChatMessage = {
+            role: 'notice',
+            content: `${accessBody}. Review it in Access Control.`,
+            timestamp: new Date(),
+            source: isExternalPlatform(accessPlatform) ? accessPlatform : undefined,
+          };
+          if (approvalSessionKey) {
+            if (approvalSessionKey === get().activeSessionKey) {
+              set(state => ({ chatMessages: appendMessage(state.chatMessages, approvalNotice) }));
+            } else {
+              const cached = sessionMessageCache.get(approvalSessionKey) || [];
+              sessionMessageCache.set(approvalSessionKey, appendMessage(cached, approvalNotice));
+            }
+          }
           useNotificationStore.getState().addNotification(
             {
               title: accessPlatform === 'email' ? 'New Email from Unknown Sender' : 'Permission Request',
@@ -4706,6 +5035,11 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'terminal_command': {
           const cmd = event.data?.command as string || '';
+          useTerminalStore.getState().ingestCommand({
+            ...(event.data || {}),
+            command: cmd,
+            timestamp: event.timestamp,
+          });
           window.dispatchEvent(new CustomEvent('terminal_command', { detail: { ...(event.data || {}), command: cmd } }));
           break;
         }
@@ -4713,6 +5047,11 @@ export const useComputerStore = create<ComputerStore>()(
         case 'terminal_output': {
           const _chunk = event.data?.data as string || '';
           set((s) => ({ terminalOutputSeq: s.terminalOutputSeq + 1 }));
+          useTerminalStore.getState().ingestOutput({
+            ...(event.data || {}),
+            data: _chunk,
+            timestamp: event.timestamp,
+          });
           useDocumentPreviewStore.getState().appendTerminalOutput(event.data || {});
           window.dispatchEvent(new CustomEvent('terminal_output', { detail: { ...(event.data || {}), data: _chunk } }));
           break;
@@ -4721,6 +5060,12 @@ export const useComputerStore = create<ComputerStore>()(
         case 'terminal_exit': {
           const exitCode = (event.data?.exitCode as number) ?? 0;
           const exitCmd = event.data?.command as string || '';
+          useTerminalStore.getState().ingestExit({
+            ...(event.data || {}),
+            exitCode,
+            command: exitCmd,
+            timestamp: event.timestamp,
+          });
           window.dispatchEvent(new CustomEvent('terminal_exit', { detail: { ...(event.data || {}), exitCode, command: exitCmd } }));
           // Notify on command failure
           if (exitCode !== 0) {

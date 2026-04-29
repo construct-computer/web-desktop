@@ -8,15 +8,47 @@
 export interface AskUserOption {
   label: string;
   description?: string;
-  value: string;
+  /** Stable value for the agent's tool result. Defaults to label when omitted. */
+  value?: string;
+  /** Optional preview content (text/markdown) shown when this option is focused. */
+  preview?: string;
+}
+
+export interface AskUserQuestion {
+  /** The question text. Should end with "?". */
+  question: string;
+  /** Short chip label (max ~20 chars), e.g. "Library", "Auth method". */
+  header: string;
+  /** 2-5 options (the system may auto-inject an "Other" option as the 5th). */
+  options: AskUserOption[];
+  /** Allow picking multiple options instead of one. */
+  multiSelect?: boolean;
+}
+
+export interface AskUserField {
+  id: string;
+  label: string;
+  required?: boolean;
+  placeholder?: string;
 }
 
 export interface AskUserData {
   questionId: string;
-  question: string;
-  options: AskUserOption[];
+  /** Canonical multi-question MCQ shape (preferred). */
+  questions?: AskUserQuestion[];
+  /** Legacy single-question text (kept so old persisted messages still render). */
+  question?: string;
+  /** Legacy single-question options. */
+  options?: AskUserOption[];
+  /** Legacy free-text fields path. */
+  fields?: AskUserField[];
   allowCustom: boolean;
-  /** Set after the user picks an option */
+  /**
+   * Set after the user submits — map of questionText/fieldLabel → answer string.
+   * For multiSelect questions the answer is a comma-joined list of option labels.
+   */
+  answers?: Record<string, string>;
+  /** Legacy single-value flag (kept so old persisted messages still render). */
   selectedValue?: string;
 }
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
@@ -6,6 +6,7 @@ import { useBillingStore } from '@/stores/billingStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
+import { useWindowStore } from '@/stores/windowStore';
 import { useSound } from '@/hooks/useSound';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportBottomInset';
@@ -16,13 +17,18 @@ import { VoiceButton } from '@/components/ui/VoiceButton';
 import { useSlashCommands } from './hooks';
 import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
 
-const DRAFT_KEY = 'construct:spotlight-draft';
+const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
 const MAX_INPUT_HISTORY = 200;
 
 function inputHistoryKey(sessionKey: string | undefined) {
   return `${INPUT_HISTORY_PREFIX}${sessionKey || 'default'}`;
+}
+
+function draftKey(sessionKey: string | undefined) {
+  return `${DRAFT_KEY_PREFIX}${sessionKey || 'default'}`;
 }
 
 function loadInputHistory(sessionKey: string | undefined): string[] {
@@ -55,10 +61,7 @@ type FileSuggestion = { id: string; display: string; isDir: boolean };
 const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 const IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/i;
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
-
-function isExternalSession(key: string): boolean {
-  return key.startsWith('telegram_') || key.startsWith('slack_') || key.startsWith('email_');
-}
+type Attachment = { name: string; path: string };
 
 export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
@@ -66,6 +69,7 @@ export function SpotlightInput() {
   const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
   const agentConnected = useComputerStore(s => s.agentConnected);
+  const agentConnecting = useComputerStore(s => s.agentConnecting);
   const instanceId = useComputerStore(s => s.instanceId);
   const pendingImages = useComputerStore(s => s.pendingImageData);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
@@ -75,7 +79,9 @@ export function SpotlightInput() {
     for (const m of s.chatMessages) if (m.role === 'user' && m.pendingInjection) n++;
     return n;
   });
-  const isExternal = isExternalSession(activeSessionKey || '');
+  const externalPlatform = inferExternalPlatform(activeSessionKey);
+  const isExternal = isExternalSessionKey(activeSessionKey);
+  const externalLabel = externalPlatform ? EXTERNAL_PLATFORM_META[externalPlatform].label : 'external platform';
   const replyingTo = useComputerStore(s => s.replyingTo);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
   /**
@@ -100,7 +106,42 @@ export function SpotlightInput() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [slashSelected, setSlashSelected] = useState(0);
-  const [attachments, setAttachments] = useState<Array<{ name: string; path: string }>>([]);
+  const sessionInputKey = activeSessionKey || 'default';
+  const [attachmentsBySession, setAttachmentsBySession] = useState<Record<string, Attachment[]>>({});
+  const attachments = useMemo(
+    () => attachmentsBySession[sessionInputKey] || [],
+    [attachmentsBySession, sessionInputKey],
+  );
+  const setAttachments = useCallback(
+    (updater: Attachment[] | ((prev: Attachment[]) => Attachment[])) => {
+      setAttachmentsBySession(prev => {
+        const current = prev[sessionInputKey] || [];
+        const next = typeof updater === 'function'
+          ? (updater as (value: Attachment[]) => Attachment[])(current)
+          : updater;
+        return { ...prev, [sessionInputKey]: next };
+      });
+    },
+    [sessionInputKey],
+  );
+  const setSessionPendingImages = useCallback(
+    (updater: string[] | ((prev: string[]) => string[])) => {
+      useComputerStore.setState(state => {
+        const current = state.pendingImageDataBySession[sessionInputKey] || [];
+        const next = typeof updater === 'function'
+          ? (updater as (value: string[]) => string[])(current)
+          : updater;
+        return {
+          pendingImageData: next,
+          pendingImageDataBySession: {
+            ...state.pendingImageDataBySession,
+            [sessionInputKey]: next,
+          },
+        };
+      });
+    },
+    [sessionInputKey],
+  );
   const atMentionedFilesRef = useRef<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -111,22 +152,20 @@ export function SpotlightInput() {
   const historyStashRef = useRef('');
 
   const [message, setMessageRaw] = useState(() => {
-    try { return localStorage.getItem(DRAFT_KEY) || ''; } catch { return ''; }
+    try { return localStorage.getItem(draftKey(activeSessionKey)) || ''; } catch { return ''; }
   });
   const setMessage = useCallback((val: string) => {
     setMessageRaw(val);
-    try { localStorage.setItem(DRAFT_KEY, val); } catch { /* */ }
-  }, []);
-
-  const isConnected = computer?.status === 'running' && agentConnected;
-  const showSlash = message.startsWith('/') && !message.includes(' ');
-  const filteredCommands = showSlash ? slashCommands.filter(c => c.name.startsWith(message.toLowerCase())) : [];
-  useEffect(() => { setSlashSelected(0); }, [message]);
-
-  useEffect(() => {
-    setHistoryNavIndex(-1);
-    historyStashRef.current = '';
+    try { localStorage.setItem(draftKey(activeSessionKey), val); } catch { /* */ }
   }, [activeSessionKey]);
+
+  const isConnected = computer?.status === 'running' && (agentConnected || agentConnecting);
+  const showSlash = message.startsWith('/') && !message.includes(' ');
+  const filteredCommands = useMemo(
+    () => showSlash ? slashCommands.filter(c => c.name.startsWith(message.toLowerCase())) : [],
+    [showSlash, slashCommands, message],
+  );
+  useEffect(() => { setSlashSelected(0); }, [message]);
 
   const autoResize = useCallback(() => {
     const el = inputRef.current;
@@ -134,6 +173,14 @@ export function SpotlightInput() {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
+
+  useEffect(() => {
+    setHistoryNavIndex(-1);
+    historyStashRef.current = '';
+    atMentionedFilesRef.current.clear();
+    try { setMessageRaw(localStorage.getItem(draftKey(activeSessionKey)) || ''); } catch { setMessageRaw(''); }
+    requestAnimationFrame(autoResize);
+  }, [activeSessionKey, autoResize]);
 
   // Focus input on mount and when typing — but never on mobile, where
   // auto-focus pops the keyboard immediately and obscures the rest of the UI.
@@ -228,12 +275,21 @@ export function SpotlightInput() {
     const el = inputRef.current;
     if (!el || fsAtPosRef.current < 0) return;
     el.focus();
-    el.setSelectionRange(fsAtPosRef.current, el.selectionStart ?? el.value.length);
+    const start = fsAtPosRef.current;
+    const end = el.selectionStart ?? el.value.length;
+    const insert = `@${item.display}${item.isDir ? '' : ' '}`;
+    const nextValue = `${message.slice(0, start)}${insert}${message.slice(end)}`;
+    const nextCursor = start + insert.length;
+    setMessage(nextValue);
+    requestAnimationFrame(() => {
+      el.setSelectionRange(nextCursor, nextCursor);
+      autoResize();
+      detectFileTrigger(nextValue, nextCursor);
+    });
 
     if (item.isDir) {
-      document.execCommand('insertText', false, `@${item.display}`);
+      return;
     } else {
-      document.execCommand('insertText', false, `@${item.display} `);
       atMentionedFilesRef.current.add(item.display);
       setAttachments(prev => {
         if (prev.some(a => a.path === item.id)) return prev;
@@ -248,15 +304,13 @@ export function SpotlightInput() {
           const reader = new FileReader();
           reader.onload = () => {
             const dataUrl = reader.result as string;
-            useComputerStore.setState(state => ({
-              pendingImageData: [...state.pendingImageData, dataUrl],
-            }));
+            setSessionPendingImages(prev => [...prev, dataUrl]);
           };
           reader.readAsDataURL(blob);
         }).catch(() => {});
       }
     }
-  }, [instanceId]);
+  }, [instanceId, message, setMessage, autoResize, detectFileTrigger, setAttachments, setSessionPendingImages]);
 
   useEffect(() => {
     if (!fsOpen) return;
@@ -286,9 +340,7 @@ export function SpotlightInput() {
             reader.onerror = reject;
             reader.readAsDataURL(file);
           });
-          useComputerStore.setState(state => ({
-            pendingImageData: [...state.pendingImageData, dataUrl],
-          }));
+          setSessionPendingImages(prev => [...prev, dataUrl]);
         }
       }
       if (skipped.length > 0) {
@@ -300,7 +352,7 @@ export function SpotlightInput() {
     } finally {
       setUploading(false);
     }
-  }, [instanceId]);
+  }, [instanceId, setAttachments, setSessionPendingImages]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -338,9 +390,9 @@ export function SpotlightInput() {
     setMessageRaw('');
     setHistoryNavIndex(-1);
     historyStashRef.current = '';
-    try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
+    try { localStorage.removeItem(draftKey(activeSessionKey)); } catch { /* */ }
     requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
-  }, []);
+  }, [activeSessionKey]);
 
   const executeSlashCommand = useCallback((cmd: { action: () => void }) => {
     play('click');
@@ -381,7 +433,7 @@ export function SpotlightInput() {
     atMentionedFilesRef.current.clear();
     setUploadError(null);
     setFsOpen(false);
-  }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, replyingTo, setReplyingTo, activeSessionKey]);
+  }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, setAttachments, replyingTo, setReplyingTo, activeSessionKey]);
 
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
@@ -417,7 +469,7 @@ export function SpotlightInput() {
     const text = (finalTranscript || message).trim();
     voiceReset();
 
-    if (voiceAutoSend && text) {
+    if (voiceAutoSend && text && isConnected) {
       play('click');
       if (isMobile) hapticLight();
       appendToInputHistory(activeSessionKey, text);
@@ -428,7 +480,7 @@ export function SpotlightInput() {
       requestAnimationFrame(autoResize);
       inputRef.current?.focus();
     }
-  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, isMobile, setMessage, autoResize, voiceReset, clearDraft, activeSessionKey]);
+  }, [sttState, finalTranscript, message, voiceAutoSend, sendChatMessage, play, isMobile, setMessage, autoResize, voiceReset, clearDraft, activeSessionKey, isConnected]);
 
   // Cancel voice recording on Escape
   useEffect(() => {
@@ -543,17 +595,16 @@ export function SpotlightInput() {
                 <img src={dataUrl} alt={`Attachment ${i + 1}`} className="h-full w-auto object-cover" style={{ maxWidth: 80 }} />
                 <button
                   onClick={() => {
-                    useComputerStore.setState(state => ({
-                      pendingImageData: state.pendingImageData.filter((_, j) => j !== i),
-                    }));
+                    setSessionPendingImages(prev => prev.filter((_, j) => j !== i));
                     setAttachments(prev => {
-                      const remaining = [...prev];
-                      const imgIdx = remaining.findIndex((_, j) => {
-                        const ext = remaining[j].name.split('.').pop()?.toLowerCase();
-                        return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
+                      let imageIndex = -1;
+                      return prev.filter((att) => {
+                        const ext = att.name.split('.').pop()?.toLowerCase();
+                        const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
+                        if (!isImage) return true;
+                        imageIndex += 1;
+                        return imageIndex !== i;
                       });
-                      if (imgIdx >= 0) remaining.splice(imgIdx, 1);
-                      return remaining;
                     });
                   }}
                   className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded-full p-0.5"
@@ -607,6 +658,17 @@ export function SpotlightInput() {
                   const gone = [...atMentionedFilesRef.current].filter(name => !val.includes(`@${name}`));
                   if (gone.length > 0) {
                     gone.forEach(name => atMentionedFilesRef.current.delete(name));
+                    const removedImageIndexes: number[] = [];
+                    let imageIndex = -1;
+                    for (const att of attachments) {
+                      if (IMAGE_EXTS.test(att.name)) imageIndex += 1;
+                      if (gone.includes(att.name) && IMAGE_EXTS.test(att.name)) {
+                        removedImageIndexes.push(imageIndex);
+                      }
+                    }
+                    if (removedImageIndexes.length > 0) {
+                      setSessionPendingImages(prev => prev.filter((_, i) => !removedImageIndexes.includes(i)));
+                    }
                     setAttachments(prev => prev.filter(a => !gone.includes(a.name)));
                   }
                 }
@@ -682,7 +744,19 @@ export function SpotlightInput() {
                   if (document.activeElement !== inputRef.current) setFsOpen(false);
                 }, 150);
               }}
-              placeholder={isVoiceActive ? 'Listening...' : isExternal ? 'This conversation is from an external platform (read-only)' : isConnected ? 'Ask anything... (@ to reference files)' : agentConnected ? 'Starting agent...' : 'Reconnecting to agent...'}
+              placeholder={
+                isVoiceActive
+                  ? 'Listening...'
+                  : isExternal
+                    ? `Reply from ${externalLabel}. This Spotlight view is read-only.`
+                    : isConnected
+                      ? agentConnecting && !agentConnected
+                        ? 'Queue a message while the agent reconnects...'
+                        : 'Ask anything... (@ to reference files)'
+                      : agentConnected
+                        ? 'Starting agent...'
+                        : 'Reconnecting to agent...'
+              }
               disabled={!isConnected || isExternal}
               rows={1}
               className="w-full bg-transparent outline-none border-none resize-none focus:outline-none focus:ring-0 focus:border-none text-[15px]"
@@ -692,6 +766,15 @@ export function SpotlightInput() {
               }}
             />
           </div>
+          {isExternal && (
+            <button
+              type="button"
+              onClick={() => useWindowStore.getState().ensureWindowOpen('access-control')}
+              className="mb-1 shrink-0 rounded-md border border-white/[0.08] px-2 py-1 text-[11px] font-medium text-[var(--color-text-muted)]/70 hover:bg-white/[0.06] hover:text-[var(--color-text)] transition-colors"
+            >
+              Manage access
+            </button>
+          )}
           <div className="flex items-center gap-0.5 shrink-0 pb-1">
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
             {voiceEnabled && !isExternal && (

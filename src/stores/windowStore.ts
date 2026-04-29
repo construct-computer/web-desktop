@@ -205,7 +205,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     chromeHeight: 88, // titlebar(32) + navbar(33) + statusbar(23)
   },
   terminal: {
-    title: 'Terminal',
+    title: 'Agent Terminal',
     width: 600,
     height: 540,
     minWidth: 350,

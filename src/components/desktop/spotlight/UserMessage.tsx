@@ -6,6 +6,12 @@ import { useAppStore } from '@/stores/appStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useSound } from '@/hooks/useSound';
 import { hapticLight } from '@/lib/haptics';
+import {
+  EXTERNAL_PLATFORM_META,
+  isExternalSessionKey,
+  sourceContext,
+  sourceLabel,
+} from '@/lib/externalPlatforms';
 
 interface PlatformMessage {
   platform: string;
@@ -80,11 +86,6 @@ function parseReply(content: string): { quote: string; who: string; body: string
   return { who: match[1] === 'my earlier message' ? 'You' : 'Agent', quote: match[2], body: match[3] };
 }
 
-function isExternalSessionKey(key: string | undefined) {
-  if (!key) return false;
-  return key.startsWith('telegram_') || key.startsWith('slack_') || key.startsWith('email_');
-}
-
 export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const interruptSession = useComputerStore(s => s.interruptSession);
@@ -105,6 +106,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
 
   // Only parse as platform message when the backend confirms the source
   const parsed = msg.source ? parsePlatformContent(msg.source, msg.content) : null;
+  const externalPlatform = msg.sourceMeta?.platform || msg.source;
 
   // Look up app icon for App platform messages
   const appIcon = parsed?.platform === 'App'
@@ -126,9 +128,14 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     wasPending.current = showPending;
   }, [showPending]);
 
-  if (parsed?.platform) {
-    const color = PLATFORM_COLORS[parsed.platform] || 'var(--color-accent)';
-    const Icon = PLATFORM_ICONS[parsed.platform] || Send;
+  if (externalPlatform) {
+    const platformName = EXTERNAL_PLATFORM_META[externalPlatform]?.label || parsed?.platform || externalPlatform;
+    const color = EXTERNAL_PLATFORM_META[externalPlatform]?.color || PLATFORM_COLORS[parsed?.platform || ''] || 'var(--color-accent)';
+    const Icon = PLATFORM_ICONS[platformName] || Send;
+    const sender = sourceLabel(msg.sourceMeta) || parsed?.user || 'Unknown sender';
+    const context = sourceContext(msg.sourceMeta) || parsed?.subject;
+    const body = parsed?.message || msg.content;
+    const role = msg.access?.role;
 
     return (
       <div className="flex justify-end px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
@@ -140,17 +147,25 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
               ) : (
                 <Icon className="w-2.5 h-2.5" />
               )}
-              <span>via {parsed.platform}</span>
+              <span>via {platformName}</span>
               <span className="text-white/40">·</span>
-              <span className="text-white/80">{parsed.user}</span>
+              <span className="text-white/80 truncate">{sender}</span>
+              {role && (
+                <>
+                  <span className="text-white/40">·</span>
+                  <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-white/70">
+                    {role === 'ONE_OFF' ? 'once' : role.toLowerCase()}
+                  </span>
+                </>
+              )}
             </div>
-            {parsed.subject && (
+            {context && (
               <div className="px-3 py-1 text-[11px] font-medium text-white/70 border-b border-white/10">
-                {parsed.subject}
+                {context}
               </div>
             )}
             <div className="px-4 py-2 text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
-              <p className="whitespace-pre-wrap">{parsed.message}</p>
+              <p className="whitespace-pre-wrap">{body}</p>
             </div>
           </div>
           {replySlot}

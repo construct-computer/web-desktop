@@ -3,7 +3,8 @@ import { ArrowDown, Globe, Terminal, FileSearch, AlertTriangle, AlertCircle } fr
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
-import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
+import { useComputerStore, type ChatMessage, type OverseerAlert } from '@/stores/agentStore';
+import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
 import { groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
@@ -11,6 +12,10 @@ import { ToolCallBanner } from './ToolCallBanner';
 import { OperationCard } from './OperationCard';
 import { UserMessage } from './UserMessage';
 import { AgentMessage } from './AgentMessage';
+
+/** Stable empty array for the alerts selector — avoids creating a new array
+ *  per render which would defeat zustand's referential-equality bail-out. */
+const EMPTY_ALERTS: OverseerAlert[] = [];
 
 function isToday(date: Date): boolean {
   const now = new Date();
@@ -80,32 +85,42 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   const thinkingStream = useComputerStore(s => s.agentThinkingStream);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
   const activeKey = useComputerStore(s => s.activeSessionKey);
-  const overseerAlerts = useComputerStore(s => s.overseerAlerts);
-  /** Watchdog / system alerts that apply to this chat (or are global when no sessionKey). */
-  const alertsForThisChat = useMemo(
-    () => overseerAlerts.filter(a => a.sessionKey === activeKey),
-    [overseerAlerts, activeKey],
+  const alertsForThisChat = useComputerStore(s => s.overseerAlertsBySession[s.activeSessionKey] ?? EMPTY_ALERTS);
+  const activeChatTitle = useComputerStore(
+    s => s.chatSessions.find(c => c.key === s.activeSessionKey)?.title,
   );
-  const isExternal = activeKey?.startsWith('telegram_') || activeKey?.startsWith('slack_') || activeKey?.startsWith('email_');
+  const activeExternalPlatform = inferExternalPlatform(activeKey);
+  const isExternal = isExternalSessionKey(activeKey);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const isMobile = useIsMobile();
 
   const groups = useMemo(() => groupMessages(chatMessages, agentRunning), [chatMessages, agentRunning]);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) setShowScrollBtn(el.scrollTop + el.clientHeight < el.scrollHeight - 60);
+    if (el) {
+      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+      stickToBottomRef.current = nearBottom;
+      setShowScrollBtn(!nearBottom);
+    }
   }, []);
 
-  useEffect(() => { scrollToBottom(); }, [chatMessages, agentRunning, agentStatusLabel, thinkingStream, scrollToBottom]);
-  useEffect(() => { const t = setTimeout(scrollToBottom, 200); return () => clearTimeout(t); }, [scrollToBottom]);
+  useEffect(() => {
+    if (stickToBottomRef.current) scrollToBottom();
+  }, [chatMessages, agentRunning, agentStatusLabel, thinkingStream, scrollToBottom]);
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    const t = setTimeout(() => scrollToBottom('auto'), 50);
+    return () => clearTimeout(t);
+  }, [activeKey, scrollToBottom]);
 
   // Build enhanced groups: operations always render (as ToolCallBanner if
   // activities follow, or as a standalone OperationCard otherwise). Activities
@@ -235,6 +250,19 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   }
 
   if (!hasContent) {
+    if (isExternal && activeExternalPlatform) {
+      const meta = EXTERNAL_PLATFORM_META[activeExternalPlatform];
+      return (
+        <div className="flex-1 min-h-0 w-full min-w-0 flex items-center justify-center px-6">
+          <div className="text-center max-w-sm">
+            <p className="text-[18px] font-light text-[var(--color-text)]/60">{meta.label} session</p>
+            <p className="text-[13px] text-[var(--color-text-muted)]/40 mt-2">
+              Messages from this external platform will appear here after they pass access control.
+            </p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col items-stretch">
         <div className="flex-1 min-h-0 flex items-center justify-center px-4 sm:px-8">
@@ -242,7 +270,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
             <p className="text-[18px] font-light text-[var(--color-text)]/60">What can I help you with?</p>
             <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
             {!isMobile && (
-              <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl+Space</span> to toggle the agent anytime</p>
+              <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl/Alt+Space</span> to toggle the agent anytime</p>
             )}
             <div
               className={cn(
@@ -313,7 +341,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]/50 mb-0.5">
                     <span>Status</span>
-                    {alert.sessionKey && <span>· {alert.sessionKey}</span>}
+                    {alert.sessionKey && <span className="truncate">· {activeChatTitle || alert.sessionKey}</span>}
                     <span className="ml-auto">{when}</span>
                   </div>
                   <p className="leading-snug whitespace-pre-wrap break-words">{alert.text}</p>
@@ -334,7 +362,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
           <Tooltip content="Scroll to bottom" side="top">
             <button
               type="button"
-              onClick={scrollToBottom}
+                onClick={() => scrollToBottom()}
               className="pointer-events-auto w-7 h-7 rounded-full surface-card-raised border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
               aria-label="Scroll to latest messages"
             >

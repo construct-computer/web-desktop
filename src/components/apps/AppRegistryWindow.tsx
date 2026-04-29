@@ -13,6 +13,7 @@ import {
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
+import { useAgentStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
@@ -636,9 +637,22 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   <button
                     key={example}
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(example).catch(() => {})}
+                    onClick={() => {
+                      useWindowStore.getState().updateWindow(config.id, {
+                        metadata: {
+                          ...(config.metadata || {}),
+                          launchedFrom: 'app-registry-example',
+                          selectedIntegrationSlug: detail.composioSlug,
+                          selectedCapability: example,
+                          selectedAppId: detail.id,
+                          selectedAppName: detail.name,
+                          selectedAppSource: detail.source,
+                        },
+                      });
+                      useAgentStore.getState().sendChatMessage(example);
+                    }}
                     className="text-left text-[11px] px-2.5 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.05] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/5 transition-colors"
-                    title="Copy example prompt"
+                    title="Ask the agent with this integration context"
                   >
                     {example}
                   </button>

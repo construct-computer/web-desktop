@@ -429,6 +429,26 @@ export interface AgentEvent {
   data: Record<string, unknown>;
 }
 
+export interface AgentFrontendContext {
+  activeWindow?: {
+    id: string;
+    type: string;
+    title?: string;
+    metadata?: Record<string, unknown>;
+  } | null;
+  openWindows?: Array<{ id: string; type: string; title?: string }>;
+  activeApp?: {
+    id?: string;
+    name?: string;
+    source?: string;
+    selectedCapability?: string;
+    metadata?: Record<string, unknown>;
+  } | null;
+  selectedIntegrationSlug?: string;
+  selectedFiles?: string[];
+  launchedFrom?: string;
+}
+
 class AgentWSClient {
   private ws: WebSocket | null = null;
   private instanceId: string | null = null;
@@ -562,8 +582,21 @@ class AgentWSClient {
    * Send a chat message. Returns true if the message was sent or queued for
    * delivery, false if it was dropped (no connection and not connecting).
    */
-  sendChat(message: string, sessionKey: string = 'ws_default', images?: string[]): boolean {
-    const payload = JSON.stringify({ type: 'chat', message, session_key: sessionKey, ...(images && images.length > 0 ? { images } : {}) });
+  sendChat(
+    message: string,
+    sessionKey: string = 'ws_default',
+    images?: string[],
+    frontendContext?: AgentFrontendContext,
+    clientId?: string,
+  ): boolean {
+    const payload = JSON.stringify({
+      type: 'chat',
+      message,
+      session_key: sessionKey,
+      ...(images && images.length > 0 ? { images } : {}),
+      ...(frontendContext ? { frontendContext } : {}),
+      ...(clientId ? { clientId } : {}),
+    });
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(payload);
       return true;
@@ -624,11 +657,12 @@ class AgentWSClient {
    * the current turn is cooperatively cancelled. Used by the Spotlight
    * "Interrupt" button.
    */
-  sendInterrupt(options: { sessionKey: string; message?: string }): boolean {
+  sendInterrupt(options: { sessionKey: string; message?: string; clientId?: string }): boolean {
     const payload = JSON.stringify({
       type: 'interrupt',
       sessionKey: options.sessionKey,
       ...(options.message ? { message: options.message } : {}),
+      ...(options.clientId ? { clientId: options.clientId } : {}),
     });
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(payload);
@@ -703,6 +737,10 @@ class AgentWSClient {
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  isConnecting(): boolean {
+    return this.ws?.readyState === WebSocket.CONNECTING;
   }
 }
 

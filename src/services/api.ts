@@ -425,6 +425,28 @@ export interface SessionEventRow {
   created_at: number;
 }
 
+export interface TerminalRunRow {
+  tool_call_id: string;
+  session_key?: string | null;
+  terminal_id?: string | null;
+  sandbox_instance_id?: string | null;
+  subagent_id?: string | null;
+  correlation_id?: string | null;
+  command: string;
+  status: 'running' | 'completed' | 'failed';
+  started_at: number;
+  ended_at?: number | null;
+  exit_code?: number | null;
+  duration_ms?: number | null;
+  stdout_bytes?: number | null;
+  stderr_bytes?: number | null;
+  output_bytes?: number | null;
+  output_ref?: string | null;
+  preview?: string | null;
+  created_at?: number;
+  updated_at?: number;
+}
+
 export async function getAgentHistory(_instanceId: string, sessionKey = 'ws_default'): Promise<ApiResult<{
   session_key: string;
   messages: Array<{
@@ -445,9 +467,31 @@ export async function getAgentHistory(_instanceId: string, sessionKey = 'ws_defa
   /** Durable event log for reconstructing ephemeral UI cards (child
    *  spawn/complete, orchestration, research checkpoints, etc.). */
   events?: SessionEventRow[];
+  terminal_runs?: TerminalRunRow[];
   operation_metadata?: OperationMeta[];
 }>> {
   return request(`/agent/history?session_key=${encodeURIComponent(sessionKey)}`);
+}
+
+export async function getTerminalRuns(sessionKey: string, opts?: {
+  terminalId?: string;
+  status?: 'running' | 'completed' | 'failed';
+  limit?: number;
+}): Promise<ApiResult<{ runs: TerminalRunRow[] }>> {
+  const params = new URLSearchParams({ session_key: sessionKey });
+  if (opts?.terminalId) params.set('terminal_id', opts.terminalId);
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  return request(`/agent/terminal/runs?${params.toString()}`);
+}
+
+export async function getTerminalRunOutput(toolCallId: string): Promise<ApiResult<{
+  tool_call_id: string;
+  output: string;
+  output_ref?: string | null;
+  truncated?: boolean;
+}>> {
+  return request(`/agent/terminal/runs/${encodeURIComponent(toolCallId)}/output`);
 }
 
 export interface SessionInfo {
