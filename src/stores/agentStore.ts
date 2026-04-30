@@ -1297,20 +1297,21 @@ export const useComputerStore = create<ComputerStore>()(
       if (alreadySubscribed) return;
 
       // Load sessions and persisted chat history from the container.
-      // loadSessions sets activeSessionKey, then loadChatHistory uses it.
-      // On a fresh browser session (new tab), start with a new chat.
-      // On a refresh (same tab), restore the last active session.
+      // loadSessions sets activeSessionKey to the backend's last-active
+      // session; loadChatHistory then hydrates the message list for it.
+      //
+      // We used to branch on `sessionStorage.getItem('construct:session-active')`
+      // to "start a fresh chat on new tabs," but the new-tab path called
+      // createSession() with no args. createSession early-returns when the
+      // FRONTEND chatMessages array is empty (`activeSessionKey && !chatMessages.length`),
+      // and on first load chatMessages is ALWAYS empty because we haven't
+      // hydrated yet — so it bailed without creating, AND without loading
+      // history. The sidebar showed the backend's active session highlighted
+      // while the main pane stayed blank. If a user genuinely wants a fresh
+      // chat they can hit "+ New Chat" in the sidebar (which passes
+      // `forceNew: true`).
       get().loadSessions().then(async () => {
-        const isNewBrowserSession = !sessionStorage.getItem('construct:session-active');
-        sessionStorage.setItem('construct:session-active', '1');
-
-        if (isNewBrowserSession) {
-          // New tab/window — start a fresh chat
-          await get().createSession();
-        } else {
-          // Same tab refresh — restore last active session
-          await get().loadChatHistory();
-        }
+        await get().loadChatHistory();
       });
 
       // Fetch desktop state via REST as a fallback sync.
