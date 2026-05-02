@@ -187,7 +187,7 @@ export const useAgentTrackerStore = create<AgentTrackerStore>()((set, get) => ({
         changed = true;
         const subAgents = op.subAgents.map((s) =>
           s.status === 'running' || s.status === 'pending'
-            ? { ...s, status: 'complete' as const, completedAt: Date.now() }
+            ? { ...s, status: 'cancelled' as const, completedAt: Date.now(), error: 'Session went idle before a final sub-agent event arrived.' }
             : s,
         );
         operations[id] = {

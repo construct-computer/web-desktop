@@ -14,6 +14,7 @@ import { useTerminalStore } from './terminalStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
+import { shouldClearViewedAgentState } from './agentStateCleanup';
 import { useAppStore, localAppIframeRefs } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
@@ -1841,10 +1842,41 @@ export const useComputerStore = create<ComputerStore>()(
                 };
               }
               
-              set({ 
-                activeSessions: hydrated,
-                runningSessions: liveSessionKeys,
-                agentRunning: liveSessionKeys.has(get().activeSessionKey),
+              const activeViewKey = get().activeSessionKey;
+              const activeViewStillRunning = liveSessionKeys.has(activeViewKey);
+              set(state => {
+                const updates: Partial<ComputerStore> = {
+                  activeSessions: hydrated,
+                  runningSessions: liveSessionKeys,
+                  agentRunning: activeViewStillRunning,
+                };
+
+                if (shouldClearViewedAgentState({
+                  activeSessionKey: activeViewKey,
+                  liveSessionKeys,
+                  desktopAgent: state.platformAgents.desktop,
+                  hasTaskProgress: Boolean(state.taskProgress),
+                })) {
+                  const desktopAgent = state.platformAgents.desktop;
+                  updates.agentThinking = null;
+                  updates.agentThinkingStream = null;
+                  updates.agentStatusLabel = null;
+                  updates.taskProgress = null;
+                  if (desktopAgent?.running || desktopAgent?.currentTool || desktopAgent?.thinking) {
+                    updates.platformAgents = {
+                      ...state.platformAgents,
+                      desktop: {
+                        ...desktopAgent,
+                        running: false,
+                        currentTool: undefined,
+                        thinking: null,
+                        completedAt: Date.now(),
+                      },
+                    };
+                  }
+                }
+
+                return updates;
               });
 
               // Clean up zombie operations in tracker
