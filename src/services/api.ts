@@ -931,12 +931,6 @@ export async function copyToLocal(instanceId: string, driveFileId: string, conta
   });
 }
 
-export async function syncDrive(_instanceId: string): Promise<ApiResult<DriveSyncReport>> {
-  // Drive files are listed live from Google Drive API — no separate sync needed.
-  // Return a no-op success so the UI doesn't show an error.
-  return { success: true, data: { downloaded: [], uploaded: [], deleted: [], conflicts: [], timestamp: new Date().toISOString() } };
-}
-
 // ============================================================================
 // Google Calendar API (backed by Composio)
 // ============================================================================
@@ -1096,8 +1090,6 @@ export interface AppConnectionStatus {
   connected: boolean;
   connectionId?: string;
   activeScheme?: AppAuthScheme;
-  /** Alias for activeScheme — kept for backwards compatibility. */
-  authType?: AppAuthScheme;
   connectedAt?: number;
   schemes: AppConnectionScheme[];
   error?: string;
@@ -1105,7 +1097,7 @@ export interface AppConnectionStatus {
 
 export interface AppConnectResult {
   connected: boolean;
-  authType: AppAuthScheme;
+  activeScheme: AppAuthScheme;
   authorizationUrl?: string;
   connectionId?: string;
   connectedAt?: number;
@@ -1115,7 +1107,7 @@ export interface AppConnection {
   id: string;
   appId: string;
   appName: string;
-  authType: string;
+  activeScheme: string;
   status: string;
   connectedAt: number;
   updatedAt: number;
@@ -1125,12 +1117,7 @@ export interface AppConnection {
  * Get available auth schemes for an app + current connection status.
  */
 export async function getAppConnection(appId: string): Promise<ApiResult<AppConnectionStatus>> {
-  const res = await request<AppConnectionStatus>(`/apps/connect/${encodeURIComponent(appId)}`);
-  if (res.success && res.data) {
-    // Alias activeScheme → authType for older callers.
-    res.data.authType = res.data.authType ?? res.data.activeScheme;
-  }
-  return res;
+  return request<AppConnectionStatus>(`/apps/connect/${encodeURIComponent(appId)}`);
 }
 
 /**
@@ -1322,21 +1309,6 @@ export async function linkTelegramMiniApp(initData: string): Promise<ApiResult<{
 }
 
 // Legacy stubs — kept so any old frontend code that references these doesn't break at import time.
-export async function connectTelegram(
-  _botToken: string,
-  _allowedUsernames: string[],
-  _notificationUsernames: string[],
-): Promise<ApiResult<{ status: string; botUsername: string }>> {
-  return { success: false, error: 'Legacy connect removed. Use the deep link flow instead.' };
-}
-
-export async function updateTelegramConfig(
-  _allowedUsernames: string[],
-  _notificationUsernames: string[],
-): Promise<ApiResult<TelegramStatus>> {
-  return { success: false, error: 'Legacy config update removed.' };
-}
-
 // ============================================================================
 // Team Access API
 // ============================================================================
@@ -1458,12 +1430,14 @@ export interface SubscriptionInfo {
   cancelAtPeriodEnd: boolean;
   environment?: string;
   byok?: boolean;
-  hasOpenRouterKey?: boolean;
-  selectedModel?: string;
   byokSettings?: ByokSettings;
+  platformModelChoice?: {
+    enabled: boolean;
+    selectedModel: string | null;
+  };
   planLimits?: {
     weeklyCapUsd: number;
-    windowCapUsd: number;
+    sessionCapUsd: number;
     email: boolean;
     backgroundAgents: boolean;
     byok: boolean;
@@ -1479,20 +1453,21 @@ export interface SubscriptionInfo {
   topupCreditsUsd?: number;
   /** Only present in staging */
   limits?: {
-    windowCapUsd: number;
+    sessionCapUsd: number;
     weeklyCapUsd: number;
   };
 }
 
-export interface WindowUsage {
+export interface CurrentUsage {
   plan?: string;
   allowed: boolean;
   reason?: string;
-  windowPercentUsed: number;
   weeklyPercentUsed: number;
-  windowResetsAt: string;
+  monthlyPercentUsed: number;
+  sessionPercentUsed: number;
+  sessionResetsAt: string;
   weeklyResetsAt: string;
-  shouldDowngrade: boolean;
+  monthlyResetsAt: string;
   usingBonus?: boolean;
   hasBonusCredits?: boolean;
   /** True when the user's BYOK key is currently serving their traffic. */
@@ -1500,14 +1475,17 @@ export interface WindowUsage {
   /** True when platform caps are exhausted and BYOK auto-fallback is active. */
   byokFallback?: boolean;
   environment?: string;
-  /** Staging only */
-  windowUsedUsd?: number;
-  /** Staging only */
-  windowCapUsd?: number;
-  /** Staging only */
   weeklyUsedUsd?: number;
   /** Staging only */
   weeklyCapUsd?: number;
+  /** Staging only */
+  monthlyUsedUsd?: number;
+  /** Staging only */
+  monthlyCapUsd?: number;
+  /** Staging only */
+  sessionUsedUsd?: number;
+  /** Staging only */
+  sessionCapUsd?: number;
   /** Staging only */
   topupCreditsUsd?: number;
 }
@@ -1541,7 +1519,7 @@ export async function getSubscription(): Promise<ApiResult<SubscriptionInfo>> {
   return request('/billing/subscription');
 }
 
-export async function getCurrentUsage(): Promise<ApiResult<WindowUsage>> {
+export async function getCurrentUsage(): Promise<ApiResult<CurrentUsage>> {
   return request('/billing/usage/current');
 }
 
@@ -1628,6 +1606,33 @@ export interface ByokSettings {
 export interface ByokModel {
   id: string;
   label: string;
+  pricing?: {
+    input: number | null;
+    output: number | null;
+    cache: number | null;
+  };
+}
+
+export interface PlatformModelOption {
+  id: string;
+  label: string;
+  provider: string;
+  contextWindow: number;
+  reasoning: boolean;
+  vision: boolean;
+  pricing: {
+    input: number;
+    output: number;
+    cache: number | null;
+  };
+}
+
+export interface PlatformModelSettings {
+  enabled: boolean;
+  selectedModel: string | null;
+  effectiveModel: string;
+  defaultModel: string;
+  options: PlatformModelOption[];
 }
 
 /** Fetch current BYOK settings + OpenRouter credits (if key is saved). */
@@ -1671,26 +1676,16 @@ export async function listByokModels(): Promise<ApiResult<{ recommended: ByokMod
   return request('/billing/byok/models');
 }
 
-// ── Legacy OpenRouter Key compat shims (deprecated) ──
-// Older UI code imports these names. Keep them as thin wrappers around
-// the BYOK endpoints so existing callers continue to work.
-
-export async function saveOpenRouterKey(apiKey: string): Promise<ApiResult<{ ok: boolean }>> {
-  const res = await saveByokKey(apiKey);
-  if (res.success) return { success: true, data: { ok: true } };
-  return { success: false, error: res.error };
+export async function getPlatformModelSettings(): Promise<ApiResult<PlatformModelSettings>> {
+  return request('/billing/platform-model');
 }
 
-export async function removeOpenRouterKey(): Promise<ApiResult<{ ok: boolean }>> {
-  return deleteByokKey();
+export async function updatePlatformModel(model: string | null): Promise<ApiResult<PlatformModelSettings & { ok: boolean }>> {
+  return request('/billing/platform-model', {
+    method: 'PUT',
+    body: JSON.stringify({ model }),
+  });
 }
-
-export async function getOpenRouterKeyStatus(): Promise<ApiResult<{ hasKey: boolean }>> {
-  const res = await getByokSettings();
-  if (res.success) return { success: true, data: { hasKey: res.data.hasKey } };
-  return { success: false, error: res.error };
-}
-
 
 // ── Tweet Credits ──
 

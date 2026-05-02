@@ -18,7 +18,7 @@ import {
   type BrowserRunSummary, type BrowserRunDetail,
 } from '@/services/api';
 import { BrowserScreenshotGallery } from './BrowserScreenshotGallery';
-import { getOrCreateBrowserAppWindow, useAgentStore } from '@/stores/agentStore';
+import { getOrCreateBrowserAppWindow, useComputerStore } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 
 const RECENT_RUN_WINDOW_MS = 15 * 60 * 1000; // Browser Use live URL max lifetime
@@ -69,11 +69,11 @@ const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string }> = [
 
 export function BrowserRunHistory() {
   const [tab, setTab] = useState<'runs' | 'shots'>('runs');
-  const runs = useAgentStore((s) => s.browserRuns);
-  const hydrated = useAgentStore((s) => s.browserRunsHydrated);
-  const hydrateBrowserRuns = useAgentStore((s) => s.hydrateBrowserRuns);
-  const patchBrowserRun = useAgentStore((s) => s.patchBrowserRun);
-  const setActiveBrowserSession = useAgentStore((s) => s.setActiveBrowserSession);
+  const runs = useComputerStore((s) => s.browserRuns);
+  const hydrated = useComputerStore((s) => s.browserRunsHydrated);
+  const hydrateBrowserRuns = useComputerStore((s) => s.hydrateBrowserRuns);
+  const patchBrowserRun = useComputerStore((s) => s.patchBrowserRun);
+  const setActiveBrowserSession = useComputerStore((s) => s.setActiveBrowserSession);
   const [loading, setLoading] = useState(!hydrated);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');

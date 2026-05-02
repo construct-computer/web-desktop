@@ -4,8 +4,7 @@
  * Sections:
  *   User         — Agent status, profile name, agent name, email
  *   Connections  — Slack + Telegram connect/disconnect
- *   Appearance   — Theme toggle, wallpaper picker
- *   Sound        — UI sounds toggle
+ *   Customisation — Wallpaper, sound, and voice preferences
  *   Subscription — Billing, usage, top-ups
  */
 
@@ -33,11 +32,13 @@ import {
   getAgentConfig, updateAgentConfig,
   getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
   getComposioToolkitDetail,
+  getPlatformModelSettings, updatePlatformModel,
+  type PlatformModelSettings,
 } from '@/services/api';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { BillingSection } from './BillingSection';
 import { ByokSection } from './ByokSection';
-import { UsageSection } from './UsageSection';
+import { UsageSection, InfoCard } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
 import { hasPaidAccess } from '@/lib/plans';
@@ -59,8 +60,7 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'user', label: 'User', icon: User },
   { id: 'connections', label: 'Connections', icon: Link2 },
-  { id: 'appearance', label: 'Appearance', icon: Paintbrush },
-  { id: 'sound', label: 'Sound', icon: Volume2 },
+  { id: 'customisation', label: 'Customisation', icon: Paintbrush },
   { id: 'subscription', label: 'Subscription', icon: CreditCard },
   { id: 'usage', label: 'Usage', icon: Zap },
   { id: 'developer', label: 'Developer', icon: Code2 },
@@ -140,8 +140,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
       <div className="flex-1 overflow-y-auto">
         {section === 'user' && <UserSection />}
         {section === 'connections' && <ConnectionsSection />}
-        {section === 'appearance' && <AppearanceSection />}
-        {section === 'sound' && <SoundSection />}
+        {section === 'customisation' && <CustomisationSection />}
         {section === 'subscription' && <SubscriptionSection />}
         {section === 'usage' && <UsageSectionWrapper />}
         {section === 'developer' && <DeveloperSection />}
@@ -1300,13 +1299,20 @@ function TelegramExpanded({
 
 
 
-// ── Appearance Section ──
+// ── Customisation Section ──
 
-function AppearanceSection() {
-  const { theme, wallpaperId, toggleTheme, setWallpaper } = useSettingsStore();
+function CustomisationSection() {
+  const {
+    wallpaperId,
+    setWallpaper,
+    soundEnabled,
+    toggleSound,
+    voiceAutoSend,
+    setVoiceAutoSend,
+  } = useSettingsStore();
 
   return (
-    <SectionPanel title="Appearance" subtitle="Customize your desktop look and feel.">
+    <SectionPanel title="Customisation" subtitle="Customise your desktop look, sound, and voice behavior.">
       {/* Theme toggle removed — dark mode is permanent */}
 
       {/* Wallpaper */}
@@ -1364,6 +1370,20 @@ function AppearanceSection() {
             }}
           />
         </div>
+      </div>
+      <div className="mt-6 pt-5 border-t border-black/6 dark:border-white/6">
+        <div className="flex items-center gap-2 mb-3">
+          <Volume2 className="w-4 h-4 text-text-muted" />
+          <span className="text-[13px] font-medium">Sound</span>
+        </div>
+        <SettingsCard>
+          <SettingsRow label="UI Sounds" description="Play sounds for clicks, notifications, and other actions.">
+            <Toggle checked={soundEnabled} onChange={toggleSound} />
+          </SettingsRow>
+          <SettingsRow label="Voice Auto-Send" description="Automatically send transcribed voice messages instead of placing them in the input for review.">
+            <Toggle checked={voiceAutoSend} onChange={setVoiceAutoSend} />
+          </SettingsRow>
+        </SettingsCard>
       </div>
     </SectionPanel>
   );
@@ -1436,25 +1456,6 @@ function CustomWallpaperTile({ isActive, onSelect, onUpload }: {
   );
 }
 
-// ── Sound Section ──
-
-function SoundSection() {
-  const { soundEnabled, toggleSound, voiceAutoSend, setVoiceAutoSend } = useSettingsStore();
-
-  return (
-    <SectionPanel title="Sound" subtitle="Configure audio feedback.">
-      <SettingsCard>
-        <SettingsRow label="UI Sounds" description="Play sounds for clicks, notifications, and other actions.">
-          <Toggle checked={soundEnabled} onChange={toggleSound} />
-        </SettingsRow>
-        <SettingsRow label="Voice Auto-Send" description="Automatically send transcribed voice messages instead of placing them in the input for review.">
-          <Toggle checked={voiceAutoSend} onChange={setVoiceAutoSend} />
-        </SettingsRow>
-      </SettingsCard>
-    </SectionPanel>
-  );
-}
-
 // ── Subscription Section ──
 
 function SubscriptionSection() {
@@ -1493,25 +1494,130 @@ function SubscriptionSection() {
       ) : undefined}
     >
       <BillingSection />
-      <div className="mt-6 pt-5 border-t border-black/[0.06] dark:border-white/[0.06]">
-        <div className="mb-3">
-          <h3 className="text-[14px] font-semibold">Bring your own OpenRouter key</h3>
-          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
-            Power fall-back inference — or replace the platform AI entirely — with your own OpenRouter key.
-          </p>
-        </div>
-        <ByokSection />
-      </div>
     </SectionPanel>
   );
 }
 
 // ── Usage Section ──
 
+function formatModelPrice(value: number | null | undefined): string {
+  if (value == null) return 'n/a';
+  if (value === 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return `$${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
+function platformPricingText(option: PlatformModelSettings['options'][number] | undefined): string {
+  if (!option) return 'Input n/a / Output n/a / Cache n/a per 1M tokens';
+  return `Input ${formatModelPrice(option.pricing.input)} / Output ${formatModelPrice(option.pricing.output)} / Cache ${formatModelPrice(option.pricing.cache)} per 1M tokens`;
+}
+
+function PlatformModelPickerCard() {
+  const [platformModel, setPlatformModel] = useState<PlatformModelSettings | null>(null);
+  const [platformModelLoading, setPlatformModelLoading] = useState(true);
+  const [platformModelSaving, setPlatformModelSaving] = useState(false);
+  const [platformModelError, setPlatformModelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPlatformModelLoading(true);
+    getPlatformModelSettings().then((result) => {
+      if (cancelled) return;
+      if (result.success) {
+        setPlatformModel(result.data);
+        setPlatformModelError(null);
+      } else {
+        setPlatformModelError(result.error);
+      }
+      setPlatformModelLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handlePlatformModelChange = async (value: string) => {
+    const nextModel = value === '__default__' ? null : value;
+    setPlatformModelSaving(true);
+    setPlatformModelError(null);
+    const result = await updatePlatformModel(nextModel);
+    if (result.success) {
+      setPlatformModel(result.data);
+    } else {
+      setPlatformModelError(result.error);
+    }
+    setPlatformModelSaving(false);
+  };
+
+  if (!platformModelLoading && !platformModel?.enabled) return null;
+
+  return (
+    <div className="mt-6 pt-5 border-t border-black/[0.06] dark:border-white/[0.06]">
+      <InfoCard>
+        <div className="px-4 pt-3.5 pb-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-[var(--color-text-muted)]" />
+            <span className="text-[13px] font-medium">Primary Agent Model</span>
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
+            Choose the platform model used for your main agent orchestration. OpenRouter BYOK models stay separate.
+          </p>
+          {platformModelLoading ? (
+            <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading model access...
+            </div>
+          ) : platformModel?.enabled ? (
+            <div className="space-y-3">
+              <Select
+                value={platformModel.selectedModel || '__default__'}
+                onChange={handlePlatformModelChange}
+                disabled={platformModelSaving}
+                searchable
+                options={[
+                  {
+                    value: '__default__',
+                    label: `Default (${platformModel.defaultModel})`,
+                    description: `Use the platform-optimized model stack. ${platformPricingText(platformModel.options.find((option) => option.id === platformModel.defaultModel))}`,
+                  },
+                  ...platformModel.options.map((option) => ({
+                    value: option.id,
+                    label: option.label,
+                    description: `${option.provider} • ${Math.round(option.contextWindow / 1000)}k context${option.vision ? ' • vision' : ''}${option.reasoning ? ' • reasoning' : ''} • ${platformPricingText(option)}`,
+                  })),
+                ]}
+              />
+              <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
+                <span>Effective model: <span className="font-mono">{platformModel.effectiveModel}</span></span>
+                {platformModelSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+              </div>
+            </div>
+          ) : null}
+          {platformModelError && (
+            <div className="flex items-start gap-2 text-[11px] text-red-600 dark:text-red-400">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>{platformModelError}</span>
+            </div>
+          )}
+        </div>
+      </InfoCard>
+    </div>
+  );
+}
+
 function UsageSectionWrapper() {
   return (
-    <SectionPanel title="Usage" subtitle="AI usage and storage statistics.">
+    <SectionPanel title="Usage" subtitle="AI usage, model selection, and storage statistics.">
       <UsageSection />
+      <PlatformModelPickerCard />
+      <div className="mt-6 pt-5 border-t border-black/[0.06] dark:border-white/[0.06]">
+        <div className="mb-3">
+          <h3 className="text-[14px] font-semibold">Bring your own OpenRouter key</h3>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+            Power fallback inference, or replace the platform AI entirely, with your own OpenRouter key.
+          </p>
+        </div>
+        <ByokSection />
+      </div>
     </SectionPanel>
   );
 }

@@ -263,10 +263,6 @@ export const analytics = {
   },
 
   // ── Settings ──
-  themeChanged: (theme: string) => {
-    track('theme_changed', { theme });
-    registerSuperProperties({ theme });
-  },
   soundToggled: (enabled: boolean) => {
     track('sound_toggled', { enabled });
     registerSuperProperties({ sound_enabled: enabled });

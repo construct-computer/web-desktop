@@ -211,7 +211,7 @@ export function AuthSchemesPanel({ appId, mode, onStatusChange, className }: Aut
             <div className="min-w-0">
               <div className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">Connected</div>
               <div className="text-[10px] text-[var(--color-text-muted)] truncate">
-                via {prettySchemeName(status.activeScheme || status.authType)}
+                via {prettySchemeName(status.activeScheme)}
                 {status.connectedAt ? ` · ${formatConnectedAt(status.connectedAt)}` : ''}
               </div>
             </div>

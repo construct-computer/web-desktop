@@ -63,6 +63,9 @@ const IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/i;
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 type Attachment = { name: string; path: string };
 
+/** Stable empty slice for Zustand selector — never use `|| []` in selectors (new ref each run → infinite re-renders). */
+const EMPTY_PENDING_IMAGES: string[] = [];
+
 export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
   const stopChatSession = useComputerStore(s => s.stopChatSession);
@@ -71,8 +74,8 @@ export function SpotlightInput() {
   const agentConnected = useComputerStore(s => s.agentConnected);
   const agentConnecting = useComputerStore(s => s.agentConnecting);
   const instanceId = useComputerStore(s => s.instanceId);
-  const pendingImages = useComputerStore(s => s.pendingImageData);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const pendingImages = useComputerStore(s => s.pendingImageDataBySession[s.activeSessionKey || 'default'] ?? EMPTY_PENDING_IMAGES);
   const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
   const queuedCount = useComputerStore(s => {
     let n = 0;
@@ -132,7 +135,6 @@ export function SpotlightInput() {
           ? (updater as (value: string[]) => string[])(current)
           : updater;
         return {
-          pendingImageData: next,
           pendingImageDataBySession: {
             ...state.pendingImageDataBySession,
             [sessionInputKey]: next,

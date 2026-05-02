@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react';
 import { Globe, ExternalLink, Loader2, CheckCircle2, XCircle, StopCircle } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
-import { getOrCreateBrowserAppWindow, useAgentStore, type ChatMessage } from '@/stores/agentStore';
+import { getOrCreateBrowserAppWindow, useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { stopBrowserRun, getBrowserRun, type BrowserRunSummary } from '@/services/api';
 
@@ -45,7 +45,7 @@ export function BrowserRunCard({
   subagentId?: string;
 }) {
   const windows = useWindowStore((s) => s.windows);
-  const browserRuns = useAgentStore((s) => s.browserRuns);
+  const browserRuns = useComputerStore((s) => s.browserRuns);
   const [reopening, setReopening] = useState(false);
 
   // Locate the live BrowserWindow for this subagent (if any).

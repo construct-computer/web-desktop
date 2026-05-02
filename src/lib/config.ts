@@ -135,9 +135,7 @@ export const STORAGE_KEYS = {
   userId: 'construct:userId',
 
   // Preferences
-  theme: 'construct:theme',
-  soundEnabled: 'construct:sound',
-  wallpaper: 'construct:wallpaper',
+  settings: 'construct:settings',
 
   // Window state
   windowPositions: 'construct:windows',

@@ -65,7 +65,7 @@ export function providerCopy(p: EffectiveProvider): ProviderCopy {
         toastTitle: null,
         toastBody: null,
         toastVariant: null,
-        widgetLabel: 'Weekly',
+        widgetLabel: 'Monthly',
         tone: 'neutral',
         cta: null,
         inputDisabled: false,

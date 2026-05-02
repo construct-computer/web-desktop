@@ -13,7 +13,7 @@ import {
   saveBrowserScreenshotToWorkspace,
   type BrowserScreenshotSummary,
 } from '@/services/api';
-import { useAgentStore } from '@/stores/agentStore';
+import { useComputerStore } from '@/stores/agentStore';
 
 const GALLERY_LIMIT = 50;
 
@@ -79,9 +79,9 @@ export function BrowserScreenshotGallery({
   runId?: string | null;
   subagentId?: string | null;
 } = {}) {
-  const items = useAgentStore((s) => s.browserScreenshots);
-  const hydrated = useAgentStore((s) => s.browserScreenshotsHydrated);
-  const hydrate = useAgentStore((s) => s.hydrateBrowserScreenshots);
+  const items = useComputerStore((s) => s.browserScreenshots);
+  const hydrated = useComputerStore((s) => s.browserScreenshotsHydrated);
+  const hydrate = useComputerStore((s) => s.hydrateBrowserScreenshots);
   const [loading, setLoading] = useState(!hydrated);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);

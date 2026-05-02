@@ -394,7 +394,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   const [storageUsage, setStorageUsage] = useState<{ bytesUsed: number; maxBytes: number } | null>(null);
 
   // Drive hooks (must be before any callbacks that reference them)
-  const driveSync = useDriveSync(instanceId);
+  const driveSync = useDriveSync();
   const driveFiles = useDriveFiles(activeTab === 'cloud');
 
   // Transfer tracking state
@@ -1089,17 +1089,6 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           </div>
         )}
 
-        {activeTab === 'cloud' && driveSync.status.connected && instanceId && (
-          <button
-            onClick={driveSync.sync}
-            disabled={driveSync.isSyncing}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-xs hover:bg-[var(--color-border)] disabled:opacity-50"
-            title="Sync workspace with Drive"
-          >
-            <RefreshCw className={`w-3 h-3 ${driveSync.isSyncing ? 'animate-spin' : ''}`} />
-            Sync
-          </button>
-        )}
       </div>
 
       <div className="flex flex-1 min-h-0">
@@ -1559,11 +1548,6 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
               )}
               {driveSync.status.connected && (
                 <span className="ml-2 text-[var(--color-text-muted)]">Connected</span>
-              )}
-              {driveSync.lastReport && (
-                <span className="ml-auto">
-                  Last sync: {driveSync.lastReport.downloaded.length} down, {driveSync.lastReport.uploaded.length} up
-                </span>
               )}
             </div>
           )}

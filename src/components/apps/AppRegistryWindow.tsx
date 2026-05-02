@@ -13,7 +13,7 @@ import {
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
-import { useAgentStore } from '@/stores/agentStore';
+import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
@@ -649,7 +649,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                           selectedAppSource: detail.source,
                         },
                       });
-                      useAgentStore.getState().sendChatMessage(example);
+                      useComputerStore.getState().sendChatMessage(example);
                     }}
                     className="text-left text-[11px] px-2.5 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.05] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/5 transition-colors"
                     title="Ask the agent with this integration context"

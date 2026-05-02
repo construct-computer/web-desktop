@@ -5,19 +5,15 @@ import {
   getDriveAuthUrl,
   getDriveStatus,
   disconnectDrive,
-  syncDrive,
   composioFinalize,
   type DriveStatus,
-  type DriveSyncReport,
 } from '@/services/api'
 import { openAuthRedirect } from '@/lib/utils'
 
-export function useDriveSync(instanceId: string | null) {
+export function useDriveSync() {
   const [status, setStatus] = useState<DriveStatus>({ connected: false })
   const [isConfigured, setIsConfigured] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [lastReport, setLastReport] = useState<DriveSyncReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -117,31 +113,10 @@ export function useDriveSync(instanceId: string | null) {
     const result = await disconnectDrive()
     if (result.success) {
       setStatus({ connected: false })
-      setLastReport(null)
     } else {
       setError('Failed to disconnect')
     }
   }, [])
-
-  // Sync files
-  const sync = useCallback(async () => {
-    if (!instanceId || !status.connected) return
-    setIsSyncing(true)
-    setError(null)
-    try {
-      const result = await syncDrive(instanceId)
-      if (result.success) {
-        setLastReport(result.data)
-        await refreshStatus()
-      } else {
-        setError(result.error || 'Sync failed')
-      }
-    } catch {
-      setError('Sync failed')
-    } finally {
-      setIsSyncing(false)
-    }
-  }, [instanceId, status.connected, refreshStatus])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -150,12 +125,9 @@ export function useDriveSync(instanceId: string | null) {
     isConfigured,
     isConnecting,
     isLoading,
-    isSyncing,
-    lastReport,
     error,
     connect,
     disconnect,
-    sync,
     clearError,
     refreshStatus,
   }

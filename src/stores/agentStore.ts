@@ -488,9 +488,7 @@ interface ComputerStore {
   agentThinking: string | null;
   /** Streaming thinking text from the LLM. null = not thinking, '' = started (no tokens yet). */
   agentThinkingStream: string | null;
-  /** Base64 data URLs for image attachments pending send (cleared on send). */
-  pendingImageData: string[];
-  /** Session-scoped image attachment previews; `pendingImageData` mirrors the active session for legacy callers. */
+  /** Session-scoped image attachment previews. */
   pendingImageDataBySession: Record<string, string[]>;
   /** Session-level token usage tracking */
   sessionTokens: { prompt: number; completion: number; total: number; cost: number };
@@ -1104,11 +1102,10 @@ function clearAgentRunningTimer() {
  * Stores raw Blob objects — used with the per-window canvas rendering
  * pipeline that bypasses React state entirely.
  */
-// Frame cache, renderers and clear fns now live in agentStoreUtils.ts
-// Alias for backward compat within this file (used in ~15 places)
-const _tabBlobCache = getTabBlobCache();
-const _frameRenderers = getFrameRenderers();
-const _canvasClearFns = getCanvasClearFns();
+// Frame cache, renderers and clear functions live in agentStoreUtils.ts.
+const tabBlobCache = getTabBlobCache();
+const frameRenderers = getFrameRenderers();
+const canvasClearFns = getCanvasClearFns();
 
 /**
  * Per-window frame renderers — each BrowserWindow registers its own renderer
@@ -1222,7 +1219,6 @@ export const useComputerStore = create<ComputerStore>()(
     sessionSwitching: false,
     agentThinking: null,
     agentThinkingStream: null,
-    pendingImageData: [],
     pendingImageDataBySession: {},
     sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
     agentRunning: false,
@@ -1758,9 +1754,9 @@ export const useComputerStore = create<ComputerStore>()(
               if (winTabId) {
                 // Window has a daemon tab assigned — close if that tab no longer exists
                 if (!daemonTabIds.has(winTabId)) {
-                  _tabBlobCache.delete(winTabId);
-                  _frameRenderers.delete(win.id);
-                  _canvasClearFns.delete(win.id);
+                  tabBlobCache.delete(winTabId);
+                  frameRenderers.delete(win.id);
+                  canvasClearFns.delete(win.id);
                   wStore.closeWindow(win.id);
                 }
               } else if (!adoptedWindowIds.has(win.id)) {
@@ -1778,8 +1774,8 @@ export const useComputerStore = create<ComputerStore>()(
                   });
                 } else {
                   // Max retries exceeded — close the orphaned window
-                  _frameRenderers.delete(win.id);
-                  _canvasClearFns.delete(win.id);
+                  frameRenderers.delete(win.id);
+                  canvasClearFns.delete(win.id);
                   wStore.closeWindow(win.id);
                 }
               }
@@ -1912,9 +1908,9 @@ export const useComputerStore = create<ComputerStore>()(
       agentWS.disconnect();
 
       // Clean up per-window frame renderers
-      _frameRenderers.clear();
-      _canvasClearFns.clear();
-      _tabBlobCache.clear();
+      frameRenderers.clear();
+      canvasClearFns.clear();
+      tabBlobCache.clear();
 
       set({
         browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
@@ -2550,15 +2546,13 @@ export const useComputerStore = create<ComputerStore>()(
       // user knows to retry.
       // Collect base64 image data for any image attachments (for multimodal/vision)
       const imageDataUrls: string[] = [];
-      const pendingImages =
-        get().pendingImageDataBySession[activeSessionKey] ??
-        get().pendingImageData;
+      const pendingImages = get().pendingImageDataBySession[activeSessionKey] ?? [];
       if (pendingImages && pendingImages.length > 0) {
         imageDataUrls.push(...pendingImages);
         set(state => {
           const nextBySession = { ...state.pendingImageDataBySession };
           delete nextBySession[activeSessionKey];
-          return { pendingImageData: [], pendingImageDataBySession: nextBySession };
+          return { pendingImageDataBySession: nextBySession };
         });
       }
 
@@ -3005,7 +2999,6 @@ export const useComputerStore = create<ComputerStore>()(
           set({
             chatSessions: raw,
             activeSessionKey: activeKey,
-            pendingImageData: get().pendingImageDataBySession[activeKey] ?? [],
           });
           sessionsLoadedAt = Date.now();
         }
@@ -3044,7 +3037,6 @@ export const useComputerStore = create<ComputerStore>()(
             activeSessionKey: session.key,
             chatMessages: [],
             replyingTo: null,
-            pendingImageData: get().pendingImageDataBySession[session.key] ?? [],
             agentThinking: null,
             agentRunning: false,
           });
@@ -3074,7 +3066,6 @@ export const useComputerStore = create<ComputerStore>()(
             activeSessionKey: key,
             chatMessages: cached || [],
             replyingTo: null,
-            pendingImageData: get().pendingImageDataBySession[key] ?? [],
             agentThinking: null,
             agentRunning: isTargetRunning,
             sessionSwitching: !cached, // only show loading if no cache
@@ -3103,7 +3094,6 @@ export const useComputerStore = create<ComputerStore>()(
             activeSessionKey: result.data.active_key,
             chatMessages: [],
             replyingTo: null,
-            pendingImageData: get().pendingImageDataBySession[result.data.active_key] ?? [],
             agentThinking: null,
           });
           // Reload full session list (a fresh session may have been created
@@ -3219,7 +3209,7 @@ export const useComputerStore = create<ComputerStore>()(
 
       // Cache key: daemon tab ID, subagentId, or 'main'
       const cacheKey = subagentId || effectiveTabId || 'main';
-      _tabBlobCache.set(cacheKey, frame);
+      tabBlobCache.set(cacheKey, frame);
 
       // For subagent frames, also cache under the daemon tab ID so that
       // BrowserWindow.getCachedFrameBlob(daemonTabId) works on mount.
@@ -3230,7 +3220,7 @@ export const useComputerStore = create<ComputerStore>()(
         const tab = browserState.tabs.find(t => t.subagentId === subagentId);
         if (tab) {
           subagentDaemonTabId = tab.id;
-          _tabBlobCache.set(tab.id, frame);
+          tabBlobCache.set(tab.id, frame);
         }
       }
 
@@ -3253,11 +3243,11 @@ export const useComputerStore = create<ComputerStore>()(
           w => w.type === 'browser' && w.workspaceId === 'main'
         ) ?? wStore.windows.find(w => w.type === 'browser');
         if (mainBrowser) {
-          const renderer = _frameRenderers.get(mainBrowser.id);
+          const renderer = frameRenderers.get(mainBrowser.id);
           if (renderer) renderer(frame);
         }
       } else if (targetWindowId) {
-        const renderer = _frameRenderers.get(targetWindowId);
+        const renderer = frameRenderers.get(targetWindowId);
         if (renderer) renderer(frame);
       }
 
@@ -3315,7 +3305,7 @@ export const useComputerStore = create<ComputerStore>()(
       // Tell daemon to close the tab when running in legacy container mode.
       if (daemonTabId && browserWS.isConnected()) {
         browserWS.sendAction({ action: 'closeTab', tabId: daemonTabId });
-        _tabBlobCache.delete(daemonTabId);
+        tabBlobCache.delete(daemonTabId);
         // Clean per-tab frame marker
         const { browserState: bs1 } = get();
         if (bs1.tabsWithFrames[daemonTabId]) {
@@ -3336,12 +3326,12 @@ export const useComputerStore = create<ComputerStore>()(
             tabsWithFrames: remainingFrames,
           },
         });
-        _tabBlobCache.delete(browserSubagentId);
+        tabBlobCache.delete(browserSubagentId);
       }
 
       // Clean up per-window renderer
-      _frameRenderers.delete(windowId);
-      _canvasClearFns.delete(windowId);
+      frameRenderers.delete(windowId);
+      canvasClearFns.delete(windowId);
 
       // Close the window
       useWindowStore.getState().closeWindow(windowId);
@@ -3349,7 +3339,7 @@ export const useComputerStore = create<ComputerStore>()(
       // If no browser windows remain, clear all frame state
       const remainingBrowserWindows = useWindowStore.getState().windows.filter(w => w.type === 'browser');
       if (remainingBrowserWindows.length === 0) {
-        _tabBlobCache.clear();
+        tabBlobCache.clear();
         set({
           browserState: {
             ...get().browserState,
@@ -3375,8 +3365,8 @@ export const useComputerStore = create<ComputerStore>()(
 
       // Always render cached blob for instant display on focus, even if
       // already active (handles cases where the canvas was cleared/resized)
-      const cached = _tabBlobCache.get(daemonTabId);
-      const renderer = _frameRenderers.get(windowId);
+      const cached = tabBlobCache.get(daemonTabId);
+      const renderer = frameRenderers.get(windowId);
       if (cached && renderer) {
         renderer(cached);
       }
@@ -4012,8 +4002,8 @@ export const useComputerStore = create<ComputerStore>()(
             // Close the Web Agent browser window
             const tfWindowId = findWindowForBrowser(tfSubagentId);
             if (tfWindowId) {
-              _frameRenderers.delete(tfWindowId);
-              _canvasClearFns.delete(tfWindowId);
+              frameRenderers.delete(tfWindowId);
+              canvasClearFns.delete(tfWindowId);
               useWindowStore.getState().closeWindow(tfWindowId);
             }
 
@@ -4211,8 +4201,8 @@ export const useComputerStore = create<ComputerStore>()(
                 w.type === 'browser' && w.metadata?.browserSubagentId
               );
               for (const tfWin of tfWindows) {
-                _frameRenderers.delete(tfWin.id);
-                _canvasClearFns.delete(tfWin.id);
+                frameRenderers.delete(tfWin.id);
+                canvasClearFns.delete(tfWin.id);
                 wStore.closeWindow(tfWin.id);
               }
             }
@@ -4246,9 +4236,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'overseer_alert': {
           const text = (event.data?.text as string | undefined) ?? '';
           const severity = ((event.data?.severity as string | undefined) ?? 'info') as OverseerAlert['severity'];
-          // `relatedSession` is a legacy alias kept for backwards compat with
-          // older worker builds; the trimmed contract uses `sessionKey` only.
-          const alertSessionKey = (event.data?.sessionKey ?? event.data?.relatedSession) as string | undefined;
+          const alertSessionKey = event.data?.sessionKey as string | undefined;
           const origin = event.data?.origin as string | undefined;
           const shouldClear = event.data?.clear === true;
           if (shouldClear && origin === 'watchdog') {
@@ -4512,39 +4500,6 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'workspace_action':
-        case 'window:move_to_workspace':
-        case 'browser:move_to_workspace': {
-          // Removed — workspaces are client-side only
-          break;
-        }
-        case '__deprecated_workspace_action': {
-          const wsAction = event.data?.action as string | undefined;
-          const wsName = event.data?.name as string | undefined;
-          const wsPlatform = (event.data?.platform as import('@/types').WorkspacePlatform) ?? 'desktop';
-          const wsTargetId = event.data?.workspace_id as string | undefined;
-
-          if (wsAction === 'create' && wsName) {
-            const autoSwitch = event.data?.auto_switch !== false;  // Default true
-            const newId = useWindowStore.getState().createWorkspace({
-              id: wsTargetId,  // Agent may pre-assign an ID (e.g. for delegate_task)
-              name: wsName,
-              platform: wsPlatform,
-            });
-            // Only switch to the new workspace if auto_switch is not disabled.
-            // delegate_task sets auto_switch: false to avoid rapid cascading
-            // state updates when creating multiple workspaces at once.
-            if (autoSwitch) {
-              useWindowStore.getState().switchWorkspace(newId);
-            }
-          } else if (wsAction === 'switch' && wsTargetId) {
-            useWindowStore.getState().switchWorkspace(wsTargetId);
-          } else if (wsAction === 'delete' && wsTargetId) {
-            useWindowStore.getState().deleteWorkspace(wsTargetId);
-          }
-          break;
-        }
-
         case 'window:close': {
           // Agent closed an app — tear down the frontend window.
           // Supports closing by: terminalId (metadata match), windowId,
@@ -4734,14 +4689,14 @@ export const useComputerStore = create<ComputerStore>()(
             const windowId = findWindowForDaemonTab(tabId)
               || (closedSubagentId ? findWindowForSubagent(closedSubagentId) : undefined);
             if (windowId) {
-              _frameRenderers.delete(windowId);
-              _canvasClearFns.delete(windowId);
+              frameRenderers.delete(windowId);
+              canvasClearFns.delete(windowId);
               useWindowStore.getState().closeWindow(windowId);
             }
 
             // Clean up frame cache
-            _tabBlobCache.delete(tabId);
-            if (closedSubagentId) _tabBlobCache.delete(closedSubagentId);
+            tabBlobCache.delete(tabId);
+            if (closedSubagentId) tabBlobCache.delete(closedSubagentId);
 
             // Find the closed tab index for subagentTabMap shifting
             const closedIndex = browserState.tabs.findIndex(t => t.id === tabId);
@@ -5017,10 +4972,6 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'model_fallback':
-          // Legacy event — no longer emitted, ignore
-          break;
-
         case 'provider_state': {
           const state = event.data?.state as string | undefined;
           const model = event.data?.model as string | undefined;
@@ -5092,23 +5043,15 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'byok_fallback_notice': {
-          // Back-compat: treat as provider_state: byok-fallback.
-          const billing = useBillingStore.getState();
-          billing.setLiveProvider({ active: true });
-          void billing.fetchUsage();
-          break;
-        }
-
         case 'usage_warning': {
           const threshold = event.data?.threshold as number || 100;
-          const resetsAt = event.data?.resetsAt as string | undefined;
+          const activeBudgetResetsAt = event.data?.activeBudgetResetsAt as string | undefined;
           const byok = useBillingStore.getState().byok;
           const byokWillFallback =
             !!byok?.hasKey && (byok.mode === 'auto' || byok.mode === 'exclusive');
 
-          const resetStr = resetsAt
-            ? new Date(resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          const resetStr = activeBudgetResetsAt
+            ? new Date(activeBudgetResetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
             : 'soon';
 
           // Under 100%: info toast (non-blocking warning).
@@ -6014,32 +5957,6 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        // ── Legacy delegation/consultation/background events ──────────
-        // These are from the old SubagentManager pattern (delegate_task,
-        // consult_experts, background_task tools). Kept as no-ops for
-        // backward compatibility — the new orchestrator pattern uses
-        // orchestration:started/complete + child:* events instead.
-        case 'delegation:started':
-        case 'delegation:subagent_started':
-        case 'delegation:subagent_progress':
-        case 'delegation:subagent_complete':
-        case 'delegation:subagent_failed':
-        case 'delegation:aggregating':
-        case 'delegation:complete':
-        case 'consultation:started':
-        case 'consultation:subagent_started':
-        case 'consultation:subagent_complete':
-        case 'consultation:subagent_failed':
-        case 'consultation:aggregating':
-        case 'consultation:complete':
-        case 'background:started':
-        case 'background:progress':
-        case 'background:complete':
-        case 'background:failed': {
-          // No-op — old delegation pattern disabled
-          break;
-        }
-
         // ── Platform agent lifecycle events ─────────────────────────
         // These arrive for ALL platforms (not filtered) so the desktop
         // frontend can visualize that Slack/Telegram agents are active.
@@ -6295,18 +6212,12 @@ export const useComputerStore = create<ComputerStore>()(
           logger.debug('Child cancelled:', event.data?.childId);
           break;
         }
-
-        // model_fallback handled above (line ~3389)
-
         default:
           break;
       }
     },
   }))
 );
-
-// Legacy alias for backward compatibility
-export const useAgentStore = useComputerStore;
 
 // Expose store ref for cross-store reads (e.g. windowStore reading task descriptions
 // for lazy workspace naming). This avoids circular imports.

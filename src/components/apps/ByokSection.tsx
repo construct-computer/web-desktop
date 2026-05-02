@@ -15,7 +15,7 @@ import { ExternalLink, Loader2, Trash2, AlertCircle, CheckCircle2, Key } from 'l
 import { Button, Input, Label, Select, type SelectOption } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import { useShallow } from 'zustand/react/shallow';
-import type { ByokMode } from '@/services/api';
+import type { ByokMode, ByokModel } from '@/services/api';
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
@@ -29,6 +29,20 @@ const MODES: Array<{ id: 'auto' | 'exclusive'; label: string; hint: string }> = 
   { id: 'auto', label: 'Auto-fallback', hint: 'Platform first. When limits hit, use my key.' },
   { id: 'exclusive', label: 'Exclusive', hint: 'Always use my key. Skip platform AI.' },
 ];
+
+function formatUsdPerMillion(value: number | null | undefined): string {
+  if (value == null) return 'n/a';
+  if (value === 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return `$${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
+function pricingText(model: Pick<ByokModel, 'pricing'> | undefined): string {
+  const pricing = model?.pricing;
+  if (!pricing) return 'Input n/a / Output n/a / Cache n/a per 1M tokens';
+  return `Input ${formatUsdPerMillion(pricing.input)} / Output ${formatUsdPerMillion(pricing.output)} / Cache ${formatUsdPerMillion(pricing.cache)} per 1M tokens`;
+}
 
 export function ByokSection() {
   const {
@@ -83,7 +97,7 @@ export function ByokSection() {
   const isByokCapBlocked = providerState.kind === 'blocked-byok-cap';
 
   const hasKey = !!byok?.hasKey;
-  const mode: ByokMode = hasKey ? (byok?.mode === 'off' || !byok?.mode ? 'auto' : byok.mode) : 'off';
+  const mode: ByokMode = hasKey ? (byok?.mode || 'auto') : 'off';
   const selectedModel = byok?.model || '';
   const isCustom = selectedModel && !recommendedIds.has(selectedModel);
 
@@ -94,14 +108,14 @@ export function ByokSection() {
     const recOpts: SelectOption[] = (byokModels?.recommended || []).map((m) => ({
       value: m.id,
       label: m.label,
-      description: 'Recommended',
+      description: `Recommended • ${pricingText(m)}`,
     }));
     const catOpts: SelectOption[] = catalogue
       .filter((m) => !recommendedIds.has(m.id))
-      .map((m) => ({ value: m.id, label: m.label, description: m.id }));
+      .map((m) => ({ value: m.id, label: m.label, description: `${m.id} • ${pricingText(m)}` }));
     const opts = [...recOpts, ...catOpts];
     if (selectedModel && !opts.find((o) => o.value === selectedModel)) {
-      opts.unshift({ value: selectedModel, label: selectedModel, description: 'Custom' });
+      opts.unshift({ value: selectedModel, label: selectedModel, description: `Custom • ${pricingText(undefined)}` });
     }
     return opts;
   }, [byokModels, catalogue, recommendedIds, selectedModel]);
@@ -378,6 +392,7 @@ export function ByokSection() {
           {isCustom && !showCustomInput && (
             <div className="text-[11px] text-[var(--color-text-muted)]">
               Using custom model: <span className="font-mono">{selectedModel}</span>
+              <span className="block text-[10px] opacity-70">{pricingText(undefined)}</span>
             </div>
           )}
           {modelError && (

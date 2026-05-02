@@ -10,7 +10,7 @@ import {
   type TerminalChunk,
   type TerminalRun,
 } from '@/stores/terminalStore';
-import { useAgentStore } from '@/stores/agentStore';
+import { useComputerStore } from '@/stores/agentStore';
 
 const TERMINAL_THEME = {
   background: 'transparent',
@@ -229,7 +229,7 @@ export function AgentTerminalWindow({ config }: AgentTerminalWindowProps) {
   const allRuns = useTerminalStore((s) => s.runs);
   const selectRun = useTerminalStore((s) => s.selectRun);
   const clearTerminal = useTerminalStore((s) => s.clearTerminal);
-  const activeSessionKey = useAgentStore((s) => s.activeSessionKey);
+  const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);

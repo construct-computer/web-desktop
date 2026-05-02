@@ -36,7 +36,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-function InfoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+export function InfoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-lg border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.03] dark:bg-white/[0.04] ${className}`}>
       {children}
@@ -111,19 +111,24 @@ export function UsageSection() {
   }, [fetchUsage, fetchTweetStatus, fetchSubscription]);
 
   const [weeklyTimeLeft, setWeeklyTimeLeft] = useState('');
-  const [windowTimeLeft, setWindowTimeLeft] = useState('');
+  const [monthlyTimeLeft, setMonthlyTimeLeft] = useState('');
+  const [sessionTimeLeft, setSessionTimeLeft] = useState('');
   useEffect(() => {
     const update = () => {
+      if (usage?.monthlyResetsAt) setMonthlyTimeLeft(formatTimeRemaining(usage.monthlyResetsAt));
       if (usage?.weeklyResetsAt) setWeeklyTimeLeft(formatTimeRemaining(usage.weeklyResetsAt));
-      if (usage?.windowResetsAt) setWindowTimeLeft(formatTimeRemaining(usage.windowResetsAt));
+      if (usage?.sessionResetsAt) {
+        setSessionTimeLeft(formatTimeRemaining(usage.sessionResetsAt));
+      }
     };
     update();
     const timer = setInterval(update, 30_000);
     return () => clearInterval(timer);
-  }, [usage?.weeklyResetsAt, usage?.windowResetsAt]);
+  }, [usage?.monthlyResetsAt, usage?.weeklyResetsAt, usage?.sessionResetsAt]);
 
+  const monthlyPercent = usage?.monthlyPercentUsed ?? 0;
   const weeklyPercent = usage?.weeklyPercentUsed ?? 0;
-  const windowPercent = usage?.windowPercentUsed ?? 0;
+  const sessionPercent = usage?.sessionPercentUsed ?? 0;
   const storagePercent = storage ? (storage.bytesUsed / storage.maxBytes) * 100 : 0;
 
   return (
@@ -170,6 +175,30 @@ export function UsageSection() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-[var(--color-text-muted)]">Monthly</span>
+                  <span className="font-mono text-[12px] flex items-center gap-2">
+                    {usage.monthlyUsedUsd !== undefined && usage.monthlyCapUsd !== undefined && usage.monthlyCapUsd > 0 ? (
+                      <span>
+                        {formatCost(usage.monthlyUsedUsd)}
+                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.monthlyCapUsd)}</span>
+                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(monthlyPercent)}%)</span>
+                      </span>
+                    ) : (
+                      <span>{Math.round(monthlyPercent)}%</span>
+                    )}
+                    {usage.monthlyResetsAt && (
+                      <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+                        <Clock className="w-3 h-3" />
+                        {monthlyTimeLeft}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <UsageBar percent={monthlyPercent} />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[12px]">
                   <span className="text-[var(--color-text-muted)]">Weekly</span>
                   <span className="font-mono text-[12px] flex items-center gap-2">
                     {usage.weeklyUsedUsd !== undefined && usage.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0 ? (
@@ -199,37 +228,41 @@ export function UsageSection() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[12px]">
-                  <span className="text-[var(--color-text-muted)]">4-hour window</span>
+                  <span className="text-[var(--color-text-muted)]">Session usage</span>
                   <span className="font-mono text-[12px] flex items-center gap-2">
-                    {usage.windowUsedUsd !== undefined && usage.windowCapUsd !== undefined && usage.windowCapUsd > 0 ? (
+                    {usage.sessionUsedUsd !== undefined && usage.sessionCapUsd !== undefined && usage.sessionCapUsd > 0 ? (
                       <span>
-                        {formatCost(usage.windowUsedUsd)}
-                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.windowCapUsd)}</span>
-                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(windowPercent)}%)</span>
+                        {formatCost(usage.sessionUsedUsd)}
+                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.sessionCapUsd)}</span>
+                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(sessionPercent)}%)</span>
                       </span>
                     ) : (
-                      <span>{Math.round(windowPercent)}%</span>
+                      <span>{Math.round(sessionPercent)}%</span>
                     )}
-                    {usage.windowResetsAt && (
+                    {usage.sessionResetsAt && (
                       <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
                         <Clock className="w-3 h-3" />
-                        {windowTimeLeft}
+                        {sessionTimeLeft}
                       </span>
                     )}
                   </span>
                 </div>
-                <UsageBar percent={windowPercent} height="h-1.5" />
+                <UsageBar percent={sessionPercent} height="h-1.5" />
               </div>
 
-              {weeklyPercent >= 75 && !usingBonus && (
+              {Math.max(monthlyPercent, weeklyPercent, sessionPercent) >= 75 && !usingBonus && (
                 <div className={`flex items-center gap-2.5 p-2.5 rounded-lg text-[12px] ${
-                  weeklyPercent >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                  Math.max(monthlyPercent, weeklyPercent, sessionPercent) >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
                 }`}>
                   <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>
-                    {weeklyPercent >= 100
-                      ? `Weekly limit reached. Resets in ${weeklyTimeLeft}.`
-                      : `${Math.round(weeklyPercent)}% of weekly usage consumed.`}
+                    {monthlyPercent >= 100
+                      ? `Monthly limit reached. Resets in ${monthlyTimeLeft}.`
+                      : weeklyPercent >= 100
+                        ? `Weekly limit reached. Resets in ${weeklyTimeLeft}.`
+                        : sessionPercent >= 100
+                          ? `Session usage limit reached. Resets in ${sessionTimeLeft}.`
+                          : `${Math.round(Math.max(monthlyPercent, weeklyPercent, sessionPercent))}% of the nearest usage cap consumed.`}
                   </span>
                 </div>
               )}

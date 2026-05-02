@@ -69,11 +69,7 @@ export function saveCustomWallpaper(file: File): Promise<boolean> {
   });
 }
 
-// ─── Store ─────────────────────────────────────────────────────────────────
-export type Theme = 'light' | 'dark';
-
 interface SettingsState {
-  theme: Theme;
   soundEnabled: boolean;
   wallpaperId: string;
   /** Bumped when custom wallpaper data changes, to force re-render even though wallpaperId stays 'custom'. */
@@ -83,8 +79,6 @@ interface SettingsState {
   voiceAutoSend: boolean;
 
   // Actions
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
   setSoundEnabled: (enabled: boolean) => void;
   toggleSound: () => void;
   setWallpaper: (id: string) => void;
@@ -97,7 +91,6 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      theme: 'dark',
       soundEnabled: true,
       wallpaperId: 'construct',
       wallpaperRev: 0,
@@ -105,20 +98,6 @@ export const useSettingsStore = create<SettingsState>()(
       voiceEnabled: true,
       voiceAutoSend: false,
       
-      setTheme: (_theme) => {
-        // Dark mode is permanently forced
-        document.documentElement.classList.add('dark');
-        set({ theme: 'dark' });
-      },
-
-      toggleTheme: () => {
-        // Dark mode is permanently forced — toggle is a no-op
-        document.documentElement.classList.add('dark');
-        set((_state) => {
-          return { theme: 'dark' };
-        });
-      },
-
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
 
       toggleSound: () => set((state) => {
@@ -138,14 +117,9 @@ export const useSettingsStore = create<SettingsState>()(
       setVoiceAutoSend: (enabled) => set({ voiceAutoSend: enabled }),
     }),
     {
-      name: STORAGE_KEYS.theme,
-      onRehydrateStorage: () => (state) => {
-        // Apply theme on hydration — dark is default
-        if (!state || state.theme === 'dark') {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
+      name: STORAGE_KEYS.settings,
+      onRehydrateStorage: () => () => {
+        document.documentElement.classList.add('dark');
       },
     }
   )

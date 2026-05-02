@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, WifiOff, Sun, Moon, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, Brain, Shield, Map, Package } from 'lucide-react';
+import { Wifi, WifiOff, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, Brain, Shield, Map, Package } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -64,7 +64,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const wifiRef = useRef<HTMLDivElement>(null);
   const latency = useLatency(wifiHover);
   const { isStandalone, isInstalled, deferredPrompt, installPWA } = usePWA();
-  const { theme, soundEnabled, toggleTheme, toggleSound } = useSettingsStore();
+  const { soundEnabled, toggleSound } = useSettingsStore();
   const { windows, focusedWindowId, openWindow } = useWindowStore();
   const workspaces = useWindowStore((s) => s.workspaces);
   const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);

@@ -1,5 +1,5 @@
 /**
- * Billing & usage store — manages subscription state and current usage window.
+ * Billing & usage store — manages subscription state and LLM usage periods.
  * Refreshes usage periodically when the billing UI is visible.
  */
 
@@ -19,7 +19,7 @@ import {
   updateByokSettings,
   listByokModels,
   type SubscriptionInfo,
-  type WindowUsage,
+  type CurrentUsage,
   type UsageHistorySummary,
   type ByokSettings,
   type ByokMode,
@@ -49,8 +49,8 @@ interface BillingState {
   subscriptionLoading: boolean;
   subscriptionError: string | null;
 
-  // Current 6h usage window
-  usage: WindowUsage | null;
+  // Current monthly / weekly / session usage
+  usage: CurrentUsage | null;
   usageLoading: boolean;
 
   // Usage history

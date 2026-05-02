@@ -12,8 +12,7 @@ import { useWindowStore } from '@/stores/windowStore';
 export type SettingsSection =
   | 'user'
   | 'connections'
-  | 'appearance'
-  | 'sound'
+  | 'customisation'
   | 'subscription'
   | 'usage'
   | 'developer';

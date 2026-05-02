@@ -11,7 +11,7 @@ import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { preloadAllSounds, installGlobalClickSound, unlockAudio } from '@/lib/sounds';
-import { preloadAllAssets, preloadDesktopAssets } from '@/lib/preload';
+import { preloadAllAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { installGlobalErrorHandlers } from '@/stores/errorStore';
@@ -224,7 +224,7 @@ function WebAppShell() {
   // everything is already in the browser cache.
   useEffect(() => {
     if (isAuthenticated) {
-      preloadDesktopAssets();
+      preloadAllAssets();
     }
   }, [isAuthenticated]);
 

@@ -63,7 +63,7 @@ function fmtTime(ms: number): string {
   return `${m}m`;
 }
 
-type UsageWindow = api.WindowUsage;
+type CurrentUsage = api.CurrentUsage;
 
 const EMPTY_HISTORY: Array<{ tool: string; timestamp: number }> = [];
 
@@ -105,7 +105,7 @@ export function StatusWidget() {
   const dotColor = running ? '#4ade80' : connected ? 'rgba(255,255,255,0.25)' : '#f87171';
 
   // Usage stats
-  const [usage, setUsage] = useState<UsageWindow | null>(null);
+  const [usage, setUsage] = useState<CurrentUsage | null>(null);
   const [storage, setStorage] = useState<{ bytesUsed: number; maxBytes: number } | null>(null);
 
   const fetchBillingUsage = useBillingStore(s => s.fetchUsage);
@@ -115,7 +115,7 @@ export function StatusWidget() {
     let cancelled = false;
     const poll = async () => {
       const r = await api.getCurrentUsage();
-      if (!cancelled && r.success && r.data) setUsage(r.data as unknown as UsageWindow);
+      if (!cancelled && r.success && r.data) setUsage(r.data);
       // Keep billingStore in sync so other surfaces read the same data.
       void fetchBillingUsage();
     };
@@ -136,19 +136,24 @@ export function StatusWidget() {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  const pct = usage?.weeklyPercentUsed ?? 0;
-  const windowPct = usage?.windowPercentUsed ?? 0;
-  const resetsIn = usage?.weeklyResetsAt ? fmtTime(new Date(usage.weeklyResetsAt).getTime() - Date.now()) : null;
-  const windowResetsIn = usage?.windowResetsAt ? fmtTime(new Date(usage.windowResetsAt).getTime() - Date.now()) : null;
+  const monthlyPct = usage?.monthlyPercentUsed ?? 0;
+  const weeklyPct = usage?.weeklyPercentUsed ?? 0;
+  const sessionPct = usage?.sessionPercentUsed ?? 0;
+  const monthlyResetsIn = usage?.monthlyResetsAt ? fmtTime(new Date(usage.monthlyResetsAt).getTime() - Date.now()) : null;
+  const weeklyResetsIn = usage?.weeklyResetsAt ? fmtTime(new Date(usage.weeklyResetsAt).getTime() - Date.now()) : null;
+  const sessionResetsIn = usage?.sessionResetsAt
+    ? fmtTime(new Date(usage.sessionResetsAt).getTime() - Date.now())
+    : null;
+  const hasMonthlyUsd = usage?.monthlyUsedUsd !== undefined && usage?.monthlyCapUsd !== undefined && usage.monthlyCapUsd > 0;
   const hasWeeklyUsd = usage?.weeklyUsedUsd !== undefined && usage?.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0;
-  const hasWindowUsd = usage?.windowUsedUsd !== undefined && usage?.windowCapUsd !== undefined && usage.windowCapUsd > 0;
+  const hasSessionUsd = usage?.sessionUsedUsd !== undefined && usage?.sessionCapUsd !== undefined && usage.sessionCapUsd > 0;
 
   // Provider-state drives the label + accent colors + CTA below.
   const provider = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
   const byokSettings = useBillingStore(s => s.byok);
   const copy = providerCopy(provider);
   const providerAccent = copy.tone === 'neutral'
-    ? (pct < 60 ? '#22d3ee' : pct < 85 ? '#fbbf24' : '#f87171')
+    ? (Math.max(monthlyPct, weeklyPct, sessionPct) < 60 ? '#22d3ee' : Math.max(monthlyPct, weeklyPct, sessionPct) < 85 ? '#fbbf24' : '#f87171')
     : TONE_HEX[copy.tone];
   const accent = providerAccent;
 
@@ -215,28 +220,28 @@ export function StatusWidget() {
           <div className="flex items-baseline justify-between gap-2 mt-2">
             <span
               className="text-[11px] font-semibold tracking-wide shrink-0"
-              style={{ color: (isBlocked || isByok) ? accent : (pct >= 100 ? accent : 'rgba(255,255,255,0.35)') }}
+              style={{ color: (isBlocked || isByok) ? accent : (monthlyPct >= 100 ? accent : 'rgba(255,255,255,0.35)') }}
             >
               {copy.widgetLabel}
             </span>
             <span
               className="text-[12px] font-medium tabular-nums whitespace-nowrap"
-              style={{ color: (isBlocked || isByok) ? accent : (pct >= 100 ? accent : 'rgba(255,255,255,0.6)') }}
+              style={{ color: (isBlocked || isByok) ? accent : (monthlyPct >= 100 ? accent : 'rgba(255,255,255,0.6)') }}
             >
               {isByok && byokCap
                 ? `${fmtCost(byokUsed)} / ${fmtCost(byokCap)}`
                 : isByok
                   ? 'no cap'
-                  : hasWeeklyUsd
-                    ? `${fmtCost(usage!.weeklyUsedUsd!)} / ${fmtCost(usage!.weeklyCapUsd!)}`
-                    : `${Math.min(pct, 100).toFixed(0)}%`}
+                  : hasMonthlyUsd
+                    ? `${fmtCost(usage!.monthlyUsedUsd!)} / ${fmtCost(usage!.monthlyCapUsd!)}`
+                    : `${Math.min(monthlyPct, 100).toFixed(0)}%`}
             </span>
           </div>
           <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.06)' }}>
             <div
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${(isBlocked || pct >= 100) ? 'animate-pulse' : ''}`}
+              className={`h-full rounded-full transition-all duration-1000 ease-out ${(isBlocked || monthlyPct >= 100) ? 'animate-pulse' : ''}`}
               style={{
-                width: `${Math.max(1, Math.min(100, isByok && byokCap ? byokPct : (isBlocked ? 100 : pct)))}%`,
+                width: `${Math.max(1, Math.min(100, isByok && byokCap ? byokPct : (isBlocked ? 100 : monthlyPct)))}%`,
                 background: accent,
                 boxShadow: `0 0 6px ${accent}66`,
               }}
@@ -255,36 +260,63 @@ export function StatusWidget() {
             </button>
           ) : isByok ? (
             <div className="text-[10px] mt-0.5" style={{ color: accent }}>
-              {provider.kind === 'byok-fallback' ? `platform resets ${resetsIn ?? 'soon'}` : 'your key'}
+              {provider.kind === 'byok-fallback' ? `platform resets ${weeklyResetsIn ?? 'soon'}` : 'your key'}
             </div>
-          ) : resetsIn && pct > 0 ? (
+          ) : monthlyResetsIn && monthlyPct > 0 ? (
             <div className="text-[10px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.15)' }}>
-              resets {resetsIn}
+              monthly resets {monthlyResetsIn}
             </div>
           ) : null}
 
-          {/* 4h window bar — hidden when on BYOK (platform window irrelevant) or blocked. */}
-          {!isByok && !isBlocked && windowPct > 0 && (
+          {/* Weekly bar — hidden when on BYOK or blocked. */}
+          {!isByok && !isBlocked && weeklyPct > 0 && (
             <>
               <div className="flex items-baseline justify-between gap-2 mt-1.5">
                 <span className="text-[10px] tracking-wide shrink-0" style={{ color: 'rgba(255,255,255,0.25)' }}>
-                  4h window
+                  weekly
                 </span>
                 <span className="text-[11px] font-medium tabular-nums whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  {hasWindowUsd
-                    ? `${fmtCost(usage!.windowUsedUsd!)} / ${fmtCost(usage!.windowCapUsd!)}`
-                    : `${Math.min(windowPct, 100).toFixed(0)}%`}
+                  {hasWeeklyUsd
+                    ? `${fmtCost(usage!.weeklyUsedUsd!)} / ${fmtCost(usage!.weeklyCapUsd!)}`
+                    : `${Math.min(weeklyPct, 100).toFixed(0)}%`}
                 </span>
               </div>
               <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
                 <div
                   className="h-full rounded-full transition-all duration-1000 ease-out"
-                  style={{ width: `${Math.max(1, Math.min(100, windowPct))}%`, background: 'rgba(255,255,255,0.35)' }}
+                  style={{ width: `${Math.max(1, Math.min(100, weeklyPct))}%`, background: 'rgba(255,255,255,0.35)' }}
                 />
               </div>
-              {windowResetsIn && (
+              {weeklyResetsIn && (
                 <div className="text-[9px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.12)' }}>
-                  resets {windowResetsIn}
+                  resets {weeklyResetsIn}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Session usage bar — hidden when on BYOK (platform session cap irrelevant) or blocked. */}
+          {!isByok && !isBlocked && sessionPct > 0 && (
+            <>
+              <div className="flex items-baseline justify-between gap-2 mt-1.5">
+                <span className="text-[10px] tracking-wide shrink-0" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  session
+                </span>
+                <span className="text-[11px] font-medium tabular-nums whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {hasSessionUsd
+                    ? `${fmtCost(usage!.sessionUsedUsd!)} / ${fmtCost(usage!.sessionCapUsd!)}`
+                    : `${Math.min(sessionPct, 100).toFixed(0)}%`}
+                </span>
+              </div>
+              <div className="h-[2px] rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${Math.max(1, Math.min(100, sessionPct))}%`, background: 'rgba(255,255,255,0.35)' }}
+                />
+              </div>
+              {sessionResetsIn && (
+                <div className="text-[9px] tabular-nums mt-0.5 text-right" style={{ color: 'rgba(255,255,255,0.12)' }}>
+                  resets {sessionResetsIn}
                 </div>
               )}
             </>

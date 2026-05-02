@@ -81,6 +81,37 @@ type DrawerState = {
   data: unknown;
 } | null;
 
+type AdminUserOverrides = {
+  usage: {
+    monthlyCapUsd: number | null;
+    weeklyCapUsd: number | null;
+    sessionCapUsd: number | null;
+  };
+  platformModelChoice: {
+    enabled: boolean;
+    selectedModel: string | null;
+  };
+};
+
+type AdminPlatformModelOption = {
+  id: string;
+  label: string;
+  provider: string;
+  pricing?: {
+    input: number | null;
+    output: number | null;
+    cache: number | null;
+  };
+};
+
+type AdminUserOverridesResponse = {
+  ok: boolean;
+  userId: string;
+  email: string;
+  overrides: AdminUserOverrides;
+  platformModelOptions: AdminPlatformModelOption[];
+};
+
 const tabs: Array<{ id: TabId; label: string; icon: typeof Gauge }> = [
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'usage', label: 'LLM', icon: Bot },
@@ -114,6 +145,20 @@ function formatCost(value: unknown): string {
   if (n >= 100) return `$${n.toFixed(0)}`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(4)}`;
+}
+
+function formatModelPrice(value: number | null | undefined): string {
+  if (value == null) return 'n/a';
+  if (value === 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return `$${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
+function adminModelPricingText(option: AdminPlatformModelOption | undefined): string {
+  const pricing = option?.pricing;
+  if (!pricing) return 'Input n/a / Output n/a / Cache n/a per 1M tokens';
+  return `Input ${formatModelPrice(pricing.input)} / Output ${formatModelPrice(pricing.output)} / Cache ${formatModelPrice(pricing.cache)} per 1M tokens`;
 }
 
 function formatDate(value: unknown): string {
@@ -332,9 +377,259 @@ function LoginPanel({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function AdminConfigPage({ onLogout }: { onLogout: () => void }) {
+  const [email, setEmail] = useState('');
+  const [loaded, setLoaded] = useState<AdminUserOverridesResponse | null>(null);
+  const [options, setOptions] = useState<AdminPlatformModelOption[]>([]);
+  const [monthlyCap, setMonthlyCap] = useState('');
+  const [weeklyCap, setWeeklyCap] = useState('');
+  const [sessionCap, setSessionCap] = useState('');
+  const [modelChoiceEnabled, setModelChoiceEnabled] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('__default__');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function fillForm(data: AdminUserOverridesResponse) {
+    const usage = data.overrides.usage;
+    setMonthlyCap(usage.monthlyCapUsd == null ? '' : String(usage.monthlyCapUsd));
+    setWeeklyCap(usage.weeklyCapUsd == null ? '' : String(usage.weeklyCapUsd));
+    setSessionCap(usage.sessionCapUsd == null ? '' : String(usage.sessionCapUsd));
+    setModelChoiceEnabled(data.overrides.platformModelChoice.enabled);
+    setSelectedModel(data.overrides.platformModelChoice.selectedModel || '__default__');
+    setOptions(data.platformModelOptions || []);
+  }
+
+  function capValue(value: string): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error('Usage limits must be non-negative dollar values, or blank to clear.');
+    }
+    return parsed;
+  }
+
+  async function loadUser(event?: React.FormEvent) {
+    event?.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await adminApi.get<AdminUserOverridesResponse>(`/config/user-overrides?email=${encodeURIComponent(normalizedEmail)}`);
+      setLoaded(data);
+      fillForm(data);
+      setEmail(data.email);
+    } catch (err) {
+      setLoaded(null);
+      setError(err instanceof Error ? err.message : 'Unable to load user config');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveConfig(event: React.FormEvent) {
+    event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await adminApi.post<AdminUserOverridesResponse>('/config/user-overrides', {
+        email: normalizedEmail,
+        usage: {
+          monthlyCapUsd: capValue(monthlyCap),
+          weeklyCapUsd: capValue(weeklyCap),
+          sessionCapUsd: capValue(sessionCap),
+        },
+        platformModelChoice: {
+          enabled: modelChoiceEnabled,
+          selectedModel: selectedModel === '__default__' ? null : selectedModel,
+        },
+      });
+      setLoaded(data);
+      fillForm(data);
+      setEmail(data.email);
+      setMessage(`Saved config for ${data.email}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save user config');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function calculateFromMonthlyCap() {
+    setError(null);
+    try {
+      const monthly = capValue(monthlyCap);
+      if (!monthly || monthly <= 0) {
+        setError('Enter a monthly cap first.');
+        return;
+      }
+      const now = new Date();
+      const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+      const nextMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+      const monthHours = (nextMonthStart - monthStart) / 3_600_000;
+      const weeks = monthHours / (24 * 7);
+      const sessionWindows = monthHours / 4;
+      const roundUsd = (value: number) => String(Math.max(0.01, Math.round(value * 100) / 100));
+      setWeeklyCap(roundUsd(monthly / weeks));
+      setSessionCap(roundUsd(monthly / sessionWindows));
+      setMessage('Calculated weekly and session caps from monthly usage.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to calculate limits');
+    }
+  }
+
+  const capFields: Array<{
+    label: string;
+    value: string;
+    setter: (next: string) => void;
+    placeholder: string;
+  }> = [
+    { label: 'Monthly cap USD', value: monthlyCap, setter: setMonthlyCap, placeholder: '500' },
+    { label: 'Weekly cap USD', value: weeklyCap, setter: setWeeklyCap, placeholder: '125' },
+    { label: 'Session cap USD', value: sessionCap, setter: setSessionCap, placeholder: '2.75' },
+  ];
+
+  return (
+    <div className="min-h-screen overflow-y-auto bg-black px-5 py-6 text-white">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+        <header className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50">
+              <KeyRound className="h-3.5 w-3.5" />
+              Admin Config
+            </div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em]">User LLM Config</h1>
+            <p className="mt-1 text-xs text-white/42">
+              Write-only controls for usage caps and platform model selection access.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => { window.location.href = '/admin'; }} className="h-9 rounded-2xl border-white/10 bg-white/6 text-white">
+              Dashboard
+            </Button>
+            <Button onClick={onLogout} className="h-9 rounded-2xl border-white/10 bg-white/6 text-white">
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
+        </header>
+
+        <Card className="p-5">
+          <form onSubmit={loadUser} className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex-1">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-white/40">User email</label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="user@example.com"
+                className="h-11 rounded-2xl border-white/10 bg-black/25 text-white"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button type="submit" disabled={loading || !email.trim()} className="h-11 rounded-2xl border-white/10 bg-white/10 text-white">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                Load
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        <form onSubmit={saveConfig} className="space-y-5">
+          <Card className="p-5">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Usage Limits</h2>
+              <p className="mt-1 text-xs text-white/42">
+                Only three LLM caps are enforced: monthly, weekly, and session usage. Blank fields clear the override and fall back to plan defaults where available.
+              </p>
+            </div>
+            <div className="mb-4">
+              <Button type="button" onClick={calculateFromMonthlyCap} className="h-9 rounded-2xl border-white/10 bg-white/8 text-white">
+                Calculate weekly + session from monthly
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {capFields.map(({ label, value, setter, placeholder }) => (
+                <label key={label} className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-white/40">{label}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={value}
+                    onChange={(event) => setter(event.target.value)}
+                    placeholder={placeholder}
+                    className="h-10 rounded-2xl border-white/10 bg-black/25 text-white"
+                  />
+                </label>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Model Selection Access</h2>
+              <p className="mt-1 text-xs text-white/42">
+                Enables the user's Developer settings model picker. OpenRouter models are excluded from this platform list.
+              </p>
+            </div>
+            <label className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <span>
+                <span className="block text-sm font-medium">Allow platform model selection</span>
+                <span className="block text-xs text-white/40">User can choose their primary platform agent model.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={modelChoiceEnabled}
+                onChange={(event) => setModelChoiceEnabled(event.target.checked)}
+                className="h-5 w-5 accent-white"
+              />
+            </label>
+            <Select
+              value={selectedModel}
+              onChange={setSelectedModel}
+              disabled={!modelChoiceEnabled || options.length === 0}
+              searchable
+              options={[
+                { value: '__default__', label: 'Default platform model', description: 'Use the platform default for this plan.' },
+                ...options.map((option) => ({
+                  value: option.id,
+                  label: option.label,
+                  description: `${option.provider} • ${option.id} • ${adminModelPricingText(option)}`,
+                })),
+              ]}
+            />
+          </Card>
+
+          {error && <Card className="border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</Card>}
+          {message && <Card className="border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{message}</Card>}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-white/40">
+              {loaded ? `Loaded ${loaded.email} (${loaded.userId})` : 'Load a user before saving config.'}
+            </div>
+            <Button type="submit" disabled={saving || !email.trim()} className="h-11 rounded-2xl border-white/20 bg-white text-black hover:bg-white/90">
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              Save config
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function AdminDashboard() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
+  const [path, setPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [range, setRange] = useState<TimeRangeValue>('24h');
   const [query, setQuery] = useState('');
@@ -344,6 +639,13 @@ export function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [drawer, setDrawer] = useState<DrawerState>(null);
+  const isConfigPage = path === '/admin/config';
+
+  useEffect(() => {
+    const updatePath = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', updatePath);
+    return () => window.removeEventListener('popstate', updatePath);
+  }, []);
 
   useEffect(() => {
     adminApi.session()
@@ -353,7 +655,7 @@ export function AdminDashboard() {
   }, []);
 
   const loadDashboard = useCallback(async () => {
-    if (!authenticated) return;
+    if (!authenticated || isConfigPage) return;
     setLoading(true);
     setLoadErrors([]);
     const q = rangeQuery(range);
@@ -404,17 +706,17 @@ export function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [authenticated, query, range]);
+  }, [authenticated, isConfigPage, query, range]);
 
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard, refreshNonce]);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || isConfigPage) return;
     const id = window.setInterval(() => setRefreshNonce((n) => n + 1), 60_000);
     return () => window.clearInterval(id);
-  }, [authenticated]);
+  }, [authenticated, isConfigPage]);
 
   const planRows = useMemo(() => {
     const plans = data.overview?.plans || {};
@@ -443,6 +745,10 @@ export function AdminDashboard() {
 
   if (!authenticated) {
     return <LoginPanel onLogin={() => setAuthenticated(true)} />;
+  }
+
+  if (isConfigPage) {
+    return <AdminConfigPage onLogout={() => void logout()} />;
   }
 
   return (
@@ -504,6 +810,10 @@ export function AdminDashboard() {
                 <Button onClick={() => setRefreshNonce((n) => n + 1)} disabled={loading} className="h-9 rounded-2xl border-white/10 bg-white/6 text-white">
                   <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
                   Refresh
+                </Button>
+                <Button onClick={() => { window.location.href = '/admin/config'; }} className="h-9 rounded-2xl border-white/10 bg-white/6 text-white">
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Config
                 </Button>
                 <Button onClick={() => void logout()} className="h-9 rounded-2xl border-white/10 bg-white/6 text-white">
                   <LogOut className="mr-2 h-4 w-4" />

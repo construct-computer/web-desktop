@@ -210,15 +210,3 @@ export function preloadAllAssets(): void {
     ])
   );
 }
-
-// ─── Legacy export (used by App.tsx after auth) ────────────────────────────
-
-let desktopPreloaded = false;
-
-/**
- * @deprecated Use preloadAllAssets() instead. Kept for backward compat.
- */
-export function preloadDesktopAssets(): void {
-  if (desktopPreloaded) return;
-  desktopPreloaded = true;
-}

@@ -10,8 +10,7 @@ type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
  * Clear all user-specific data from localStorage and sessionStorage
  * when a different user logs in (or first login with stale data).
  *
- * Preserves: theme/wallpaper preferences (STORAGE_KEYS.theme),
- * since those are cosmetic and user-independent.
+ * Preserves cosmetic settings, since those are user-independent.
  */
 function clearStaleUserData(newUserId: string): void {
   const previousUserId = localStorage.getItem(STORAGE_KEYS.userId);
@@ -32,13 +31,12 @@ function clearStaleUserData(newUserId: string): void {
 
   // Clear user-specific localStorage keys
   // We enumerate all known construct: keys and remove them,
-  // EXCEPT theme (cosmetic) and the token (just set by login).
-  const PRESERVE = new Set([STORAGE_KEYS.token, STORAGE_KEYS.theme, STORAGE_KEYS.userId]);
+  // EXCEPT settings (cosmetic) and the token (just set by login).
+  const PRESERVE = new Set([STORAGE_KEYS.token, STORAGE_KEYS.settings, STORAGE_KEYS.userId]);
 
   // Remove all known keys
   const keysToRemove = [
     STORAGE_KEYS.windowPositions,
-    STORAGE_KEYS.soundEnabled,
     'construct:tracker:dismissedGoals',
     'construct:tracker:operations',
     'construct:tour-completed',
