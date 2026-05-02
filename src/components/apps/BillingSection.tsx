@@ -251,7 +251,8 @@ type FeatureRow = {
 };
 
 const PLAN_FEATURES: FeatureRow[] = [
-  { label: 'Agent Reasoning Depth', tooltip: 'How deeply the agent thinks before giving up on a task. Higher steps allow it to solve much harder multi-step problems autonomously.', free: '15 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Agent Model Quality', tooltip: 'All plans use the same best available platform model stack; paid plans increase usage, concurrency, and runtime headroom.', free: 'Best available', starter: 'Best available', pro: 'Best available', freeHas: true, starterHas: true, proHas: true },
+  { label: 'Agent Reasoning Depth', tooltip: 'How deeply the agent thinks before giving up on a task. Higher steps allow it to solve much harder multi-step problems autonomously.', free: '20 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Task Execution Timeout',tooltip: 'Maximum continuous time an agent is allowed to run a single task in the background sandbox.', free: '5 minutes',       starter: '1 hour',        pro: '3 hours',        freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Concurrent Subagents',  tooltip: 'How many separate tasks or workers the agent can parallelize at the exact same time to speed up bulk work.', free: '2 active',        starter: '6 active',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Scheduled Tasks',       tooltip: 'Routines and cron-jobs you can tell your agent to run repeatedly on a schedule (e.g. "Check my email every morning").', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
@@ -264,7 +265,7 @@ const PLAN_FEATURES: FeatureRow[] = [
 ];
 
 /** Weekly usage caps in USD (mirror of worker/src/config/tiers.ts TIER_LIMITS). */
-const WEEKLY_CAPS: Record<PlanId, number> = { free: 1, starter: 8, pro: 45 };
+const WEEKLY_CAPS: Record<PlanId, number> = { free: 3.5, starter: 8, pro: 45 };
 
 /** Format a cap ratio as a readable label, e.g. 8 → "8× more", 0.125 → "8× less". */
 function formatMultiplier(ratio: number): string {
