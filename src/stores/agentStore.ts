@@ -136,6 +136,10 @@ export interface ChatMessage {
   clientId?: string;
   /** Structured details for browser activity rows (icons, payload disclosures). */
   browserAction?: BrowserActionMeta;
+  /** Stable incident id for deduping live + history notices. */
+  incidentId?: string;
+  /** Internal notice category for compact rendering/deduping. */
+  noticeKind?: 'watchdog' | 'system_recovery' | 'incident';
 }
 
 export interface BrowserActionMeta {
@@ -383,8 +387,11 @@ export interface ActiveSessionStatus {
   /** Raw backend status string (thinking / executing / compacting / …). */
   rawStatus?: string;
   lastToolName?: string | null;
+  activeToolName?: string | null;
+  progressReason?: string | null;
   startedAt?: number;
   lastHeartbeatAt?: number;
+  lastProgressAt?: number;
   idleMs?: number;
   lastIteration?: number;
   pendingInjectionCount?: number;
@@ -812,6 +819,9 @@ function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
 }
 
 function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
+  if (msg.incidentId && messages.some(m => m.incidentId === msg.incidentId)) {
+    return messages;
+  }
   // Deduplicate consecutive identical error messages
   if (msg.isError && messages.length > 0) {
     const last = messages[messages.length - 1];
@@ -819,8 +829,111 @@ function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[]
       return messages;
     }
   }
+  if (msg.role === 'notice' && msg.content === SYSTEM_RECOVERY_NOTICE && messages.length > 0) {
+    const last = messages[messages.length - 1];
+    if (last.role === 'notice' && last.content === msg.content) {
+      return messages;
+    }
+  }
+  if (msg.role === 'notice' && msg.noticeKind === 'watchdog') {
+    const withoutPriorWatchdog = messages.filter(m => !(m.role === 'notice' && m.noticeKind === 'watchdog'));
+    const next = [...withoutPriorWatchdog, msg];
+    return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
+  }
+  if (msg.role === 'notice' && msg.noticeKind === 'system_recovery') {
+    const withoutPriorRecovery = clearWatchdogNotices(messages);
+    const next = [...withoutPriorRecovery, msg];
+    return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
+  }
   const next = [...messages, msg];
   return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
+}
+
+function clearWatchdogNotices(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter(m => !(m.role === 'notice' && (m.noticeKind === 'watchdog' || m.noticeKind === 'system_recovery')));
+}
+
+const SYSTEM_RECOVERY_NOTICE = 'Session appears stuck, trying to recover.';
+
+function isSystemRecoveryInstruction(content: string): boolean {
+  return content.trim().startsWith('[System recovery]');
+}
+
+function systemRecoveryNotice(timestamp = Date.now()): ChatMessage {
+  return {
+    role: 'notice',
+    content: SYSTEM_RECOVERY_NOTICE,
+    timestamp: new Date(timestamp),
+    activityType: 'tool',
+    noticeKind: 'system_recovery',
+  };
+}
+
+function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimestamp = Date.now()): ChatMessage | null {
+  const userVisible = data.userVisible === true || data.user_visible === true || data.user_visible === 1;
+  if (!userVisible) return null;
+
+  const severity = String(data.severity || 'warn');
+  const kind = String(data.kind || '');
+  const scope = String(data.scope || '');
+  const message = String(data.message || 'The agent hit an internal issue.');
+  const toolName = typeof data.toolName === 'string'
+    ? data.toolName
+    : typeof data.tool_name === 'string'
+      ? data.tool_name
+      : undefined;
+  const incidentId = typeof data.incidentId === 'string'
+    ? data.incidentId
+    : typeof data.incident_id === 'string'
+      ? data.incident_id
+      : undefined;
+  const actionTaken = typeof data.actionTaken === 'string'
+    ? data.actionTaken
+    : typeof data.action_taken === 'string'
+      ? data.action_taken
+      : undefined;
+  const nextStep = typeof data.nextStep === 'string'
+    ? data.nextStep
+    : typeof data.next_step === 'string'
+      ? data.next_step
+      : undefined;
+  const createdAt = typeof data.createdAt === 'number'
+    ? data.createdAt
+    : typeof data.created_at === 'number'
+      ? data.created_at
+      : fallbackTimestamp;
+
+  if (scope === 'watchdog' || kind.startsWith('watchdog_')) {
+    return {
+      role: 'notice',
+      content: kind === 'watchdog_recovery'
+        ? 'Session appears paused; trying to recover.'
+        : 'Session is taking longer than expected; still monitoring.',
+      timestamp: new Date(createdAt),
+      isError: false,
+      activityType: 'tool',
+      incidentId,
+      noticeKind: 'watchdog',
+    };
+  }
+
+  const parts = [
+    message,
+    toolName ? `Tool: ${toolName}` : '',
+    actionTaken ? `Action taken: ${actionTaken}` : '',
+    nextStep ? `Next step: ${nextStep}` : '',
+    incidentId ? `Reference: ${incidentId}` : '',
+  ].filter(Boolean);
+
+  return {
+    role: 'notice',
+    content: parts.join('\n'),
+    timestamp: new Date(createdAt),
+    isError: severity === 'error',
+    activityType: 'tool',
+    incidentId,
+    noticeKind: 'incident',
+  };
 }
 
 const INFLIGHT_ASSISTANT_STORAGE_PREFIX = 'construct:inflight-assistant:';
@@ -1717,8 +1830,11 @@ export const useComputerStore = create<ComputerStore>()(
                   status: s.idleMs > SESSION_STUCK_THRESHOLD_MS ? 'stuck' : 'thinking',
                   rawStatus: 'running',
                   lastToolName: s.lastToolName,
+                  activeToolName: s.activeToolName,
+                  progressReason: s.progressReason,
                   startedAt: s.startedAt,
                   lastHeartbeatAt: s.lastHeartbeatAt,
+                  lastProgressAt: s.lastProgressAt,
                   idleMs: s.idleMs,
                   lastIteration: s.lastIteration,
                   pendingInjectionCount: s.pendingInjectionCount,
@@ -1819,14 +1935,14 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
 
-        const { messages, operation_metadata, events, terminal_runs } = result.data;
+        const { messages, operation_metadata, events, terminal_runs, incidents } = result.data;
         if (terminal_runs?.length) {
           useTerminalStore.getState().hydrateRuns(terminal_runs);
         }
         // Do not return without updating the UI: an empty table must still
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
-        if (!messages || messages.length === 0) {
+        if ((!messages || messages.length === 0) && (!events || events.length === 0) && (!incidents || incidents.length === 0)) {
           if (get().activeSessionKey === requestedSessionKey) {
             set({ chatMessages: [] });
             sessionMessageCache.set(requestedSessionKey, []);
@@ -1927,6 +2043,10 @@ export const useComputerStore = create<ComputerStore>()(
               : String(msg.content);
             // Skip injected screenshot placeholders
             if (content === '[Screenshot of the current browser page]') continue;
+            if (isSystemRecoveryInstruction(content)) {
+              history.push(systemRecoveryNotice(msg.created_at));
+              continue;
+            }
             // Skip system-injected messages (nudges, auto-continue prompts, error recovery)
             if (content.startsWith('[System]') || content.startsWith('[System:') || content.startsWith('[System —')) continue;
             // Legacy rows: research checkpoints were stored as role=user before internal role existed
@@ -2235,6 +2355,14 @@ export const useComputerStore = create<ComputerStore>()(
           }
 
           // Re-sort so replayed events interleave with messages in real order.
+          history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        }
+
+        if (incidents && incidents.length > 0) {
+          for (const incident of incidents) {
+            const notice = incidentNoticeFromPayload(incident as unknown as Record<string, unknown>, incident.created_at);
+            if (notice) history.push(notice);
+          }
           history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         }
 
@@ -3420,6 +3548,10 @@ export const useComputerStore = create<ComputerStore>()(
           // from Telegram/Slack/Email redirected to the active desktop session).
           const msgRole = event.data?.role as string;
           const msgContent = event.data?.content as string;
+          if (msgRole === 'user' && msgContent && isSystemRecoveryInstruction(msgContent)) {
+            appendToAgentChat(systemRecoveryNotice());
+            break;
+          }
           if (msgRole === 'user' && msgContent && msgContent.startsWith('[System]')) {
             break;
           }
@@ -3940,9 +4072,44 @@ export const useComputerStore = create<ComputerStore>()(
                 set({ activeSessions: next });
               }
             } else {
-              set({ activeSessions: next });
+              const prevAlerts = get().overseerAlertsBySession;
+              const sessionAlerts = prevAlerts[eventSessionKey] ?? [];
+              const remainingSessionAlerts = sessionAlerts.filter((alert) => alert.origin !== 'watchdog');
+              if (remainingSessionAlerts.length !== sessionAlerts.length) {
+                const nextAlerts = { ...prevAlerts };
+                if (remainingSessionAlerts.length > 0) {
+                  nextAlerts[eventSessionKey] = remainingSessionAlerts;
+                } else {
+                  delete nextAlerts[eventSessionKey];
+                }
+                set({ activeSessions: next, overseerAlertsBySession: nextAlerts });
+              } else {
+                set({ activeSessions: next });
+              }
             }
           }
+
+          // Any status_change is authoritative progress/settlement from the
+          // backend. Clear transient watchdog recovery notices so they don't
+          // linger once the session resumes or finishes.
+          set(state => {
+            const updates: Partial<typeof state> = {};
+            if (isActiveSession) {
+              const cleared = clearWatchdogNotices(state.chatMessages);
+              if (cleared.length !== state.chatMessages.length) updates.chatMessages = cleared;
+            }
+            const pa = state.platformAgents[eventPlatform];
+            if (pa?.chatMessages?.length) {
+              const clearedAgentMessages = clearWatchdogNotices(pa.chatMessages);
+              if (clearedAgentMessages.length !== pa.chatMessages.length) {
+                updates.platformAgents = {
+                  ...state.platformAgents,
+                  [eventPlatform]: { ...pa, chatMessages: clearedAgentMessages },
+                };
+              }
+            }
+            return updates;
+          });
 
           if (statusPlatform && statusPlatform !== 'desktop') break;
 
@@ -4051,6 +4218,25 @@ export const useComputerStore = create<ComputerStore>()(
           // older worker builds; the trimmed contract uses `sessionKey` only.
           const alertSessionKey = (event.data?.sessionKey ?? event.data?.relatedSession) as string | undefined;
           const origin = event.data?.origin as string | undefined;
+          const shouldClear = event.data?.clear === true;
+          if (shouldClear && origin === 'watchdog') {
+            set(state => {
+              const bucketKey = alertSessionKey ?? '';
+              const nextBuckets = { ...state.overseerAlertsBySession };
+              delete nextBuckets[bucketKey];
+              const updates: Partial<typeof state> = { overseerAlertsBySession: nextBuckets };
+              if (isActiveSession) updates.chatMessages = clearWatchdogNotices(state.chatMessages);
+              const pa = state.platformAgents[eventPlatform];
+              if (pa?.chatMessages?.length) {
+                updates.platformAgents = {
+                  ...state.platformAgents,
+                  [eventPlatform]: { ...pa, chatMessages: clearWatchdogNotices(pa.chatMessages) },
+                };
+              }
+              return updates;
+            });
+            break;
+          }
           if (!text) break;
           const alert: OverseerAlert = {
             id: Date.now() + Math.floor(Math.random() * 1000),
@@ -4065,7 +4251,10 @@ export const useComputerStore = create<ComputerStore>()(
             // so noisy sessions can't evict alerts from quiet peers.
             const bucketKey = alertSessionKey ?? '';
             const bucket = state.overseerAlertsBySession[bucketKey] ?? [];
-            const nextBucket = [...bucket, alert].slice(-OVERSEER_ALERTS_PER_SESSION);
+            const dedupedBucket = origin === 'watchdog'
+              ? bucket.filter((existing) => existing.origin !== 'watchdog')
+              : bucket;
+            const nextBucket = [...dedupedBucket, alert].slice(-OVERSEER_ALERTS_PER_SESSION);
             const nextBuckets = { ...state.overseerAlertsBySession, [bucketKey]: nextBucket };
 
             // Promote the live status dot to 'stuck' when the watchdog warns
@@ -4088,13 +4277,29 @@ export const useComputerStore = create<ComputerStore>()(
           });
           // In-chat banners carry warn/info; toast only on hard failures so the
           // watchdog stays quiet by default.
-          if (severity === 'error') {
+          if (severity === 'error' && origin !== 'watchdog') {
             useNotificationStore.getState().addNotification({
               title: 'Agent status',
               body: text,
               source: 'agent',
               variant: 'error',
             }, 5000);
+          }
+          break;
+        }
+
+        case 'agent_incident': {
+          const notice = incidentNoticeFromPayload(event.data || {}, Date.now());
+          if (notice) {
+            appendToAgentChat(notice);
+            if (notice.isError) {
+              useNotificationStore.getState().addNotification({
+                title: 'Agent issue',
+                body: notice.content.split('\n')[0] || 'The agent hit an issue.',
+                source: 'agent',
+                variant: 'error',
+              }, 5000);
+            }
           }
           break;
         }

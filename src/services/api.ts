@@ -468,6 +468,22 @@ export async function getAgentHistory(_instanceId: string, sessionKey = 'ws_defa
    *  spawn/complete, orchestration, research checkpoints, etc.). */
   events?: SessionEventRow[];
   terminal_runs?: TerminalRunRow[];
+  incidents?: Array<{
+    incident_id: string;
+    severity: 'info' | 'warn' | 'error';
+    kind: string;
+    scope: string;
+    recoverability: string;
+    message: string;
+    technical_detail?: string | null;
+    action_taken?: string | null;
+    next_step?: string | null;
+    user_visible?: number | boolean | null;
+    correlation_id?: string | null;
+    tool_call_id?: string | null;
+    tool_name?: string | null;
+    created_at: number;
+  }>;
   operation_metadata?: OperationMeta[];
 }>> {
   return request(`/agent/history?session_key=${encodeURIComponent(sessionKey)}`);
@@ -519,6 +535,9 @@ export interface ActiveSessionSnapshot {
   sessionKey: string;
   startedAt: number;
   lastHeartbeatAt: number;
+  lastProgressAt?: number;
+  progressReason?: string | null;
+  activeToolName?: string | null;
   lastIteration: number;
   lastToolName: string | null;
   interruptRequested: boolean;
