@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
+import { useClippyActivitySummary, type ClippyActivityKind, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
@@ -321,7 +321,8 @@ export function ClippyWidget() {
     injectStyles();
   }, []);
 
-  const { stateLabel, scrollText, isActive, isIdle } = useAgentStateLabel();
+  const activitySummary = useClippyActivitySummary();
+  const { headline: stateLabel, detail: scrollText, isActive, isIdle } = activitySummary;
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
@@ -334,6 +335,7 @@ export function ClippyWidget() {
   const avatarSize = isMobile ? MOBILE_AVATAR_SIZE : DESKTOP_AVATAR_SIZE;
   const [pos, setPos] = useState(() => hasWindows ? CORNER_POS : defaultCenter);
   const [userDragged, setUserDragged] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // When windows open and widget is near center, auto-slide to corner
   useEffect(() => {
@@ -365,6 +367,7 @@ export function ClippyWidget() {
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDragging(true);
     wasDragRef.current = false;
     dragRef.current = { startMX: e.clientX, startMY: e.clientY, startRx: pos.rx, startRy: pos.ry };
   }, [pos]);
@@ -385,6 +388,7 @@ export function ClippyWidget() {
       if (!wasDragRef.current) toggleSpotlight();
       dragRef.current = null;
     }
+    setIsDragging(false);
   }, [toggleSpotlight]);
 
   // ── Welcome bubble (shows once on mount with 1s delay, auto-dismisses) ──
@@ -496,16 +500,26 @@ export function ClippyWidget() {
   // - Operation goals (what a spawned agent is doing)
   // - Errors (disconnected, agent error)
   // Simple "Working..." status is handled by the MenuBar indicator.
-  const hasUniqueContext = !!scrollText || !agentConnected;
+  const hasActivityContext = activitySummary.activityFeed.length > 0 || activitySummary.subagents.length > 0;
+  const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext;
   const showBubble = isActive && hasUniqueContext && !dismissed;
   const showWelcome = !!welcomeMsg && !showBubble;
 
   // Determine what to show in the unified comic bubble
-  const bubbleContent = showBubble
-    ? { title: stateLabel, detail: scrollText, variant: 'status' as const }
-    : showWelcome
-    ? { title: welcomeMsg!, detail: '', variant: 'welcome' as const }
-    : null;
+  const bubbleContent = useMemo(() => {
+    if (showBubble) {
+      return {
+        title: stateLabel,
+        detail: scrollText,
+        variant: hasActivityContext ? 'status-dashboard' as const : 'status' as const,
+        summary: activitySummary,
+      };
+    }
+    if (showWelcome) {
+      return { title: welcomeMsg!, detail: '', variant: 'welcome' as const, summary: undefined };
+    }
+    return null;
+  }, [activitySummary, hasActivityContext, scrollText, showBubble, showWelcome, stateLabel, welcomeMsg]);
 
   // Keep bubble mounted during exit animation
   const [visibleBubble, setVisibleBubble] = useState(bubbleContent);
@@ -532,7 +546,7 @@ export function ClippyWidget() {
   return (
     <div
       className="fixed select-none"
-      style={{ left: px, top: py, zIndex: Z_INDEX.clippyWidget, width: avatarSize, height: avatarSize, transition: dragRef.current ? 'none' : 'left 0.6s cubic-bezier(0.4,0,0.2,1), top 0.6s cubic-bezier(0.4,0,0.2,1)' }}
+      style={{ left: px, top: py, zIndex: Z_INDEX.clippyWidget, width: avatarSize, height: avatarSize, transition: isDragging ? 'none' : 'left 0.6s cubic-bezier(0.4,0,0.2,1), top 0.6s cubic-bezier(0.4,0,0.2,1)' }}
     >
       {/* ── Avatar ── */}
       <div
@@ -542,6 +556,7 @@ export function ClippyWidget() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onMouseEnter={() => { hoverRef.current = true; }}
         onMouseLeave={() => { hoverRef.current = false; }}
         style={{ willChange: 'transform, filter' }}
@@ -598,7 +613,9 @@ export function ClippyWidget() {
            title={visibleBubble.title}
            detail={visibleBubble.detail}
            variant={visibleBubble.variant}
+           summary={visibleBubble.summary}
            avatarSize={avatarSize}
+           isMobile={isMobile}
            closing={bubbleClosing}
            onClickBubble={() => {
              // Let any current drag/click settle, then open spotlight
@@ -634,24 +651,35 @@ const NORMAL_BUBBLE_W = 180;
 const NORMAL_BUBBLE_H = 62;  // 276 * (180/800) ≈ 62
 const LG_BUBBLE_W = 220;
 const LG_BUBBLE_H = 186;     // 676 * (220/800) ≈ 186
+const DASHBOARD_BUBBLE_W = 286;
+const DASHBOARD_BUBBLE_H = 242;
+const MOBILE_DASHBOARD_BUBBLE_W = 220;
+const MOBILE_DASHBOARD_BUBBLE_H = 186;
 
-function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubble }: {
+function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, closing, onClickBubble }: {
   title: string;
   detail: string;
-  variant: 'welcome' | 'status';
+  variant: 'welcome' | 'status' | 'status-dashboard';
+  summary?: ClippyActivitySummary;
   avatarSize: number;
+  isMobile: boolean;
   closing?: boolean;
   onClickBubble?: () => void;
 }) {
   const textRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
   const isWelcome = variant === 'welcome';
+  const isDashboard = variant === 'status-dashboard' && !!summary;
   const hasDetail = !!detail;
 
   // Use lg bubble for status messages with detail text, normal for welcome or no detail
-  const useLgBubble = !isWelcome && hasDetail;
-  const bubbleW = useLgBubble ? LG_BUBBLE_W : NORMAL_BUBBLE_W;
-  const bubbleH = useLgBubble ? LG_BUBBLE_H : NORMAL_BUBBLE_H;
+  const useLgBubble = (!isWelcome && hasDetail) || !!isDashboard;
+  const bubbleW = isDashboard
+    ? (isMobile ? MOBILE_DASHBOARD_BUBBLE_W : DASHBOARD_BUBBLE_W)
+    : useLgBubble ? LG_BUBBLE_W : NORMAL_BUBBLE_W;
+  const bubbleH = isDashboard
+    ? (isMobile ? MOBILE_DASHBOARD_BUBBLE_H : DASHBOARD_BUBBLE_H)
+    : useLgBubble ? LG_BUBBLE_H : NORMAL_BUBBLE_H;
   const bubbleSrc = useLgBubble ? chatBubbleLgSrc : chatBubbleSrc;
 
   // Auto-scroll thinking text to bottom
@@ -690,7 +718,9 @@ function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubbl
   // Content area padding - adjusted for the bubble image's tail (right side) and rounded corners
   // Format: top right bottom left
   // More padding on right to avoid tail, left padding for rounded corner
-  const contentPadding = useLgBubble ? '14px 40px 18px 34px' : '10px 36px 14px 30px';
+  const contentPadding = isDashboard
+    ? (isMobile ? '13px 39px 17px 29px' : '16px 48px 22px 36px')
+    : useLgBubble ? '14px 40px 18px 34px' : '10px 36px 14px 30px';
 
   return (
     <div
@@ -730,6 +760,10 @@ function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubbl
         className="relative h-full flex flex-col items-center justify-center text-center pointer-events-none"
         style={{ padding: contentPadding }}
       >
+        {isDashboard && summary ? (
+          <ClippyActivityBubbleContent summary={summary} isMobile={isMobile} />
+        ) : (
+          <>
         {/* Title */}
         <div
           className="text-white"
@@ -762,7 +796,269 @@ function ComicBubble({ title, detail, variant, avatarSize, closing, onClickBubbl
             {detail}
           </div>
         )}
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+function ClippyActivityBubbleContent({ summary, isMobile }: {
+  summary: ClippyActivitySummary;
+  isMobile: boolean;
+}) {
+  const visibleFeed = summary.activityFeed.slice(0, isMobile ? 2 : 3);
+  const visibleSubagents = summary.subagents.slice(0, isMobile ? 2 : 4);
+  const hiddenSubagents = Math.max(0, summary.counts.total - visibleSubagents.length);
+  const counters = summary.counts.total > 0
+    ? [
+        summary.counts.running > 0 ? `${summary.counts.running} running` : '',
+        summary.counts.complete > 0 ? `${summary.counts.complete} done` : '',
+        summary.counts.failed > 0 ? `${summary.counts.failed} failed` : '',
+      ].filter(Boolean).join(' · ')
+    : '';
+
+  return (
+    <div className="flex h-full w-full flex-col text-left text-white">
+      <div className="min-w-0">
+        <div
+          className="truncate"
+          style={{
+            fontSize: isMobile ? '11px' : '12px',
+            fontWeight: 700,
+            lineHeight: 1.2,
+            textShadow: '0 1px 2px rgba(0,0,0,0.25)',
+          }}
+        >
+          {summary.headline}
+        </div>
+        {counters && (
+          <div
+            className="truncate"
+            style={{
+              marginTop: 2,
+              color: 'rgba(255,255,255,0.72)',
+              fontSize: isMobile ? '8px' : '9px',
+              lineHeight: 1.2,
+              textShadow: '0 1px 2px rgba(0,0,0,0.18)',
+            }}
+          >
+            {counters}
+          </div>
+        )}
+      </div>
+
+      <div
+        className="mt-2 overflow-hidden rounded-[10px]"
+        style={{
+          background: 'rgba(4, 28, 64, 0.18)',
+          border: '1px solid rgba(255,255,255,0.16)',
+        }}
+      >
+        {visibleFeed.length > 0 ? visibleFeed.map(item => (
+          <ActivityRow key={item.id} item={item} compact={isMobile} />
+        )) : (
+          <div
+            className="line-clamp-2"
+            style={{
+              padding: '7px 8px',
+              color: 'rgba(255,255,255,0.82)',
+              fontSize: isMobile ? '9px' : '10px',
+              lineHeight: 1.35,
+            }}
+          >
+            {summary.detail || 'Gathering activity...'}
+          </div>
+        )}
+      </div>
+
+      {visibleSubagents.length > 0 && (
+        <div
+          className="mt-2 grid gap-1.5"
+          style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}
+        >
+          {visibleSubagents.map(agent => (
+            <SubagentTile key={agent.id} agent={agent} compact={isMobile} />
+          ))}
+          {hiddenSubagents > 0 && !isMobile && (
+            <div
+              className="flex items-center justify-center rounded-[9px]"
+              style={{
+                minHeight: 36,
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px dashed rgba(255,255,255,0.25)',
+                color: 'rgba(255,255,255,0.78)',
+                fontSize: '10px',
+                fontWeight: 700,
+              }}
+            >
+              +{hiddenSubagents} more
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityRow({ item, compact }: {
+  item: ClippyActivitySummary['activityFeed'][number];
+  compact: boolean;
+}) {
+  return (
+    <div
+      className="flex min-w-0 items-center gap-1.5 border-b last:border-b-0"
+      style={{
+        padding: compact ? '5px 7px' : '6px 8px',
+        borderColor: 'rgba(255,255,255,0.11)',
+      }}
+    >
+      <KindDot kind={item.kind} status={item.status} />
+      <div className="min-w-0 flex-1">
+        <div
+          className="truncate"
+          style={{
+            color: 'rgba(255,255,255,0.68)',
+            fontSize: compact ? '7px' : '8px',
+            fontWeight: 700,
+            letterSpacing: '0.03em',
+            lineHeight: 1.05,
+            textTransform: 'uppercase',
+          }}
+        >
+          {item.actor}
+        </div>
+        <div
+          className="truncate"
+          style={{
+            color: 'rgba(255,255,255,0.9)',
+            fontSize: compact ? '8px' : '9px',
+            lineHeight: 1.25,
+          }}
+        >
+          {item.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubagentTile({ agent, compact }: {
+  agent: ClippyActivitySummary['subagents'][number];
+  compact: boolean;
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-[9px]"
+      style={{
+        padding: compact ? '6px 7px' : '7px 8px',
+        minHeight: compact ? 34 : 46,
+        background: 'rgba(255,255,255,0.13)',
+        border: '1px solid rgba(255,255,255,0.16)',
+      }}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        <StatusDot status={agent.status} />
+        <span
+          className="truncate"
+          style={{
+            color: 'rgba(255,255,255,0.94)',
+            fontSize: compact ? '9px' : '10px',
+            fontWeight: 700,
+            lineHeight: 1.1,
+          }}
+        >
+          {agent.label}
+        </span>
+        {agent.terminalActive && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              color: 'rgba(255,255,255,0.66)',
+              fontSize: compact ? '8px' : '9px',
+              fontWeight: 700,
+            }}
+          >
+            term
+          </span>
+        )}
+      </div>
+      <div
+        className="mt-1 line-clamp-2"
+        style={{
+          color: 'rgba(255,255,255,0.76)',
+          fontSize: compact ? '8px' : '9px',
+          lineHeight: 1.25,
+        }}
+      >
+        {agent.currentActivity || agent.goal}
+      </div>
+    </div>
+  );
+}
+
+function KindDot({ kind, status }: {
+  kind: ClippyActivityKind;
+  status?: ClippyActivitySummary['activityFeed'][number]['status'];
+}) {
+  const color = kindColor(kind, status);
+  return (
+    <span
+      className="shrink-0 rounded-full"
+      style={{
+        width: 7,
+        height: 7,
+        background: color,
+        boxShadow: `0 0 8px ${color}`,
+      }}
+    />
+  );
+}
+
+function StatusDot({ status }: {
+  status: ClippyActivitySummary['subagents'][number]['status'];
+}) {
+  const color =
+    status === 'running' ? 'rgb(125, 211, 252)' :
+    status === 'pending' ? 'rgb(253, 224, 71)' :
+    status === 'complete' ? 'rgb(134, 239, 172)' :
+    status === 'failed' || status === 'cancelled' ? 'rgb(252, 165, 165)' :
+    'rgba(255,255,255,0.55)';
+  return (
+    <span
+      className="shrink-0 rounded-full"
+      style={{
+        width: 7,
+        height: 7,
+        background: color,
+        boxShadow: `0 0 8px ${color}`,
+      }}
+    />
+  );
+}
+
+function kindColor(kind: ClippyActivityKind, status?: ClippyActivitySummary['activityFeed'][number]['status']): string {
+  if (status === 'failed') return 'rgb(252, 165, 165)';
+  if (status === 'completed') return 'rgb(134, 239, 172)';
+  switch (kind) {
+    case 'terminal':
+      return 'rgb(251, 191, 36)';
+    case 'browser':
+    case 'web':
+      return 'rgb(56, 189, 248)';
+    case 'file':
+      return 'rgb(167, 139, 250)';
+    case 'delegation':
+    case 'background':
+      return 'rgb(45, 212, 191)';
+    case 'desktop':
+      return 'rgb(96, 165, 250)';
+    case 'calendar':
+      return 'rgb(244, 114, 182)';
+    case 'text':
+    case 'agent':
+      return 'rgb(255, 255, 255)';
+    default:
+      return 'rgb(147, 197, 253)';
+  }
 }
