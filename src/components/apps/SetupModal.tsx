@@ -60,6 +60,7 @@ export function SetupModal() {
 
   // Upgrade-in-place state.
   const [upgrading, setUpgrading] = useState<'starter' | 'pro' | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Profile fields
   const [ownerName, setOwnerName] = useState(user?.displayName || '');
@@ -284,10 +285,27 @@ export function SetupModal() {
               <Mail className="w-3.5 h-3.5" />
               Agent Email Address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
-              {!emailLocked && !isPaid && <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-emerald-500/15 text-emerald-400 font-semibold tracking-wide uppercase normal-case ml-1">Paid</span>}
+              {!emailLocked && !isPaid && (
+                <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-black/5 dark:bg-white/10 text-[var(--color-text-muted)] font-semibold tracking-wide uppercase normal-case ml-1">Optional</span>
+              )}
             </Label>
             {!isPaid && !emailLocked ? (
-              <SetupModalUpgradeCard upgrading={upgrading} onUpgrade={handleUpgrade} />
+              showUpgrade ? (
+                <SetupModalUpgradeCard upgrading={upgrading} onUpgrade={handleUpgrade} onCancel={() => setShowUpgrade(false)} />
+              ) : (
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02]">
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    Give your agent a dedicated inbox
+                  </p>
+                  <button
+                    type="button"
+                    className="h-6 text-[10px] font-medium px-2.5 rounded-md bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 transition-colors text-[var(--color-text)]"
+                    onClick={() => setShowUpgrade(true)}
+                  >
+                    View Plans
+                  </button>
+                </div>
+              )
             ) : (
             <>
             <div className="flex items-stretch rounded-lg overflow-hidden border border-[var(--color-border)]">
@@ -373,15 +391,28 @@ export function SetupModal() {
 function SetupModalUpgradeCard({
   upgrading,
   onUpgrade,
+  onCancel,
 }: {
   upgrading: 'starter' | 'pro' | null;
   onUpgrade: (plan: 'starter' | 'pro') => void;
+  onCancel?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5">
-      <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-        Give your agent a <span className="font-medium text-[var(--color-text)]">@agents.construct.computer</span> inbox — available on any paid plan.
-      </p>
+    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+          Give your agent a <span className="font-medium text-[var(--color-text)]">@agents.construct.computer</span> inbox — available on any paid plan.
+        </p>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 mt-0.5"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-1.5">
         <button
           type="button"
