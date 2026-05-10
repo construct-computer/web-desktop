@@ -237,7 +237,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     height: 560,
     minWidth: 560,
     minHeight: 400,
-    maxWidth: 900,
+    maxWidth: 1400,
     maxHeight: 900,
   },
   about: {

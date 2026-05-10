@@ -584,7 +584,7 @@ export function Spotlight() {
                       <button
                         type="button"
                         onClick={() => { setSidebarOpen(s => !s); }}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent text-text-muted/70 transition-all duration-150 hover:border-white/8 hover:bg-white/6 hover:text-text"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-muted/70 transition-all duration-150 hover:bg-white/10 hover:text-text"
                         aria-expanded={sidebarOpen}
                         aria-label={sidebarOpen ? 'Hide session list' : 'Show session list'}
                       >

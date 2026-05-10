@@ -158,7 +158,7 @@ function SectionPanel({ title, subtitle, action, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="px-7 py-6 max-w-[540px]">
+    <div className="px-7 py-6">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[22px] font-bold mb-1 tracking-tight">{title}</h2>
