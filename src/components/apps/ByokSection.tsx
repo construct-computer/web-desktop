@@ -173,7 +173,7 @@ export function ByokSection() {
     if (!id) return;
     // Light validation: must contain a slash (openrouter format is `provider/model`).
     if (!id.includes('/')) {
-      setModelError('Model ids look like "anthropic/claude-sonnet-4.5".');
+      setModelError('Model ids look like "google/gemini-2.5-pro".');
       return;
     }
     // Warn if not in the catalogue but allow save (OpenRouter sometimes has beta models).
@@ -366,7 +366,7 @@ export function ByokSection() {
           {showCustomInput ? (
             <div className="flex gap-2">
               <Input
-                placeholder="anthropic/claude-sonnet-4.5"
+                placeholder="google/gemini-2.5-pro"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
                 onKeyDown={(e) => {

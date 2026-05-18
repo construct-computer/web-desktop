@@ -79,4 +79,29 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'react-vendor';
+          if (id.includes('/monaco-editor/') || id.includes('/@monaco-editor/')) return 'editor-vendor';
+          if (id.includes('/@xterm/')) return 'terminal-vendor';
+          if (id.includes('/xlsx/')) return 'spreadsheet-vendor';
+          if (id.includes('/mammoth/') || id.includes('/@jvmr/pptx-to-html/')) return 'document-vendor';
+          if (
+            id.includes('/react-markdown/')
+            || id.includes('/remark-')
+            || id.includes('/rehype-')
+            || id.includes('/unified/')
+            || id.includes('/katex/')
+            || id.includes('/highlight.js/')
+          ) return 'markdown-vendor';
+          if (id.includes('/recharts/')) return 'chart-vendor';
+          if (id.includes('/lucide-react/')) return 'icons-vendor';
+          return undefined;
+        },
+      },
+    },
+  },
 })

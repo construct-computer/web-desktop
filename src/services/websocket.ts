@@ -47,7 +47,7 @@ class BrowserWSClient {
     const token = localStorage.getItem(STORAGE_KEYS.token);
     const url = `${getWsBaseUrl()}/ws/browser/${instanceId}?token=${encodeURIComponent(token || '')}`;
     
-    browserLog.info('Connecting to', url);
+    browserLog.info('Connecting to browser websocket', { instanceId });
     
     try {
       this.ws = new WebSocket(url);
@@ -474,7 +474,7 @@ class AgentWSClient {
     const token = localStorage.getItem(STORAGE_KEYS.token);
     const url = `${getWsBaseUrl()}/ws/agent/${instanceId}?token=${encodeURIComponent(token || '')}`;
     
-    agentLog.info('Connecting to', url);
+    agentLog.info('Connecting to agent websocket', { instanceId });
     
     try {
       this.ws = new WebSocket(url);
@@ -747,4 +747,3 @@ class AgentWSClient {
 // Export singleton instances
 export const browserWS = new BrowserWSClient();
 export const agentWS = new AgentWSClient();
-

@@ -49,7 +49,7 @@ function formatResetTime(iso?: string): string {
 
 function truncateModel(model?: string): string {
   if (!model) return 'your model';
-  // `openrouter/anthropic/claude-3.5-sonnet` -> `claude-3.5-sonnet`
+  // `openrouter/google/gemini-2.5-pro` -> `gemini-2.5-pro`
   const parts = model.split('/');
   return parts[parts.length - 1] || model;
 }
