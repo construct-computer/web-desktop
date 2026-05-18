@@ -14,6 +14,7 @@ import {
 import { Button, Tooltip } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import type { SubscriptionInfo } from '@/services/api';
+import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 
 /* ── Reusable card wrapper ── */
 
@@ -258,7 +259,7 @@ const PLAN_FEATURES: FeatureRow[] = [
   { label: 'Scheduled Tasks',       tooltip: 'Routines and cron-jobs you can tell your agent to run repeatedly on a schedule (e.g. "Check my email every morning").', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Cloud Storage',         tooltip: 'Space for files, PDFs, images, and documents stored in your virtual workspace.', free: '100 MB',          starter: '1 GB',          pro: '3 GB',           freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Platform Integrations', tooltip: 'Connect external apps (Slack, Gmail, GitHub, Notion, etc.) for your agent to interact with.', free: 'Full Library',    starter: 'Full Library',  pro: 'Full Library',   freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Agent Email Address',   tooltip: 'Get a dedicated @agents.construct.computer email address that your agent can autonomously read and reply from.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
+  { label: 'Agent Email Address',   tooltip: `Get a dedicated @${AGENT_EMAIL_DOMAIN} email address that your agent can autonomously read and reply from.`, free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
   { label: 'Background Execution',  tooltip: 'Allow agents to continue long-running tasks asynchronously even after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
   { label: 'Bring Your Own Keys',   tooltip: 'Use your own LLM API keys through supported providers to completely bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },

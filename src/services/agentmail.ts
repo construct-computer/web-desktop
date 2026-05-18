@@ -1,8 +1,7 @@
 /**
- * AgentMail service for the frontend.
+ * Agent email service for the frontend.
  *
- * All calls are proxied through the backend — the API key never
- * leaves the server.
+ * All calls are proxied through the backend.
  */
 
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
@@ -84,7 +83,7 @@ function getToken(): string | null {
 
 /**
  * Recursively convert snake_case keys to camelCase.
- * The AgentMail REST API returns snake_case but our types use camelCase.
+ * The backend API returns snake_case in some legacy fields but our types use camelCase.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function snakeToCamel(obj: any): any {
@@ -129,7 +128,7 @@ async function apiCall<T>(
   }
 }
 
-/** Check if AgentMail is configured and get the inbox address. */
+/** Check if agent email is configured and get the inbox address. */
 export async function getEmailStatus(): Promise<ApiResponse<{
   configured: boolean;
   inboxId: string | null;

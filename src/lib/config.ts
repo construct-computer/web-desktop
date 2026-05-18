@@ -200,8 +200,8 @@ export function detectActivePromoCode(): RecognizedPromoCode | null {
 /** Upload directory path inside the workspace. */
 export const UPLOAD_DIRECTORY = '/home/sandbox/workspace/uploads';
 
-/** AgentMail email domain. */
-export const AGENTMAIL_DOMAIN = 'agents.construct.computer';
+/** Native agent email domain. */
+export const AGENT_EMAIL_DOMAIN = import.meta.env.VITE_AGENT_EMAIL_DOMAIN || 'agents.construct.computer';
 
 /** BroadcastChannel name for tab singleton. */
 export const TAB_SINGLETON_CHANNEL = 'construct-desktop';

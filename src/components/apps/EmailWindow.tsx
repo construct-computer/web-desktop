@@ -21,21 +21,26 @@ import {
 import type { WindowConfig } from '@/types';
 import {
   deleteThread,
+  downloadAttachment,
+  deleteDraft,
   extractEmail,
   extractName,
   getEmailStatus,
   getMailboxItemId,
-  getMessageAttachment,
   getThread,
+  isDraftItem,
   isThreadItem,
   listMailbox,
   markThreadUnreadState,
+  sendDraft,
   updateMessageLabels,
+  type EmailDraft,
   type EmailMessage,
   parseAddress,
   parseAddressList,
   type EmailThread,
   type EmailThreadDetail,
+  type MailboxFolder,
   type MailboxItem,
   type ParsedAddress,
 } from '@/services/emailMailbox';
@@ -56,6 +61,15 @@ function formatFullDate(dateStr: string): string {
     minute: '2-digit',
   });
 }
+
+const MAILBOX_FOLDERS: Array<{ key: MailboxFolder; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'inbox', label: 'Inbox' },
+  { key: 'sent', label: 'Sent' },
+  { key: 'drafts', label: 'Drafts' },
+  { key: 'outbox', label: 'Outbox' },
+  { key: 'trash', label: 'Trash' },
+];
 
 function Checkbox({
   checked,
@@ -130,12 +144,16 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [folder, setFolder] = useState<MailboxFolder>('all');
 
   const [selectedThread, setSelectedThread] = useState<EmailThreadDetail | null>(null);
+  const [selectedDraft, setSelectedDraft] = useState<EmailDraft | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Record<string, boolean>>({});
   const [pendingAction, setPendingAction] = useState<null | 'read' | 'unread' | 'delete'>(null);
+  const [pendingDraftAction, setPendingDraftAction] = useState<null | 'send' | 'delete'>(null);
+  const selectedItemOpen = !!selectedThread || !!selectedDraft;
 
   const selectedCount = useMemo(
     () => Object.values(selection).filter(Boolean).length,
@@ -171,7 +189,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     else setLoadingMore(true);
 
     const result = await listMailbox({
-      folder: 'all',
+      folder,
       limit: 30,
       pageToken: reset ? undefined : nextPageToken,
       query: searchQuery || undefined,
@@ -187,7 +205,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
     setListLoading(false);
     setLoadingMore(false);
-  }, [nextPageToken, searchQuery]);
+  }, [folder, nextPageToken, searchQuery]);
 
   const init = useCallback(async () => {
     setLoading(true);
@@ -226,7 +244,8 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
   useEffect(() => {
     setSelection({});
     setSelectedThread(null);
-  }, [searchQuery]);
+    setSelectedDraft(null);
+  }, [folder, searchQuery]);
 
   useEffect(() => {
     if (loading || notConfigured) return;
@@ -249,6 +268,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
   const openThread = useCallback(async (thread: EmailThread) => {
     setThreadLoading(true);
+    setSelectedDraft(null);
     const detail = await getThread(thread.threadId);
     if (detail.success && detail.data) {
       let nextThread = detail.data;
@@ -362,6 +382,26 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     await loadMailbox(true);
   }, [loadMailbox]);
 
+  const handleDraftSend = useCallback(async (draftId: string) => {
+    setPendingDraftAction('send');
+    setActionError(null);
+    const result = await sendDraft(draftId);
+    if (!result.success && result.error) setActionError(result.error);
+    setSelectedDraft(null);
+    await loadMailbox(true);
+    setPendingDraftAction(null);
+  }, [loadMailbox]);
+
+  const handleDraftDelete = useCallback(async (draftId: string) => {
+    setPendingDraftAction('delete');
+    setActionError(null);
+    const result = await deleteDraft(draftId);
+    if (!result.success && result.error) setActionError(result.error);
+    setSelectedDraft(null);
+    await loadMailbox(true);
+    setPendingDraftAction(null);
+  }, [loadMailbox]);
+
   const handleMessageUnreadToggle = useCallback(async (message: EmailMessage) => {
     const result = await updateMessageLabels(message.messageId, message.unread
       ? { addLabels: ['read'], removeLabels: ['UNREAD', 'unread'] }
@@ -374,12 +414,16 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     }
   }, [loadMailbox, selectedThread]);
 
-  const openAttachment = useCallback(async (message: EmailMessage, attachmentId: string | null) => {
+  const openAttachment = useCallback(async (_message: EmailMessage | EmailDraft, attachmentId: string | null) => {
     if (!attachmentId) return;
-    const attachment = await getMessageAttachment(message.messageId, attachmentId);
-    const url = attachment.data?.downloadUrl;
-    if (attachment.success && url) window.open(url, '_blank');
-    else if (attachment.error) setActionError(attachment.error);
+    const attachment = await downloadAttachment(attachmentId);
+    const url = attachment.data?.url;
+    if (attachment.success && url) {
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } else if (attachment.error) {
+      setActionError(attachment.error);
+    }
   }, []);
 
   if (loading) {
@@ -408,12 +452,12 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 surface-app text-sm overflow-hidden">
-      {(!isMobile || !selectedThread) && (
+      {(!isMobile || !selectedItemOpen) && (
       <div className={`${isMobile ? 'w-full' : 'w-[380px] border-r'} shrink-0 min-h-0 border-[var(--color-border)] flex flex-col overflow-hidden`}>
         <div className="shrink-0 border-b border-[var(--color-border)] surface-toolbar px-3 py-2 space-y-2">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium">All Mail</div>
+              <div className="text-xs font-medium">{MAILBOX_FOLDERS.find((item) => item.key === folder)?.label || 'Mail'}</div>
               <div className="text-[10px] text-[var(--color-text-muted)] truncate" title={inboxEmail}>{inboxEmail}</div>
             </div>
             <button
@@ -450,6 +494,23 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
               </button>
             </div>
           )}
+
+          <div className="flex gap-1 overflow-x-auto pb-0.5">
+            {MAILBOX_FOLDERS.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                onClick={() => setFolder(entry.key)}
+                className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
+                  folder === entry.key
+                    ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/10'
+                }`}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
 
           {selectedCount > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] surface-control px-2 py-1.5">
@@ -524,6 +585,46 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           ) : (
             <>
               {items.map((item) => {
+                if (isDraftItem(item)) {
+                  const id = getMailboxItemId(item);
+                  const active = selectedDraft?.draftId === item.draftId;
+                  const title = item.subject || '(no subject)';
+                  const recipients = item.to.length ? item.to.join(', ') : 'No recipients';
+                  const status = item.sendStatus === 'scheduled' && item.sendAt
+                    ? `Scheduled ${formatRelativeTimeShort(item.sendAt)}`
+                    : item.sendStatus === 'failed'
+                      ? 'Failed'
+                      : item.sendStatus === 'sending'
+                        ? 'Sending'
+                        : 'Draft';
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => { setSelectedThread(null); setSelectedDraft(item); }}
+                      className={`block w-full text-left border-b border-[var(--color-border)] px-3 py-2.5 ${
+                        active ? 'bg-[var(--color-accent)]/10' : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[var(--color-text-muted)] shrink-0">
+                          <Mail size={14} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-medium text-[var(--color-text)] truncate flex-1">{title}</span>
+                            <span className={`text-[10px] shrink-0 ${item.sendStatus === 'failed' ? 'text-red-300' : 'text-[var(--color-text-muted)]'}`}>
+                              {status}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[var(--color-text-muted)] truncate">To: {recipients}</p>
+                          {item.preview && <p className="text-[10px] text-[var(--color-text-muted)] truncate">{item.preview}</p>}
+                        </div>
+                        {(item.attachments || []).length > 0 && <Paperclip size={11} className="text-[var(--color-text-muted)] shrink-0" />}
+                      </div>
+                    </button>
+                  );
+                }
                 if (!isThreadItem(item)) return null;
                 const id = getMailboxItemId(item);
                 const checked = !!selection[id];
@@ -612,7 +713,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
       </div>
       )}
 
-      {(!isMobile || selectedThread) && (
+      {(!isMobile || selectedItemOpen) && (
       <div className="flex-1 min-w-0 min-h-0 flex flex-col surface-app">
         {threadLoading ? (
           <div className="flex-1 flex items-center justify-center">
@@ -627,6 +728,15 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
             onToggleUnread={handleMessageUnreadToggle}
             onOpenAttachment={openAttachment}
           />
+        ) : selectedDraft ? (
+          <DraftPane
+            draft={selectedDraft}
+            pendingAction={pendingDraftAction}
+            onBack={() => setSelectedDraft(null)}
+            onSend={handleDraftSend}
+            onDelete={handleDraftDelete}
+            onOpenAttachment={openAttachment}
+          />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)]">
             <Mail size={28} className="opacity-40" />
@@ -636,6 +746,97 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
         )}
       </div>
       )}
+    </div>
+  );
+}
+
+function DraftPane({
+  draft,
+  pendingAction,
+  onBack,
+  onSend,
+  onDelete,
+  onOpenAttachment,
+}: {
+  draft: EmailDraft;
+  pendingAction: null | 'send' | 'delete';
+  onBack: () => void;
+  onSend: (draftId: string) => Promise<void>;
+  onDelete: (draftId: string) => Promise<void>;
+  onOpenAttachment: (draft: EmailDraft, attachmentId: string | null) => Promise<void>;
+}) {
+  const status = draft.sendStatus === 'scheduled' && draft.sendAt
+    ? `Scheduled for ${formatFullDate(draft.sendAt)}`
+    : draft.sendStatus === 'failed'
+      ? 'Failed to send'
+      : draft.sendStatus === 'sending'
+        ? 'Sending'
+        : 'Draft';
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
+        <button onClick={onBack} className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 shrink-0">
+          <ArrowLeft size={14} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xs font-medium truncate">{draft.subject || '(no subject)'}</h3>
+          <p className="text-[10px] text-[var(--color-text-muted)] truncate">{status}</p>
+        </div>
+        <button
+          onClick={() => void onSend(draft.draftId)}
+          disabled={pendingAction !== null}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text)]/90 bg-white/10 hover:bg-white/15 disabled:opacity-50"
+          title="Send now"
+        >
+          {pendingAction === 'send' ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          Send
+        </button>
+        <button
+          onClick={() => void onDelete(draft.draftId)}
+          disabled={pendingAction !== null}
+          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)] disabled:opacity-50"
+          title="Delete"
+        >
+          {pendingAction === 'delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
+          <div className="px-3 py-3 border-b border-[var(--color-border)] space-y-1.5">
+            <DetailRow label="To" addresses={parseAddressList(draft.to)} />
+            <DetailRow label="Cc" addresses={parseAddressList(draft.cc)} />
+            <DetailRow label="Bcc" addresses={parseAddressList(draft.bcc)} />
+            {draft.sendAt && (
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] w-14 shrink-0 pt-[3px]">
+                  Send
+                </span>
+                <span className="text-[11px] text-[var(--color-text)]/90">{formatFullDate(draft.sendAt)}</span>
+              </div>
+            )}
+          </div>
+          <div className="px-3 py-2.5">
+            <EmailHtmlBody html={draft.html} text={draft.text || draft.preview || ''} />
+          </div>
+          {draft.attachments?.length ? (
+            <div className="px-3 pb-3 flex flex-wrap gap-1.5">
+              {draft.attachments.map((attachment) => (
+                <button
+                  key={attachment.attachmentId || attachment.filename}
+                  type="button"
+                  onClick={() => void onOpenAttachment(draft, attachment.attachmentId)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded surface-control text-[10px] text-[var(--color-text-muted)] border border-[var(--color-border)] hover:bg-white/5"
+                >
+                  <Paperclip size={9} />
+                  {attachment.filename || 'attachment'}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

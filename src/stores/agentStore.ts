@@ -665,6 +665,7 @@ interface ComputerStore {
 import {
   AGENT_RUNNING_TIMEOUT_MS,
   MAX_CHAT_MESSAGES,
+  AGENT_EMAIL_DOMAIN,
   OVERSEER_ALERTS_PER_SESSION,
   SESSION_STUCK_THRESHOLD_MS,
   STORAGE_KEYS as CONFIG_STORAGE_KEYS,
@@ -1331,7 +1332,7 @@ export const useComputerStore = create<ComputerStore>()(
               if (cfg.data.agentmail_inbox_username) {
                 agentmailEmail = cfg.data.agentmail_inbox_username.includes('@')
                   ? cfg.data.agentmail_inbox_username
-                  : `${cfg.data.agentmail_inbox_username}@agents.construct.computer`;
+                  : `${cfg.data.agentmail_inbox_username}@${AGENT_EMAIL_DOMAIN}`;
               }
             }
           } catch { /* agent may not be ready yet */ }

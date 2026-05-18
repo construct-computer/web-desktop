@@ -1,6 +1,6 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 
-export type MailboxFolder = 'inbox' | 'sent' | 'drafts' | 'all' | 'spam' | 'trash' | 'blocked';
+export type MailboxFolder = 'inbox' | 'sent' | 'drafts' | 'outbox' | 'all' | 'spam' | 'trash' | 'blocked';
 
 export interface EmailAttachment {
   attachmentId: string | null;
@@ -128,6 +128,8 @@ export interface ComposeAttachment {
   contentType: string;
   content: string;
 }
+
+export const MAX_EMAIL_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
 function getToken(): string | null {
   return localStorage.getItem(STORAGE_KEYS.token);
@@ -436,6 +438,29 @@ export async function getMessageAttachment(messageId: string, attachmentId: stri
   return request<EmailAttachment>(`/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`);
 }
 
+export function getAttachmentDownloadUrl(attachmentId: string) {
+  return `${API_BASE_URL}/email/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+export async function downloadAttachment(attachmentId: string): Promise<ApiResponse<{ url: string; filename?: string }>> {
+  try {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(getAttachmentDownloadUrl(attachmentId), { headers });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: (json as { error?: string } | null)?.error || `HTTP ${res.status}` };
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const filename = disposition.match(/filename="([^"]+)"/)?.[1];
+    return { success: true, data: { url: URL.createObjectURL(blob), filename } };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function markThreadUnreadState(
   threadId: string,
   unread: boolean,
@@ -473,6 +498,9 @@ export async function filesToComposeAttachments(files: FileList | File[]): Promi
   const array = Array.from(files);
   const attachments: ComposeAttachment[] = [];
   for (const file of array) {
+    if (file.size > MAX_EMAIL_ATTACHMENT_BYTES) {
+      throw new Error(`Attachment "${file.name}" exceeds the 15 MB limit`);
+    }
     const buffer = await file.arrayBuffer();
     attachments.push({
       filename: file.name,

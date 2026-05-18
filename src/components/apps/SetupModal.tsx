@@ -17,6 +17,7 @@ import { checkAgentEmailAvailability } from '@/services/api';
 import { getEmailStatus } from '@/services/agentmail';
 import analytics from '@/lib/analytics';
 import { log } from '@/lib/logger';
+import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 
 const logger = log('SetupModal');
 
@@ -39,7 +40,7 @@ function extractBaseUsername(suggestion: string): string {
 
 function formatSuggestionDisplay(suggestion: string): string {
   const base = extractBaseUsername(suggestion);
-  return `${base}@agents.construct.computer`;
+  return `${base}@${AGENT_EMAIL_DOMAIN}`;
 }
 
 // ── Component ──
@@ -323,7 +324,7 @@ export function SetupModal() {
                 disabled={emailLocked}
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-[var(--color-border)] text-[var(--color-text-muted)] text-[13px] font-medium select-none shrink-0">
-                @agents.construct.computer
+                @{AGENT_EMAIL_DOMAIN}
               </div>
             </div>
             {/* Status */}
@@ -345,7 +346,7 @@ export function SetupModal() {
               )}
               {!emailLocked && !emailChecking && emailAvailable === true && emailUsername && (
                 <span className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="w-3.5 h-3.5" /> {emailUsername}@agents.construct.computer is available
+                  <Check className="w-3.5 h-3.5" /> {emailUsername}@{AGENT_EMAIL_DOMAIN} is available
                 </span>
               )}
               {!emailLocked && !emailChecking && emailAvailable === false && (
@@ -401,7 +402,7 @@ function SetupModalUpgradeCard({
     <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5 animate-in fade-in slide-in-from-top-1">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-          Give your agent a <span className="font-medium text-[var(--color-text)]">@agents.construct.computer</span> inbox — available on any paid plan.
+          Give your agent a <span className="font-medium text-[var(--color-text)]">@{AGENT_EMAIL_DOMAIN}</span> inbox — available on any paid plan.
         </p>
         {onCancel && (
           <button

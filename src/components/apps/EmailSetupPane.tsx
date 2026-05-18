@@ -23,6 +23,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { checkAgentEmailAvailability } from '@/services/api';
 import analytics from '@/lib/analytics';
+import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 import { log } from '@/lib/logger';
 
 const logger = log('EmailSetupPane');
@@ -45,7 +46,7 @@ function extractBaseUsername(suggestion: string): string {
 }
 
 function formatSuggestionDisplay(suggestion: string): string {
-  return `${extractBaseUsername(suggestion)}@agents.construct.computer`;
+  return `${extractBaseUsername(suggestion)}@${AGENT_EMAIL_DOMAIN}`;
 }
 
 // ── Component ──
@@ -228,7 +229,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
                 autoFocus
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 text-[12px] font-medium select-none shrink-0">
-                @agents.construct.computer
+                @{AGENT_EMAIL_DOMAIN}
               </div>
             </div>
 
@@ -242,7 +243,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
               {!checking && available === true && username && (
                 <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
                   <Check className="w-3.5 h-3.5" />
-                  {username}@agents.construct.computer is available
+                  {username}@{AGENT_EMAIL_DOMAIN} is available
                 </span>
               )}
               {!checking && available === false && (
@@ -307,7 +308,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
             Give your agent its own email
           </h2>
           <p className="text-[12px] text-black/50 dark:text-white/50 leading-relaxed">
-            A real <span className="font-medium text-black/70 dark:text-white/60">@agents.construct.computer</span>{' '}
+            A real <span className="font-medium text-black/70 dark:text-white/60">@{AGENT_EMAIL_DOMAIN}</span>{' '}
             inbox your agent can send and receive mail from. Available on any paid plan.
           </p>
         </div>

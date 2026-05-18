@@ -24,6 +24,7 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useSettingsNav, type SettingsSection } from '@/lib/settingsNav';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 
 import { openAuthRedirect } from '@/lib/utils';
 import {
@@ -244,7 +245,7 @@ function UserSection() {
   // Populate email username from existing config
   useEffect(() => {
     if (existingEmail) {
-      // Extract base username: "ankush@agents.construct.computer" → "ankush"
+      // Extract base username from "ankush@example.com" → "ankush".
       const base = existingEmail.replace(/@.*$/, '');
       setEmailUsername(base);
     }
@@ -381,7 +382,7 @@ function UserSection() {
                 className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
               />
               <span className="text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
-                @agents.construct.computer
+                @{AGENT_EMAIL_DOMAIN}
               </span>
             </div>
           )}
