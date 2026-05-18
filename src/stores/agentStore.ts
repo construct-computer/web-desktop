@@ -139,8 +139,18 @@ export interface ChatMessage {
   browserAction?: BrowserActionMeta;
   /** Stable incident id for deduping live + history notices. */
   incidentId?: string;
+  /** Additional incident ids collapsed into this notice. */
+  incidentIds?: string[];
   /** Internal notice category for compact rendering/deduping. */
   noticeKind?: 'watchdog' | 'system_recovery' | 'incident';
+  /** Stable duplicate key for collapsing repeated notice cards. */
+  noticeSignature?: string;
+  /** Compact notice display metadata. */
+  noticeTitle?: string;
+  noticeDetail?: string;
+  noticeToolName?: string;
+  noticeSeverity?: 'info' | 'warn' | 'error';
+  noticeRepeatCount?: number;
 }
 
 export interface BrowserActionMeta {
@@ -817,9 +827,47 @@ function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
   };
 }
 
+const INCIDENT_COLLAPSE_WINDOW_MS = 2 * 60 * 1000;
+
+function formatToolNoticeTitle(message: string, toolName?: string): string {
+  const failedTool = message.match(/^Tool "([^"]+)" failed\.?$/i)?.[1] || toolName;
+  if (failedTool) {
+    const label = failedTool
+      .split(/[_.-]+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    return `${label || 'Tool'} failed`;
+  }
+  return message || 'Agent issue';
+}
+
 function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   if (msg.incidentId && messages.some(m => m.incidentId === msg.incidentId)) {
     return messages;
+  }
+  if (msg.role === 'notice' && msg.noticeKind === 'incident' && msg.noticeSignature) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const prev = messages[i];
+      if (prev.role === 'user' || (prev.role === 'agent' && !prev.isError)) break;
+      if (
+        prev.role === 'notice' &&
+        prev.noticeKind === 'incident' &&
+        prev.noticeSignature === msg.noticeSignature &&
+        Math.abs(msg.timestamp.getTime() - prev.timestamp.getTime()) <= INCIDENT_COLLAPSE_WINDOW_MS
+      ) {
+        const incidentIds = new Set([...(prev.incidentIds || []), prev.incidentId, msg.incidentId].filter(Boolean) as string[]);
+        const updated = [...messages];
+        updated[i] = {
+          ...prev,
+          timestamp: msg.timestamp,
+          noticeRepeatCount: (prev.noticeRepeatCount || 1) + 1,
+          incidentIds: [...incidentIds],
+          isError: prev.isError || msg.isError,
+        };
+        return updated;
+      }
+    }
   }
   // Deduplicate consecutive identical error messages
   if (msg.isError && messages.length > 0) {
@@ -846,6 +894,10 @@ function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[]
   }
   const next = [...messages, msg];
   return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
+}
+
+function compactIncidentNotices(messages: ChatMessage[]): ChatMessage[] {
+  return messages.reduce<ChatMessage[]>((acc, msg) => appendMessage(acc, msg), []);
 }
 
 function clearWatchdogNotices(messages: ChatMessage[]): ChatMessage[] {
@@ -916,22 +968,28 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
     };
   }
 
-  const parts = [
-    message,
-    toolName ? `Tool: ${toolName}` : '',
+  const detail = [
     actionTaken ? `Action taken: ${actionTaken}` : '',
     nextStep ? `Next step: ${nextStep}` : '',
-    incidentId ? `Reference: ${incidentId}` : '',
-  ].filter(Boolean);
+  ].filter(Boolean).join('\n');
+  const title = formatToolNoticeTitle(message, toolName);
+  const signature = [kind, severity, toolName || '', message, actionTaken || '', nextStep || ''].join('|');
 
   return {
     role: 'notice',
-    content: parts.join('\n'),
+    content: [title, detail].filter(Boolean).join('\n'),
     timestamp: new Date(createdAt),
     isError: severity === 'error',
     activityType: 'tool',
     incidentId,
+    incidentIds: incidentId ? [incidentId] : undefined,
     noticeKind: 'incident',
+    noticeSignature: signature,
+    noticeTitle: title,
+    noticeDetail: detail || undefined,
+    noticeToolName: toolName,
+    noticeSeverity: severity === 'error' ? 'error' : severity === 'warn' ? 'warn' : 'info',
+    noticeRepeatCount: 1,
   };
 }
 
@@ -2439,9 +2497,10 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
 
-        set({ chatMessages: history });
-        sessionMessageCache.set(requestedSessionKey, history);
-        logger.info(`Loaded ${history.length} messages from chat history`);
+        const compactedHistory = compactIncidentNotices(history);
+        set({ chatMessages: compactedHistory });
+        sessionMessageCache.set(requestedSessionKey, compactedHistory);
+        logger.info(`Loaded ${compactedHistory.length} messages from chat history`);
       } catch (err) {
         logger.warn('Error loading chat history:', err);
       } finally {

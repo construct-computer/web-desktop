@@ -102,15 +102,80 @@ function ErrorCard({ content }: { content: string }) {
   );
 }
 
+function NoticeCard({ msg }: { msg: ChatMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  const isIncident = msg.noticeKind === 'incident';
+
+  if (!isIncident) {
+    return (
+      <div className="mx-auto max-w-[560px] rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-center text-[12px] leading-relaxed text-[var(--color-text-muted)]">
+        {msg.content}
+      </div>
+    );
+  }
+
+  const severity = msg.noticeSeverity || (msg.isError ? 'error' : 'warn');
+  const tone = severity === 'error'
+    ? 'border-red-400/15 bg-red-500/[0.06] text-red-200'
+    : severity === 'warn'
+      ? 'border-amber-400/15 bg-amber-500/[0.06] text-amber-100'
+      : 'border-white/[0.08] bg-white/[0.035] text-[var(--color-text-muted)]';
+  const iconTone = severity === 'error' ? 'text-red-300' : severity === 'warn' ? 'text-amber-300' : 'text-[var(--color-text-muted)]';
+  const refs = msg.incidentIds?.length ? msg.incidentIds : msg.incidentId ? [msg.incidentId] : [];
+  const repeatCount = msg.noticeRepeatCount || 1;
+
+  return (
+    <div className={`mx-auto max-w-[520px] rounded-xl border px-3 py-2.5 text-left shadow-sm ${tone}`}>
+      <div className="flex items-start gap-2.5">
+        <AlertCircle className={`w-4 h-4 mt-0.5 shrink-0 ${iconTone}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-[12.5px] font-medium leading-5">{msg.noticeTitle || msg.content.split('\n')[0]}</p>
+            {repeatCount > 1 && (
+              <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] leading-none text-current/70">
+                {repeatCount} attempts
+              </span>
+            )}
+            {msg.noticeToolName && (
+              <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] leading-none text-current/55">
+                {msg.noticeToolName}
+              </span>
+            )}
+          </div>
+          {msg.noticeDetail && (
+            <p className="mt-1 text-[11.5px] leading-5 text-current/65 whitespace-pre-wrap">{msg.noticeDetail}</p>
+          )}
+          {refs.length > 0 && (
+            <>
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-current/45 hover:text-current/70 transition-colors"
+              >
+                {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                Details
+              </button>
+              {expanded && (
+                <div className="mt-1.5 rounded-lg bg-black/10 px-2 py-1.5 font-mono text-[10px] leading-4 text-current/50">
+                  {refs.map((ref, index) => (
+                    <div key={`${ref}-${index}`}>Reference: {ref}</div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
 
   if (msg.role === 'notice') {
     return (
       <div className="px-4 sm:px-6 py-1.5">
-        <div className="mx-auto max-w-[560px] rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-center text-[12px] leading-relaxed text-[var(--color-text-muted)]">
-          {msg.content}
-        </div>
+        <NoticeCard msg={msg} />
       </div>
     );
   }

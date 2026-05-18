@@ -1,6 +1,14 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import type { ApiResult, User, AgentWithConfig } from '@/types';
 
+type ApiRequestOptions = RequestInit & {
+  /** Disable error-store capture for background polling where transient failures are expected. */
+  captureErrors?: boolean;
+  /** Retry network-level fetch failures once. HTTP failures still return immediately. */
+  retryNetwork?: boolean;
+  retryDelayMs?: number;
+};
+
 /**
  * Get the auth token from storage
  */
@@ -40,14 +48,20 @@ async function ensureTokenRefreshed(): Promise<boolean> {
  */
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {},
+  options: ApiRequestOptions = {},
   _isRetry = false,
 ): Promise<ApiResult<T>> {
+  const {
+    captureErrors = true,
+    retryNetwork = false,
+    retryDelayMs = 350,
+    ...fetchOptions
+  } = options;
   const token = getToken();
   
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...fetchOptions.headers,
   };
   
   if (token) {
@@ -56,7 +70,7 @@ async function request<T>(
   
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
+      ...fetchOptions,
       headers,
     });
     
@@ -90,29 +104,38 @@ async function request<T>(
     if (!response.ok) {
       const errorMsg = (data.error as string) || `Request failed (${response.status})`;
       // Capture API errors in the debug store
-      try {
-        const { useErrorStore } = await import('@/stores/errorStore');
-        useErrorStore.getState().capture({
-          source: 'api',
-          message: errorMsg,
-          context: { endpoint, status: response.status, response: data },
-        });
-      } catch { /* errorStore not loaded yet during startup */ }
+      if (captureErrors) {
+        try {
+          const { useErrorStore } = await import('@/stores/errorStore');
+          useErrorStore.getState().capture({
+            source: 'api',
+            message: errorMsg,
+            context: { endpoint, status: response.status, response: data },
+          });
+        } catch { /* errorStore not loaded yet during startup */ }
+      }
       return { success: false, error: errorMsg, data };
     }
 
     return { success: true, data: data as T };
   } catch (error) {
+    if (retryNetwork && !_isRetry) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      return request<T>(endpoint, options, true);
+    }
+
     const errorMsg = error instanceof Error ? error.message : 'Network error';
-    try {
-      const { useErrorStore } = await import('@/stores/errorStore');
-      useErrorStore.getState().capture({
-        source: 'api',
-        message: errorMsg,
-        stack: error instanceof Error ? error.stack : undefined,
-        context: { endpoint },
-      });
-    } catch { /* errorStore not loaded yet during startup */ }
+    if (captureErrors) {
+      try {
+        const { useErrorStore } = await import('@/stores/errorStore');
+        useErrorStore.getState().capture({
+          source: 'api',
+          message: errorMsg,
+          stack: error instanceof Error ? error.stack : undefined,
+          context: { endpoint },
+        });
+      } catch { /* errorStore not loaded yet during startup */ }
+    }
     return { success: false, error: errorMsg };
   }
 }
@@ -1993,7 +2016,7 @@ export async function callAppTool(appId: string, tool: string, args: Record<stri
 
 /** Get storage usage (R2 workspace). */
 export async function getStorageUsage(): Promise<ApiResult<{ bytesUsed: number; fileCount: number; maxBytes: number }>> {
-  return request('/files/usage');
+  return request('/files/usage', { captureErrors: false, retryNetwork: true });
 }
 
 /** Refresh cached tool definitions for an app. */
@@ -2174,4 +2197,3 @@ export async function setLocalAppState(appId: string, state: Record<string, unkn
     body: JSON.stringify(state),
   });
 }
-
