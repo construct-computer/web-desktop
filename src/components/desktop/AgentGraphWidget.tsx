@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs -- Canvas physics state intentionally lives in refs for RAF updates. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import {
@@ -5,9 +6,10 @@ import {
   type TrackedOperation,
   type OperationType,
 } from '@/stores/agentTrackerStore';
-import { useWindowStore } from '@/stores/windowStore';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { MENUBAR_HEIGHT, DOCK_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { useDraggableWidget } from '@/hooks/useDraggableWidget';
+import { MENUBAR_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { AutopilotPanel } from './AutopilotWidget';
 
 // ── Style ────────────────────────────────────────────────────────────
 
@@ -15,6 +17,7 @@ import { MENUBAR_HEIGHT, DOCK_HEIGHT, Z_INDEX } from '@/lib/constants';
 
 const COMPLETED_TTL = 90_000;
 const BOUND_PAD = 30;
+const INITIAL_RENDER_NOW = Date.now();
 
 // Free-position gravity — stored as ratios (0-1) so it adapts to window resize
 const POS_KEY = 'construct:agent-widget-pos';
@@ -24,12 +27,16 @@ function loadPos(): { rx: number; ry: number } {
   try {
     const raw = localStorage.getItem(POS_KEY);
     if (raw) { const p = JSON.parse(raw); return { rx: +p.rx || 0.5, ry: +p.ry || 0.1 }; }
-  } catch {}
+  } catch {
+    // Ignore corrupt persisted widget position.
+  }
   return DEFAULT_POS;
 }
 
 function savePos(rx: number, ry: number) {
-  try { localStorage.setItem(POS_KEY, JSON.stringify({ rx, ry })); } catch {}
+  try { localStorage.setItem(POS_KEY, JSON.stringify({ rx, ry })); } catch {
+    // Ignore storage failures in private browsing or locked-down contexts.
+  }
 }
 
 function posToPixel(rx: number, ry: number, w: number, h: number) {
@@ -100,6 +107,14 @@ function fmtElapsed(ms: number): string {
 
 function trunc(s: string, n = 14): string {
   return s.length > n ? s.slice(0, n) + '\u2026' : s;
+}
+
+function seededJitter(id: string, salt: number): number {
+  let hash = salt;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return (hash / 0xffffffff) - 0.5;
 }
 
 function fadeAlpha(op: TrackedOperation, now: number): number {
@@ -183,8 +198,8 @@ function tickSimulation(
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i];
       const b = nodes[j];
-      let dx = a.x - b.x;
-      let dy = a.y - b.y;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
       let dist = Math.sqrt(dx * dx + dy * dy) || 1;
       if (dist < 15) dist = 15;
       // Extra repulsion between nodes in different clusters to keep them apart
@@ -243,7 +258,11 @@ function tickSimulation(
 
 // ── Component ────────────────────────────────────────────────────────
 
-export function AgentGraphWidget() {
+interface AgentGraphWidgetProps {
+  showAutopilot?: boolean;
+}
+
+export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps = {}) {
   const running = useComputerStore((s) => s.agentRunning);
   const operations = useAgentTrackerStore((s) => s.operations);
   const platformAgents = useComputerStore((s) => s.platformAgents);
@@ -268,18 +287,16 @@ export function AgentGraphWidget() {
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 
   // 1-second tick for timers & fade recalc
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(INITIAL_RENDER_NOW);
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const openTrackerAndSwitch = useCallback((_sessionKey?: string) => {
+  const openTrackerAndSwitch = useCallback(() => {
     // Open the notification center drawer with the Agents tab selected
     useNotificationStore.getState().openDrawerTab('agents');
   }, []);
-
-  const now = Date.now();
 
   // ══════════════════════════════════════════════════════════════════
   //  Collect 3-level hierarchy: Platform → Operation → SubAgent
@@ -291,6 +308,7 @@ export function AgentGraphWidget() {
     status: string;
     depth: number;
     alpha: number;
+    parentId?: string;
     startedAt?: number;
     currentTool?: string;
     sessionKey?: string;
@@ -483,10 +501,10 @@ export function AgentGraphWidget() {
     if (!parentId) return false;
     if (collapsedNodes.has(parentId)) return true;
     const parentNode = allSpecs.find(s => s.id === parentId);
-    return parentNode ? isHidden((parentNode as any).parentId) : false;
+    return parentNode ? isHidden(parentNode.parentId) : false;
   };
 
-  allSpecs = allSpecs.filter(s => !isHidden((s as any).parentId));
+  allSpecs = allSpecs.filter(s => !isHidden(s.parentId));
 
   // More parallel sub-agents → wider cluster spread so fan-out is readable
   clusterSpreadRef.current = Math.min(
@@ -529,8 +547,8 @@ export function AgentGraphWidget() {
     const gc = posToPixel(gravityPosRef.current.rx, gravityPosRef.current.ry, vw, vh);
     return {
       ...spec,
-      x: gc.x + (Math.random() - 0.5) * 80,
-      y: gc.y + (Math.random() - 0.5) * 60,
+      x: gc.x + seededJitter(spec.id, 17) * 80,
+      y: gc.y + seededJitter(spec.id, 29) * 60,
       vx: 0,
       vy: 0,
     } as AgentNode;
@@ -816,7 +834,6 @@ export function AgentGraphWidget() {
 
     rafRef.current = requestAnimationFrame(frame);
     return () => { active = false; cancelAnimationFrame(rafRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   // ── Document-level mouse interaction ────────────────────────────
@@ -928,7 +945,7 @@ export function AgentGraphWidget() {
             });
             alphaRef.current = Math.max(alphaRef.current, 0.5); // Reheat
           } else {
-            openTrackerAndSwitch(drag.sessionKey);
+            openTrackerAndSwitch();
           }
         }
         dragNodeRef.current = null;
@@ -950,14 +967,14 @@ export function AgentGraphWidget() {
 
   // ── Visibility ────────────────────────────────────────────────────
 
-  if (!visible) return null;
+  if (!visible && !showAutopilot) return null;
 
   return (
     <div
       className="absolute inset-0 pointer-events-none select-none"
       style={{ top: MENUBAR_HEIGHT, zIndex: Z_INDEX.desktopWidget }}
     >
-      <canvas ref={canvasRef} className="w-full h-full" />
+      {visible && <canvas ref={canvasRef} className="w-full h-full" />}
       {graphTip && (
         <div
           className="fixed max-w-sm rounded-lg border border-white/10 glass-tooltip px-3 py-2 text-left shadow-lg pointer-events-none"
@@ -977,6 +994,18 @@ export function AgentGraphWidget() {
           )}
         </div>
       )}
+      {showAutopilot && <AgentOpsPanel />}
+    </div>
+  );
+}
+
+function AgentOpsPanel() {
+  const { containerStyle, containerProps } = useDraggableWidget('agent-dashboard', 'tr');
+  const { className: dragClassName, ...dragProps } = containerProps;
+
+  return (
+    <div style={containerStyle} {...dragProps} className={`flex flex-col items-center ${dragClassName || ''}`}>
+      <AutopilotPanel />
     </div>
   );
 }

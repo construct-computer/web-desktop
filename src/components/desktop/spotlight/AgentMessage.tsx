@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { AlertCircle, FileText, Image as ImageIcon, Download, Loader2, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { AuthConnectCard, parseAuthMarker } from '@/components/ui/AuthConnectCard';
+import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
+import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
 import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';

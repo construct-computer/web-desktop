@@ -33,7 +33,7 @@ async function apiCall<T>(path: string, opts?: { method?: string; body?: unknown
 export interface AccessListEntry {
   id: string
   userId: string
-  platform: 'slack' | 'telegram' | 'email'
+  platform: 'slack' | 'telegram' | 'email' | 'agent'
   senderId: string
   senderName: string
   senderHandle: string
@@ -47,7 +47,7 @@ export interface AccessListEntry {
 export interface ApprovalQueueEntry {
   id: string
   userId: string
-  platform: 'slack' | 'telegram' | 'email'
+  platform: 'slack' | 'telegram' | 'email' | 'agent'
   senderId: string
   senderName: string
   senderHandle: string
@@ -58,8 +58,12 @@ export interface ApprovalQueueEntry {
   impactSummary: string
   toolName: string
   status: 'pending' | 'approved' | 'denied' | 'expired'
-  mode: 'full_block' | 'escalation'
+  mode: 'full_block' | 'escalation' | 'tool_permission'
   platformMeta: string
+  approvalKind?: 'external_access' | 'tool_permission' | string
+  toolCallId?: string | null
+  risk?: string | null
+  riskLevel?: string | null
   requestedAt: number
   resolvedAt: number | null
 }

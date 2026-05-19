@@ -581,6 +581,376 @@ export async function getActiveAgentSessions(): Promise<ApiResult<{
   return request(`/agent/active-sessions`);
 }
 
+export type AutopilotMode = 'idle' | 'running' | 'blocked' | 'recovering' | 'degraded' | 'disabled';
+export type AutonomyMode = 'conservative' | 'standard' | 'aggressive';
+export type AutopilotVerificationStatus = 'not_required' | 'pending' | 'verified' | 'blocked';
+
+export interface AutopilotRunSnapshot {
+  runId: string;
+  sessionKey: string;
+  status: string;
+  reason: string | null;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  completedAt: number | null;
+  lastIteration: number;
+  lastToolName: string | null;
+  activeToolName: string | null;
+  progressReason: string | null;
+  elapsedMs: number;
+  idleMs: number;
+}
+
+export interface AutopilotTaskSnapshot {
+  id: number;
+  title: string;
+  status: string;
+  parentTaskId: number | null;
+  updatedAt: number | null;
+  createdAt: number | null;
+}
+
+export interface AutopilotBackgroundAgentSnapshot {
+  childId: string;
+  agentType: string;
+  task: string;
+  status: string;
+  lastHeartbeatAt: number | null;
+  createdAt: number;
+  completedAt: number | null;
+}
+
+export interface AutopilotIncidentSnapshot {
+  incidentId: string;
+  severity: string;
+  kind: string;
+  recoverability: string;
+  message: string;
+  toolName: string | null;
+  sessionKey: string | null;
+  createdAt: number;
+}
+
+export interface AutopilotControlEventSnapshot {
+  sessionKey: string;
+  action: string;
+  actor: string;
+  message: string | null;
+  createdAt: number;
+}
+
+export interface AutopilotAutonomyGateSnapshot {
+  sessionKey: string;
+  tool: string;
+  toolCallId: string | null;
+  decision: string;
+  reason: string | null;
+  risk: string;
+  riskLevel: string;
+  mode: string;
+  budget: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+export interface AutopilotWorkSideEffectSnapshot {
+  id: number;
+  sessionKey: string;
+  toolCallId: string | null;
+  toolName: string;
+  riskKind: string;
+  riskLevel: string;
+  status: string;
+  summary: string;
+  confirmation: string | null;
+  createdAt: number;
+  updatedAt: number | null;
+}
+
+export interface AutopilotWorkVerificationSnapshot {
+  id: number;
+  sessionKey: string;
+  toolCallId: string | null;
+  toolName: string | null;
+  status: string;
+  summary: string;
+  evidence: string | null;
+  createdAt: number;
+}
+
+export interface AutopilotToolReliabilitySnapshot {
+  sessionKey: string;
+  providerKey: string;
+  toolName: string;
+  operationKey: string | null;
+  status: 'blocked' | 'degraded';
+  problemCount: number;
+  errorClasses: string[];
+  summary: string;
+  recoveryHint: string | null;
+  createdAt: number;
+}
+
+export interface AutopilotDecisionSnapshot {
+  id: number;
+  sessionKey: string;
+  decisionKey: string;
+  category: string;
+  source: string;
+  confidence: number;
+  summary: string;
+  chosenValue: string | null;
+  reusable: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type AutonomyPolicyDecision = 'allow' | 'ask' | 'deny';
+export type AutonomyRiskKind =
+  | '*'
+  | 'read'
+  | 'compute'
+  | 'workspace_write'
+  | 'automation'
+  | 'external_write'
+  | 'communication'
+  | 'destructive'
+  | 'credential'
+  | 'financial'
+  | 'browser';
+export type AutonomyRiskLevel = '*' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface AutonomyPolicyRule {
+  id: number;
+  tool_pattern: string;
+  risk_kind: AutonomyRiskKind;
+  risk_level: AutonomyRiskLevel;
+  decision: AutonomyPolicyDecision;
+  reason?: string | null;
+  created_at: number;
+}
+
+export interface AutopilotGoalSnapshot {
+  goalId: string;
+  runId: string | null;
+  sessionKey: string;
+  title: string;
+  status: string;
+  autonomyMode: string;
+  successCriteria: string | null;
+  currentActionId: string | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  lastError: string | null;
+  verificationStatus: AutopilotVerificationStatus;
+  verificationSummary: string | null;
+  verifiedAt: number | null;
+}
+
+export interface AutopilotActionSnapshot {
+  actionId: string;
+  goalId: string;
+  runId: string | null;
+  sessionKey: string;
+  title: string;
+  status: string;
+  toolName: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRunAt: number | null;
+  retryReady: boolean;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
+export interface AutopilotBlockerSnapshot {
+  blockerId: string;
+  goalId: string;
+  actionId: string | null;
+  sessionKey: string;
+  kind: string;
+  status: string;
+  summary: string;
+  requiredFrom: string | null;
+  sourceId?: string | null;
+  sourceKind?: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+export interface AutopilotStatus {
+  mode: AutopilotMode;
+  summary: string;
+  activeRunCount: number;
+  activeGoalCount: number;
+  openBlockerCount: number;
+  pendingActionCount: number;
+  retryingActionCount: number;
+  deadLetterCount: number;
+  verificationPendingCount: number;
+  unresolvedSideEffectCount: number;
+  blockedToolProviderCount: number;
+  degradedToolProviderCount: number;
+  activeDecisionCount: number;
+  activeTaskCount: number;
+  blockedTaskCount: number;
+  activeBackgroundAgentCount: number;
+  pendingApprovalCount: number;
+  runs: AutopilotRunSnapshot[];
+  goals: AutopilotGoalSnapshot[];
+  actions: AutopilotActionSnapshot[];
+  blockers: AutopilotBlockerSnapshot[];
+  tasks: AutopilotTaskSnapshot[];
+  backgroundAgents: AutopilotBackgroundAgentSnapshot[];
+  incidents: AutopilotIncidentSnapshot[];
+  controlEvents: AutopilotControlEventSnapshot[];
+  autonomyGates: AutopilotAutonomyGateSnapshot[];
+  workSideEffects: AutopilotWorkSideEffectSnapshot[];
+  workVerifications: AutopilotWorkVerificationSnapshot[];
+  toolReliability: AutopilotToolReliabilitySnapshot[];
+  decisions: AutopilotDecisionSnapshot[];
+  latestMessageAt: number | null;
+  pausedSessionCount: number;
+  autonomyMode: AutonomyMode;
+  autopilotEnabled: boolean;
+  generatedAt: number;
+}
+
+export async function getAutopilotStatus(): Promise<ApiResult<AutopilotStatus>> {
+  return request(`/agent/autopilot`, { captureErrors: false, retryNetwork: true });
+}
+
+export interface AutopilotPolicy {
+  mode: AutonomyMode;
+  modes: AutonomyMode[];
+  enabled: boolean;
+  rules: AutonomyPolicyRule[];
+}
+
+export async function getAutopilotPolicy(): Promise<ApiResult<AutopilotPolicy>> {
+  return request(`/agent/autopilot/policy`, { captureErrors: false, retryNetwork: true });
+}
+
+export async function updateAutopilotPolicy(
+  update: AutonomyMode | { mode?: AutonomyMode; enabled?: boolean },
+): Promise<ApiResult<AutopilotPolicy & { ok: boolean }>> {
+  const body = typeof update === 'string' ? { mode: update } : update;
+  return request(`/agent/autopilot/policy`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function addAutopilotPolicyRule(rule: {
+  toolPattern?: string;
+  riskKind?: AutonomyRiskKind;
+  riskLevel?: AutonomyRiskLevel;
+  decision: AutonomyPolicyDecision;
+  reason?: string;
+}): Promise<ApiResult<{ ok: boolean; rule: AutonomyPolicyRule; rules: AutonomyPolicyRule[] }>> {
+  return request(`/agent/autopilot/policy/rules`, {
+    method: 'POST',
+    body: JSON.stringify(rule),
+  });
+}
+
+export async function deleteAutopilotPolicyRule(
+  id: number,
+): Promise<ApiResult<{ ok: boolean; rules: AutonomyPolicyRule[] }>> {
+  return request(`/agent/autopilot/policy/rules/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function retryAutopilotAction(actionId: string): Promise<ApiResult<{
+  ok: boolean;
+  actionId: string;
+  goalId: string;
+  sessionKey: string;
+  nextRunAt: number;
+  maxAttempts: number;
+}>> {
+  return request(`/agent/autopilot/actions/${encodeURIComponent(actionId)}/retry`, {
+    method: 'POST',
+  });
+}
+
+export type PendingUserActionKind = 'approval' | 'auth' | 'question';
+export type PendingUserActionStatus = 'pending' | 'resolved' | 'expired';
+
+export interface PendingUserAction {
+  id: string;
+  userId: string;
+  kind: PendingUserActionKind;
+  sourceId: string;
+  sessionKey: string;
+  title: string;
+  body: string;
+  actionUrl: string;
+  status: PendingUserActionStatus;
+  metadata: Record<string, unknown>;
+  notifyCount: number;
+  maxNotifyCount: number;
+  lastNotifiedAt: number | null;
+  nextNotifyAt: number | null;
+  expiresAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  resolvedAt: number | null;
+}
+
+export async function getPendingUserActions(
+  status: PendingUserActionStatus | 'all' = 'pending',
+  limit = 25,
+): Promise<ApiResult<{ actions: PendingUserAction[]; generatedAt: number }>> {
+  const params = new URLSearchParams({ status, limit: String(limit) });
+  return request(`/agent/pending-actions?${params.toString()}`, { captureErrors: false, retryNetwork: true });
+}
+
+export async function resendPendingUserAction(
+  id: string,
+): Promise<ApiResult<{ ok: boolean; action: PendingUserAction }>> {
+  return request(`/agent/pending-actions/${encodeURIComponent(id)}/resend`, {
+    method: 'POST',
+  });
+}
+
+export async function resolvePendingUserAction(
+  id: string,
+  status: PendingUserActionStatus = 'resolved',
+): Promise<ApiResult<{ ok: boolean; id: string; status: PendingUserActionStatus }>> {
+  return request(`/agent/pending-actions/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function stopAgentSession(sessionKey: string): Promise<ApiResult<{
+  ok: boolean;
+  sessionKey: string;
+  stopped: boolean;
+}>> {
+  return request(`/agent/sessions/${encodeURIComponent(sessionKey)}/stop`, { method: 'POST' });
+}
+
+export async function interruptAgentSession(
+  sessionKey: string,
+  message?: string,
+  clientId?: string,
+): Promise<ApiResult<{
+  ok: boolean;
+  sessionKey: string;
+  interrupted: boolean;
+  queued: boolean;
+}>> {
+  return request(`/agent/sessions/${encodeURIComponent(sessionKey)}/interrupt`, {
+    method: 'POST',
+    body: JSON.stringify({ message, clientId }),
+  });
+}
+
 /**
  * Create a new chat session.
  */

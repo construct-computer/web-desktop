@@ -611,12 +611,14 @@ class AgentWSClient {
     return false;
   }
 
-  sendAuthResume(params: { sessionKey: string; toolkit: string; name: string }): boolean {
+  sendAuthResume(params: { sessionKey: string; toolkit: string; name: string; kind?: 'composio' | 'app'; appId?: string }): boolean {
     const payload = JSON.stringify({
       type: 'auth_resume',
       session_key: params.sessionKey,
       toolkit: params.toolkit,
       name: params.name,
+      kind: params.kind,
+      appId: params.appId,
     });
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(payload);

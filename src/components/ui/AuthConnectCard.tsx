@@ -19,19 +19,7 @@ import { agentWS } from '@/services/websocket'
 import { PlatformIcon } from './PlatformIcon'
 import { openAuthRedirect } from '@/lib/utils'
 import { formatPlatformDescription, getPlatformColor, getPlatformDisplayName } from '@/lib/platforms'
-
-// ── Types ──
-
-export interface AuthConnectPayload {
-  kind?: 'composio' | 'app'
-  toolkit: string
-  name: string
-  description: string
-  url?: string
-  logo?: string
-  appId?: string
-  sessionKey?: string
-}
+import type { AuthConnectPayload } from './authConnectMarker'
 
 // ── Global tracker: coordinates between card instances and notifications ──
 // When any card or notification detects a connection, all others for the same toolkit update.
@@ -42,22 +30,6 @@ const connectedToolkits = new Set<string>()
 function notifyAuthConnected(toolkit: string) {
   connectedToolkits.add(toolkit)
   authListeners.forEach(l => l(toolkit))
-}
-
-// ── Parser ──
-
-const AUTH_MARKER_RE = /<!--AUTH_CONNECT:(.*?)-->/
-
-export function parseAuthMarker(content: string): { payload: AuthConnectPayload; rest: string } | null {
-  const match = content.match(AUTH_MARKER_RE)
-  if (!match) return null
-  try {
-    const payload = JSON.parse(match[1]) as AuthConnectPayload
-    const rest = content.replace(AUTH_MARKER_RE, '').trim()
-    return { payload, rest }
-  } catch {
-    return null
-  }
 }
 
 // ── Component ──
@@ -100,10 +72,12 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
           sessionKey,
           toolkit: payload.toolkit,
           name: payload.name,
+          kind: authKind,
+          appId: payload.appId,
         })
       }, 800)
     }
-  }, [payload.toolkit, payload.name, payload.sessionKey])
+  }, [authKind, payload.appId, payload.toolkit, payload.name, payload.sessionKey])
 
   // Listen for cross-instance connected notifications
   useEffect(() => {
@@ -143,7 +117,9 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
         if (result.success && result.data?.connected) {
           onConnected()
         }
-      } catch {}
+      } catch {
+        // Polling will retry.
+      }
     }, 3000)
     return () => clearInterval(interval)
   }, [polling, connected, authKind, payload.appId, payload.toolkit, onConnected])

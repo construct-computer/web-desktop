@@ -4959,7 +4959,9 @@ export const useComputerStore = create<ComputerStore>()(
           const accessPlatform = event.data?.platform as string || '';
           const accessToolName = event.data?.toolName as string;
           const approvalSessionKey = event.data?.sessionKey as string | undefined;
-          const accessBody = accessPlatform === 'email'
+          const accessBody = accessPlatform === 'agent' && accessToolName
+            ? `${accessUserName} needs approval for ${accessToolName}`
+            : accessPlatform === 'email'
             ? `${accessUserName} sent your agent an email`
             : accessToolName
               ? `${accessUserName} wants to use ${accessToolName}`
@@ -4980,7 +4982,11 @@ export const useComputerStore = create<ComputerStore>()(
           }
           useNotificationStore.getState().addNotification(
             {
-              title: accessPlatform === 'email' ? 'New Email from Unknown Sender' : 'Permission Request',
+              title: accessPlatform === 'email'
+                ? 'New Email from Unknown Sender'
+                : accessPlatform === 'agent'
+                  ? 'Tool Approval Required'
+                  : 'Permission Request',
               body: accessBody,
               source: 'Access Control',
               variant: 'info',

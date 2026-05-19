@@ -6,10 +6,8 @@ import { MobileAppBar } from './MobileAppBar';
 import { MissionControl, MissionControlScrim } from './MissionControl';
 import { Launchpad } from './Launchpad';
 import { Spotlight } from './Spotlight';
-import { StatusWidget } from './StatusWidget';
 import { AgentGraphWidget } from './AgentGraphWidget';
 import { ClippyWidget } from './ClippyWidget';
-import { TodoListWidget } from './TodoListWidget';
 import { NotificationCenter } from './NotificationCenter';
 import { Toasts } from '@/components/ui';
 import { WindowManager } from '@/components/window';
@@ -26,7 +24,7 @@ import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { getSlackStatus, validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
-import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, STAGE_STRIP_WIDTH, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
+import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { hasAgentAccess } from '@/lib/plans';
 
 // ── Workspace slide constants ──────────────────────────────────────
@@ -44,12 +42,9 @@ interface DesktopProps {
 }
 
 export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: DesktopProps) {
-  const { openWindow, windows } = useWindowStore();
+  const { openWindow } = useWindowStore();
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
-  const stageManagerActive = useWindowStore((s) => s.stageManagerActive);
-  const spotlightOpen = useWindowStore((s) => s.spotlightOpen);
-  const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
   const isMobile = useIsMobile();
@@ -105,6 +100,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // Handle OAuth callback redirect (e.g. ?drive=connected)
   const addNotification = useNotificationStore((s) => s.addNotification);
   const oauthHandledRef = useRef(false);
+  const deepLinkHandledRef = useRef(false);
 
   useEffect(() => {
     if (oauthHandledRef.current) return;
@@ -218,21 +214,38 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get('open');
+    const approvalId = params.get('approval');
+    if (target !== 'access-control' && !approvalId) return;
+
+    deepLinkHandledRef.current = true;
+    openWindow('access-control', approvalId ? { metadata: { approvalId } } : undefined);
+
+    params.delete('open');
+    params.delete('approval');
+    const qs = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  }, [openWindow]);
+
   const user = useAuthStore((s) => s.user);
+  const userId = user?.id;
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
-  const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
+  const isTelegram = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
 
   // Keep subscription state fresh even when Settings is closed. This lets
   // billing webhooks surface as desktop notifications and updates cached plan
   // data used by paid-feature gates.
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     void fetchSubscription();
     const interval = setInterval(() => {
       void fetchSubscription();
     }, 60_000);
     return () => clearInterval(interval);
-  }, [user?.id, fetchSubscription]);
+  }, [userId, fetchSubscription]);
 
   // ── Promo code modal state ──
   // Read localStorage once on mount; the "seen" flag is session-scoped so a
@@ -293,7 +306,6 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
     setTimeout(() => {
       window.dispatchEvent(new Event('construct:start-tour'));
     }, 600);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, hasAccess]);
 
   // Request browser notification permission early so it's available
@@ -411,21 +423,9 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       </div>
 
 
-      {/* Agent widgets — only for active plans (need agent connection). */}
-      {hasAccess && <AgentGraphWidget />}
+      {/* Agent desktop surface — only for active plans (need agent connection). */}
+      {hasAccess && <AgentGraphWidget showAutopilot={!isMobile} />}
       {hasAccess && <ClippyWidget />}
-      {isMobile ? null : (
-        <>
-          <StatusWidget />
-          <div
-            data-tour="widgets"
-            className="absolute right-3 pointer-events-none flex flex-col items-end"
-            style={{ top: MENUBAR_HEIGHT + 12, zIndex: Z_INDEX.desktopWidget }}
-          >
-            <TodoListWidget />
-          </div>
-        </>
-      )}
 
       {/* Dock (desktop) / App bar (mobile) */}
       {isMobile ? <MobileAppBar /> : <Dock />}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
+  Bot,
   Shield, RefreshCw, Check, X, UserPlus, Trash2,
   MessageSquare, Mail, Hash, Loader2,
   Link2, Plus,
@@ -14,6 +15,15 @@ import {
   type ApprovalQueueEntry, type AccessListEntry, type WorkspaceBinding,
   type PlatformSettings,
 } from '@/services/access-control';
+import {
+  addAutopilotPolicyRule,
+  deleteAutopilotPolicyRule,
+  getAutopilotPolicy,
+  type AutopilotPolicy,
+  type AutonomyPolicyDecision,
+  type AutonomyRiskKind,
+  type AutonomyRiskLevel,
+} from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
 import { Select } from '@/components/ui';
 import { PanelError } from './AppShared';
@@ -25,11 +35,13 @@ const platformColors: Record<string, string> = {
   slack: 'bg-purple-500/20 text-purple-400',
   telegram: 'bg-blue-500/20 text-blue-400',
   email: 'bg-green-500/20 text-green-400',
+  agent: 'bg-cyan-500/20 text-cyan-300',
 };
 const platformIcons: Record<string, typeof MessageSquare> = {
   slack: Hash,
   telegram: MessageSquare,
   email: Mail,
+  agent: Bot,
 };
 
 function PlatformBadge({ platform }: { platform: string }) {
@@ -58,6 +70,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
   const [accessList, setAccessList] = useState<AccessListEntry[]>([]);
   const [settings, setSettings] = useState<PlatformSettings>({});
   const [bindings, setBindings] = useState<WorkspaceBinding[]>([]);
+  const [autopilotPolicy, setAutopilotPolicy] = useState<AutopilotPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +86,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
         getAccessSettings(),
         getWorkspaceBindings(),
       ]);
+      const p = await getAutopilotPolicy();
       setQueue(q);
       // Sync pendingApprovalCount with actual pending count
       const actualPending = q.filter((r: ApprovalQueueEntry) => r.status === 'pending').length;
@@ -80,6 +94,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
       setAccessList(l);
       setSettings(s);
       setBindings(b);
+      if (p.success) setAutopilotPolicy(p.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -141,7 +156,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
         ) : tab === 'list' ? (
           <AccessListTab entries={accessList} onRefresh={refresh} />
         ) : (
-          <SettingsTab settings={settings} bindings={bindings} onRefresh={refresh} />
+          <SettingsTab settings={settings} bindings={bindings} autopilotPolicy={autopilotPolicy} onRefresh={refresh} />
         )}
       </div>
     </div>
@@ -187,15 +202,45 @@ function ApprovalQueueTab({ queue, onRefresh }: { queue: ApprovalQueueEntry[]; o
 
 function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry; onRefresh: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isPending = req.status === 'pending';
+  const isToolApproval = req.approvalKind === 'tool_permission' || req.mode === 'tool_permission' || req.platform === 'agent';
 
   const handleAction = async (action: 'approve' | 'deny', extra?: boolean) => {
     setBusy(true);
+    setActionError(null);
     try {
       if (action === 'approve') await approveRequest(req.id, extra);
       else await denyRequest(req.id, extra);
       onRefresh();
-    } catch { /* ignore */ } finally { setBusy(false); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update approval.');
+    } finally { setBusy(false); }
+  };
+
+  const handleToolPolicyAction = async (decision: 'allow' | 'deny') => {
+    if (!isToolApproval) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await addAutopilotPolicyRule({
+        toolPattern: req.toolName || '*',
+        riskKind: (req.risk as AutonomyRiskKind) || '*',
+        riskLevel: '*',
+        decision,
+        reason: decision === 'allow'
+          ? `Repeated approval from Access Control for ${req.toolName || 'tool'}.`
+          : `Repeated denial from Access Control for ${req.toolName || 'tool'}.`,
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save the Autopilot policy rule.');
+      }
+      if (decision === 'allow') await approveRequest(req.id);
+      else await denyRequest(req.id);
+      onRefresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update approval policy.');
+    } finally { setBusy(false); }
   };
 
   return (
@@ -203,10 +248,12 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
       <div className="flex items-center gap-2 mb-1">
         <PlatformBadge platform={req.platform} />
         <span className="font-medium text-xs">
-          {req.senderName || req.senderHandle || req.senderId}
+          {isToolApproval ? 'Autopilot action' : (req.senderName || req.senderHandle || req.senderId)}
         </span>
         {req.channelInfo && (
-          <span className="text-[10px] text-[var(--color-text-muted)]">in {req.channelInfo}</span>
+          <span className="text-[10px] text-[var(--color-text-muted)]">
+            {isToolApproval ? req.channelInfo.replace(/^platform:/, '') : `in ${req.channelInfo}`}
+          </span>
         )}
         <div className="flex-1" />
         <span className="text-[10px] text-[var(--color-text-muted)]">{formatTime(req.requestedAt)}</span>
@@ -231,24 +278,47 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
       )}
 
       {isPending ? (
-        <div className="flex gap-1.5 mt-1">
-          <button disabled={busy} onClick={() => handleAction('approve')}
-            className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
-            Allow once
-          </button>
-          <button disabled={busy} onClick={() => handleAction('approve', true)}
-            className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
-            Trust sender
-          </button>
-          <button disabled={busy} onClick={() => handleAction('deny')}
-            className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
-            Deny once
-          </button>
-          <button disabled={busy} onClick={() => handleAction('deny', true)}
-            className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
-            Block sender
-          </button>
-        </div>
+        <>
+          <div className="flex gap-1.5 mt-1">
+            <button disabled={busy} onClick={() => handleAction('approve')}
+              className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
+              {isToolApproval ? 'Approve' : 'Allow once'}
+            </button>
+            {!isToolApproval && (
+              <button disabled={busy} onClick={() => handleAction('approve', true)}
+                className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
+                Trust sender
+              </button>
+            )}
+            {isToolApproval && (
+              <button disabled={busy} onClick={() => handleToolPolicyAction('allow')}
+                className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
+                Always allow
+              </button>
+            )}
+            <button disabled={busy} onClick={() => handleAction('deny')}
+              className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
+              {isToolApproval ? 'Deny' : 'Deny once'}
+            </button>
+            {!isToolApproval && (
+              <button disabled={busy} onClick={() => handleAction('deny', true)}
+                className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
+                Block sender
+              </button>
+            )}
+            {isToolApproval && (
+              <button disabled={busy} onClick={() => handleToolPolicyAction('deny')}
+                className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-error-muted)] text-[var(--color-error)] hover:brightness-110 disabled:opacity-50">
+                Never allow
+              </button>
+            )}
+          </div>
+          {actionError && (
+            <div className="mt-2 rounded border border-[var(--color-error)]/20 bg-[var(--color-error-muted)] px-2 py-1 text-[11px] text-[var(--color-error)]">
+              {actionError}
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex items-center gap-1 text-[11px]">
           {req.status === 'approved' ? (
@@ -399,14 +469,22 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
 
 // ── Settings Tab ──
 
-function SettingsTab({ settings, bindings, onRefresh }: {
+function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
   settings: PlatformSettings;
   bindings: WorkspaceBinding[];
+  autopilotPolicy: AutopilotPolicy | null;
   onRefresh: () => void;
 }) {
   const [bindCode, setBindCode] = useState<string | null>(null);
   const [addGroupId, setAddGroupId] = useState('');
   const [addGroupName, setAddGroupName] = useState('');
+  const [ruleToolPattern, setRuleToolPattern] = useState('*');
+  const [ruleRiskKind, setRuleRiskKind] = useState<AutonomyRiskKind>('*');
+  const [ruleRiskLevel, setRuleRiskLevel] = useState<AutonomyRiskLevel>('*');
+  const [ruleDecision, setRuleDecision] = useState<AutonomyPolicyDecision>('ask');
+  const [ruleReason, setRuleReason] = useState('');
+  const [ruleBusy, setRuleBusy] = useState(false);
+  const [ruleError, setRuleError] = useState<string | null>(null);
 
   const handleModeChange = async (platform: string, mode: string) => {
     try {
@@ -439,6 +517,45 @@ function SettingsTab({ settings, bindings, onRefresh }: {
     } catch { /* ignore */ }
   };
 
+  const handleAddAutonomyRule = async () => {
+    setRuleBusy(true);
+    setRuleError(null);
+    try {
+      const result = await addAutopilotPolicyRule({
+        toolPattern: ruleToolPattern,
+        riskKind: ruleRiskKind,
+        riskLevel: ruleRiskLevel,
+        decision: ruleDecision,
+        reason: ruleReason,
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save the Autopilot policy rule.');
+      }
+      setRuleToolPattern('*');
+      setRuleRiskKind('*');
+      setRuleRiskLevel('*');
+      setRuleDecision('ask');
+      setRuleReason('');
+      onRefresh();
+    } catch (err) {
+      setRuleError(err instanceof Error ? err.message : 'Failed to save the Autopilot policy rule.');
+    } finally { setRuleBusy(false); }
+  };
+
+  const handleDeleteAutonomyRule = async (id: number) => {
+    setRuleBusy(true);
+    setRuleError(null);
+    try {
+      const result = await deleteAutopilotPolicyRule(id);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete the Autopilot policy rule.');
+      }
+      onRefresh();
+    } catch (err) {
+      setRuleError(err instanceof Error ? err.message : 'Failed to delete the Autopilot policy rule.');
+    } finally { setRuleBusy(false); }
+  };
+
   const modes = [
     { value: 'open', label: 'Open' },
     { value: 'approval_required', label: 'Approval Required' },
@@ -448,6 +565,99 @@ function SettingsTab({ settings, bindings, onRefresh }: {
 
   return (
     <div className="p-3 space-y-4">
+      <div>
+        <h3 className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Autopilot Approval Rules</h3>
+        <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-surface-raised)] p-2 space-y-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <input value={ruleToolPattern} onChange={e => setRuleToolPattern(e.target.value)}
+              placeholder="Tool pattern, e.g. email"
+              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
+            <Select
+              value={ruleDecision}
+              onChange={(v) => setRuleDecision(v as AutonomyPolicyDecision)}
+              options={[
+                { value: 'ask', label: 'Ask' },
+                { value: 'allow', label: 'Allow' },
+                { value: 'deny', label: 'Deny' },
+              ]}
+              inline
+            />
+            <Select
+              value={ruleRiskKind}
+              onChange={(v) => setRuleRiskKind(v as AutonomyRiskKind)}
+              options={[
+                { value: '*', label: 'Any risk' },
+                { value: 'communication', label: 'Communication' },
+                { value: 'external_write', label: 'External write' },
+                { value: 'browser', label: 'Browser' },
+                { value: 'destructive', label: 'Destructive' },
+                { value: 'financial', label: 'Financial' },
+                { value: 'credential', label: 'Credential' },
+                { value: 'workspace_write', label: 'Workspace write' },
+                { value: 'automation', label: 'Automation' },
+                { value: 'compute', label: 'Compute' },
+                { value: 'read', label: 'Read' },
+              ]}
+              inline
+            />
+            <Select
+              value={ruleRiskLevel}
+              onChange={(v) => setRuleRiskLevel(v as AutonomyRiskLevel)}
+              options={[
+                { value: '*', label: 'Any level' },
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+                { value: 'critical', label: 'Critical' },
+              ]}
+              inline
+            />
+          </div>
+          <div className="flex gap-1.5">
+            <input value={ruleReason} onChange={e => setRuleReason(e.target.value)}
+              placeholder="Reason shown to the agent"
+              className="flex-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
+            <button onClick={handleAddAutonomyRule} disabled={ruleBusy}
+              className="px-2 py-1 rounded text-xs bg-[var(--color-accent)] text-white disabled:opacity-50">
+              Add
+            </button>
+          </div>
+          {ruleError && (
+            <div className="rounded border border-[var(--color-error)]/20 bg-[var(--color-error-muted)] px-2 py-1 text-[11px] text-[var(--color-error)]">
+              {ruleError}
+            </div>
+          )}
+          {(autopilotPolicy?.rules || []).length === 0 ? (
+            <p className="text-[11px] text-[var(--color-text-muted)]">No custom Autopilot rules.</p>
+          ) : (
+            <div className="space-y-1">
+              {(autopilotPolicy?.rules || []).map(rule => (
+                <div key={rule.id} className="flex items-center gap-1.5 py-1 text-xs">
+                  <span className={`px-1.5 py-0.5 rounded font-medium ${
+                    rule.decision === 'allow'
+                      ? 'bg-[var(--color-success-muted)] text-[var(--color-success)]'
+                      : rule.decision === 'deny'
+                        ? 'bg-[var(--color-error-muted)] text-[var(--color-error)]'
+                        : 'bg-[var(--color-warning-muted)] text-[var(--color-warning)]'
+                  }`}>
+                    {rule.decision}
+                  </span>
+                  <span className="font-mono text-[11px]">{rule.tool_pattern}</span>
+                  <span className="text-[var(--color-text-muted)] truncate">
+                    {rule.risk_kind}/{rule.risk_level}{rule.reason ? ` - ${rule.reason}` : ''}
+                  </span>
+                  <div className="flex-1" />
+                  <button disabled={ruleBusy} onClick={() => handleDeleteAutonomyRule(rule.id)}
+                    className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] disabled:opacity-50">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Per-platform access modes */}
       <div>
         <h3 className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Access Mode by Platform</h3>

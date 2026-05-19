@@ -16,8 +16,8 @@
 import { MENUBAR_HEIGHT, DOCK_HEIGHT } from '@/lib/constants';
 
 const PAD = 14;
-const W = 210;
-const H = 100;
+const W = 300;
+const H = 430;
 
 export type SlotId = 'tl' | 'tr' | 'bl' | 'br';
 

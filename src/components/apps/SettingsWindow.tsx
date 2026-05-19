@@ -3,6 +3,7 @@
  *
  * Sections:
  *   User         — Agent status, profile name, agent name, email
+ *   Agent        — Autonomy and recovery behavior
  *   Connections  — Slack + Telegram connect/disconnect
  *   Customisation — Wallpaper, sound, and voice preferences
  *   Subscription — Billing, usage, top-ups
@@ -10,13 +11,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  User, Link2, Paintbrush, Volume2, CreditCard,
+  User, Bot, Link2, Paintbrush, Volume2, CreditCard,
   Image,
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
-  Code2, Upload, FileArchive, Mail, Lock, Globe, Search, Plug, MessageCircle,
+  Code2, Upload, Mail, Lock, Globe, Search, Plug, MessageCircle,
   Zap, ExternalLink,
 } from 'lucide-react';
-import { Button, Input, Label, Select } from '@/components/ui';
+import { Button, Input, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { getPlatformDisplayName } from '@/lib/platforms';
 import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } from '@/stores/settingsStore';
@@ -34,7 +35,10 @@ import {
   getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
   getComposioToolkitDetail,
   getPlatformModelSettings, updatePlatformModel,
+  getAutopilotPolicy, updateAutopilotPolicy,
   type PlatformModelSettings,
+  type AutopilotPolicy,
+  type AutonomyMode,
 } from '@/services/api';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { BillingSection } from './BillingSection';
@@ -42,15 +46,20 @@ import { ByokSection } from './ByokSection';
 import { UsageSection, InfoCard } from './UsageSection';
 import { useBillingStore } from '@/stores/billingStore';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
-import { hasPaidAccess } from '@/lib/plans';
 // Dev app upload removed — apps are now hosted MCP servers
-import { useAppStore } from '@/stores/appStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import type { WindowConfig } from '@/types';
 
 // ── Types ──
 
 type Section = SettingsSection;
+type TelegramWidgetUser = Record<string, string>;
+
+declare global {
+  interface Window {
+    onTelegramWidgetAuth?: (user: TelegramWidgetUser) => void | Promise<void>;
+  }
+}
 
 interface SectionDef {
   id: Section;
@@ -60,6 +69,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'user', label: 'User', icon: User },
+  { id: 'agent', label: 'Agent', icon: Bot },
   { id: 'connections', label: 'Connections', icon: Link2 },
   { id: 'customisation', label: 'Customisation', icon: Paintbrush },
   { id: 'subscription', label: 'Subscription', icon: CreditCard },
@@ -69,15 +79,18 @@ const SECTIONS: SectionDef[] = [
 
 // ── macOS-style toggle switch ──
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       role="switch"
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
       className={`relative inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
         checked ? 'bg-emerald-500' : 'bg-black/15 dark:bg-white/20'
-      }`}
+      } disabled:cursor-default disabled:opacity-60`}
     >
       <span
         className={`pointer-events-none inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
@@ -90,7 +103,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 // ── Main Component ──
 
-export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
+export function SettingsWindow({ config }: { config: WindowConfig }) {
+  void config;
   const isMobile = useIsMobile();
   const pendingSection = useSettingsNav((s) => s.pendingSection);
   const setPendingSection = useSettingsNav((s) => s.setPendingSection);
@@ -140,6 +154,7 @@ export function SettingsWindow({ config: _config }: { config: WindowConfig }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {section === 'user' && <UserSection />}
+        {section === 'agent' && <AgentSection />}
         {section === 'connections' && <ConnectionsSection />}
         {section === 'customisation' && <CustomisationSection />}
         {section === 'subscription' && <SubscriptionSection />}
@@ -206,7 +221,7 @@ function SettingsRow({ label, description, children, noBorder }: {
 
 function UserSection() {
   const { user, updateProfile } = useAuthStore();
-  const { computer, updateComputer, isLoading: computerLoading } = useComputerStore();
+  const { computer, updateComputer } = useComputerStore();
   const subscription = useBillingStore((s) => s.subscription);
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const setPendingSection = useSettingsNav((s) => s.setPendingSection);
@@ -226,9 +241,13 @@ function UserSection() {
 
   // Populate agent name from computer config
   useEffect(() => {
-    if (computer?.config?.identityName) {
-      setAgentName(computer.config.identityName);
-    }
+    const nextName = computer?.config?.identityName;
+    if (!nextName) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setAgentName(nextName);
+    });
+    return () => { cancelled = true; };
   }, [computer?.config?.identityName]);
 
   // Populate timezone from agent config
@@ -244,11 +263,14 @@ function UserSection() {
 
   // Populate email username from existing config
   useEffect(() => {
-    if (existingEmail) {
-      // Extract base username from "ankush@example.com" → "ankush".
-      const base = existingEmail.replace(/@.*$/, '');
-      setEmailUsername(base);
-    }
+    if (!existingEmail) return;
+    // Extract base username from "ankush@example.com" -> "ankush".
+    const base = existingEmail.replace(/@.*$/, '');
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setEmailUsername(base);
+    });
+    return () => { cancelled = true; };
   }, [existingEmail]);
 
   // Reset saved indicator after a delay
@@ -432,6 +454,189 @@ function UserSection() {
   );
 }
 
+// ── Agent Section ──
+
+const AUTONOMY_MODE_OPTIONS: Array<{
+  mode: AutonomyMode;
+  label: string;
+  summary: string;
+  detail: string;
+}> = [
+  {
+    mode: 'conservative',
+    label: 'Careful',
+    summary: 'Asks before anything that may affect people, money, external messages, or broad changes.',
+    detail: 'Best when you want close supervision or the task is sensitive.',
+  },
+  {
+    mode: 'standard',
+    label: 'Standard',
+    summary: 'Handles routine work and safe retries, then asks for credentials, approvals, or unclear decisions.',
+    detail: 'Best default for normal business workflows.',
+  },
+  {
+    mode: 'aggressive',
+    label: 'Auto',
+    summary: 'Takes more low and medium risk decisions on its own, with fewer interruptions.',
+    detail: 'Still asks before critical, destructive, or explicitly restricted actions.',
+  },
+];
+
+function AgentSection() {
+  const [policy, setPolicy] = useState<AutopilotPolicy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAutopilotPolicy().then((result) => {
+      if (cancelled) return;
+      if (result.success) {
+        setPolicy(result.data);
+        setError(null);
+      } else {
+        setError(result.error || 'Failed to load agent settings');
+      }
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const savePolicy = async (
+    update: AutonomyMode | { mode?: AutonomyMode; enabled?: boolean },
+    busyKey: string,
+    optimistic: (current: AutopilotPolicy) => AutopilotPolicy,
+  ) => {
+    if (!policy || savingKey) return;
+    const previous = policy;
+    setSavingKey(busyKey);
+    setError(null);
+    setPolicy(optimistic(policy));
+    const result = await updateAutopilotPolicy(update);
+    if (result.success) {
+      setPolicy(result.data);
+    } else {
+      setPolicy(previous);
+      setError(result.error || 'Failed to save agent settings');
+    }
+    setSavingKey(null);
+  };
+
+  const handleModeChange = (mode: AutonomyMode) => {
+    if (!policy || policy.mode === mode) return;
+    void savePolicy(
+      { mode },
+      `mode:${mode}`,
+      (current) => ({ ...current, mode }),
+    );
+  };
+
+  const handleEnabledChange = (enabled: boolean) => {
+    if (!policy || policy.enabled === enabled) return;
+    void savePolicy(
+      { enabled },
+      'enabled',
+      (current) => ({ ...current, enabled }),
+    );
+  };
+
+  const availableModes = new Set(policy?.modes ?? AUTONOMY_MODE_OPTIONS.map((option) => option.mode));
+  const busy = loading || !!savingKey;
+
+  return (
+    <SectionPanel title="Agent" subtitle="Choose how independently the agent works and recovers.">
+      {error && (
+        <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      <SettingsCard>
+        <SettingsRow
+          label="Autonomous recovery"
+          description="Lets the agent continue background work, retry recoverable failures, and resume safe steps even when the desktop is closed."
+        >
+          {loading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
+          ) : (
+            <Toggle
+              checked={policy?.enabled ?? true}
+              disabled={!!savingKey}
+              onChange={handleEnabledChange}
+            />
+          )}
+        </SettingsRow>
+
+        <div className="px-4 py-3.5">
+          <div className="mb-3">
+            <h3 className="text-[13px] font-medium">Autonomy mode</h3>
+            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug">
+              Pick how much judgment the agent can use before asking you.
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            {AUTONOMY_MODE_OPTIONS.map((option) => {
+              const selected = policy?.mode === option.mode;
+              const unavailable = !availableModes.has(option.mode);
+              const disabled = busy || unavailable;
+              const savingThis = savingKey === `mode:${option.mode}`;
+
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => handleModeChange(option.mode)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors disabled:cursor-default ${
+                    selected
+                      ? 'border-[var(--color-accent)] bg-black/[0.03] dark:bg-white/[0.05]'
+                      : 'border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.035] hover:bg-black/[0.04] dark:hover:bg-white/[0.055]'
+                  } ${disabled && !selected ? 'opacity-55' : ''}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-semibold">{option.label}</span>
+                        {option.mode === 'standard' && (
+                          <span className="rounded-full bg-emerald-500/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[var(--color-text)] opacity-80 mt-1 leading-snug">
+                        {option.summary}
+                      </p>
+                      <p className="text-[10px] text-[var(--color-text-muted)] mt-1 leading-snug">
+                        {option.detail}
+                      </p>
+                    </div>
+                    <div className="mt-0.5 w-5 h-5 shrink-0 rounded-full border border-black/10 dark:border-white/15 flex items-center justify-center">
+                      {savingThis ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-[var(--color-accent)]" />
+                      ) : selected ? (
+                        <Check className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {policy?.enabled === false && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/15 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>Autonomous recovery is off. The selected mode will apply when recovery is enabled again.</span>
+            </div>
+          )}
+        </div>
+      </SettingsCard>
+    </SectionPanel>
+  );
+}
+
 // ── Connections Section ──
 
 const SLACK_OAUTH_URL = 'https://slack.com/oauth/v2/authorize?client_id=10603607090582.10618588079921&scope=app_mentions:read,im:read,im:write,im:history,chat:write,files:write,reactions:read,reactions:write,channels:read,channels:history,users:read,users:read.email&user_scope=';
@@ -459,7 +664,9 @@ const DEFAULT_COMPOSIO_INTEGRATIONS: ConnectionDef[] = [
 const BUILTIN_COMPOSIO_SLUGS = new Set(['slack', 'telegram']);
 
 /** Check if a toolkit is available for the user's plan. */
-function isToolkitAvailableForPlan(_slug: string, _plan: string): boolean {
+function isToolkitAvailableForPlan(slug: string, plan: string): boolean {
+  void slug;
+  void plan;
   return true; // All integrations available to all plans
 }
 
@@ -496,7 +703,6 @@ function AuthBadge({ type }: { type: AuthType }) {
 
 function ConnectionsSection() {
   const userPlan = useAuthStore((s) => s.user?.plan);
-  const isSubscribed = hasPaidAccess(userPlan);
 
   // Slack state
   const [slackConfigured, setSlackConfigured] = useState(false);
@@ -710,7 +916,7 @@ function ConnectionsSection() {
     script.async = true;
 
     // Set up the global callback
-    (window as any).onTelegramWidgetAuth = async (user: Record<string, string>) => {
+    window.onTelegramWidgetAuth = async (user: TelegramWidgetUser) => {
       setTelegramLinking(true);
       const result = await telegramLoginWidget(user);
       setTelegramLinking(false);
@@ -728,7 +934,7 @@ function ConnectionsSection() {
     telegramWidgetRef.current.appendChild(script);
 
     return () => {
-      delete (window as any).onTelegramWidgetAuth;
+      delete window.onTelegramWidgetAuth;
     };
   }, [telegramWidgetReady, telegramBotUsername]);
 
@@ -1522,7 +1728,6 @@ function PlatformModelPickerCard() {
 
   useEffect(() => {
     let cancelled = false;
-    setPlatformModelLoading(true);
     getPlatformModelSettings().then((result) => {
       if (cancelled) return;
       if (result.success) {
