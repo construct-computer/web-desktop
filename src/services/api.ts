@@ -505,6 +505,7 @@ export async function getAgentHistory(_instanceId: string, sessionKey = 'ws_defa
     correlation_id?: string | null;
     tool_call_id?: string | null;
     tool_name?: string | null;
+    resolved_at?: number | null;
     created_at: number;
   }>;
   operation_metadata?: OperationMeta[];

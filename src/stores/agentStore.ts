@@ -901,6 +901,27 @@ function compactIncidentNotices(messages: ChatMessage[]): ChatMessage[] {
   return messages.reduce<ChatMessage[]>((acc, msg) => appendMessage(acc, msg), []);
 }
 
+function removeIncidentNotices(messages: ChatMessage[], incidentIds: string[]): ChatMessage[] {
+  if (incidentIds.length === 0) return messages;
+  const resolved = new Set(incidentIds);
+  let changed = false;
+  const next = messages.flatMap((msg) => {
+    if (msg.role !== 'notice' || msg.noticeKind !== 'incident') return [msg];
+    const originalIds = msg.incidentIds?.length ? msg.incidentIds : msg.incidentId ? [msg.incidentId] : [];
+    const ids = originalIds.filter(id => !resolved.has(id));
+    if (ids.length === 0) return [];
+    if (ids.length === originalIds.length) return [msg];
+    changed = true;
+    return [{
+      ...msg,
+      incidentId: ids[0],
+      incidentIds: ids,
+      noticeRepeatCount: ids.length,
+    }];
+  });
+  return changed || next.length !== messages.length ? next : messages;
+}
+
 function clearWatchdogNotices(messages: ChatMessage[]): ChatMessage[] {
   return messages.filter(m => !(m.role === 'notice' && (m.noticeKind === 'watchdog' || m.noticeKind === 'system_recovery')));
 }
@@ -2029,7 +2050,7 @@ export const useComputerStore = create<ComputerStore>()(
         // Do not return without updating the UI: an empty table must still
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
-        if ((!messages || messages.length === 0) && (!events || events.length === 0) && (!incidents || incidents.length === 0)) {
+        if ((!messages || messages.length === 0) && (!events || events.length === 0)) {
           if (get().activeSessionKey === requestedSessionKey) {
             set({ chatMessages: [] });
             sessionMessageCache.set(requestedSessionKey, []);
@@ -4380,6 +4401,35 @@ export const useComputerStore = create<ComputerStore>()(
                 variant: 'error',
               }, 5000);
             }
+          }
+          break;
+        }
+
+        case 'agent_incident_resolved': {
+          const ids = Array.isArray(event.data?.incidentIds)
+            ? (event.data.incidentIds as unknown[]).filter((id): id is string => typeof id === 'string' && id.length > 0)
+            : typeof event.data?.incidentId === 'string'
+              ? [event.data.incidentId]
+              : [];
+          if (ids.length === 0) break;
+          set(state => {
+            const nextMessages = removeIncidentNotices(state.chatMessages, ids);
+            const nextPlatformAgents = { ...state.platformAgents };
+            for (const [key, pa] of Object.entries(state.platformAgents)) {
+              if (!pa?.chatMessages) continue;
+              const nextChat = removeIncidentNotices(pa.chatMessages, ids);
+              if (nextChat !== pa.chatMessages) {
+                nextPlatformAgents[key] = { ...pa, chatMessages: nextChat };
+              }
+            }
+            return {
+              chatMessages: nextMessages,
+              platformAgents: nextPlatformAgents,
+            };
+          });
+          const activeKey = get().activeSessionKey;
+          if (activeKey && sessionMessageCache.has(activeKey)) {
+            sessionMessageCache.set(activeKey, removeIncidentNotices(sessionMessageCache.get(activeKey) || [], ids));
           }
           break;
         }
