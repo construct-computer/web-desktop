@@ -1480,6 +1480,14 @@ export const useComputerStore = create<ComputerStore>()(
       // Browser/terminal WS are disabled in serverless mode (no container).
       // browserWS.connect(instanceId);
       set({ agentConnecting: true });
+      agentWS.setPresenceProvider(() => {
+        const context = buildFrontendContext();
+        return {
+          activeSessionKey: get().activeSessionKey,
+          activeWindow: context.activeWindow,
+          openWindows: context.openWindows,
+        };
+      });
       agentWS.connect(instanceId);
 
       const alreadySubscribed = subscribedInstanceId === instanceId;

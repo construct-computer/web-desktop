@@ -449,6 +449,18 @@ export interface AgentFrontendContext {
   launchedFrom?: string;
 }
 
+export interface AgentClientPresence {
+  surface: 'web' | 'desktop_app' | 'mobile_app';
+  visibility: 'visible' | 'hidden' | 'unknown';
+  activeSessionKey?: string;
+  timezone?: string;
+  lastFocusedAt?: number;
+  appVersion?: string;
+  deviceLabel?: string;
+  openWindows?: Array<{ id: string; type: string; title?: string }>;
+  activeWindow?: AgentFrontendContext['activeWindow'];
+}
+
 class AgentWSClient {
   private ws: WebSocket | null = null;
   private instanceId: string | null = null;
@@ -459,6 +471,14 @@ class AgentWSClient {
   private pendingMessages: string[] = [];
   private pingResolve: ((rtt: number) => void) | null = null;
   private pingTimer: ReturnType<typeof setTimeout> | null = null;
+  private presenceInterval: ReturnType<typeof setInterval> | null = null;
+  private presenceProvider: (() => Partial<AgentClientPresence>) | null = null;
+  private lastFocusedAt = Date.now();
+  private handlePresenceVisibility = () => this.sendPresence('visibility');
+  private handlePresenceFocus = () => {
+    this.lastFocusedAt = Date.now();
+    this.sendPresence('focus');
+  };
 
   connect(instanceId: string) {
     if (
@@ -492,6 +512,7 @@ class AgentWSClient {
           // timeZone not available in some runtimes
           void 0;
         }
+        this.startPresenceHeartbeat();
 
         // Re-register dev app if connected (survives page refresh / WS reconnect)
         import('@/stores/devAppStore').then(({ useDevAppStore }) => {
@@ -529,6 +550,7 @@ class AgentWSClient {
       this.ws.onclose = () => {
         agentLog.info('Disconnected');
         this.connectionHandler?.(false);
+        this.stopPresenceHeartbeat();
         this.scheduleReconnect();
       };
 
@@ -541,6 +563,7 @@ class AgentWSClient {
   }
 
   disconnect() {
+    this.stopPresenceHeartbeat();
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -551,6 +574,71 @@ class AgentWSClient {
     }
     this.instanceId = null;
     this.pendingMessages = [];
+  }
+
+  setPresenceProvider(provider: (() => Partial<AgentClientPresence>) | null) {
+    this.presenceProvider = provider;
+  }
+
+  private detectSurface(): AgentClientPresence['surface'] {
+    const ua = navigator.userAgent || '';
+    if (/ConstructDesktop/i.test(ua)) return 'desktop_app';
+    if (/ConstructMobile|iPhone|iPad|Android/i.test(ua)) return 'mobile_app';
+    return 'web';
+  }
+
+  private buildPresence(reason: string): AgentClientPresence & { type: 'client_presence'; reason: string } {
+    let timezone = 'UTC';
+    try {
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone;
+    } catch {
+      void 0;
+    }
+    const provided = this.presenceProvider?.() || {};
+    return {
+      type: 'client_presence',
+      reason,
+      surface: this.detectSurface(),
+      visibility: typeof document !== 'undefined'
+        ? (document.visibilityState === 'visible' ? 'visible' : 'hidden')
+        : 'unknown',
+      timezone,
+      lastFocusedAt: this.lastFocusedAt,
+      appVersion: import.meta.env.VITE_APP_VERSION || undefined,
+      deviceLabel: navigator.platform || navigator.userAgent.slice(0, 80),
+      ...provided,
+    };
+  }
+
+  private sendPresence(reason: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify(this.buildPresence(reason)));
+  }
+
+  private startPresenceHeartbeat() {
+    this.stopPresenceHeartbeat();
+    this.lastFocusedAt = Date.now();
+    this.sendPresence('open');
+    this.presenceInterval = setInterval(() => this.sendPresence('heartbeat'), 30_000);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.handlePresenceVisibility);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', this.handlePresenceFocus);
+    }
+  }
+
+  private stopPresenceHeartbeat() {
+    if (this.presenceInterval) {
+      clearInterval(this.presenceInterval);
+      this.presenceInterval = null;
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handlePresenceVisibility);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.handlePresenceFocus);
+    }
   }
 
   /** Reset backoff and immediately attempt to reconnect. */
