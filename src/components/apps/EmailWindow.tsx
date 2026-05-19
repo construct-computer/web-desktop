@@ -870,18 +870,24 @@ function ThreadPane({
         </button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {thread.messages.map((message) => {
           const isOwn = extractEmail(message.from || '').toLowerCase() === inboxEmail.toLowerCase();
           return (
-            <div key={message.messageId} className={`group ${isOwn ? 'ml-8' : 'mr-8'}`}>
-              <div className={`rounded-lg border border-[var(--color-border)] ${isOwn ? 'bg-[var(--color-accent)]/5' : 'bg-[var(--color-surface-raised)]'}`}>
+            <div key={message.messageId} className={`group flex ${isOwn ? 'justify-end pl-10' : 'justify-start pr-10'}`}>
+              <div className={`w-full max-w-[960px] overflow-hidden rounded-lg border shadow-sm ${
+                isOwn
+                  ? 'border-[var(--color-accent)]/20 bg-[var(--color-accent)]/[0.07]'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface-raised)]'
+              }`}
+              >
                 <MessageHeader message={message} />
 
-                <div className="px-3 py-2.5">
+                <div className="px-4 py-3">
                   <EmailHtmlBody
                     html={message.extractedHtml || message.html}
                     text={message.extractedText || message.text}
+                    preferPlainText={isOwn}
                   />
                 </div>
 

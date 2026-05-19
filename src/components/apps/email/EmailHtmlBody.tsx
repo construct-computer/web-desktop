@@ -20,6 +20,20 @@ function stripQuotedPlainText(value: string): { body: string; quoted: string } {
   };
 }
 
+function cleanConstructAgentText(value: string): string {
+  const lines = value.replace(/\r\n/g, '\n').split('\n');
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (/^(construct|construct agent)$/i.test(lines[0]?.trim() || '')) lines.shift();
+
+  const cleaned = lines.filter((line) => {
+    const trimmed = line.trim();
+    return !/^Construct Agent sent this email from Construct\.?$/i.test(trimmed)
+      && !/^-{8,}$/.test(trimmed);
+  });
+
+  return cleaned.join('\n').trim();
+}
+
 function isMarkdownTableSeparator(line: string): boolean {
   return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
 }
@@ -116,14 +130,18 @@ function renderPlainText(text: string) {
 export function EmailHtmlBody({
   html,
   text,
+  preferPlainText = false,
   className = '',
 }: {
   html?: string;
   text?: string;
+  preferPlainText?: boolean;
   className?: string;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
-  const plainText = useMemo(() => stripQuotedPlainText(text?.trim() || ''), [text]);
+  const plainText = useMemo(() => stripQuotedPlainText(
+    preferPlainText ? cleanConstructAgentText(text?.trim() || '') : text?.trim() || '',
+  ), [preferPlainText, text]);
 
   const sanitized = useMemo(() => {
     if (!html || typeof window === 'undefined') return { body: html || '', quoted: '' };
@@ -160,10 +178,10 @@ export function EmailHtmlBody({
     return { body: doc.body.innerHTML.trim(), quoted };
   }, [html]);
 
-  if (sanitized.body) {
+  if ((!preferPlainText || (!plainText.body && !plainText.quoted)) && sanitized.body) {
     return (
-      <div className={`break-words text-xs leading-relaxed [&_a]:text-sky-400 [&_blockquote]:border-l [&_blockquote]:border-white/15 [&_blockquote]:pl-3 [&_blockquote]:text-white/70 [&_img]:max-w-full [&_pre]:whitespace-pre-wrap ${className}`}>
-        <div dangerouslySetInnerHTML={{ __html: sanitized.body }} />
+      <div className={`break-words text-xs leading-relaxed [&_a]:text-sky-400 [&_blockquote]:border-l [&_blockquote]:border-white/15 [&_blockquote]:pl-3 [&_blockquote]:text-white/70 [&_img]:max-w-full [&_pre]:whitespace-pre-wrap [&_table]:max-w-full ${className}`}>
+        <div className="mx-auto max-w-[860px]" dangerouslySetInnerHTML={{ __html: sanitized.body }} />
         {sanitized.quoted && (
           <button
             type="button"
@@ -186,7 +204,7 @@ export function EmailHtmlBody({
     const visibleText = plainText.body || plainText.quoted;
     const hasCollapsedQuote = !!plainText.body && !!plainText.quoted;
     return (
-      <div className={`break-words text-xs leading-relaxed ${className}`}>
+      <div className={`break-words text-[13px] leading-relaxed text-[var(--color-text)]/95 ${className}`}>
         {renderPlainText(visibleText)}
         {hasCollapsedQuote && (
           <button
