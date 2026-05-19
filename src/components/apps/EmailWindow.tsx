@@ -45,7 +45,6 @@ import {
   type ParsedAddress,
 } from '@/services/emailMailbox';
 import { useComputerStore } from '@/stores/agentStore';
-import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailSetupPane } from './EmailSetupPane';
 import { EmailHtmlBody } from './email/EmailHtmlBody';
 import { formatRelativeTimeShort } from '@/lib/format';
@@ -130,7 +129,6 @@ function markThreadReadLocally(thread: EmailThreadDetail): EmailThreadDetail {
 }
 
 export function EmailWindow({ config: _config }: { config: WindowConfig }) {
-  const isMobile = useIsMobile();
   const [inboxEmail, setInboxEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
@@ -153,7 +151,6 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
   const [selection, setSelection] = useState<Record<string, boolean>>({});
   const [pendingAction, setPendingAction] = useState<null | 'read' | 'unread' | 'delete'>(null);
   const [pendingDraftAction, setPendingDraftAction] = useState<null | 'send' | 'delete'>(null);
-  const selectedItemOpen = !!selectedThread || !!selectedDraft;
 
   const selectedCount = useMemo(
     () => Object.values(selection).filter(Boolean).length,
@@ -450,10 +447,41 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     );
   }
 
+  if (threadLoading || selectedThread || selectedDraft) {
+    return (
+      <div className="relative flex h-full min-h-0 min-w-0 surface-app text-sm overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col surface-app">
+          {threadLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 size={20} className="animate-spin text-[var(--color-text-muted)]" />
+            </div>
+          ) : selectedThread ? (
+            <ThreadPane
+              inboxEmail={inboxEmail}
+              thread={selectedThread}
+              onBack={() => setSelectedThread(null)}
+              onDelete={handleThreadDelete}
+              onToggleUnread={handleMessageUnreadToggle}
+              onOpenAttachment={openAttachment}
+            />
+          ) : selectedDraft ? (
+            <DraftPane
+              draft={selectedDraft}
+              pendingAction={pendingDraftAction}
+              onBack={() => setSelectedDraft(null)}
+              onSend={handleDraftSend}
+              onDelete={handleDraftDelete}
+              onOpenAttachment={openAttachment}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex h-full min-h-0 min-w-0 surface-app text-sm overflow-hidden">
-      {(!isMobile || !selectedItemOpen) && (
-      <div className={`${isMobile ? 'w-full' : 'w-[380px] border-r'} shrink-0 min-h-0 border-[var(--color-border)] flex flex-col overflow-hidden`}>
+      <div className="w-full min-h-0 border-[var(--color-border)] flex flex-col overflow-hidden">
         <div className="shrink-0 border-b border-[var(--color-border)] surface-toolbar px-3 py-2 space-y-2">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
@@ -587,7 +615,6 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
               {items.map((item) => {
                 if (isDraftItem(item)) {
                   const id = getMailboxItemId(item);
-                  const active = selectedDraft?.draftId === item.draftId;
                   const title = item.subject || '(no subject)';
                   const recipients = item.to.length ? item.to.join(', ') : 'No recipients';
                   const status = item.sendStatus === 'scheduled' && item.sendAt
@@ -602,9 +629,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
                       key={id}
                       type="button"
                       onClick={() => { setSelectedThread(null); setSelectedDraft(item); }}
-                      className={`block w-full text-left border-b border-[var(--color-border)] px-3 py-2.5 ${
-                        active ? 'bg-[var(--color-accent)]/10' : 'hover:bg-white/5'
-                      }`}
+                      className="block w-full text-left border-b border-[var(--color-border)] px-3 py-2.5 hover:bg-white/5"
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[var(--color-text-muted)] shrink-0">
@@ -628,7 +653,6 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
                 if (!isThreadItem(item)) return null;
                 const id = getMailboxItemId(item);
                 const checked = !!selection[id];
-                const active = selectedThread?.threadId === item.threadId;
                 const unread = item.unread;
                 const title = item.subject || '(no subject)';
                 const sender = extractName((item.senders || ['Unknown'])[0]);
@@ -638,11 +662,9 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
                   <div
                     key={id}
                     className={`relative border-b border-[var(--color-border)] ${
-                      active
-                        ? 'bg-[var(--color-accent)]/10'
-                        : unread
-                          ? 'bg-[var(--color-accent)]/5 hover:bg-[var(--color-accent)]/10'
-                          : 'hover:bg-white/5'
+                      unread
+                        ? 'bg-[var(--color-accent)]/5 hover:bg-[var(--color-accent)]/10'
+                        : 'hover:bg-white/5'
                     }`}
                   >
                     {unread && (
@@ -711,41 +733,6 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           )}
         </div>
       </div>
-      )}
-
-      {(!isMobile || selectedItemOpen) && (
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col surface-app">
-        {threadLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 size={20} className="animate-spin text-[var(--color-text-muted)]" />
-          </div>
-        ) : selectedThread ? (
-          <ThreadPane
-            inboxEmail={inboxEmail}
-            thread={selectedThread}
-            onBack={() => setSelectedThread(null)}
-            onDelete={handleThreadDelete}
-            onToggleUnread={handleMessageUnreadToggle}
-            onOpenAttachment={openAttachment}
-          />
-        ) : selectedDraft ? (
-          <DraftPane
-            draft={selectedDraft}
-            pendingAction={pendingDraftAction}
-            onBack={() => setSelectedDraft(null)}
-            onSend={handleDraftSend}
-            onDelete={handleDraftDelete}
-            onOpenAttachment={openAttachment}
-          />
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)]">
-            <Mail size={28} className="opacity-40" />
-            <p className="text-sm">Select a message</p>
-            <p className="text-xs opacity-60">Your agent handles composing and sending — you can read, search, and manage mail here.</p>
-          </div>
-        )}
-      </div>
-      )}
     </div>
   );
 }

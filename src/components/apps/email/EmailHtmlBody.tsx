@@ -182,11 +182,13 @@ export function EmailHtmlBody({
     );
   }
 
-  if (plainText.body) {
+  if (plainText.body || plainText.quoted) {
+    const visibleText = plainText.body || plainText.quoted;
+    const hasCollapsedQuote = !!plainText.body && !!plainText.quoted;
     return (
       <div className={`break-words text-xs leading-relaxed ${className}`}>
-        {renderPlainText(plainText.body)}
-        {plainText.quoted && (
+        {renderPlainText(visibleText)}
+        {hasCollapsedQuote && (
           <button
             type="button"
             onClick={() => setShowQuoted((value) => !value)}
@@ -195,7 +197,7 @@ export function EmailHtmlBody({
             {showQuoted ? 'Hide quoted text' : 'Show quoted text'}
           </button>
         )}
-        {showQuoted && plainText.quoted && (
+        {showQuoted && hasCollapsedQuote && (
           <pre className="mt-2 whitespace-pre-wrap rounded border border-[var(--color-border)] bg-black/10 p-2 text-[10px] text-[var(--color-text-muted)]">
             {plainText.quoted}
           </pre>
