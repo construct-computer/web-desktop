@@ -10,7 +10,16 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.ota
 *.local
+
+# Native build outputs
+android/.gradle/
+android/.idea/
+android/**/build/
+android/local.properties
+ios/DerivedData/
+ios/**/xcuserdata/
 
 # Editor directories and files
 .vscode/*

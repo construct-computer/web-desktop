@@ -129,6 +129,17 @@ html, body, #root {
   overflow: hidden;
 }
 
+html[data-capacitor='true'] {
+  --construct-keyboard-height: 0px;
+}
+
+html[data-capacitor='true'] input,
+html[data-capacitor='true'] textarea,
+html[data-capacitor='true'] [contenteditable='true'] {
+  scroll-margin-top: 18px;
+  scroll-margin-bottom: calc(var(--construct-keyboard-height, 0px) + 28px);
+}
+
 body {
   font-family: var(--font-sans);
   font-size: 13px;

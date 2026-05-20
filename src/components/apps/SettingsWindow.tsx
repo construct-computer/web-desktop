@@ -15,7 +15,7 @@ import {
   Image,
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
   Code2, Upload, Mail, Lock, Globe, Search, Plug, MessageCircle,
-  Zap, ExternalLink,
+  Zap, ExternalLink, MonitorSmartphone, RefreshCw, LogOut,
 } from 'lucide-react';
 import { Button, Input, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
@@ -36,9 +36,11 @@ import {
   getComposioToolkitDetail,
   getPlatformModelSettings, updatePlatformModel,
   getAutopilotPolicy, updateAutopilotPolicy,
+  listAuthSessions, revokeAuthSession, revokeOtherAuthSessions,
   type PlatformModelSettings,
   type AutopilotPolicy,
   type AutonomyMode,
+  type AuthSessionRecord,
 } from '@/services/api';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { BillingSection } from './BillingSection';
@@ -69,6 +71,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'user', label: 'User', icon: User },
+  { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'agent', label: 'Agent', icon: Bot },
   { id: 'connections', label: 'Connections', icon: Link2 },
   { id: 'customisation', label: 'Customisation', icon: Paintbrush },
@@ -154,6 +157,7 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {section === 'user' && <UserSection />}
+        {section === 'devices' && <DevicesSection />}
         {section === 'agent' && <AgentSection />}
         {section === 'connections' && <ConnectionsSection />}
         {section === 'customisation' && <CustomisationSection />}
@@ -214,6 +218,154 @@ function SettingsRow({ label, description, children, noBorder }: {
       </div>
       <div className="flex-shrink-0">{children}</div>
     </div>
+  );
+}
+
+function formatRelativeTime(value: number): string {
+  const diffMs = Date.now() - value;
+  if (diffMs < 10_000) return 'just now';
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return 'less than a minute ago';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function surfaceLabel(surface: string): string {
+  if (surface === 'mobile_app') return 'Mobile app';
+  if (surface === 'desktop_app') return 'Desktop app';
+  if (surface === 'telegram_mini') return 'Telegram Mini App';
+  return 'Web';
+}
+
+function DevicesSection() {
+  const [sessions, setSessions] = useState<AuthSessionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const result = await listAuthSessions();
+    if (result.success) {
+      setSessions(result.data.sessions);
+      setError(null);
+    } else {
+      setError(result.error || 'Failed to load devices');
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(refresh, 15_000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  const revokeOne = async (id: string) => {
+    setBusy(id);
+    const result = await revokeAuthSession(id);
+    if (!result.success) setError(result.error || 'Failed to log out device');
+    await refresh();
+    setBusy(null);
+  };
+
+  const revokeOthers = async () => {
+    setBusy('others');
+    const result = await revokeOtherAuthSessions();
+    if (!result.success) setError(result.error || 'Failed to log out other devices');
+    await refresh();
+    setBusy(null);
+  };
+
+  const activeSessions = sessions.filter((session) => !session.revokedAt);
+  const otherActiveCount = activeSessions.filter((session) => !session.current).length;
+
+  return (
+    <SectionPanel
+      title="Devices"
+      subtitle="See where your account is signed in and log out devices you do not recognize."
+      action={
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={loading}>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button size="sm" variant="destructive" onClick={revokeOthers} disabled={!otherActiveCount || busy === 'others'}>
+            {busy === 'others' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+            Log out others
+          </Button>
+        </div>
+      }
+    >
+      {error && (
+        <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      <SettingsCard>
+        {loading && sessions.length === 0 ? (
+          <div className="flex items-center gap-2 px-4 py-5 text-[13px] text-[var(--color-text-muted)]">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading devices...
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="px-4 py-5 text-[13px] text-[var(--color-text-muted)]">No active sessions found.</div>
+        ) : (
+          sessions.map((session) => {
+            const revoked = Boolean(session.revokedAt);
+            const title = session.deviceLabel || [session.browser, session.os].filter(Boolean).join(' on ') || 'Unknown device';
+            return (
+              <div
+                key={session.id}
+                className="flex items-start gap-3 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0"
+              >
+                <div className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)]">
+                  <MonitorSmartphone className="w-4.5 h-4.5" />
+                  <span className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-surface)] ${
+                    revoked ? 'bg-zinc-500' : session.online ? 'bg-emerald-500' : 'bg-zinc-400'
+                  }`} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[13px] font-medium truncate">{title}</p>
+                    {session.current && (
+                      <span className="rounded-full bg-[var(--color-accent)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--color-accent)]">
+                        Current
+                      </span>
+                    )}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      revoked
+                        ? 'bg-zinc-500/12 text-zinc-500'
+                        : session.online
+                          ? 'bg-emerald-500/12 text-emerald-500'
+                          : 'bg-zinc-500/12 text-zinc-500'
+                    }`}>
+                      {revoked ? 'Logged out' : session.online ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
+                    {surfaceLabel(session.surface)}
+                    {session.ipAddress ? ` · ${session.ipAddress}` : ''}
+                    {session.location ? ` · ${session.location}` : ''}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
+                    Last active {formatRelativeTime(session.lastSeenAt)}
+                    {session.timezone ? ` · ${session.timezone}` : ''}
+                  </p>
+                </div>
+                {!session.current && !revoked && (
+                  <Button size="sm" variant="ghost" onClick={() => void revokeOne(session.id)} disabled={busy === session.id}>
+                    {busy === session.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Log out'}
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </SettingsCard>
+    </SectionPanel>
   );
 }
 

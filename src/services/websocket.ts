@@ -1,5 +1,13 @@
 import { STORAGE_KEYS } from '@/lib/constants';
-import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, WS_RECONNECT_JITTER_MS, WS_KEEPALIVE_TIMEOUT_MS, WS_KEEPALIVE_PING_INTERVAL_MS, IS_DEV } from '@/lib/config';
+import {
+  API_BASE_URL,
+  WS_RECONNECT_BASE_MS,
+  WS_RECONNECT_MAX_MS,
+  WS_RECONNECT_JITTER_MS,
+  WS_KEEPALIVE_TIMEOUT_MS,
+  WS_KEEPALIVE_PING_INTERVAL_MS,
+  IS_DEV,
+} from '@/lib/config';
 import { log } from '@/lib/logger';
 
 const browserLog = log('BrowserWS');
@@ -12,6 +20,12 @@ const agentLog = log('AgentWS');
 function getWsBaseUrl(): string {
   const override = import.meta.env.VITE_WS_BASE_URL;
   if (override) return override;
+
+  if (/^https?:\/\//i.test(API_BASE_URL)) {
+    const apiUrl = new URL(API_BASE_URL);
+    return `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}`;
+  }
+
   const backendHost = IS_DEV ? 'localhost:3000' : window.location.host;
   return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${backendHost}`;
 }

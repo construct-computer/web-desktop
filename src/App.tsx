@@ -20,6 +20,7 @@ import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tab
 import * as api from '@/services/api';
 import analytics from '@/lib/analytics';
 import { hasAgentAccess } from '@/lib/plans';
+import { getCurrentDeviceId, isNativePlatform, syncNativePushRegistration } from '@/native';
 
 // Telegram Mini App — lazy loaded only when running inside Telegram.
 const MiniApp = lazy(() =>
@@ -175,17 +176,26 @@ function WebAppShell() {
       return cleanup;
     }
 
-    // Check if this is an OAuth callback (token or error in URL)
-    handleOAuthReturn().then((oauthHandled) => {
+    const finishOAuthReturn = () => handleOAuthReturn().then((oauthHandled) => {
       if (!oauthHandled) {
         // No OAuth callback — check existing session
-        checkAuth().then(() => setAuthChecked(true));
+        return checkAuth().then(() => setAuthChecked(true));
       } else {
         setAuthChecked(true);
       }
     });
 
+    // Check if this is an OAuth callback (token or error in URL)
+    void finishOAuthReturn();
+
+    const onNativeUrlOpen = () => {
+      void finishOAuthReturn();
+    };
+
+    window.addEventListener('construct:native-url-open', onNativeUrlOpen);
+
     return () => {
+      window.removeEventListener('construct:native-url-open', onNativeUrlOpen);
       cleanup();
       cleanupTabSingleton();
     };
@@ -227,6 +237,35 @@ function WebAppShell() {
       preloadAllAssets();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authChecked || !user?.id) return;
+    void syncNativePushRegistration();
+  }, [isAuthenticated, authChecked, user?.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authChecked || !user?.id) return;
+
+    const heartbeat = () => {
+      void api.heartbeatAuthSession({
+        surface: isNativePlatform() ? 'mobile_app' : 'web',
+        deviceId: getCurrentDeviceId(),
+        userAgent: navigator.userAgent,
+      });
+    };
+
+    heartbeat();
+    const interval = window.setInterval(heartbeat, 30_000);
+    const onVisibility = () => {
+      if (!document.hidden) heartbeat();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isAuthenticated, authChecked, user?.id]);
 
   // Slide up lock screen when the agent is ready OR the user is blocked (show desktop with subscription overlay).
   // Skip when the user has explicitly locked the screen (isLocked).

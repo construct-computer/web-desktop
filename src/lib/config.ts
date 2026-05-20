@@ -136,6 +136,10 @@ export const STORAGE_KEYS = {
 
   // Preferences
   settings: 'construct:settings',
+  deviceId: 'construct:deviceId',
+  lastLiveUpdateCheck: 'construct:lastLiveUpdateCheck',
+  nativePushToken: 'construct:nativePushToken',
+  nativePushDeviceId: 'construct:nativePushDeviceId',
 
   // Window state
   windowPositions: 'construct:windows',

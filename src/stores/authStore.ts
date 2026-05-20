@@ -3,6 +3,7 @@ import * as api from '@/services/api';
 import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
+import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
 
@@ -98,8 +99,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   loginWithGoogle: () => {
     analytics.loginStarted('google');
-    // Navigate to Google OAuth
-    window.location.href = api.getGoogleAuthUrl();
+    const url = api.getGoogleAuthUrl();
+    void openNativeAuthUrl(url).then((openedNative) => {
+      if (!openedNative) window.location.href = url;
+    }).catch((error) => {
+      console.warn('[auth] native Google auth open failed, falling back to window navigation:', error);
+      window.location.href = url;
+    });
   },
 
   sendMagicLink: async (email: string) => {
@@ -209,6 +215,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     const result = await api.getMe();
 
     if (result.success) {
+      if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
       analytics.loginSuccess('google');
@@ -235,6 +242,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     analytics.logout();
+    void unregisterCurrentNativePushToken();
     api.logout();
 
     // Clear all user-specific data so the next login starts completely fresh
@@ -275,6 +283,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     const result = await api.getMe();
 
     if (result.success) {
+      if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
       // Identify returning user for analytics

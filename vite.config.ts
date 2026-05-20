@@ -10,15 +10,18 @@ import { VitePWA } from "vite-plugin-pwa";
 const gitHash = execSync('git rev-parse --short HEAD').toString().trim();
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const isCapacitorBuild = mode.startsWith('capacitor');
+
+  return {
   define: {
     __GIT_HASH__: JSON.stringify(gitHash),
   },
   plugins: [
     react(),
     tailwindcss(),
-    cloudflare(),
-    VitePWA({
+    !isCapacitorBuild && cloudflare(),
+    !isCapacitorBuild && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       devOptions: {
@@ -51,7 +54,7 @@ export default defineConfig({
         ]
       }
     })
-  ],
+  ].filter(Boolean),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -104,4 +107,5 @@ export default defineConfig({
       },
     },
   },
+  };
 })

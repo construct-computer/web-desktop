@@ -1,5 +1,6 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import type { ApiResult, User, AgentWithConfig } from '@/types';
+import { Capacitor } from '@capacitor/core';
 
 type ApiRequestOptions = RequestInit & {
   /** Disable error-store capture for background polling where transient failures are expected. */
@@ -178,7 +179,10 @@ async function refreshTokenInternal(): Promise<boolean> {
  * Get the Google OAuth URL — navigating here starts the login flow.
  */
 export function getGoogleAuthUrl(): string {
-  const redirect = encodeURIComponent(window.location.origin);
+  const redirectOrigin = Capacitor.isNativePlatform()
+    ? 'construct://auth'
+    : window.location.origin;
+  const redirect = encodeURIComponent(redirectOrigin);
   return `${API_BASE_URL}/auth/google?redirect_origin=${redirect}`;
 }
 
@@ -295,7 +299,7 @@ export async function verifyOtp(email: string, otp: string): Promise<ApiResult<{
   }
 }
 
-export async function getMe(): Promise<ApiResult<{ user: User }>> {
+export async function getMe(): Promise<ApiResult<{ user: User; token?: string }>> {
   return request('/auth/me');
 }
 
@@ -308,6 +312,106 @@ export async function updateProfile(data: { displayName: string }): Promise<ApiR
 
 export async function markSetupComplete(): Promise<ApiResult<{ user: User }>> {
   return request('/auth/setup-complete', { method: 'POST' });
+}
+
+export interface NativePushTokenRecord {
+  id: string;
+  platform: 'ios' | 'android' | 'web';
+  deviceId: string | null;
+  deviceLabel: string | null;
+  appVersion: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastSeenAt: number;
+}
+
+export interface AuthSessionRecord {
+  id: string;
+  current: boolean;
+  surface: 'web' | 'mobile_app' | 'desktop_app' | 'telegram_mini' | string;
+  deviceType: string | null;
+  deviceId: string | null;
+  deviceLabel: string | null;
+  browser: string | null;
+  os: string | null;
+  ipAddress: string | null;
+  location: string | null;
+  timezone: string | null;
+  online: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastSeenAt: number;
+  revokedAt: number | null;
+}
+
+export async function listAuthSessions(): Promise<ApiResult<{
+  onlineWindowMs: number;
+  currentSessionId: string | null;
+  sessions: AuthSessionRecord[];
+}>> {
+  return request('/devices/sessions', {
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export async function heartbeatAuthSession(input: {
+  surface?: 'web' | 'mobile_app' | 'desktop_app' | 'telegram_mini';
+  deviceId?: string;
+  deviceLabel?: string;
+  userAgent?: string;
+}): Promise<ApiResult<{ ok: boolean; legacy?: boolean }>> {
+  return request('/devices/sessions/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify(input),
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export async function revokeAuthSession(id: string): Promise<ApiResult<{ ok: boolean; revoked: number }>> {
+  return request(`/devices/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export async function revokeOtherAuthSessions(): Promise<ApiResult<{ ok: boolean; revoked: number }>> {
+  return request('/devices/sessions/others', {
+    method: 'DELETE',
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export interface RegisterNativePushTokenInput {
+  token: string;
+  platform: 'ios' | 'android' | 'web';
+  deviceId?: string;
+  deviceLabel?: string;
+  appVersion?: string;
+}
+
+export async function registerNativePushToken(
+  input: RegisterNativePushTokenInput,
+): Promise<ApiResult<{ ok: boolean; token: NativePushTokenRecord }>> {
+  return request('/devices/push-tokens', {
+    method: 'POST',
+    body: JSON.stringify(input),
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export async function unregisterNativePushToken(token: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/devices/push-tokens', {
+    method: 'DELETE',
+    body: JSON.stringify({ token }),
+    captureErrors: false,
+    retryNetwork: true,
+  });
 }
 
 export async function checkAgentEmailAvailability(_instanceId: string, username: string): Promise<ApiResult<{ available: boolean; reason?: string; suggestion?: string }>> {
