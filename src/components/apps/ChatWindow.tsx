@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Send, Square, Bot, User, Loader2, Globe, Terminal, FileText, Monitor, Wrench, SquarePen, ChevronDown, ChevronRight, Trash2, MessageSquare, Zap, AlertCircle, CalendarDays, Network, Cog, CheckCircle2, XCircle } from 'lucide-react';
+import { Send, Square, User, Loader2, SquarePen, ChevronDown, ChevronRight, Trash2, MessageSquare, AlertCircle, Network, CheckCircle2, XCircle } from 'lucide-react';
 import constructLogo from '@/assets/logo.png';
 import { Button, MarkdownRenderer } from '@/components/ui';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
+import { ActivityIcon as ToolActivityIcon } from '@/components/desktop/spotlight/ActivityIcon';
+import { ChatEventRow } from '@/components/desktop/spotlight/ChatEventRow';
 import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -75,22 +77,6 @@ function AgentThinkingIndicator() {
       )}
     </div>
   );
-}
-
-/** Return an icon component for activity messages based on type */
-function ActivityIcon({ type }: { type?: ChatMessage['activityType'] }) {
-  const cls = "w-3 h-3";
-  switch (type) {
-    case 'browser': return <Globe className={cls} />;
-    case 'web': return <Zap className={cls} />;
-    case 'terminal': return <Terminal className={cls} />;
-    case 'file': return <FileText className={cls} />;
-    case 'desktop': return <Monitor className={cls} />;
-    case 'calendar': return <CalendarDays className={cls} />;
-    case 'delegation': return <Network className={cls} />;
-    case 'background': return <Cog className={cls} />;
-    default: return <Wrench className={cls} />;
-  }
 }
 
 // ── Session Picker Dropdown (portaled for backdrop-blur) ─────────
@@ -264,15 +250,21 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
 // ── Elapsed timer hook ───────────────────────────────────────────
 
 function useElapsed(startedAt: number, active: boolean): string {
-  const [, setTick] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  const s = Math.round((Date.now() - startedAt) / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
+    const update = () => setSeconds(Math.max(0, Math.round((Date.now() - startedAt) / 1000)));
+    const timeoutId = window.setTimeout(update, 0);
+    const intervalId = window.setInterval(update, 1000);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [active, startedAt]);
+
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 // ── Subagent line (shimmer while running, collapsible) ──────────
@@ -341,7 +333,7 @@ function SubAgentLine({ agent }: { agent: TrackedSubAgent }) {
             <div className="space-y-0.5 mb-1">
               {agent.activities.map((act, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <ActivityIcon type={act.activityType as ChatMessage['activityType']} />
+                  <ToolActivityIcon type={act.activityType as ChatMessage['activityType']} label={act.text} />
                   <span className="truncate">{act.text}</span>
                 </div>
               ))}
@@ -434,7 +426,7 @@ interface ChatWindowProps {
 
 const DRAFT_STORAGE_KEY = 'construct:chat-draft';
 
-export function ChatWindow({ config: _config }: ChatWindowProps) {
+export function ChatWindow({ config }: ChatWindowProps) {
   const [message, setMessage] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -463,7 +455,7 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
   const chatSessions = useComputerStore((s) => s.chatSessions);
   const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
   const createSession = useComputerStore((s) => s.createSession);
-  const taskProgress = useComputerStore((s) => s.taskProgress);
+  void config;
 
   // Provider state drives the sticky usage banner + per-message notice styling.
   const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
@@ -486,10 +478,12 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
     draftRestoredRef.current = false;
     try {
       const draft = localStorage.getItem(`${DRAFT_STORAGE_KEY}:${activeSessionKey}`);
-      setMessage(draft || '');
+      requestAnimationFrame(() => setMessage(draft || ''));
       // Defer autoResize so the textarea has the new value
       requestAnimationFrame(autoResize);
-    } catch { setMessage(''); }
+    } catch {
+      requestAnimationFrame(() => setMessage(''));
+    }
     // Mark restore as complete on the next tick so the persist effect
     // (which fires synchronously after this one in the same render)
     // knows to skip its first run.
@@ -506,7 +500,9 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
       } else {
         localStorage.removeItem(`${DRAFT_STORAGE_KEY}:${activeSessionKey}`);
       }
-    } catch {}
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
   }, [message, activeSessionKey]);
 
   // Connect to agent WS
@@ -547,7 +543,11 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
     setMessage('');
     // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    try { localStorage.removeItem(`${DRAFT_STORAGE_KEY}:${activeSessionKey}`); } catch {}
+    try {
+      localStorage.removeItem(`${DRAFT_STORAGE_KEY}:${activeSessionKey}`);
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
   };
 
   const handleStop = () => {
@@ -670,25 +670,8 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
           }
 
           if (msg.role === 'activity') {
-            const isAgentBrowser = msg.activityType === 'web';
             return (
-              <div key={index} className="flex items-center gap-2 px-2 py-1">
-                <div className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center ${
-                  isAgentBrowser
-                    ? 'bg-amber-500/20 text-amber-500'
-                    : 'bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                }`}>
-                  <ActivityIcon type={msg.activityType} />
-                </div>
-                <span className={`text-xs truncate ${
-                  isAgentBrowser ? 'text-amber-400/80' : 'text-[var(--color-text-muted)]'
-                }`}>
-                  {msg.content}
-                </span>
-                <span className="text-xs text-[var(--color-text-subtle)] ml-auto shrink-0">
-                  {msg.timestamp.toLocaleTimeString()}
-                </span>
-              </div>
+              <ChatEventRow key={index} msg={msg} />
             );
           }
 
@@ -706,11 +689,7 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
           // Render provider-transition notices as subtle muted inline text.
           if (msg.role === 'notice') {
             return (
-              <div key={index} className="flex justify-center py-1">
-                <span className="text-[11px] text-[var(--color-text-muted)] italic">
-                  {msg.content}
-                </span>
-              </div>
+              <ChatEventRow key={index} msg={msg} />
             );
           }
 
@@ -726,6 +705,10 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
                 </span>
               </div>
             );
+          }
+
+          if (isError) {
+            return <ChatEventRow key={index} msg={msg} />;
           }
 
           return (
@@ -744,7 +727,7 @@ export function ChatWindow({ config: _config }: ChatWindowProps) {
               <div
                 className={`max-w-[80%] px-3 py-2 text-sm rounded-xl ${
                   msg.role === 'user'
-                    ? 'bg-[var(--color-accent)] text-white selection:bg-white/30 selection:text-white'
+                    ? 'bg-[var(--color-accent)] text-right text-white selection:bg-white/30 selection:text-white'
                     : isError
                     ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/30 dark:border-red-500/25 text-red-600 dark:text-red-400'
                     : 'bg-[var(--color-surface-raised)] border border-[var(--color-border)]'

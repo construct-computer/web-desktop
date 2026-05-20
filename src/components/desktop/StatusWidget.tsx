@@ -71,6 +71,7 @@ const EMPTY_HISTORY: Array<{ tool: string; timestamp: number }> = [];
 
 export function StatusWidget() {
   const { containerStyle, containerProps } = useDraggableWidget('status', 'tr');
+  const { className: dragClassName, ...dragProps } = containerProps;
   const userPlan = useAuthStore((s) => s.user?.plan);
 
   // Agent status
@@ -172,7 +173,7 @@ export function StatusWidget() {
   };
 
   return (
-    <div style={containerStyle} {...containerProps} className="flex flex-col items-center">
+    <div style={containerStyle} {...dragProps} className={`flex w-[300px] flex-col items-center ${dragClassName || ''}`}>
       <div
         className="px-5 py-4 rounded-2xl w-full glass-window border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)]"
       >

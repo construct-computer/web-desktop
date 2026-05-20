@@ -7,6 +7,9 @@ export interface AuthConnectPayload {
   logo?: string;
   appId?: string;
   sessionKey?: string;
+  expiresAt?: number;
+  pendingActionId?: string;
+  createdAt?: number;
 }
 
 const AUTH_MARKER_RE = /<!--AUTH_CONNECT:(.*?)-->/;

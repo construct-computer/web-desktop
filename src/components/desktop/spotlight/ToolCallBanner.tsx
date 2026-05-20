@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
-import { ActivityIcon } from './ActivityGroup';
-import { BrowserActivityRow, mergeBrowserRepeats } from './BrowserActivityRow';
+import { ActivityIcon } from './ActivityIcon';
+import { ACTIVITY_ICON_CLASS } from './activityStyles';
+import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
+import { mergeBrowserRepeats } from './browserActivityUtils';
 import { useElapsed } from './hooks';
 import { formatDuration } from './utils';
 import type { ChatMessage } from '@/stores/agentStore';
@@ -121,15 +123,15 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
   if (activities.length === 0 && !op) return null;
 
   return (
-    <div className="mx-4 my-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+    <div className="mx-4 my-1.5 rounded-lg border border-white/[0.06] bg-white/[0.025] overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-white/[0.03] transition-colors"
+        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-white/[0.035] transition-colors"
       >
         {expanded
-          ? <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-muted)]/40 shrink-0" />
-          : <ChevronRight className="w-3.5 h-3.5 text-[var(--color-text-muted)]/40 shrink-0" />}
-        <Clock className="w-3.5 h-3.5 text-[var(--color-text-muted)]/50 shrink-0" />
+          ? <ChevronDown className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />
+          : <ChevronRight className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />}
+        <Clock className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />
         <span className="text-[12px] text-[var(--color-text-muted)]/60 font-medium">
           {isRunning ? 'Working' : 'Worked'}{durationText ? ` for ${durationText}` : ''}
         </span>
@@ -156,18 +158,18 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               />
             </div>
           )}
-          <div ref={scrollRef} className="ml-1 mt-1.5 space-y-0.5 max-h-[200px] overflow-y-auto">
+          <div ref={scrollRef} className="mt-2 max-h-[200px] overflow-y-auto pr-0.5">
             {hasSubAgents && timeline ? (
               /* ── Merged timeline: sub-agents + main activities ── */
               timeline.map((entry, i) => {
                 if (entry.kind === 'subagent') {
-                  return <SubAgentEntry key={entry.agent.id} agent={entry.agent} />;
+                  return <SubAgentEntry key={entry.agent.id} agent={entry.agent} isFirst={i === 0} isLast={i === timeline.length - 1} />;
                 }
-                return <FlatActivityLine key={`main-${i}`} activity={entry.activity} />;
+                return <FlatActivityLine key={`main-${i}`} activity={entry.activity} isFirst={i === 0} isLast={i === timeline.length - 1} />;
               })
             ) : (
               /* ── Flat activity list (no sub-agents) ── */
-              itemsWithDuration.map(({ act, dur, repeat, key }) => {
+              itemsWithDuration.map(({ act, dur, repeat, key }, index) => {
                 if (act.activityType === 'web' && act.browserAction) {
                   return (
                     <BrowserActivityRow
@@ -175,20 +177,21 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                       message={act}
                       duration={dur || undefined}
                       repeatCount={repeat}
+                      isFirst={index === 0}
+                      isLast={index === itemsWithDuration.length - 1}
                     />
                   );
                 }
                 const isTerminal = act.activityType === 'terminal';
                 return (
-                  <div key={key} className="flex items-center gap-2.5 py-[2px]">
-                    <div className="relative flex items-center justify-center w-5">
-                      {key > 0 && (
-                        <div className="absolute -top-[6px] left-1/2 -translate-x-1/2 w-px h-[6px] bg-white/[0.06]" />
-                      )}
-                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)]/20" />
+                  <div key={key} className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
+                    <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
+                      {index > 0 && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
+                      {index < itemsWithDuration.length - 1 && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
+                      <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
                     </div>
-                    <div className="w-5 h-5 shrink-0 rounded-md flex items-center justify-center bg-white/[0.04] text-[var(--color-text-muted)]/40">
-                      <ActivityIcon type={act.activityType} className="w-3 h-3" />
+                    <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+                      <ActivityIcon type={act.activityType} tool={act.tool} label={act.content} className="w-3 h-3" />
                     </div>
                     <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
                       {act.content}
@@ -211,7 +214,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
 
 /* ── Sub-agent entry (expandable with nested activities) ── */
 
-export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
+export function SubAgentEntry({ agent, isFirst = false, isLast = false }: { agent: TrackedSubAgent; isFirst?: boolean; isLast?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = agent.status === 'running' || agent.status === 'pending';
   const isFailed = agent.status === 'failed';
@@ -225,24 +228,28 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
     <div>
       <button
         onClick={() => hasActivities && setExpanded(!expanded)}
-        className={`w-full flex items-center gap-2 py-1 text-left rounded-md transition-colors ${hasActivities ? 'hover:bg-white/[0.03] cursor-pointer' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-2 rounded-md px-1 py-[3px] text-left transition-colors ${hasActivities ? 'hover:bg-white/[0.03] cursor-pointer' : 'cursor-default'}`}
       >
         {/* Expand chevron */}
-        <div className="w-5 flex items-center justify-center shrink-0">
+        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
+          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
+          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
           {hasActivities ? (
             expanded
-              ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]/30" />
-              : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]/30" />
+              ? <ChevronDown className="relative z-10 w-3 h-3 text-blue-300/70" />
+              : <ChevronRight className="relative z-10 w-3 h-3 text-blue-300/70" />
           ) : (
-            <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)]/20" />
+            <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
           )}
         </div>
 
         {/* Status icon */}
-        {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-accent)] shrink-0" />
-          : isFailed ? <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          : isCancelled ? <Square className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-          : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${ACTIVITY_ICON_CLASS}`}>
+          {isRunning ? <Loader2 className="w-3 h-3 animate-spin" />
+            : isFailed ? <XCircle className="w-3 h-3" />
+            : isCancelled ? <Square className="w-3 h-3" />
+            : <CheckCircle2 className="w-3 h-3" />}
+        </span>
 
         <span className={`text-[12px] truncate flex-1 ${isRunning ? 'text-[var(--color-text-muted)]/60' : isFailed || isCancelled ? 'text-red-400/60' : 'text-[var(--color-text-muted)]/50'}`}>
           {shortGoal}
@@ -251,11 +258,11 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
       </button>
 
       {expanded && hasActivities && (
-        <div className="ml-7 pl-3 border-l border-white/[0.06] mb-1">
+        <div className="ml-8 mb-1 border-l border-blue-300/10 pl-3">
           {agent.activities.map((act, i) => (
-            <div key={i} className="flex items-center gap-2.5 py-[2px]">
-              <div className="w-5 h-5 shrink-0 rounded-md flex items-center justify-center bg-white/[0.04] text-[var(--color-text-muted)]/40">
-                <ActivityIcon type={act.activityType as ChatMessage['activityType']} className="w-3 h-3" />
+            <div key={i} className="flex items-center gap-2.5 rounded-md py-[2px]">
+              <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+                <ActivityIcon type={act.activityType as ChatMessage['activityType']} label={act.text} className="w-3 h-3" />
               </div>
               <span className="text-[11px] text-[var(--color-text-muted)]/40 truncate flex-1">
                 {act.text}
@@ -270,15 +277,17 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
 
 /* ── Flat activity line (for main-agent activities in merged timeline) ── */
 
-function FlatActivityLine({ activity }: { activity: ChatMessage }) {
+function FlatActivityLine({ activity, isFirst = false, isLast = false }: { activity: ChatMessage; isFirst?: boolean; isLast?: boolean }) {
   const isTerminal = activity.activityType === 'terminal';
   return (
-    <div className="flex items-center gap-2.5 py-[2px]">
-      <div className="flex items-center justify-center w-5">
-        <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)]/20" />
+    <div className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
+      <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
+        {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
+        {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
+        <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
       </div>
-      <div className="w-5 h-5 shrink-0 rounded-md flex items-center justify-center bg-white/[0.04] text-[var(--color-text-muted)]/40">
-        <ActivityIcon type={activity.activityType} className="w-3 h-3" />
+      <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+        <ActivityIcon type={activity.activityType} tool={activity.tool} label={activity.content} className="w-3 h-3" />
       </div>
       <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
         {activity.content}

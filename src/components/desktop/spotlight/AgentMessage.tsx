@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { AlertCircle, FileText, Image as ImageIcon, Download, Loader2, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Image as ImageIcon, Download, Loader2 } from 'lucide-react';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
@@ -7,178 +7,16 @@ import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
 import constructStatic from '@/assets/construct/loader-static.png';
+import { ChatEventRow } from './ChatEventRow';
 import type { ChatMessage } from '@/stores/agentStore';
 
 const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg)$/i;
 
-/** Parse an error string, extracting a human-readable message and structured details. */
-function parseError(content: string): { title: string; detail?: string; code?: number; provider?: string; raw?: string } {
-  // Try to parse as "Error: {json}"
-  const jsonMatch = content.match(/^Error:\s*(\{[\s\S]*\})$/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      const err = parsed.error || parsed;
-      const message = err.message || err.raw || content;
-      const code = err.code;
-      const provider = err.metadata?.provider_name;
-      // Extract a clean message from raw if it's nested JSON
-      let cleanMessage = message;
-      if (err.metadata?.raw) {
-        try {
-          const rawParsed = JSON.parse(err.metadata.raw);
-          cleanMessage = rawParsed.error?.message || cleanMessage;
-        } catch { /* use as-is */ }
-      }
-      return { title: cleanMessage, code, provider, raw: jsonMatch[1] };
-    } catch { /* not valid JSON */ }
-  }
-
-  // Try just "Error: message"
-  const simpleMatch = content.match(/^Error:\s*(.+)/);
-  if (simpleMatch) {
-    return { title: simpleMatch[1] };
-  }
-
-  return { title: content };
-}
-
-function ErrorCard({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const { title, code, provider, raw } = parseError(content);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(raw || content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [raw, content]);
-
-  return (
-    <div className="rounded-xl bg-red-500/[0.06] border border-red-500/15 overflow-hidden max-w-full min-w-0 sm:max-w-[480px]">
-      {/* Header */}
-      <div className="flex items-start gap-2.5 px-3.5 py-2.5">
-        <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] text-red-300 leading-relaxed">{title}</p>
-          {(code || provider) && (
-            <div className="flex items-center gap-2 mt-1.5">
-              {code && (
-                <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-red-500/10 text-red-400/70">{code}</span>
-              )}
-              {provider && (
-                <span className="text-[10px] text-red-400/50">{provider}</span>
-              )}
-            </div>
-          )}
-        </div>
-        {/* Copy button */}
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded-md hover:bg-red-500/10 text-red-400/40 hover:text-red-400/70 transition-colors flex-shrink-0"
-          title="Copy error details"
-        >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        </button>
-      </div>
-
-      {/* Expandable raw details */}
-      {raw && (
-        <>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center gap-1.5 px-3.5 py-1.5 text-[10px] font-medium text-red-400/40 hover:text-red-400/60 border-t border-red-500/10 hover:bg-red-500/[0.03] transition-colors"
-          >
-            {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            Raw details
-          </button>
-          {expanded && (
-            <pre className="px-3.5 pb-3 text-[10px] font-mono text-red-400/50 leading-relaxed whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
-              {JSON.stringify(JSON.parse(raw), null, 2)}
-            </pre>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function NoticeCard({ msg }: { msg: ChatMessage }) {
-  const [expanded, setExpanded] = useState(false);
-  const isIncident = msg.noticeKind === 'incident';
-
-  if (!isIncident) {
-    return (
-      <div className="mx-auto max-w-[560px] rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-center text-[12px] leading-relaxed text-[var(--color-text-muted)]">
-        {msg.content}
-      </div>
-    );
-  }
-
-  const severity = msg.noticeSeverity || (msg.isError ? 'error' : 'warn');
-  const tone = severity === 'error'
-    ? 'border-red-400/15 bg-red-500/[0.06] text-red-200'
-    : severity === 'warn'
-      ? 'border-amber-400/15 bg-amber-500/[0.06] text-amber-100'
-      : 'border-white/[0.08] bg-white/[0.035] text-[var(--color-text-muted)]';
-  const iconTone = severity === 'error' ? 'text-red-300' : severity === 'warn' ? 'text-amber-300' : 'text-[var(--color-text-muted)]';
-  const refs = msg.incidentIds?.length ? msg.incidentIds : msg.incidentId ? [msg.incidentId] : [];
-  const repeatCount = msg.noticeRepeatCount || 1;
-
-  return (
-    <div className={`mx-auto max-w-[520px] rounded-xl border px-3 py-2.5 text-left shadow-sm ${tone}`}>
-      <div className="flex items-start gap-2.5">
-        <AlertCircle className={`w-4 h-4 mt-0.5 shrink-0 ${iconTone}`} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <p className="text-[12.5px] font-medium leading-5">{msg.noticeTitle || msg.content.split('\n')[0]}</p>
-            {repeatCount > 1 && (
-              <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] leading-none text-current/70">
-                {repeatCount} attempts
-              </span>
-            )}
-            {msg.noticeToolName && (
-              <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] leading-none text-current/55">
-                {msg.noticeToolName}
-              </span>
-            )}
-          </div>
-          {msg.noticeDetail && (
-            <p className="mt-1 text-[11.5px] leading-5 text-current/65 whitespace-pre-wrap">{msg.noticeDetail}</p>
-          )}
-          {refs.length > 0 && (
-            <>
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-current/45 hover:text-current/70 transition-colors"
-              >
-                {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                Details
-              </button>
-              {expanded && (
-                <div className="mt-1.5 rounded-lg bg-black/10 px-2 py-1.5 font-mono text-[10px] leading-4 text-current/50">
-                  {refs.map((ref, index) => (
-                    <div key={`${ref}-${index}`}>Reference: {ref}</div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
 
-  if (msg.role === 'notice') {
-    return (
-      <div className="px-4 sm:px-6 py-1.5">
-        <NoticeCard msg={msg} />
-      </div>
-    );
+  if (msg.role === 'notice' || isError) {
+    return <ChatEventRow msg={msg} />;
   }
 
   // Stopped message — centered divider
@@ -192,22 +30,39 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
     );
   }
 
+  const auth = parseAuthMarker(msg.content);
+  if (auth) {
+    return (
+      <>
+        <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-2" style={{ animation: 'spt-in 150ms ease-out' }}>
+          <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
+          <div className="min-w-0 max-w-full sm:max-w-[90%]">
+            <AuthConnectCard payload={auth.payload} />
+            {!auth.rest && replySlot}
+          </div>
+        </div>
+        {auth.rest && (
+          <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
+            <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm opacity-0" />
+            <div className="flex min-w-0 max-w-full sm:max-w-[90%] flex-col items-start gap-0.5">
+              <div className="w-full text-[15px] leading-relaxed text-[var(--color-text)] selection:!bg-white/90 selection:!text-[var(--color-accent)]">
+                <MarkdownRenderer content={auth.rest} />
+              </div>
+              {replySlot}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-2" style={{ animation: 'spt-in 150ms ease-out' }}>
-      {isError ? (
-        <div className="w-6 h-6 shrink-0 rounded-full bg-red-500/10 flex items-center justify-center mt-0.5 text-red-500 font-bold border border-red-500/20">
-          <AlertCircle className="w-4 h-4 text-red-400" />
-        </div>
-      ) : (
-        <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
-      )}
+      <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
       <div className="flex min-w-0 max-w-full sm:max-w-[90%] flex-col items-start gap-0.5">
         <div className={`w-full text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
           {(() => {
             if (msg.askUser) return <AskUserCard data={msg.askUser} />;
-            if (isError) return <ErrorCard content={msg.content} />;
-            const auth = parseAuthMarker(msg.content);
-            if (auth) return <><AuthConnectCard payload={auth.payload} />{auth.rest && <MarkdownRenderer content={auth.rest} />}</>;
             return <MarkdownRenderer content={msg.content} />;
           })()}
 

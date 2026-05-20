@@ -1,10 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, Crown } from 'lucide-react';
 import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform } from '@/lib/externalPlatforms';
+import { isAttentionSession, mergeAttentionSessions } from '@/lib/autopilotAttention';
+import * as api from '@/services/api';
 import { formatRelativeTime } from './utils';
 
 function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
@@ -48,6 +50,8 @@ function SessionItem({
   isActive,
   hasUnread,
   sessionStatus,
+  hasAttention,
+  canManage = true,
   onSwitch,
   onRename,
   onDelete,
@@ -56,6 +60,8 @@ function SessionItem({
   isActive: boolean;
   hasUnread: boolean;
   sessionStatus?: ActiveSessionStatus;
+  hasAttention?: boolean;
+  canManage?: boolean;
   onSwitch: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -109,6 +115,12 @@ function SessionItem({
           {hasUnread && !isActive && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-1 ring-[#111113]" />
           )}
+          {hasAttention && !hasUnread && (
+            <span
+              title="Needs attention"
+              className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 ring-1 ring-[#111113]"
+            />
+          )}
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-2">
           {editing ? (
@@ -130,6 +142,11 @@ function SessionItem({
                 {session.title || 'New Chat'}
               </span>
               <SessionStatusDot status={sessionStatus} />
+              {hasAttention && (
+                <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-amber-300/90 bg-amber-400/10 shrink-0">
+                  Needs attention
+                </span>
+              )}
             </>
           )}
         </div>
@@ -138,7 +155,7 @@ function SessionItem({
             {formatRelativeTime(session.lastActivity)}
           </span>
         )}
-        {!editing && (
+        {!editing && canManage && (
           <button
             onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
             className="touch-target shrink-0 p-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 transition-all"
@@ -149,7 +166,7 @@ function SessionItem({
       </button>
 
       {/* Context menu */}
-      {menuOpen && (
+      {menuOpen && canManage && (
         <div
           ref={menuRef}
           className="absolute right-2 top-full mt-1 z-50 min-w-[140px] rounded-lg overflow-hidden glass-popover border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
@@ -191,6 +208,8 @@ export function SpotlightSidebar() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
+  const [attentionStatus, setAttentionStatus] = useState<api.AutopilotStatus | null>(null);
+  const [attentionActions, setAttentionActions] = useState<api.PendingUserAction[]>([]);
   const initializedRef = useRef(false);
   const userPlan = useAuthStore(s => s.user?.plan);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
@@ -202,6 +221,25 @@ export function SpotlightSidebar() {
   }, [closeSpotlight]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const [statusResult, pendingResult] = await Promise.all([
+        api.getAutopilotStatus(),
+        api.getPendingUserActions('pending', 25),
+      ]);
+      if (cancelled) return;
+      if (statusResult.success) setAttentionStatus(statusResult.data);
+      if (pendingResult.success) setAttentionActions(pendingResult.data.actions);
+    };
+    void poll();
+    const interval = setInterval(poll, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // On first load, mark all existing sessions as read so they don't show unread dots
   useEffect(() => {
@@ -224,7 +262,12 @@ export function SpotlightSidebar() {
     }
   }, [activeKey, chatMessages.length]);
 
-  const sorted = [...sessions].sort((a, b) => b.lastActivity - a.lastActivity);
+  const displaySessions = useMemo(
+    () => mergeAttentionSessions(sessions, { status: attentionStatus, pendingActions: attentionActions }),
+    [sessions, attentionStatus, attentionActions],
+  );
+
+  const sorted = [...displaySessions].sort((a, b) => b.lastActivity - a.lastActivity);
 
   const filtered = searchQuery.trim()
     ? sorted.filter(s =>
@@ -274,18 +317,26 @@ export function SpotlightSidebar() {
             </div>
           )}
           <div className="flex flex-col gap-0.5">
-            {filtered.map(session => (
+            {filtered.map(session => {
+              const hasAttention = isAttentionSession(session);
+              return (
               <SessionItem
                 key={session.key}
                 session={session}
                 isActive={session.key === activeKey}
                 hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
                 sessionStatus={activeSessions[session.key]}
-                onSwitch={() => switchSession(session.key)}
+                hasAttention={hasAttention}
+                canManage={!hasAttention}
+                onSwitch={async () => {
+                  await loadSessions(true);
+                  await switchSession(session.key);
+                }}
                 onRename={(title) => renameSession(session.key, title)}
                 onDelete={() => deleteSession(session.key)}
               />
-            ))}
+              );
+            })}
           </div>
           {filtered.length === 0 && searchQuery ? (
             <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">

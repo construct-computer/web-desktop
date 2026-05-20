@@ -5,13 +5,14 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ChatMessage, type OverseerAlert } from '@/stores/agentStore';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
-import { groupMessages, type MessageGroup } from './utils';
+import { getChatRenderKind, groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
 import { ToolCallBanner } from './ToolCallBanner';
 import { OperationCard } from './OperationCard';
 import { UserMessage } from './UserMessage';
 import { AgentMessage } from './AgentMessage';
+import { ChatEventRow } from './ChatEventRow';
 
 /** Stable empty array for the alerts selector — avoids creating a new array
  *  per render which would defeat zustand's referential-equality bail-out. */
@@ -186,7 +187,9 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
       const { msg } = group;
       flushActivitiesAndOperation(`flush-${gi}`);
 
-      if (msg.role === 'user') {
+      const renderKind = getChatRenderKind(msg);
+
+      if (renderKind === 'user') {
         const canReply = !isExternal && msg.content?.trim();
         const cm = msg as ChatMessage;
         const replySlot = canReply
@@ -202,8 +205,13 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
             </div>
           ),
         });
+      } else if (renderKind === 'inline-event') {
+        result.push({
+          key: `msg-${group.index}`,
+          node: <ChatEventRow msg={msg} />,
+        });
       } else {
-        const canReply = !isExternal && msg.content?.trim();
+        const canReply = renderKind === 'assistant' && !isExternal && msg.content?.trim();
         const cm = msg as ChatMessage;
         const replySlot = canReply
           ? isMobile

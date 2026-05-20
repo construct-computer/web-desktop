@@ -9,124 +9,107 @@
  *  - Cross-syncs with the desktop notification via a shared "auth connect tracker"
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Check, Loader2, ExternalLink } from 'lucide-react'
-import { composioFinalize, getAppConnection, getComposioStatus } from '@/services/api'
-import { useComputerStore, authConnectNotifIds, clearAuthCard } from '@/stores/agentStore'
-import { useNotificationStore } from '@/stores/notificationStore'
+import { useState, useEffect, useCallback } from 'react'
+import { Check, Loader2, ExternalLink, ShieldCheck, RotateCw, X } from 'lucide-react'
+import { composioFinalize, getAppConnection, getComposioAuthUrl, getComposioStatus, resendPendingUserAction } from '@/services/api'
+import { useComputerStore } from '@/stores/agentStore'
 import { useWindowStore } from '@/stores/windowStore'
-import { agentWS } from '@/services/websocket'
 import { PlatformIcon } from './PlatformIcon'
 import { openAuthRedirect } from '@/lib/utils'
 import { formatPlatformDescription, getPlatformColor, getPlatformDisplayName } from '@/lib/platforms'
+import { authShieldStyle, platformIconFrameStyle } from './authActionStyles'
+import { authSourceId } from '@/lib/authRequestState'
+import {
+  cancelAuthRequest,
+  completeAuthRequest,
+  registerAuthRequest,
+  startAuthRequestWatch,
+  updateAuthRequest,
+  useAuthRequest,
+} from '@/lib/authRequestCoordinator'
 import type { AuthConnectPayload } from './authConnectMarker'
 
-// ── Global tracker: coordinates between card instances and notifications ──
-// When any card or notification detects a connection, all others for the same toolkit update.
-type AuthListener = (toolkit: string) => void
-const authListeners = new Set<AuthListener>()
-const connectedToolkits = new Set<string>()
-
-function notifyAuthConnected(toolkit: string) {
-  connectedToolkits.add(toolkit)
-  authListeners.forEach(l => l(toolkit))
-}
+const AUTH_LINK_FALLBACK_TTL_MS = 10 * 60 * 1000
 
 // ── Component ──
 
 export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
   const displayName = getPlatformDisplayName(payload.toolkit, payload.name)
   const description = formatPlatformDescription(payload.description, payload.toolkit, displayName)
-  const color = getPlatformColor(payload.toolkit)
+  const brandColor = getPlatformColor(payload.toolkit)
   const authKind = payload.kind || 'composio'
   const statusKey = payload.appId || payload.toolkit
+  const sourceId = authSourceId(authKind, payload.toolkit, payload.appId)
+  const authRequest = useAuthRequest(sourceId)
 
-  const [connected, setConnected] = useState(() => connectedToolkits.has(payload.toolkit.toLowerCase()))
-  const [polling, setPolling] = useState(false)
-  const sentRetryRef = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const connected = authRequest?.status === 'connected'
+  const cancelled = authRequest?.status === 'cancelled'
+  const connecting = authRequest?.status === 'connecting'
+  const currentUrl = authRequest?.actionUrl ?? payload.url
+  const expiresAt = authRequest?.expiresAt ?? (payload.url ? (payload.createdAt ?? Date.now()) + AUTH_LINK_FALLBACK_TTL_MS : null)
+  const expired = Boolean(currentUrl && expiresAt && expiresAt <= now && !connected && !cancelled)
+  const expiresInMs = expiresAt ? Math.max(0, expiresAt - now) : null
+  const expiresLabel = expiresInMs == null
+    ? ''
+    : expired
+      ? 'Link expired'
+      : expiresInMs < 60_000
+        ? `Expires in ${Math.max(1, Math.ceil(expiresInMs / 1000))}s`
+        : `Expires in ${Math.ceil(expiresInMs / 60_000)}m`
 
-  // Dismiss the corresponding notification and auto-send retry
-  const onConnected = useCallback(() => {
-    setConnected(true)
-    setPolling(false)
-    notifyAuthConnected(payload.toolkit.toLowerCase())
-
-    // Dismiss the corresponding notification toast
-    const notifId = authConnectNotifIds.get(payload.toolkit.toLowerCase())
-    if (notifId) {
-      const store = useNotificationStore.getState()
-      store.dismissToast(notifId)
-      store.removeNotification(notifId)
-      authConnectNotifIds.delete(payload.toolkit.toLowerCase())
-    }
-
-    // Clear the persisted card from sessionStorage
-    clearAuthCard(payload.toolkit)
-
-    // Resume the blocked task without adding a fake user bubble.
-    if (!sentRetryRef.current) {
-      sentRetryRef.current = true
-      setTimeout(() => {
-        const sessionKey = payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default'
-        agentWS.sendAuthResume({
-          sessionKey,
-          toolkit: payload.toolkit,
-          name: payload.name,
-          kind: authKind,
-          appId: payload.appId,
-        })
-      }, 800)
-    }
-  }, [authKind, payload.appId, payload.toolkit, payload.name, payload.sessionKey])
-
-  // Listen for cross-instance connected notifications
   useEffect(() => {
-    const listener: AuthListener = (toolkit) => {
-      if (toolkit === payload.toolkit.toLowerCase()) {
-        setConnected(true)
-        setPolling(false)
-      }
-    }
-    authListeners.add(listener)
-    return () => { authListeners.delete(listener) }
-  }, [payload.toolkit])
+    registerAuthRequest({
+      kind: authKind,
+      toolkit: payload.toolkit,
+      name: displayName,
+      description,
+      url: payload.url,
+      logo: payload.logo,
+      appId: payload.appId,
+      sessionKey: payload.sessionKey,
+      expiresAt: payload.expiresAt,
+      pendingActionId: payload.pendingActionId,
+      createdAt: payload.createdAt,
+    })
+  }, [authKind, description, displayName, payload.appId, payload.createdAt, payload.expiresAt, payload.logo, payload.pendingActionId, payload.sessionKey, payload.toolkit, payload.url])
+
+  const onConnected = useCallback(() => {
+    completeAuthRequest({
+      sourceId,
+      kind: authKind,
+      toolkit: payload.toolkit,
+      name: payload.name,
+      appId: payload.appId,
+      sessionKey: payload.sessionKey,
+    })
+  }, [authKind, payload.appId, payload.name, payload.sessionKey, payload.toolkit, sourceId])
+
+  useEffect(() => {
+    if (!expiresAt || connected || cancelled) return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [cancelled, connected, expiresAt])
 
   // On mount: check if already connected (handles page refresh)
   useEffect(() => {
-    if (connected) return
-    let cancelled = false
+    if (connected || cancelled) return
+    let disposed = false
     const check = authKind === 'app' && payload.appId
       ? getAppConnection(payload.appId)
       : getComposioStatus(payload.toolkit)
     check.then(result => {
-      if (!cancelled && result.success && result.data?.connected) {
+      if (!disposed && result.success && result.data?.connected) {
         onConnected()
       }
     }).catch(() => {})
-    return () => { cancelled = true }
-  }, [authKind, connected, payload.appId, payload.toolkit, onConnected])
-
-  // Poll while waiting for auth to complete
-  useEffect(() => {
-    if (!polling || connected) return
-    const interval = setInterval(async () => {
-      try {
-        const result = authKind === 'app' && payload.appId
-          ? await getAppConnection(payload.appId)
-          : await getComposioStatus(payload.toolkit)
-        if (result.success && result.data?.connected) {
-          onConnected()
-        }
-      } catch {
-        // Polling will retry.
-      }
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [polling, connected, authKind, payload.appId, payload.toolkit, onConnected])
+    return () => { disposed = true }
+  }, [authKind, cancelled, connected, payload.appId, payload.toolkit, onConnected])
 
   // Listen for postMessage from OAuth popup for instant detection
   useEffect(() => {
-    if (connected) return
+    if (connected || cancelled) return
     const handler = (e: MessageEvent) => {
       if (authKind === 'composio' && e.data?.type === 'composio:connected') {
         composioFinalize(typeof e.data.connectedAccountId === 'string' ? e.data.connectedAccountId : undefined)
@@ -140,19 +123,29 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [authKind, connected, payload.toolkit, onConnected])
+  }, [authKind, cancelled, connected, payload.toolkit, onConnected])
 
   const handleClick = () => {
+    if (expired) {
+      void handleRefresh()
+      return
+    }
     const store = useWindowStore.getState()
     store.closeSpotlight()
 
-    if (payload.url) {
-      setPolling(true)
-      openAuthRedirect(payload.url)
+    if (currentUrl) {
+      startAuthRequestWatch({
+        sourceId,
+        kind: authKind,
+        toolkit: payload.toolkit,
+        name: payload.name,
+        appId: payload.appId,
+        sessionKey: payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default',
+      })
+      openAuthRedirect(currentUrl)
       return
     }
 
-    setPolling(false)
     const registryMetadata = authKind === 'composio'
       ? { view: 'integrations', search: displayName, composioSlug: payload.toolkit }
       : { view: 'integrations', search: displayName, appId: payload.appId || statusKey }
@@ -168,60 +161,192 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
     }
   }
 
+  const handleRefresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      if (payload.pendingActionId) {
+        const result = await resendPendingUserAction(payload.pendingActionId)
+        if (result.success) {
+          const action = result.data.action
+          updateAuthRequest(sourceId, {
+            actionUrl: action.actionUrl || undefined,
+            expiresAt: action.expiresAt ?? null,
+            pendingActionId: action.id,
+            status: action.actionUrl && action.expiresAt && action.expiresAt <= Date.now() ? 'expired' : 'pending',
+          })
+          setNow(Date.now())
+          if (action.actionUrl) {
+            startAuthRequestWatch({
+              sourceId,
+              kind: authKind,
+              toolkit: payload.toolkit,
+              name: payload.name,
+              appId: payload.appId,
+              sessionKey: payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default',
+            })
+            openAuthRedirect(action.actionUrl)
+          }
+          return
+        }
+      }
+      if (authKind === 'composio') {
+        const result = await getComposioAuthUrl(payload.toolkit, payload.sessionKey)
+        if (result.success && result.data.url) {
+          updateAuthRequest(sourceId, {
+            actionUrl: result.data.url,
+            expiresAt: result.data.expiresAt ?? Date.now() + AUTH_LINK_FALLBACK_TTL_MS,
+            status: 'pending',
+          })
+          setNow(Date.now())
+          startAuthRequestWatch({
+            sourceId,
+            kind: authKind,
+            toolkit: payload.toolkit,
+            name: payload.name,
+            appId: payload.appId,
+            sessionKey: payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default',
+          })
+          openAuthRedirect(result.data.url)
+          return
+        }
+      }
+      const store = useWindowStore.getState()
+      store.openWindow('app-registry', { metadata: { view: 'integrations', search: displayName } })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleCancel = () => {
+    if (cancelled || connected) return
+    const sessionKey = payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default'
+    cancelAuthRequest({
+      sourceId,
+      kind: authKind,
+      toolkit: payload.toolkit,
+      appId: payload.appId,
+      sessionKey,
+      name: displayName,
+    })
+  }
+
   return (
-    <div className="rounded-[20px] border border-border/80 bg-surface/95 overflow-hidden my-2 w-full max-w-md shadow-xl shadow-black/10 backdrop-blur">
-      <div className="flex items-start gap-3 p-4">
+    <div className="my-2 w-full max-w-md overflow-hidden rounded-2xl border border-white/[0.09] bg-white/[0.035] shadow-lg shadow-black/10 backdrop-blur">
+      <div className="flex items-start gap-3 p-3.5">
         {/* Toolkit icon */}
         <div
-          className="w-11 h-11 rounded-[15px] flex items-center justify-center shrink-0 overflow-hidden bg-white/95 border border-black/5 shadow-sm p-[3px]"
-          style={{ backgroundColor: connected ? '#16a34a' : undefined }}
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border p-[3px]"
+          style={platformIconFrameStyle(brandColor, connected ? 'connected' : cancelled ? 'cancelled' : 'default')}
         >
           {connected ? (
-            <Check className="w-5 h-5 text-white" />
+            <Check className="w-5 h-5" />
+          ) : cancelled ? (
+            <X className="w-5 h-5" />
           ) : (
-            <PlatformIcon platform={payload.toolkit} logoUrl={payload.logo} size={38} className="rounded-[12px]" />
+            <PlatformIcon platform={payload.toolkit} logoUrl={payload.logo} size={34} className="rounded-[10px]" />
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-            Account connection required
+          <p className="inline-flex items-center gap-1.5 rounded-[8px] border border-white/[0.07] bg-white/[0.04] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+            <ShieldCheck className="h-3 w-3" />
+            {connected ? 'Account connected' : cancelled ? 'Connection skipped' : 'Account connection required'}
           </p>
-          <p className="text-base font-semibold text-text mt-0.5">
+          <p className="mt-1 text-[15px] font-semibold text-text">
             Connect {displayName}
           </p>
-          <p className="text-sm text-text-muted mt-1 leading-relaxed">
-            {connected ? 'Connected' : description}
+          <p className="mt-0.5 text-[13px] leading-snug text-text-muted">
+            {connected ? 'Connected' : cancelled ? `Request cancelled. I'll continue without ${displayName} if possible.` : expired ? 'Link expired. Refresh it to continue.' : description}
           </p>
+          {!connected && !cancelled && expiresLabel && (
+            <p className={`mt-1 text-[10px] font-semibold ${expired ? 'text-amber-300/75' : 'text-text-muted/60'}`}>
+              {expiresLabel}
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="px-4 pb-4">
+      <div className="px-3.5 pb-3.5">
         {connected ? (
-          <div className="flex items-center justify-center gap-2 w-full rounded-lg px-3 py-2 text-sm font-medium text-white bg-green-600">
-            <Check className="w-4 h-4" />
-            Connected
+          <div
+            className="flex w-full items-stretch justify-center overflow-hidden rounded-[10px] text-sm font-semibold"
+            style={authShieldStyle('connected')}
+          >
+            <span className="flex items-center justify-center bg-white/[0.025] px-3">
+              <Check className="w-4 h-4" />
+            </span>
+            <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/82">
+              Connected
+            </span>
+          </div>
+        ) : cancelled ? (
+          <div
+            className="flex w-full items-stretch justify-center overflow-hidden rounded-[10px] text-sm font-semibold"
+            style={authShieldStyle('cancelled')}
+          >
+            <span className="flex items-center justify-center bg-white/[0.025] px-3">
+              <X className="w-4 h-4" />
+            </span>
+            <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/70">
+              Request cancelled
+            </span>
           </div>
         ) : (
-          <button
-            onClick={handleClick}
-            className="flex items-center justify-center gap-2 w-full rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity cursor-pointer"
-            style={{ backgroundColor: color }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-          >
-            {polling ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Waiting for authorization...
-              </>
-            ) : (
-              <>
-                <ExternalLink className="w-4 h-4" />
-                {payload.url ? `Connect ${displayName}` : `Open ${displayName}`}
-              </>
-            )}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleClick}
+              className="flex min-w-0 flex-1 cursor-pointer items-stretch justify-center overflow-hidden rounded-[10px] text-sm font-semibold transition-colors hover:bg-white/[0.035]"
+              style={authShieldStyle('primary')}
+            >
+              {refreshing ? (
+                <>
+                  <span className="flex items-center justify-center bg-white/[0.025] px-3">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </span>
+                  <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/82">
+                    Refreshing link...
+                  </span>
+                </>
+              ) : expired ? (
+                <>
+                  <span className="flex items-center justify-center bg-white/[0.025] px-3">
+                    <RotateCw className="w-4 h-4" />
+                  </span>
+                  <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/82">
+                    Retry with new link
+                  </span>
+                </>
+              ) : connecting ? (
+                <>
+                  <span className="flex items-center justify-center bg-white/[0.025] px-3">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </span>
+                  <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/82">
+                    Waiting for authorization...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center justify-center bg-white/[0.025] px-3">
+                    <ExternalLink className="w-4 h-4" />
+                  </span>
+                  <span className="flex min-h-9 flex-1 items-center justify-center px-3 text-white/82">
+                    {currentUrl ? `Connect ${displayName}` : `Open ${displayName}`}
+                  </span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-[10px] bg-white/[0.035] px-3 text-[12px] font-semibold text-white/55 transition-colors hover:bg-white/[0.06] hover:text-white/78"
+              style={authShieldStyle('ghost')}
+              title={`Cancel ${displayName} connection request`}
+            >
+              Cancel
+            </button>
+          </div>
         )}
       </div>
     </div>

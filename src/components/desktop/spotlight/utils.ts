@@ -3,6 +3,7 @@
  */
 
 import type { ChatMessage } from '@/stores/agentStore';
+import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 
 // ── Thinking text detection ───────────────────────────────────────────────
 
@@ -31,6 +32,24 @@ export type MessageGroup =
   | { type: 'message'; msg: ChatMessage; index: number }
   | { type: 'operation'; msg: ChatMessage; index: number }
   | { type: 'activities'; msgs: ChatMessage[] };
+
+export type ChatRenderKind =
+  | 'user'
+  | 'assistant'
+  | 'attention'
+  | 'inline-event'
+  | 'divider';
+
+export function getChatRenderKind(msg: ChatMessage): ChatRenderKind {
+  if (msg.role === 'user') return 'user';
+  if (msg.isStopped) return 'divider';
+  if (msg.askUser) return 'attention';
+  if (msg.role === 'agent' && parseAuthMarker(msg.content)) return 'attention';
+  if (msg.role === 'notice') return 'inline-event';
+  if (msg.role === 'agent' && msg.isError) return 'inline-event';
+  if (msg.role === 'activity') return 'inline-event';
+  return 'assistant';
+}
 
 export function groupMessages(messages: ChatMessage[], isAgentRunning: boolean): MessageGroup[] {
   const groups: MessageGroup[] = [];

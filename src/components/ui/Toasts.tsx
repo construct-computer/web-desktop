@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CheckCircle2, AlertCircle, Info, Copy, Check } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Copy, Check, X } from 'lucide-react';
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
 import { useSound } from '@/hooks/useSound';
 import { Z_INDEX, MENUBAR_HEIGHT } from '@/lib/constants';
@@ -27,6 +27,9 @@ function ToastBanner({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const suppressClickRef = useRef(false);
 
   const Icon =
     n.variant === 'success' ? CheckCircle2
@@ -54,19 +57,76 @@ function ToastBanner({
     setExpanded(!expanded);
   };
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    dragStartXRef.current = e.clientX;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartXRef.current == null) return;
+    const nextDragX = e.clientX - dragStartXRef.current;
+    if (Math.abs(nextDragX) > 4) {
+      suppressClickRef.current = true;
+    }
+    setDragX(nextDragX);
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartXRef.current == null) return;
+    dragStartXRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+    if (Math.abs(dragX) >= 88) {
+      onDismiss();
+      return;
+    }
+    setDragX(0);
+    if (suppressClickRef.current) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+  };
+
   return (
     <div
-      className={`flex items-start gap-3 w-[min(340px,calc(100vw-32px))] px-3.5 py-3
+      className={`relative flex items-start gap-3 w-[min(340px,calc(100vw-32px))] px-3.5 py-3 pr-8
                  glass-popover
                  border border-black/8 dark:border-white/10
                  rounded-xl shadow-xl shadow-black/10 dark:shadow-black/30
-                 cursor-pointer select-none
+                 cursor-grab select-none touch-pan-y active:cursor-grabbing
                  ${leaving ? 'animate-[toast-slide-out_0.3s_ease-in_forwards]' : 'animate-[toast-slide-in_0.3s_cubic-bezier(0.16,1,0.3,1)]'}`}
+      style={dragX ? {
+        transform: `translateX(${dragX}px)`,
+        opacity: Math.max(0.45, 1 - Math.abs(dragX) / 180),
+      } : undefined}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       onClick={() => {
+        if (suppressClickRef.current) return;
         if (n.onClick) n.onClick();
         onDismiss();
       }}
     >
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        className="absolute right-2 top-2 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-black/30 transition-colors hover:bg-black/5 hover:text-black/55 dark:text-white/32 dark:hover:bg-white/[0.07] dark:hover:text-white/62"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss();
+        }}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+
       {/* Icon */}
       <div className="mt-0.5 flex-shrink-0">
         <Icon className={`w-5 h-5 ${iconColor}`} />
@@ -93,14 +153,14 @@ function ToastBanner({
             {isLongBody && (
               <button
                 onClick={handleToggleExpand}
-                className="text-[10px] font-medium text-[var(--color-accent)] hover:underline"
+                className="cursor-pointer text-[10px] font-medium text-[var(--color-accent)] hover:underline"
               >
                 {expanded ? 'Show less' : 'Show more'}
               </button>
             )}
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-[10px] font-medium text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60 transition-colors"
+              className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-black/40 transition-colors hover:text-black/60 dark:text-white/40 dark:hover:text-white/60"
             >
               {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               {copied ? 'Copied' : 'Copy'}

@@ -5,7 +5,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useClippyActivitySummary, type ClippyActivityKind, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { Z_INDEX } from '@/lib/constants';
+import { DOCK_HEIGHT, MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructGif from '@/assets/construct/loader.gif';
 import constructStatic from '@/assets/construct/loader-static.png';
@@ -17,15 +17,49 @@ import chatBubbleLgSrc from '@/assets/chat-bubble-lg.png';
 //
 // No windows → center of screen (welcoming presence)
 // Windows open → bottom-right corner (out of the way)
-// User can drag it anywhere, but when window state changes
-// and it's near center, it auto-slides to corner.
+// User can drag it anywhere. The widget only auto-moves on transitions:
+// no visible windows → visible windows parks it bottom-right, and
+// visible windows → no visible windows returns it to center.
 
 const CENTER_POS = { rx: 0.5, ry: 0.5 };
-const CORNER_POS = { rx: 0.93, ry: 0.85 };
+const FALLBACK_CORNER_POS = { rx: 0.91, ry: 0.85 };
 
-/** Check if position is "near center" (within 20% of center). */
-function isNearCenter(rx: number, ry: number): boolean {
-  return Math.abs(rx - 0.5) < 0.2 && Math.abs(ry - 0.5) < 0.2;
+function clampNumber(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function clippyBounds(winSize: { w: number; h: number }, avatarSize: number, isMobile: boolean) {
+  const pad = isMobile ? 10 : 24;
+  const topInset = isMobile ? pad : MENUBAR_HEIGHT + pad;
+  const bottomInset = isMobile ? MOBILE_APP_BAR_HEIGHT : DOCK_HEIGHT;
+  return {
+    minX: pad,
+    maxX: Math.max(pad, winSize.w - pad - avatarSize),
+    minY: topInset,
+    maxY: Math.max(topInset, winSize.h - bottomInset - pad - avatarSize),
+  };
+}
+
+function pixelToRatio(px: number, py: number, winSize: { w: number; h: number }, avatarSize: number) {
+  return {
+    rx: (px + avatarSize / 2) / winSize.w,
+    ry: (py + avatarSize / 2) / winSize.h,
+  };
+}
+
+function ratioToPixel(pos: { rx: number; ry: number }, winSize: { w: number; h: number }, avatarSize: number, isMobile: boolean) {
+  const bounds = clippyBounds(winSize, avatarSize, isMobile);
+  return {
+    x: clampNumber(pos.rx * winSize.w - avatarSize / 2, bounds.minX, bounds.maxX),
+    y: clampNumber(pos.ry * winSize.h - avatarSize / 2, bounds.minY, bounds.maxY),
+  };
+}
+
+function clippyCornerPos(winSize: { w: number; h: number }, avatarSize: number, isMobile: boolean) {
+  const bounds = clippyBounds(winSize, avatarSize, isMobile);
+  const rightVisualInset = isMobile ? 0 : 40;
+  return pixelToRatio(bounds.maxX - rightVisualInset, bounds.maxY, winSize, avatarSize);
 }
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -329,27 +363,21 @@ export function ClippyWidget() {
   const isMobile = useIsMobile();
   const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
-  // ── Position (ratio-based, driven by window state) ──
-  const windowCount = useWindowStore(s => s.windows.length);
-  const hasWindows = windowCount > 0;
+  // ── Position (ratio-based, driven by visible app-window state) ──
+  const hasVisibleWindows = useWindowStore(s => s.windows.some((w) => (
+    w.workspaceId === s.activeWorkspaceId && w.state !== 'minimized'
+  )));
   const avatarSize = isMobile ? MOBILE_AVATAR_SIZE : DESKTOP_AVATAR_SIZE;
-  const [pos, setPos] = useState(() => hasWindows ? CORNER_POS : defaultCenter);
-  const [userDragged, setUserDragged] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-
-  // When windows open and widget is near center, auto-slide to corner
-  useEffect(() => {
-    if (userDragged) return; // User manually positioned it — don't override
-    if (hasWindows && isNearCenter(pos.rx, pos.ry)) {
-      setPos(CORNER_POS);
-    } else if (!hasWindows) {
-      setPos(defaultCenter);
-    }
-  }, [hasWindows, defaultCenter]); // eslint-disable-line react-hooks/exhaustive-deps
   const [winSize, setWinSize] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 1920,
     h: typeof window !== 'undefined' ? window.innerHeight : 1080,
   }));
+  const parkedCorner = useMemo(() => (
+    typeof window === 'undefined' ? FALLBACK_CORNER_POS : clippyCornerPos(winSize, avatarSize, isMobile)
+  ), [avatarSize, isMobile, winSize]);
+  const [pos, setPos] = useState(() => hasVisibleWindows ? parkedCorner : defaultCenter);
+  const [isDragging, setIsDragging] = useState(false);
+  const previousHasVisibleWindowsRef = useRef(hasVisibleWindows);
 
   useEffect(() => {
     const onResize = () => setWinSize({ w: window.innerWidth, h: window.innerHeight });
@@ -357,34 +385,48 @@ export function ClippyWidget() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const px = pos.rx * winSize.w - avatarSize / 2;
-  const py = Math.min(pos.ry * winSize.h - avatarSize / 2, winSize.h - avatarSize);
+  useEffect(() => {
+    if (isDragging) return;
+    const previous = previousHasVisibleWindowsRef.current;
+    if (previous === hasVisibleWindows) return;
+    const id = window.setTimeout(() => {
+      if (hasVisibleWindows) {
+        setPos(parkedCorner);
+      } else {
+        setPos(defaultCenter);
+      }
+      previousHasVisibleWindowsRef.current = hasVisibleWindows;
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [defaultCenter, hasVisibleWindows, isDragging, parkedCorner]);
+
+  const { x: px, y: py } = ratioToPixel(pos, winSize, avatarSize, isMobile);
 
   // ── Drag (pointer capture) ──
-  const dragRef = useRef<{ startMX: number; startMY: number; startRx: number; startRy: number } | null>(null);
+  const dragRef = useRef<{ startMX: number; startMY: number; startPx: number; startPy: number } | null>(null);
   const wasDragRef = useRef(false);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
     setIsDragging(true);
     wasDragRef.current = false;
-    dragRef.current = { startMX: e.clientX, startMY: e.clientY, startRx: pos.rx, startRy: pos.ry };
-  }, [pos]);
+    dragRef.current = { startMX: e.clientX, startMY: e.clientY, startPx: px, startPy: py };
+  }, [px, py]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragRef.current) return;
     const dx = e.clientX - dragRef.current.startMX;
     const dy = e.clientY - dragRef.current.startMY;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) wasDragRef.current = true;
-    const rx = Math.max(0.03, Math.min(0.97, dragRef.current.startRx + dx / winSize.w));
-    const ry = Math.max(0.05, Math.min(0.95, dragRef.current.startRy + dy / winSize.h));
-    setPos({ rx, ry });
-  }, [winSize]);
+    const bounds = clippyBounds(winSize, avatarSize, isMobile);
+    const nextPx = clampNumber(dragRef.current.startPx + dx, bounds.minX, bounds.maxX);
+    const nextPy = clampNumber(dragRef.current.startPy + dy, bounds.minY, bounds.maxY);
+    setPos(pixelToRatio(nextPx, nextPy, winSize, avatarSize));
+  }, [avatarSize, isMobile, winSize]);
 
   const onPointerUp = useCallback(() => {
     if (dragRef.current) {
-      if (wasDragRef.current) setUserDragged(true);
       if (!wasDragRef.current) toggleSpotlight();
       dragRef.current = null;
     }

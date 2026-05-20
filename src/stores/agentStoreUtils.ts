@@ -16,7 +16,7 @@ import { STORAGE_KEYS } from '@/lib/config';
 
 const AUTH_CARDS_STORAGE_KEY = STORAGE_KEYS.authConnectCards;
 
-interface StoredAuthCard {
+export interface StoredAuthCard {
   kind?: 'composio' | 'app';
   toolkit: string;
   name: string;
@@ -25,6 +25,8 @@ interface StoredAuthCard {
   logo?: string;
   appId?: string;
   sessionKey?: string;
+  expiresAt?: number;
+  pendingActionId?: string;
   timestamp: number;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@/stores/agentStore';
-import { groupMessages, isLikelyThinkingText } from './utils';
+import { getChatRenderKind, groupMessages, isLikelyThinkingText } from './utils';
 
 describe('isLikelyThinkingText', () => {
   it('does not hide normal markdown answers', () => {
@@ -44,5 +44,51 @@ describe('groupMessages', () => {
       { type: 'activities', msgs: [messages[0], messages[1]] },
       { type: 'message', msg: messages[2], index: 2 },
     ]);
+  });
+});
+
+describe('getChatRenderKind', () => {
+  it('renders incident notices and agent errors as inline events', () => {
+    expect(getChatRenderKind({
+      role: 'notice',
+      content: 'Composio failed',
+      timestamp: new Date(1),
+      noticeKind: 'incident',
+    })).toBe('inline-event');
+
+    expect(getChatRenderKind({
+      role: 'agent',
+      content: 'Error: Capability failed',
+      timestamp: new Date(2),
+      isError: true,
+    })).toBe('inline-event');
+  });
+
+  it('keeps auth and ask-user messages as attention cards', () => {
+    expect(getChatRenderKind({
+      role: 'agent',
+      content: '<!--AUTH_CONNECT:{"toolkit":"gmail","name":"Gmail"}-->',
+      timestamp: new Date(1),
+    })).toBe('attention');
+
+    expect(getChatRenderKind({
+      role: 'agent',
+      content: 'Choose one',
+      timestamp: new Date(2),
+      askUser: {
+        questionId: 'q1',
+        question: 'Continue?',
+        options: [{ label: 'Yes', value: 'yes' }],
+        allowCustom: false,
+      },
+    })).toBe('attention');
+  });
+
+  it('keeps normal agent prose as assistant content', () => {
+    expect(getChatRenderKind({
+      role: 'agent',
+      content: 'Here is the answer.',
+      timestamp: new Date(1),
+    })).toBe('assistant');
   });
 });

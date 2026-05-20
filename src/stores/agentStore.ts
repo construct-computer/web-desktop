@@ -18,6 +18,8 @@ import { shouldClearViewedAgentState } from './agentStateCleanup';
 import { useAppStore, localAppIframeRefs } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
+import { dispatchAgentHistoryCleared } from '@/lib/agentUiEvents';
+import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 // Utility functions extracted to reduce this file's size.
@@ -25,7 +27,7 @@ import analytics from '@/lib/analytics';
 export { authConnectNotifIds, pendingAuthCards, clearAuthCard, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from './agentStoreUtils';
 
 import {
-  authConnectNotifIds, pendingAuthCards, saveAuthCards, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns,
+  authConnectNotifIds, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns,
   findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent,
   describeToolCall,
   composioDisplayTool,
@@ -614,7 +616,7 @@ interface ComputerStore {
   clearChatHistory: () => void;
 
   // Sessions
-  loadSessions: () => Promise<void>;
+  loadSessions: (force?: boolean) => Promise<void>;
   createSession: (title?: string, options?: { forceNew?: boolean }) => Promise<void>;
   switchSession: (key: string) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
@@ -2515,7 +2517,7 @@ export const useComputerStore = create<ComputerStore>()(
         // Re-inject any pending auth_connect cards that were persisted to sessionStorage.
         const pendingCards = loadAuthCards();
         for (const [, card] of pendingCards) {
-          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: card.kind, toolkit: card.toolkit, name: card.name, description: card.description, url: card.url, logo: card.logo, appId: card.appId, sessionKey: card.sessionKey })}-->`;
+          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: card.kind, toolkit: card.toolkit, name: card.name, description: card.description, url: card.url, logo: card.logo, appId: card.appId, sessionKey: card.sessionKey, expiresAt: card.expiresAt, pendingActionId: card.pendingActionId, createdAt: card.timestamp })}-->`;
           history.push({
             role: 'agent',
             content: `${marker}\n\nI'll automatically continue once you've connected.`,
@@ -3036,6 +3038,7 @@ export const useComputerStore = create<ComputerStore>()(
       // Clear session cache for current session
       const currentKey = get().activeSessionKey;
       if (currentKey) sessionMessageCache.delete(currentKey);
+      clearAuthRequestsForSession(currentKey || 'default');
       // Clear frontend chat messages
       set({
         chatMessages: [],
@@ -3061,6 +3064,7 @@ export const useComputerStore = create<ComputerStore>()(
       tracker.resetAll();
       // Tell the agent to clear its memory for this session
       agentWS.send({ type: 'clear_history', session_key: currentKey || 'default' });
+      dispatchAgentHistoryCleared({ sessionKey: currentKey || 'default' });
       // Set a flag so that if the user refreshes before the agent finishes
       // persisting the clear, loadChatHistory() won't reload stale messages.
       try { localStorage.setItem('construct:history-cleared', '1'); } catch { /* */ }
@@ -3068,11 +3072,11 @@ export const useComputerStore = create<ComputerStore>()(
 
     // ── Session management ──────────────────────────────────
 
-    loadSessions: async () => {
+    loadSessions: async (force = false) => {
       const { instanceId } = get();
       if (!instanceId) return;
       if (sessionsLoading) return sessionsLoading;
-      if (Date.now() - sessionsLoadedAt < SESSION_LIST_STALE_MS && get().chatSessions.length > 0) {
+      if (!force && Date.now() - sessionsLoadedAt < SESSION_LIST_STALE_MS && get().chatSessions.length > 0) {
         return;
       }
 
@@ -4932,22 +4936,34 @@ export const useComputerStore = create<ComputerStore>()(
           const acUrl = event.data?.url as string || '';
           const acLogo = event.data?.logo as string | undefined;
           const acAppId = event.data?.appId as string | undefined;
+          const acExpiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt : undefined;
+          const acPendingActionId = event.data?.pendingActionId as string | undefined;
+          const acCreatedAt = Date.now();
           const acSessionKey = (event.data?.sessionKey as string | undefined) || get().activeSessionKey || 'default';
-          const authCardKey = acToolkit.toLowerCase();
-          const alreadyPending = pendingAuthCards.has(authCardKey);
+          const sourcePreview = acKind === 'app' ? `app:${acAppId || acToolkit}` : `composio:${acToolkit}`;
+          const existing = getAuthRequest(sourcePreview);
+          const alreadyPending = existing?.status === 'pending' || existing?.status === 'connecting' || existing?.status === 'expired';
 
-          // 1. Persist the card to sessionStorage so it survives page refresh
-          pendingAuthCards.set(authCardKey, {
-            kind: acKind, toolkit: acToolkit, name: acName, description: acDesc, url: acUrl || undefined, logo: acLogo, appId: acAppId, sessionKey: acSessionKey, timestamp: Date.now(),
+          const authRequest = registerAuthRequest({
+            kind: acKind,
+            toolkit: acToolkit,
+            name: acName,
+            description: acDesc,
+            url: acUrl || undefined,
+            logo: acLogo,
+            appId: acAppId,
+            sessionKey: acSessionKey,
+            expiresAt: acExpiresAt,
+            pendingActionId: acPendingActionId,
+            createdAt: acCreatedAt,
           });
-          saveAuthCards(pendingAuthCards);
 
           if (alreadyPending) {
             break;
           }
 
           // 2. Add a chat message with the AUTH_CONNECT marker so the card renders
-          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: acKind, toolkit: acToolkit, name: acName, description: acDesc, url: acUrl || undefined, logo: acLogo, appId: acAppId, sessionKey: acSessionKey })}-->`;
+          const marker = `<!--AUTH_CONNECT:${JSON.stringify({ kind: acKind, toolkit: acToolkit, name: acName, description: acDesc, url: acUrl || undefined, logo: acLogo, appId: acAppId, sessionKey: acSessionKey, expiresAt: acExpiresAt, pendingActionId: acPendingActionId, createdAt: acCreatedAt })}-->`;
           const authChatMsg: ChatMessage = {
             role: 'agent',
             content: `${marker}\n\nI'll automatically continue once you've connected.`,
@@ -4961,10 +4977,20 @@ export const useComputerStore = create<ComputerStore>()(
             body: acDesc,
             source: acName,
             variant: 'info',
-            onClick: acUrl ? () => openAuthRedirect(acUrl) : undefined,
+            onClick: acUrl ? () => {
+              startAuthRequestWatch({
+                sourceId: authRequest.sourceId,
+                kind: acKind,
+                toolkit: acToolkit,
+                name: acName,
+                appId: acAppId,
+                sessionKey: acSessionKey,
+              });
+              openAuthRedirect(acUrl);
+            } : undefined,
           }, 30_000);
           if (notifId) {
-            authConnectNotifIds.set(authCardKey, notifId);
+            authConnectNotifIds.set(authRequest.sourceId, notifId);
           }
           break;
         }

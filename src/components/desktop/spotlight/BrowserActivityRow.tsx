@@ -12,6 +12,7 @@ import {
   Globe, Code2, Timer, Search, Download, MousePointerClick, Keyboard,
   Compass, Camera, ChevronRight, ChevronDown, Sparkles, FileText, StopCircle,
 } from 'lucide-react';
+import { ACTIVITY_ICON_CLASS } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
 
 interface BrowserStyle {
@@ -20,25 +21,25 @@ interface BrowserStyle {
 }
 
 const BROWSER_STYLES: Record<string, BrowserStyle> = {
-  navigate: { icon: Globe, color: 'text-cyan-400 bg-cyan-400/10' },
-  evaluate: { icon: Code2, color: 'text-amber-400 bg-amber-400/10' },
-  wait: { icon: Timer, color: 'text-gray-400 bg-gray-400/10' },
-  find_text: { icon: Search, color: 'text-violet-400 bg-violet-400/10' },
-  fetch: { icon: Download, color: 'text-emerald-400 bg-emerald-400/10' },
-  click: { icon: MousePointerClick, color: 'text-blue-400 bg-blue-400/10' },
-  type: { icon: Keyboard, color: 'text-blue-400 bg-blue-400/10' },
-  input: { icon: Keyboard, color: 'text-blue-400 bg-blue-400/10' },
-  discover_data_sources: { icon: Compass, color: 'text-fuchsia-400 bg-fuchsia-400/10' },
-  screenshot: { icon: Camera, color: 'text-pink-400 bg-pink-400/10' },
-  open: { icon: Globe, color: 'text-cyan-400 bg-cyan-400/10' },
-  task: { icon: Sparkles, color: 'text-amber-400 bg-amber-400/10' },
-  read: { icon: FileText, color: 'text-violet-400 bg-violet-400/10' },
-  files: { icon: Download, color: 'text-emerald-400 bg-emerald-400/10' },
-  status: { icon: Timer, color: 'text-gray-400 bg-gray-400/10' },
-  stop: { icon: StopCircle, color: 'text-red-400 bg-red-400/10' },
+  navigate: { icon: Globe, color: ACTIVITY_ICON_CLASS },
+  evaluate: { icon: Code2, color: ACTIVITY_ICON_CLASS },
+  wait: { icon: Timer, color: ACTIVITY_ICON_CLASS },
+  find_text: { icon: Search, color: ACTIVITY_ICON_CLASS },
+  fetch: { icon: Download, color: ACTIVITY_ICON_CLASS },
+  click: { icon: MousePointerClick, color: ACTIVITY_ICON_CLASS },
+  type: { icon: Keyboard, color: ACTIVITY_ICON_CLASS },
+  input: { icon: Keyboard, color: ACTIVITY_ICON_CLASS },
+  discover_data_sources: { icon: Compass, color: ACTIVITY_ICON_CLASS },
+  screenshot: { icon: Camera, color: ACTIVITY_ICON_CLASS },
+  open: { icon: Globe, color: ACTIVITY_ICON_CLASS },
+  task: { icon: Sparkles, color: ACTIVITY_ICON_CLASS },
+  read: { icon: FileText, color: ACTIVITY_ICON_CLASS },
+  files: { icon: Download, color: ACTIVITY_ICON_CLASS },
+  status: { icon: Timer, color: ACTIVITY_ICON_CLASS },
+  stop: { icon: StopCircle, color: ACTIVITY_ICON_CLASS },
 };
 
-const DEFAULT_STYLE: BrowserStyle = { icon: Sparkles, color: 'text-[var(--color-text-muted)]/60 bg-white/5' };
+const DEFAULT_STYLE: BrowserStyle = { icon: Sparkles, color: ACTIVITY_ICON_CLASS };
 
 function styleFor(actionType: string | null | undefined): BrowserStyle {
   if (!actionType) return DEFAULT_STYLE;
@@ -74,10 +75,14 @@ export function BrowserActivityRow({
   message,
   duration,
   repeatCount,
+  isFirst = false,
+  isLast = false,
 }: {
   message: ChatMessage;
   duration?: string;
   repeatCount?: number;
+  isFirst?: boolean;
+  isLast?: boolean;
 }) {
   const [showPayload, setShowPayload] = useState(false);
   const meta = message.browserAction;
@@ -88,10 +93,12 @@ export function BrowserActivityRow({
   const canExpand = isExpandablePayload(meta?.payload);
 
   return (
-    <div className="py-[2px]">
+    <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
       <div className="flex items-center gap-2.5">
-        <div className="relative flex items-center justify-center w-5">
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)]/20" />
+        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
+          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
+          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
+          <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
         </div>
         <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${color}`}>
           <Icon className="w-3 h-3" />
@@ -153,36 +160,4 @@ export function BrowserActivityRow({
       )}
     </div>
   );
-}
-
-/**
- * Collapse consecutive browser activities whose label, action type, and url
- * match. Returns each item with a `repeat` count. Non-browser activities
- * pass through untouched (repeat=1).
- */
-export function mergeBrowserRepeats(activities: ChatMessage[]): Array<{ act: ChatMessage; repeat: number }> {
-  const out: Array<{ act: ChatMessage; repeat: number }> = [];
-  for (const act of activities) {
-    const last = out[out.length - 1];
-    if (last && canMerge(last.act, act)) {
-      last.repeat += 1;
-      continue;
-    }
-    out.push({ act, repeat: 1 });
-  }
-  return out;
-}
-
-function canMerge(a: ChatMessage, b: ChatMessage): boolean {
-  if (a.activityType !== 'web' || b.activityType !== 'web') return false;
-  if (!a.browserAction || !b.browserAction) return false;
-  if (a.content !== b.content) return false;
-  if (a.browserAction.actionType !== b.browserAction.actionType) return false;
-  if ((a.browserAction.url || '') !== (b.browserAction.url || '')) return false;
-  // Don't merge waits with different durations — that loses useful signal.
-  if ((a.browserAction.waitMs ?? -1) !== (b.browserAction.waitMs ?? -1)) return false;
-  // Don't merge entries with sub-actions: each compound is semantically distinct.
-  if ((a.browserAction.subActions?.length || 0) > 0) return false;
-  if ((b.browserAction.subActions?.length || 0) > 0) return false;
-  return true;
 }

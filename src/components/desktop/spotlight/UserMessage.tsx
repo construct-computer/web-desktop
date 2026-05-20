@@ -140,7 +140,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     return (
       <div className="flex justify-end px-3 sm:px-5 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
         <div className="flex max-w-[95%] sm:max-w-[80%] min-w-0 flex-col items-end gap-0.5">
-          <div className="w-full rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
+          <div className="w-fit max-w-full self-end rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
             <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-white/60" style={{ background: 'rgba(0,0,0,0.15)' }}>
               {appIcon ? (
                 <img src={appIcon} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
@@ -164,7 +164,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                 {context}
               </div>
             )}
-            <div className="px-4 py-2 text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
+            <div className="px-4 py-2 text-right text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
               <p className="whitespace-pre-wrap">{body}</p>
             </div>
           </div>
@@ -184,9 +184,9 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
       >
         <div
           className={[
-            'w-full rounded-[18px] rounded-br-md',
+            'w-fit max-w-full self-end rounded-[18px] rounded-br-md',
             'text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]',
-            'shadow-sm px-4 py-2.5 text-[15px] leading-relaxed',
+            'shadow-sm px-4 py-2.5 text-right text-[15px] leading-relaxed',
             'bg-[var(--color-accent)]',
             'transition-[opacity,filter] duration-300 ease-out',
             showPending
@@ -208,7 +208,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
           })()}
           {msg.attachments && msg.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
+            <div className="flex flex-wrap justify-end gap-1 mt-1.5">
               {msg.attachments.map((filePath, i) => (
                 <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 text-[11px]">
                   <FileText className="w-2.5 h-2.5" />

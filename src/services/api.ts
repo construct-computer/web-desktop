@@ -928,6 +928,27 @@ export async function resolvePendingUserAction(
   });
 }
 
+export async function resolvePendingUserActionBySource(
+  input: {
+    kind: PendingUserActionKind;
+    sourceId: string;
+    status?: PendingUserActionStatus;
+    sessionKey?: string;
+    name?: string;
+  },
+): Promise<ApiResult<{ ok: boolean; kind: PendingUserActionKind; sourceId: string; status: PendingUserActionStatus }>> {
+  return request('/agent/pending-actions/resolve-source', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: input.kind,
+      sourceId: input.sourceId,
+      status: input.status ?? 'resolved',
+      sessionKey: input.sessionKey,
+      name: input.name,
+    }),
+  });
+}
+
 export async function stopAgentSession(sessionKey: string): Promise<ApiResult<{
   ok: boolean;
   sessionKey: string;
@@ -1361,15 +1382,17 @@ export async function getComposioConfigured(): Promise<ApiResult<{ configured: b
   return request('/composio/configured');
 }
 
-export async function getComposioAuthUrl(toolkit: string): Promise<ApiResult<{
+export async function getComposioAuthUrl(toolkit: string, sessionKey?: string): Promise<ApiResult<{
   url?: string;
   connected_account_id?: string;
+  expiresAt?: number;
   error?: string;
   code?: 'OAUTH_UNAVAILABLE' | 'OAUTH_NOT_MANAGED' | 'PLAN_UPGRADE_REQUIRED' | string;
   availableSchemes?: string[];
   managedSchemes?: string[];
 }>> {
-  return request(`/composio/${encodeURIComponent(toolkit)}/auth-url`);
+  const params = sessionKey ? `?session_key=${encodeURIComponent(sessionKey)}` : '';
+  return request(`/composio/${encodeURIComponent(toolkit)}/auth-url${params}`);
 }
 
 /** Initiate a connection for any auth scheme. For OAUTH2 returns a redirect URL;
@@ -1378,7 +1401,7 @@ export async function composioConnect(
   toolkit: string,
   authScheme: string,
   fields: Record<string, string> = {},
-): Promise<ApiResult<{ requiresOAuth: boolean; url?: string; connected_account_id?: string; ok?: boolean; error?: string }>> {
+): Promise<ApiResult<{ requiresOAuth: boolean; url?: string; connected_account_id?: string; expiresAt?: number; ok?: boolean; error?: string }>> {
   return request(`/composio/${encodeURIComponent(toolkit)}/connect`, {
     method: 'POST',
     body: JSON.stringify({ authScheme, fields }),

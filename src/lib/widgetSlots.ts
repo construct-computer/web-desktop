@@ -16,21 +16,32 @@
 import { MENUBAR_HEIGHT, DOCK_HEIGHT } from '@/lib/constants';
 
 const PAD = 14;
-const W = 300;
-const H = 430;
+const DEFAULT_W = 300;
+const DEFAULT_H = 430;
 
 export type SlotId = 'tl' | 'tr' | 'bl' | 'br';
+export interface WidgetSize {
+  width: number;
+  height: number;
+}
 
 const ALL_SLOTS: SlotId[] = ['tl', 'tr', 'bl', 'br'];
 
 // ── Pixel positions ──────────────────────────────────────────────────────────
 
-export function slotPosition(id: SlotId): { x: number; y: number } {
+export function normalizeWidgetSize(size?: Partial<WidgetSize>): WidgetSize {
+  const width = size?.width && Number.isFinite(size.width) && size.width > 0 ? size.width : DEFAULT_W;
+  const height = size?.height && Number.isFinite(size.height) && size.height > 0 ? size.height : DEFAULT_H;
+  return { width, height };
+}
+
+export function slotPosition(id: SlotId, size?: Partial<WidgetSize>): { x: number; y: number } {
+  const { width, height } = normalizeWidgetSize(size);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const top = MENUBAR_HEIGHT + PAD;
-  const bottom = vh - DOCK_HEIGHT - PAD - H;
-  const right = vw - W - PAD;
+  const bottom = Math.max(top, vh - DOCK_HEIGHT - PAD - height);
+  const right = Math.max(PAD, vw - width - PAD);
 
   switch (id) {
     case 'tl': return { x: PAD, y: top };
@@ -86,20 +97,20 @@ function release(widgetId: string) {
 }
 
 /** Distance² between a point and a slot's position. */
-function dist2(x: number, y: number, slotId: SlotId): number {
-  const p = slotPosition(slotId);
+function dist2(x: number, y: number, slotId: SlotId, size?: Partial<WidgetSize>): number {
+  const p = slotPosition(slotId, size);
   const dx = p.x - x;
   const dy = p.y - y;
   return dx * dx + dy * dy;
 }
 
 /** Find nearest FREE slot to (x, y). Does NOT count `self` as free. */
-function findNearestFree(x: number, y: number): SlotId | null {
+function findNearestFree(x: number, y: number, size?: Partial<WidgetSize>): SlotId | null {
   let best: SlotId | null = null;
   let bestDist = Infinity;
   for (const slot of ALL_SLOTS) {
     if (occupancy.has(slot)) continue;
-    const d = dist2(x, y, slot);
+    const d = dist2(x, y, slot, size);
     if (d < bestDist) { bestDist = d; best = slot; }
   }
   return best;
@@ -111,13 +122,14 @@ function findNearestFree(x: number, y: number): SlotId | null {
  * Place a widget on a slot. Handles collisions (bumps occupant).
  * Set `silent` to true during init to suppress events.
  */
-export function claimSlot(widgetId: string, targetSlot: SlotId, silent = false): SlotId {
+export function claimSlot(widgetId: string, targetSlot: SlotId, silent = false, size?: Partial<WidgetSize>): SlotId {
   release(widgetId);
 
   const occupant = occupancy.get(targetSlot);
   if (occupant) {
     occupancy.delete(targetSlot);
-    const bumpTo = findNearestFree(slotPosition(targetSlot).x, slotPosition(targetSlot).y);
+    const target = slotPosition(targetSlot, size);
+    const bumpTo = findNearestFree(target.x, target.y, size);
     if (bumpTo) {
       occupancy.set(bumpTo, occupant);
       if (!silent) {
@@ -137,13 +149,17 @@ export function claimSlot(widgetId: string, targetSlot: SlotId, silent = false):
  * Snap a dragged widget to the nearest corner slot.
  */
 export function snapToSlot(widgetId: string, x: number, y: number): SlotId {
+  return snapToSlotWithSize(widgetId, x, y);
+}
+
+export function snapToSlotWithSize(widgetId: string, x: number, y: number, size?: Partial<WidgetSize>): SlotId {
   let best: SlotId = 'tr';
   let bestDist = Infinity;
   for (const slot of ALL_SLOTS) {
-    const d = dist2(x, y, slot);
+    const d = dist2(x, y, slot, size);
     if (d < bestDist) { bestDist = d; best = slot; }
   }
-  return claimSlot(widgetId, best);
+  return claimSlot(widgetId, best, false, size);
 }
 
 /**
@@ -156,4 +172,5 @@ export function initWidget(widgetId: string, defaultSlot: SlotId): SlotId {
   return claimSlot(widgetId, defaultSlot, true);
 }
 
-export const WIDGET_WIDTH = W;
+export const WIDGET_WIDTH = DEFAULT_W;
+export const WIDGET_HEIGHT = DEFAULT_H;
