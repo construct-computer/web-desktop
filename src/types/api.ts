@@ -16,4 +16,4 @@ export interface AuthResponse {
 
 export type ApiResult<T> = 
   | { success: true; data: T }
-  | { success: false; error: string; data?: Record<string, unknown> };
+  | { success: false; error: string; status?: number; data?: Record<string, unknown> };

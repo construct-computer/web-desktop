@@ -96,7 +96,7 @@ async function request<T>(
       // Non-JSON response - try to get text for error message
       const text = await response.text();
       if (!response.ok) {
-        return { success: false, error: text || `Request failed (${response.status})` };
+        return { success: false, error: text || `Request failed (${response.status})`, status: response.status };
       }
       // If somehow OK but not JSON, treat as empty
       data = {};
@@ -115,7 +115,7 @@ async function request<T>(
           });
         } catch { /* errorStore not loaded yet during startup */ }
       }
-      return { success: false, error: errorMsg, data };
+      return { success: false, error: errorMsg, status: response.status, data };
     }
 
     return { success: true, data: data as T };
@@ -139,6 +139,10 @@ async function request<T>(
     }
     return { success: false, error: errorMsg };
   }
+}
+
+export function isAuthRevokedResult(result: ApiResult<unknown>): boolean {
+  return !result.success && result.status === 401;
 }
 
 /**

@@ -64,6 +64,33 @@ function clearStaleUserData(newUserId: string): void {
   localStorage.setItem(STORAGE_KEYS.userId, newUserId);
 }
 
+function clearLocalSessionData(): void {
+  api.clearToken();
+
+  try { sessionStorage.clear(); } catch { /* */ }
+  try { localStorage.removeItem('construct:tracker:dismissedGoals'); } catch { /* */ }
+  try { localStorage.removeItem('construct:tracker:operations'); } catch { /* */ }
+  try { localStorage.removeItem(STORAGE_KEYS.windowPositions); } catch { /* */ }
+  try { localStorage.removeItem(STORAGE_KEYS.userId); } catch { /* */ }
+  try { localStorage.removeItem('construct:tour-completed'); } catch { /* */ }
+  try { localStorage.removeItem('construct:tour-skipped'); } catch { /* */ }
+  try { localStorage.removeItem('construct:agent-widget-pos'); } catch { /* */ }
+  try { localStorage.removeItem(STORAGE_KEYS.nativePushToken); } catch { /* */ }
+
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('construct:chat-draft:')) localStorage.removeItem(key);
+    }
+  } catch { /* */ }
+}
+
+function hardReloadToLogin(): void {
+  try {
+    window.history.replaceState({}, '', '/');
+  } catch { /* */ }
+  window.setTimeout(() => window.location.reload(), 0);
+}
+
 interface AuthState {
   user: User | null;
   isLoading: boolean;
@@ -81,6 +108,7 @@ interface AuthState {
   resetMagicLink: () => void;
   handleOAuthReturn: () => Promise<boolean>;
   logout: () => void;
+  handleRemoteLogout: () => void;
   checkAuth: () => Promise<boolean>;
   clearError: () => void;
   updateProfile: (data: { displayName: string }) => Promise<boolean>;
@@ -246,20 +274,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     api.logout();
 
     // Clear all user-specific data so the next login starts completely fresh
-    try { sessionStorage.clear(); } catch { /* */ }
-    try { localStorage.removeItem('construct:tracker:dismissedGoals'); } catch { /* */ }
-    try { localStorage.removeItem('construct:tracker:operations'); } catch { /* */ }
-    try { localStorage.removeItem(STORAGE_KEYS.windowPositions); } catch { /* */ }
-    try { localStorage.removeItem(STORAGE_KEYS.userId); } catch { /* */ }
-    try { localStorage.removeItem('construct:tour-completed'); } catch { /* */ }
-    try { localStorage.removeItem('construct:tour-skipped'); } catch { /* */ }
-    try { localStorage.removeItem('construct:agent-widget-pos'); } catch { /* */ }
-    // Clear per-session chat drafts
-    try {
-      for (const key of Object.keys(localStorage)) {
-        if (key.startsWith('construct:chat-draft:')) localStorage.removeItem(key);
-      }
-    } catch { /* */ }
+    clearLocalSessionData();
 
     set({
       user: null,
@@ -269,6 +284,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       magicLinkState: 'idle',
       magicLinkEmail: null,
     });
+  },
+
+  handleRemoteLogout: () => {
+    void unregisterCurrentNativePushToken();
+    clearLocalSessionData();
+    set({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      magicLinkState: 'idle',
+      magicLinkEmail: null,
+    });
+    hardReloadToLogin();
   },
 
   checkAuth: async () => {
@@ -296,7 +325,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       return true;
     } else {
-      api.clearToken();
+      clearLocalSessionData();
       set({
         user: null,
         isAuthenticated: false,

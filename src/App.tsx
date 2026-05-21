@@ -150,7 +150,7 @@ function WebAppShell() {
   // Tab singleton state: 'checking' | 'leader' | 'duplicate'
   const [tabStatus, setTabStatus] = useState<'checking' | 'leader' | 'duplicate'>('checking');
 
-  const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, checkAuth, handleOAuthReturn } = useAuthStore();
+  const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, handleRemoteLogout, checkAuth, handleOAuthReturn } = useAuthStore();
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const fetchUsage = useBillingStore((s) => s.fetchUsage);
   const { isConnected, forceReconnect } = useWebSocket();
@@ -246,26 +246,43 @@ function WebAppShell() {
   useEffect(() => {
     if (!isAuthenticated || !authChecked || !user?.id) return;
 
-    const heartbeat = () => {
-      void api.heartbeatAuthSession({
+    let checkingSession = false;
+
+    const heartbeat = async () => {
+      if (checkingSession) return;
+      checkingSession = true;
+      const result = await api.heartbeatAuthSession({
         surface: isNativePlatform() ? 'mobile_app' : 'web',
         deviceId: getCurrentDeviceId(),
         userAgent: navigator.userAgent,
       });
+      checkingSession = false;
+
+      if (api.isAuthRevokedResult(result)) {
+        handleRemoteLogout();
+      }
     };
 
-    heartbeat();
+    void heartbeat();
     const interval = window.setInterval(heartbeat, 30_000);
-    const onVisibility = () => {
-      if (!document.hidden) heartbeat();
+    const onVisibilityOrFocus = () => {
+      if (!document.hidden) void heartbeat();
     };
-    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    window.addEventListener('focus', onVisibilityOrFocus);
+    window.addEventListener('online', onVisibilityOrFocus);
+    window.addEventListener('construct:native-resume', onVisibilityOrFocus);
+    window.addEventListener('construct:auth-revoked', handleRemoteLogout);
 
     return () => {
       window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      window.removeEventListener('online', onVisibilityOrFocus);
+      window.removeEventListener('construct:native-resume', onVisibilityOrFocus);
+      window.removeEventListener('construct:auth-revoked', handleRemoteLogout);
     };
-  }, [isAuthenticated, authChecked, user?.id]);
+  }, [isAuthenticated, authChecked, user?.id, handleRemoteLogout]);
 
   // Slide up lock screen when the agent is ready OR the user is blocked (show desktop with subscription overlay).
   // Skip when the user has explicitly locked the screen (isLocked).

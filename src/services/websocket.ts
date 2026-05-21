@@ -555,16 +555,26 @@ class AgentWSClient {
             }
             return;
           }
+          if (msg.type === 'auth:revoked') {
+            window.dispatchEvent(new CustomEvent('construct:auth-revoked', { detail: msg.data || {} }));
+            return;
+          }
           this.eventHandler?.(msg as AgentEvent);
         } catch (e) {
           agentLog.error('Failed to parse message', e);
         }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         agentLog.info('Disconnected');
         this.connectionHandler?.(false);
         this.stopPresenceHeartbeat();
+        if (event.code === 4001) {
+          window.dispatchEvent(new CustomEvent('construct:auth-revoked', {
+            detail: { reason: event.reason || 'session_revoked' },
+          }));
+          return;
+        }
         this.scheduleReconnect();
       };
 
