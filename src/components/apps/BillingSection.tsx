@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { Button, InfoHint } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
-import type { SubscriptionInfo } from '@/services/api';
+import { getBillingPlans, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
+import { BILLING_PLAN_ORDER, buildBillingFeatureRows } from '@/lib/billingPlans';
 
 /* ── Reusable card wrapper ── */
 
@@ -140,22 +141,40 @@ export function BillingSection() {
 
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [plans, setPlans] = useState<BillingPlanInfo[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+
+  const fetchPlans = useCallback(async () => {
+    setPlansLoading(true);
+    try {
+      const result = await getBillingPlans();
+      if (result.success) setPlans(result.data.plans);
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
 
   // Fetch data on mount
   useEffect(() => {
     fetchSubscription();
+    fetchPlans();
     const refreshWhenVisible = () => {
-      if (!document.hidden) fetchSubscription();
+      if (!document.hidden) {
+        fetchSubscription();
+        fetchPlans();
+      }
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('focus', refreshWhenVisible);
     window.addEventListener('online', fetchSubscription);
+    window.addEventListener('online', fetchPlans);
     return () => {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('focus', refreshWhenVisible);
       window.removeEventListener('online', fetchSubscription);
+      window.removeEventListener('online', fetchPlans);
     };
-  }, [fetchSubscription]);
+  }, [fetchPlans, fetchSubscription]);
 
   const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
     setCheckoutLoading(true);
@@ -231,10 +250,15 @@ export function BillingSection() {
 
             <PlanSelector
               currentPlan={currentPlan}
+              plans={plans}
+              plansLoading={plansLoading}
               isDevMode={isDevMode}
+              canManageBilling={canManageBilling}
+              portalLoading={portalLoading}
               checkoutLoading={checkoutLoading}
               onSwitchPlan={handleSwitchPlan}
               onCheckout={handleCheckout}
+              onManage={handleManage}
             />
           </div>
         )}
@@ -246,134 +270,98 @@ export function BillingSection() {
 // ── Plan Selector (plan cards + feature comparison in one) ──
 
 type PlanId = 'free' | 'starter' | 'pro';
-const PLAN_ORDER: PlanId[] = ['free', 'starter', 'pro'];
 
-type FeatureRow = {
-  label: string;
-  tooltip: string;
-  free: string;
-  starter: string;
-  pro: string;
-  freeHas: boolean;
-  starterHas: boolean;
-  proHas: boolean;
-  freeColor?: string;
-  starterColor?: string;
-  proColor?: string;
-};
-
-const PLAN_FEATURES: FeatureRow[] = [
-  { label: 'Model quality', tooltip: 'All plans use the best available Construct model setup. Paid plans add more usage, parallel work, and runtime.', free: 'Best available', starter: 'Best available', pro: 'Best available', freeHas: true, starterHas: true, proHas: true },
-  { label: 'Reasoning depth', tooltip: 'How many steps Construct can take before stopping on a task. Higher limits help with harder multi-step work.', free: '20 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Task runtime', tooltip: 'Maximum continuous time Construct can spend on one background task.', free: '5 minutes',       starter: '1 hour',        pro: '3 hours',        freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Parallel work',  tooltip: 'How many tasks Construct can work on at the same time.', free: '2 active',        starter: '6 active',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Scheduled tasks',       tooltip: 'Routines you can ask Construct to repeat on a schedule, such as checking email each morning.', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Cloud Storage',         tooltip: 'Space for files, PDFs, images, and documents stored in your virtual workspace.', free: '100 MB',          starter: '1 GB',          pro: '3 GB',           freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Connected apps', tooltip: 'Connect Slack, Gmail, GitHub, Notion, and other apps for Construct to use.', free: 'Full Library',    starter: 'Full Library',  pro: 'Full Library',   freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Construct Email Address',   tooltip: `Get a dedicated @${AGENT_EMAIL_DOMAIN} email address that Construct can read and reply from.`, free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
-  { label: 'Background tasks',  tooltip: 'Let Construct continue longer tasks after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
-  { label: 'BYOK',   tooltip: 'Use your own supported AI provider key to bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
-];
-
-/** Weekly usage caps in USD (mirror of worker/src/config/tiers.ts TIER_LIMITS). */
-const WEEKLY_CAPS: Record<PlanId, number> = { free: 3.5, starter: 8, pro: 45 };
-
-/** Format a cap ratio as a readable label, e.g. 8 → "8× more", 0.125 → "8× less". */
-function formatMultiplier(ratio: number): string {
-  if (Math.abs(ratio - 1) < 0.01) return '1×';
-  if (ratio > 1) return `${Math.round(ratio)}× more`;
-  return `${Math.round(1 / ratio)}× less`;
-}
-
-/** Green for upgrades, red for downgrades, empty (use default) for the current plan. */
-function multiplierColor(ratio: number): string | undefined {
-  if (Math.abs(ratio - 1) < 0.01) return undefined;
-  return ratio > 1 ? 'text-emerald-400' : 'text-red-400';
-}
-
-function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, onCheckout }: {
+function PlanSelector({
+  currentPlan,
+  plans,
+  plansLoading,
+  isDevMode,
+  canManageBilling,
+  portalLoading,
+  checkoutLoading,
+  onSwitchPlan,
+  onCheckout,
+  onManage,
+}: {
   currentPlan: string;
+  plans: BillingPlanInfo[];
+  plansLoading: boolean;
   isDevMode: boolean;
+  canManageBilling: boolean;
+  portalLoading: boolean;
   checkoutLoading: boolean;
   onSwitchPlan: (plan: 'free' | 'starter' | 'pro') => void;
   onCheckout: (plan: 'starter' | 'pro') => void;
+  onManage: () => void;
 }) {
-  const effective = (currentPlan || 'free') as PlanId;
-  const currentIndex = PLAN_ORDER.indexOf(effective);
-
-  const plans: { id: PlanId; name: string; price: string; period: string }[] = [
-    { id: 'free', name: 'Free', price: '$0', period: '' },
-    { id: 'starter', name: 'Starter', price: '$59', period: '/mo' },
-    { id: 'pro', name: 'Pro', price: '$299', period: '/mo' },
-  ];
-
-  // Usage row is computed relative to the active plan so "1×" always marks
-  // the user's current baseline and the other tiers show how much more (or
-  // less) usage they'd get.
-  const freeRatio    = WEEKLY_CAPS.free    / WEEKLY_CAPS[effective];
-  const starterRatio = WEEKLY_CAPS.starter / WEEKLY_CAPS[effective];
-  const proRatio     = WEEKLY_CAPS.pro     / WEEKLY_CAPS[effective];
-  const usageRow: FeatureRow = {
-    label: 'Usage',
-    tooltip: 'Standard AI usage included relative to your current plan. Heavy tasks use more of this budget. BYOK bypasses this.',
-    free:    formatMultiplier(freeRatio),
-    starter: formatMultiplier(starterRatio),
-    pro:     formatMultiplier(proRatio),
-    freeHas: true, starterHas: true, proHas: true,
-    freeColor:    multiplierColor(freeRatio),
-    starterColor: multiplierColor(starterRatio),
-    proColor:     multiplierColor(proRatio),
-  };
-  const features: FeatureRow[] = [usageRow, ...PLAN_FEATURES];
+  const effective = BILLING_PLAN_ORDER.includes(currentPlan as PlanId) ? currentPlan as PlanId : 'free';
+  const currentIndex = BILLING_PLAN_ORDER.indexOf(effective);
+  const orderedPlans = BILLING_PLAN_ORDER
+    .map((id) => plans.find((plan) => plan.id === id))
+    .filter((plan): plan is BillingPlanInfo => !!plan);
+  const upgradePlans = orderedPlans.filter((plan) => BILLING_PLAN_ORDER.indexOf(plan.id) > currentIndex);
+  const features = buildBillingFeatureRows(plans, effective, AGENT_EMAIL_DOMAIN);
 
   return (
     <div className="space-y-3">
-      {/* Plan cards row */}
-      <div className="grid grid-cols-3 gap-2">
-        {plans.map((p) => {
-          const isCurrent = p.id === effective;
-          const targetIndex = PLAN_ORDER.indexOf(p.id);
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-text">Upgrade options</div>
+          <p className="mt-0.5 text-[11px] text-text-muted">
+            {upgradePlans.length > 0
+              ? 'Only higher plans are shown here.'
+              : 'You are on the highest available plan.'}
+          </p>
+        </div>
+        {canManageBilling && (
+          <Button
+            size="sm"
+            variant="default"
+            onClick={onManage}
+            disabled={portalLoading}
+            className="shrink-0"
+          >
+            {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+            Manage subscription
+          </Button>
+        )}
+      </div>
+
+      <div className={`grid gap-2 ${upgradePlans.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {upgradePlans.map((p) => {
+          const targetIndex = BILLING_PLAN_ORDER.indexOf(p.id);
           const isUpgrade = targetIndex > currentIndex;
           return (
             <div
               key={p.id}
-              className={`p-3 rounded-lg border text-center ${
-                isCurrent
-                  ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.04]'
-                  : 'border-black/[0.06] dark:border-white/[0.06]'
-              }`}
+              className="p-3 rounded-lg border border-black/[0.06] dark:border-white/[0.06] text-center"
             >
               <span className="text-[13px] font-semibold">{p.name}</span>
               <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
-                <span className="text-[18px] font-bold">{p.price}</span>
+                <span className="text-[18px] font-bold">{p.priceLabel}</span>
                 {p.period && <span className="text-[11px] text-[var(--color-text-muted)]">{p.period}</span>}
               </div>
-              {isCurrent ? (
-                <div className="mt-2 text-[11px] font-medium text-[var(--color-accent)] py-1">Current</div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant={isUpgrade ? 'primary' : 'default'}
-                  onClick={() => {
-                    if (p.id === 'free' || isDevMode) onSwitchPlan(p.id);
-                    else onCheckout(p.id as 'starter' | 'pro');
-                  }}
-                  disabled={checkoutLoading}
-                  className="w-full mt-2"
-                >
-                  {checkoutLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : isUpgrade ? (
-                    'Upgrade'
-                  ) : (
-                    'Switch'
-                  )}
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant={isUpgrade ? 'primary' : 'default'}
+                onClick={() => {
+                  if (isDevMode) onSwitchPlan(p.id);
+                  else onCheckout(p.id as 'starter' | 'pro');
+                }}
+                disabled={checkoutLoading}
+                className="w-full mt-2"
+              >
+                {checkoutLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Upgrade'}
+              </Button>
             </div>
           );
         })}
+        {plansLoading && upgradePlans.length === 0 && (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-black/[0.06] dark:border-white/[0.06] px-3 py-6 text-[12px] text-[var(--color-text-muted)]">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Loading plan details...
+          </div>
+        )}
       </div>
 
       {/* Feature comparison table — scroll horizontally on narrow viewports */}
@@ -385,7 +373,16 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
           <span className="text-center">Starter</span>
           <span className="text-center">Pro</span>
         </div>
-        {features.map((f, i) => (
+        {features.length === 0 && plansLoading ? (
+          <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-[var(--color-text-muted)]">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Loading plan details...
+          </div>
+        ) : features.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] text-[var(--color-text-muted)]">
+            Plan details are not available right now.
+          </div>
+        ) : features.map((f, i) => (
           <div
             key={f.label}
             className={`grid grid-cols-[1fr_84px_84px_84px] items-center px-3 py-2 text-[11px] ${
@@ -399,9 +396,10 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
               <InfoHint side="top">{f.tooltip}</InfoHint>
             </div>
             {(['free', 'starter', 'pro'] as const).map((tier) => {
-              const has = f[`${tier}Has`];
-              const val = f[tier];
-              const color = f[`${tier}Color`];
+              const currentCell = f.cells[tier];
+              const has = currentCell.enabled;
+              const val = currentCell.value;
+              const color = currentCell.color;
               const valClass = tier === effective
                 ? 'text-[var(--color-text)] font-medium'
                 : color || 'text-[var(--color-text-muted)]';
@@ -423,6 +421,10 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
         ))}
         </div>
       </div>
+
+      <p className="text-[11px] text-[var(--color-text-muted)]">
+        BYOK is available on every plan.
+      </p>
     </div>
   );
 }

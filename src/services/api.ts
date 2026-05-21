@@ -2097,8 +2097,8 @@ export interface SubscriptionInfo {
     selectedModel: string | null;
   };
   planLimits?: {
-    weeklyCapUsd: number;
-    sessionCapUsd: number;
+    weeklyCapUsd?: number;
+    sessionCapUsd?: number;
     email: boolean;
     backgroundAgents: boolean;
     byok: boolean;
@@ -2116,6 +2116,27 @@ export interface SubscriptionInfo {
   limits?: {
     sessionCapUsd: number;
     weeklyCapUsd: number;
+  };
+}
+
+export type BillingPlanId = 'free' | 'starter' | 'pro';
+
+export interface BillingPlanInfo {
+  id: BillingPlanId;
+  name: string;
+  priceUsd: number;
+  priceLabel: string;
+  period: string;
+  limits: {
+    weeklyUsageRelativeToFree: number;
+    sessionUsageRelativeToFree: number;
+    mainTaskSteps: number;
+    commandRuntimeSeconds: number;
+    parallelWork: number;
+    scheduledTasks: number;
+    storageBytes: number;
+    emailAddress: boolean;
+    backgroundTasks: boolean;
   };
 }
 
@@ -2178,6 +2199,10 @@ export interface UsageRecord {
 
 export async function getSubscription(): Promise<ApiResult<SubscriptionInfo>> {
   return request('/billing/subscription');
+}
+
+export async function getBillingPlans(): Promise<ApiResult<{ plans: BillingPlanInfo[]; environment?: string }>> {
+  return request('/billing/plans');
 }
 
 export async function getCurrentUsage(): Promise<ApiResult<CurrentUsage>> {
