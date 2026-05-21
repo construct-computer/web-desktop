@@ -393,6 +393,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [view, setView] = useState<'month' | 'list'>('month');
+  const calendarRequestSeqRef = useRef(0);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -404,6 +405,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; summary: string } | null>(null);
 
   const fetchEvents = useCallback(async () => {
+    const requestSeq = ++calendarRequestSeqRef.current;
     try {
       setError(null);
       const monthStart = startOfMonth(currentMonth);
@@ -421,6 +423,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
       const result = await listAgentCalendarEvents({
         maxResults: 200,
       });
+      if (requestSeq !== calendarRequestSeqRef.current) return;
       if (result.success) {
         const raw = result.data.events;
         rawEventsRef.current = raw;
@@ -430,6 +433,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         setError(result.error || 'Failed to load events');
       }
     } catch (err) {
+      if (requestSeq !== calendarRequestSeqRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load events');
     }
   }, [currentMonth]);
@@ -446,7 +450,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
     let cancelled = false;
     void (async () => {
       setLoading(true);
-      await refreshNow();
+      await refreshNow({ force: true });
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };

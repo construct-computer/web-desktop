@@ -386,6 +386,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const currentPathRef = useRef(currentPath);
+  const directoryRequestSeqRef = useRef(0);
   const [showHidden, setShowHidden] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuType | null>(null);
   const [renamingName, setRenamingName] = useState<string | null>(null);
@@ -503,9 +505,11 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   const loadDirectory = useCallback(
     async (path: string, opts?: { silent?: boolean }) => {
       if (!instanceId) return;
-      if (!opts?.silent) setLoading(true);
-      setError(null);
-      if (!opts?.silent) {
+      const silent = Boolean(opts?.silent);
+      const requestSeq = ++directoryRequestSeqRef.current;
+      if (!silent) {
+        setLoading(true);
+        setError(null);
         setSelectedName(null);
         setRenamingName(null);
         setCreatingType(null);
@@ -513,17 +517,24 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       }
 
       const result = await api.listFiles(instanceId, path);
+      if (requestSeq !== directoryRequestSeqRef.current) return;
+      if (silent && currentPathRef.current !== path) return;
 
       if (result.success) {
+        setError(null);
         setRawEntries(result.data.entries);
-        setCurrentPath(result.data.path);
+        if (!silent) setCurrentPath(result.data.path);
       } else {
         setError(result.error);
       }
-      if (!opts?.silent) setLoading(false);
+      if (!silent) setLoading(false);
     },
     [closePreview, instanceId],
   );
+
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
 
   const refreshStorageUsage = useCallback(() => {
     api.getStorageUsage().then(r => { if (r.success && r.data) setStorageUsage(r.data); });

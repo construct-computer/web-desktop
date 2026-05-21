@@ -9,13 +9,17 @@ interface FreshnessOptions {
   refreshOnOnline?: boolean;
 }
 
+interface FreshnessRefreshOptions {
+  force?: boolean;
+}
+
 export interface FreshnessState {
   isRefreshing: boolean;
   lastUpdatedAt: number | null;
   now: number;
   isStale: boolean;
   error: string | null;
-  refreshNow: () => Promise<void>;
+  refreshNow: (options?: FreshnessRefreshOptions) => Promise<void>;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -39,6 +43,8 @@ export function useFreshness(
 ): FreshnessState {
   const refreshRef = useRef(refresh);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const activeRefreshCountRef = useRef(0);
+  const refreshRunIdRef = useRef(0);
   const mountedRef = useRef(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -54,11 +60,13 @@ export function useFreshness(
     };
   }, []);
 
-  const refreshNow = useCallback(async () => {
+  const refreshNow = useCallback(async (options?: FreshnessRefreshOptions) => {
     if (!enabled) return;
-    if (inFlightRef.current) return inFlightRef.current;
+    if (!options?.force && inFlightRef.current) return inFlightRef.current;
 
+    const runId = ++refreshRunIdRef.current;
     const run = (async () => {
+      activeRefreshCountRef.current += 1;
       setIsRefreshing(true);
       setError(null);
       try {
@@ -71,8 +79,9 @@ export function useFreshness(
       } catch (err) {
         if (mountedRef.current) setError(toErrorMessage(err));
       } finally {
-        inFlightRef.current = null;
-        if (mountedRef.current) setIsRefreshing(false);
+        if (refreshRunIdRef.current === runId) inFlightRef.current = null;
+        activeRefreshCountRef.current = Math.max(0, activeRefreshCountRef.current - 1);
+        if (mountedRef.current && activeRefreshCountRef.current === 0) setIsRefreshing(false);
       }
     })();
 
