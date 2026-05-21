@@ -48,6 +48,7 @@ import {
 
 const IDLE_POLL_MS = 15_000;
 const ACTIVE_POLL_MS = 5_000;
+const ACTIVE_WORK_ORDER_STATUSES = new Set(['active', 'waiting', 'blocked']);
 
 type ModeCopy = {
   label: string;
@@ -439,7 +440,10 @@ export function AutopilotPanel() {
 
   const primaryRun = useMemo(() => {
     if (!displayStatus) return null;
-    return displayStatus.runs.find((run) => run.status === 'running' || run.status === 'recovering') ?? displayStatus.runs[0] ?? null;
+    return displayStatus.runs.find((run) => (
+      run.status === 'running'
+      || (run.status === 'recovering' && run.completedAt === null)
+    )) ?? displayStatus.runs[0] ?? null;
   }, [displayStatus]);
 
   const currentGoal = useMemo(() => {
@@ -470,9 +474,7 @@ export function AutopilotPanel() {
 
   const currentWorkOrder = useMemo(() => {
     if (!displayStatus?.workOrders?.length) return null;
-    return displayStatus.workOrders.find((order) => (
-      order.status === 'active' || order.status === 'waiting' || order.status === 'blocked'
-    )) ?? displayStatus.workOrders[0] ?? null;
+    return displayStatus.workOrders.find((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status)) ?? null;
   }, [displayStatus]);
 
   const summary = lastError
@@ -673,7 +675,7 @@ export function AutopilotPanel() {
 
   const visibleWorkOrders = useMemo(() => (
     (displayStatus?.workOrders || [])
-      .filter((order) => order.status === 'active' || order.status === 'waiting' || order.status === 'blocked' || order.status === 'completed')
+      .filter((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status))
       .slice(0, 3)
   ), [displayStatus]);
   const visibleLearnedPolicies = useMemo(() => (

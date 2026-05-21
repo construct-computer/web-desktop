@@ -85,9 +85,9 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
   }, [meta.raw, meta.detail, msg.content]);
 
   return (
-    <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-5 py-[3px]'}>
-      <div className={compact ? 'flex items-center gap-2.5 min-w-0' : 'flex items-center gap-2.5 min-w-0'}>
-        <div className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center ${colors}`}>
+    <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+      <div className={compact ? 'flex items-center gap-2.5 min-w-0' : 'flex items-center gap-2.5 sm:gap-3 min-w-0'}>
+        <div className={`${compact ? 'h-5 w-5' : 'h-6 w-6'} shrink-0 rounded-full flex items-center justify-center ${colors}`}>
           <ActivityIcon type={msg.activityType} tone={meta.tone} tool={meta.tool} label={meta.title} className="w-3 h-3" />
         </div>
         <div className="min-w-0 flex-1">
