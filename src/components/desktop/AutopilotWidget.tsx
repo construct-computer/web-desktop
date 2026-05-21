@@ -145,6 +145,47 @@ function cleanWidgetText(text: string | null | undefined, limit = 74): string {
   return clampText(clean, limit);
 }
 
+function formatLedgerStatus(status: string | null | undefined): string {
+  return (status || 'unknown')
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatPolicyScope(policy: api.AutopilotLearnedPolicySnapshot): string {
+  const scope = policy.scopeValue || policy.scope || 'user';
+  return scope.replace(/[_-]/g, ' ');
+}
+
+function formatConfidence(confidence: number | null | undefined): string {
+  const value = Math.max(0, Math.min(1, confidence ?? 0));
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatScheduleDue(value: string | null | undefined): string {
+  if (!value) return 'no next run';
+  const ms = new Date(value).getTime();
+  if (!Number.isFinite(ms)) return 'scheduled';
+  const diff = ms - Date.now();
+  const abs = Math.abs(diff);
+  const prefix = diff >= 0 ? 'in ' : 'due ';
+  if (abs < 60_000) return diff >= 0 ? 'now' : 'due now';
+  if (abs < 60 * 60_000) return `${prefix}${Math.round(abs / 60_000)}m`;
+  if (abs < 24 * 60 * 60_000) return `${prefix}${Math.round(abs / 60 / 60_000)}h`;
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatPolicyFlags(policy: Record<string, unknown> | null | undefined): string {
+  if (!policy) return '';
+  return Object.entries(policy)
+    .filter(([, value]) => value === true || typeof value === 'string')
+    .map(([key, value]) => value === true ? key : `${key}:${String(value)}`)
+    .slice(0, 2)
+    .join(', ')
+    .replace(/[_-]/g, ' ');
+}
+
 function isGenericActionTitle(text: string | null | undefined): boolean {
   return /^(complete|continue|resume)\s+(the\s+)?(current\s+)?agent\s+run\.?$/i.test((text || '').trim());
 }
@@ -245,6 +286,8 @@ export function AutopilotPanel() {
   const [pendingApproval, setPendingApproval] = useState<ApprovalQueueEntry | null>(null);
   const [pendingActions, setPendingActions] = useState<api.PendingUserAction[]>([]);
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
+  const [expiringPolicyId, setExpiringPolicyId] = useState<number | null>(null);
+  const [workOrderActionId, setWorkOrderActionId] = useState<string | null>(null);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
   const [nextEvent, setNextEvent] = useState<api.AgentCalendarEvent | null>(null);
 
@@ -425,6 +468,13 @@ export function AutopilotPanel() {
       ?? null;
   }, [displayStatus]);
 
+  const currentWorkOrder = useMemo(() => {
+    if (!displayStatus?.workOrders?.length) return null;
+    return displayStatus.workOrders.find((order) => (
+      order.status === 'active' || order.status === 'waiting' || order.status === 'blocked'
+    )) ?? displayStatus.workOrders[0] ?? null;
+  }, [displayStatus]);
+
   const summary = lastError
     ? 'Status temporarily unavailable.'
     : displayStatus?.summary || (loading ? 'Checking autonomous work.' : 'No active autonomous work.');
@@ -460,6 +510,7 @@ export function AutopilotPanel() {
   const activeHeadline = (() => {
     if (!hasActiveRun) return null;
     if (currentAction?.title && !isGenericActionTitle(currentAction.title)) return currentAction.title;
+    if (currentWorkOrder?.objective) return currentWorkOrder.objective;
     if (currentGoal?.title) return currentGoal.title;
     if (currentTask?.title) return currentTask.title;
     return formatTool(currentTool);
@@ -525,8 +576,20 @@ export function AutopilotPanel() {
       });
     }
 
+    const workOrderObjective = cleanWidgetText(currentWorkOrder?.objective, 72);
+    if (workOrderObjective && workOrderObjective !== actionTitle) {
+      items.push({
+        id: 'work-order',
+        Icon: ListChecks,
+        label: currentWorkOrder?.status === 'blocked' ? 'Blocked' : 'Work',
+        value: currentWorkOrder?.status === 'blocked'
+          ? cleanWidgetText(currentWorkOrder.blockerReason || currentWorkOrder.objective, 72)
+          : workOrderObjective,
+      });
+    }
+
     const goalTitle = cleanWidgetText(currentGoal?.title, 72);
-    if (goalTitle && goalTitle !== actionTitle) {
+    if (goalTitle && goalTitle !== actionTitle && goalTitle !== workOrderObjective) {
       items.push({
         id: 'goal',
         Icon: ListChecks,
@@ -539,7 +602,7 @@ export function AutopilotPanel() {
       ? currentTask
       : null;
     const taskTitle = cleanWidgetText(activeTask?.title, 72);
-    if (taskTitle && taskTitle !== actionTitle && taskTitle !== goalTitle) {
+    if (taskTitle && taskTitle !== actionTitle && taskTitle !== goalTitle && taskTitle !== workOrderObjective) {
       items.push({
         id: 'task',
         Icon: CheckCircle2,
@@ -601,11 +664,27 @@ export function AutopilotPanel() {
     currentGoal,
     currentTask,
     currentTool,
+    currentWorkOrder,
     displayStatus,
     primaryRun,
     showActiveTrace,
     summary,
   ]);
+
+  const visibleWorkOrders = useMemo(() => (
+    (displayStatus?.workOrders || [])
+      .filter((order) => order.status === 'active' || order.status === 'waiting' || order.status === 'blocked' || order.status === 'completed')
+      .slice(0, 3)
+  ), [displayStatus]);
+  const visibleLearnedPolicies = useMemo(() => (
+    (displayStatus?.learnedPolicies || []).slice(0, 3)
+  ), [displayStatus]);
+  const visibleScheduledWork = useMemo(() => (
+    (displayStatus?.scheduledWork || [])
+      .filter((schedule) => schedule.status === 'active' || schedule.status === 'paused')
+      .slice(0, 3)
+  ), [displayStatus]);
+  const showOperationalLedger = visibleWorkOrders.length > 0 || visibleScheduledWork.length > 0 || visibleLearnedPolicies.length > 0;
 
   const isIdleGlance = !attention && !hasActiveRun && mode === 'idle';
   const idleItems = useMemo<IdleGlanceItem[]>(() => {
@@ -780,6 +859,82 @@ export function AutopilotPanel() {
     }
   };
 
+  const handleExpirePolicy = (policy: api.AutopilotLearnedPolicySnapshot) => {
+    if (expiringPolicyId !== null) return;
+    setExpiringPolicyId(policy.id);
+    api.expireLearnedPolicy(policy.id)
+      .then((result) => {
+        if (!result.success) return;
+        setStatus((current) => {
+          if (!current) return current;
+          const learnedPolicies = (current.learnedPolicies || []).filter((item) => item.id !== policy.id);
+          return {
+            ...current,
+            learnedPolicies,
+            learnedPolicyCount: Math.max(0, (current.learnedPolicyCount ?? learnedPolicies.length + 1) - 1),
+          };
+        });
+      })
+      .finally(() => setExpiringPolicyId(null));
+  };
+
+  const applyWorkOrderUpdate = (updated: api.AutopilotWorkOrderControlSnapshot) => {
+    setStatus((current) => {
+      if (!current) return current;
+      const previous = (current.workOrders || []).find((item) => item.id === updated.id);
+      const previousWasActive = previous ? ['active', 'waiting', 'blocked'].includes(previous.status) : false;
+      const nextIsActive = ['active', 'waiting', 'blocked'].includes(updated.status);
+      const previousWasBlocked = previous?.status === 'blocked';
+      const nextIsBlocked = updated.status === 'blocked';
+      const merged = (current.workOrders || []).map((item) => (
+        item.id === updated.id
+          ? {
+            ...item,
+            ...updated,
+            blockerReason: updated.blockerReason ?? null,
+          }
+          : item
+      ));
+      const workOrders = ['completed', 'failed', 'cancelled'].includes(updated.status)
+        ? merged.filter((item) => item.id !== updated.id)
+        : merged;
+      const activeDelta = Number(nextIsActive) - Number(previousWasActive);
+      const blockedDelta = Number(nextIsBlocked) - Number(previousWasBlocked);
+      const activeWorkOrderCount = current.activeWorkOrderCount == null
+        ? workOrders.filter((item) => item.status === 'active' || item.status === 'waiting' || item.status === 'blocked').length
+        : Math.max(0, current.activeWorkOrderCount + activeDelta);
+      const blockedWorkOrderCount = current.blockedWorkOrderCount == null
+        ? workOrders.filter((item) => item.status === 'blocked').length
+        : Math.max(0, current.blockedWorkOrderCount + blockedDelta);
+      return {
+        ...current,
+        workOrders,
+        activeWorkOrderCount,
+        blockedWorkOrderCount,
+      };
+    });
+  };
+
+  const handleResolveWorkOrder = (order: api.AutopilotWorkOrderSnapshot) => {
+    if (workOrderActionId !== null) return;
+    setWorkOrderActionId(`resolve:${order.id}`);
+    api.resolveWorkOrderBlocker(order.id)
+      .then((result) => {
+        if (result.success) applyWorkOrderUpdate(result.data.workOrder);
+      })
+      .finally(() => setWorkOrderActionId(null));
+  };
+
+  const handleCancelWorkOrder = (order: api.AutopilotWorkOrderSnapshot) => {
+    if (workOrderActionId !== null) return;
+    setWorkOrderActionId(`cancel:${order.id}`);
+    api.cancelWorkOrder(order.id)
+      .then((result) => {
+        if (result.success) applyWorkOrderUpdate(result.data.workOrder);
+      })
+      .finally(() => setWorkOrderActionId(null));
+  };
+
   return (
     <div
       onClick={isIdleGlance || showActiveTrace ? () => void openSpotlightSession(activeSessionForOpen) : undefined}
@@ -908,6 +1063,193 @@ export function AutopilotPanel() {
                 </span>
               );
             })}
+          </div>
+        )}
+
+        {showOperationalLedger && (
+          <div className="mt-2 space-y-2 border-t border-white/[0.055] pt-2">
+            {visibleWorkOrders.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
+                  <span>Work orders</span>
+                  <span>{displayStatus?.activeWorkOrderCount ?? visibleWorkOrders.length}</span>
+                </div>
+                {visibleWorkOrders.map((order) => {
+                  const isBlocked = order.status === 'blocked';
+                  const canCancel = order.status === 'active' || order.status === 'waiting' || order.status === 'blocked';
+                  const resolveActionId = `resolve:${order.id}`;
+                  const cancelActionId = `cancel:${order.id}`;
+                  const detail = isBlocked
+                    ? order.blockerReason || order.latestStepTitle || order.objective
+                    : order.latestStepTitle || order.latestArtifactPath || order.latestDeliveryChannel || order.objective;
+                  return (
+                    <div
+                      key={order.id}
+                      className="group flex h-[30px] w-full min-w-0 items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-white/[0.035]"
+                      title={`${formatLedgerStatus(order.status)}: ${order.objective}`}
+                    >
+                      <button
+                        type="button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void openSpotlightSession(order.sessionKey);
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                      >
+                        <ListChecks
+                          size={13}
+                          strokeWidth={2.1}
+                          className={`shrink-0 ${isBlocked ? 'text-blue-200/[0.62]' : 'text-cyan-200/[0.50]'}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-medium text-white/[0.72]">
+                            {cleanWidgetText(order.objective, 74)}
+                          </span>
+                          <span className="block truncate text-[9.5px] text-white/[0.38]">
+                            {formatLedgerStatus(order.status)}
+                            {detail ? ` - ${cleanWidgetText(detail, 68)}` : ''}
+                          </span>
+                        </span>
+                      </button>
+                      {(isBlocked || canCancel) && (
+                        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          {isBlocked && (
+                            <button
+                              type="button"
+                              aria-label={`Resolve blocker for ${order.objective}`}
+                              title="Mark blocker resolved"
+                              disabled={workOrderActionId !== null}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleResolveWorkOrder(order);
+                              }}
+                              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-md text-blue-100/[0.50] transition hover:bg-white/[0.045] hover:text-blue-100 disabled:cursor-default disabled:opacity-40"
+                            >
+                              {workOrderActionId === resolveActionId ? (
+                                <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
+                              ) : (
+                                <CheckCircle2 size={11} strokeWidth={2.3} />
+                              )}
+                            </button>
+                          )}
+                          {canCancel && (
+                            <button
+                              type="button"
+                              aria-label={`Cancel Work Order: ${order.objective}`}
+                              title="Cancel Work Order"
+                              disabled={workOrderActionId !== null}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleCancelWorkOrder(order);
+                              }}
+                              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-md text-white/[0.30] transition hover:bg-white/[0.045] hover:text-red-100 disabled:cursor-default disabled:opacity-40"
+                            >
+                              {workOrderActionId === cancelActionId ? (
+                                <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
+                              ) : (
+                                <X size={11} strokeWidth={2.4} />
+                              )}
+                            </button>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {visibleLearnedPolicies.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
+                  <span>Learned policies</span>
+                  <span>{displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length}</span>
+                </div>
+                {visibleLearnedPolicies.map((policy) => (
+                  <div
+                    key={policy.id}
+                    className="group flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-1.5"
+                    title={`${formatPolicyScope(policy)}: ${policy.summary}`}
+                  >
+                    <Gauge size={13} strokeWidth={2.1} className="shrink-0 text-violet-200/[0.54]" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[11px] font-medium text-white/[0.70]">
+                        {cleanWidgetText(policy.summary, 74)}
+                      </span>
+                      <span className="block truncate text-[9.5px] text-white/[0.38]">
+                        {formatPolicyScope(policy)} - {formatConfidence(policy.confidence)}
+                        {policy.policyValue ? ` - ${cleanWidgetText(policy.policyValue, 42)}` : ''}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Disable learned policy: ${policy.summary}`}
+                      title="Disable learned policy"
+                      disabled={expiringPolicyId !== null}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleExpirePolicy(policy);
+                      }}
+                      className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/[0.28] opacity-0 transition hover:bg-white/[0.045] hover:text-white/[0.70] group-hover:opacity-100 disabled:cursor-default disabled:opacity-40"
+                    >
+                      {expiringPolicyId === policy.id ? (
+                        <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
+                      ) : (
+                        <X size={11} strokeWidth={2.4} />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {visibleScheduledWork.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
+                  <span>Scheduled work</span>
+                  <span>{displayStatus?.activeScheduledWorkCount ?? visibleScheduledWork.length}</span>
+                </div>
+                {visibleScheduledWork.map((schedule) => {
+                  const delivery = schedule.deliveryChannel
+                    ? `${schedule.deliveryChannel}${schedule.deliveryRecipient ? ` to ${schedule.deliveryRecipient}` : ''}`
+                    : 'delivery auto';
+                  const policy = formatPolicyFlags(schedule.verificationPolicy) || formatPolicyFlags(schedule.failurePolicy);
+                  const detail = [
+                    formatScheduleDue(schedule.nextFireTime),
+                    delivery,
+                    schedule.artifactRoot ? cleanWidgetText(schedule.artifactRoot, 46) : null,
+                    policy || null,
+                  ].filter(Boolean).join(' - ');
+                  return (
+                    <button
+                      key={schedule.id}
+                      type="button"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openWindow('calendar');
+                      }}
+                      className="flex h-[30px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-white/[0.035]"
+                      title={`${schedule.title}: ${schedule.objective}`}
+                    >
+                      <CalendarDays size={13} strokeWidth={2.1} className="shrink-0 text-emerald-200/[0.54]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-medium text-white/[0.70]">
+                          {cleanWidgetText(schedule.title || schedule.objective, 74)}
+                        </span>
+                        <span className="block truncate text-[9.5px] text-white/[0.38]">
+                          {formatLedgerStatus(schedule.status)} - {cleanWidgetText(detail, 86)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

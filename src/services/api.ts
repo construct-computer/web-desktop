@@ -793,6 +793,31 @@ export interface AutopilotWorkVerificationSnapshot {
   createdAt: number;
 }
 
+export interface AutopilotWorkOrderSnapshot {
+  id: string;
+  sessionKey: string;
+  sourceType: string;
+  sourceId: string | null;
+  requesterRole: string;
+  objective: string;
+  riskLevel: string;
+  status: string;
+  blockerReason: string | null;
+  stepCount: number;
+  artifactCount: number;
+  deliveryCount: number;
+  verificationCount: number;
+  latestStepTitle: string | null;
+  latestStepStatus: string | null;
+  latestArtifactPath: string | null;
+  latestDeliveryChannel: string | null;
+  latestDeliveryStatus: string | null;
+  latestVerificationStatus: string | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
 export interface AutopilotToolReliabilitySnapshot {
   sessionKey: string;
   providerKey: string;
@@ -817,6 +842,48 @@ export interface AutopilotDecisionSnapshot {
   chosenValue: string | null;
   reusable: boolean;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface AutopilotLearnedPolicySnapshot {
+  id: number;
+  sessionKey: string | null;
+  policyKey: string;
+  scope: string;
+  scopeValue: string | null;
+  confidence: number;
+  summary: string;
+  policyValue: string | null;
+  provenance: Record<string, unknown> | null;
+  updatedAt: number;
+  expiresAt: number | null;
+}
+
+export interface AutopilotScheduledWorkSnapshot {
+  id: string;
+  title: string;
+  status: string;
+  sessionKey: string | null;
+  timezone: string | null;
+  recurrenceRule: string | null;
+  startTime: string;
+  nextFireTime: string | null;
+  lastFireTime: string | null;
+  objective: string;
+  deliveryChannel: string | null;
+  deliveryRecipient: string | null;
+  artifactRoot: string | null;
+  overlapPolicy: string | null;
+  misfirePolicy: string | null;
+  requiredCapabilities: string[];
+  preauthorizedActions: string[];
+  verificationPolicy: Record<string, unknown> | null;
+  failurePolicy: Record<string, unknown> | null;
+  lastOccurrenceId: string | null;
+  lastOccurrenceStatus: string | null;
+  lastOccurrenceAt: string | null;
+  lastOccurrenceSummary: string | null;
+  lastOccurrenceError: string | null;
   updatedAt: number;
 }
 
@@ -909,6 +976,10 @@ export interface AutopilotStatus {
   blockedToolProviderCount: number;
   degradedToolProviderCount: number;
   activeDecisionCount: number;
+  activeWorkOrderCount?: number;
+  blockedWorkOrderCount?: number;
+  learnedPolicyCount?: number;
+  activeScheduledWorkCount?: number;
   activeTaskCount: number;
   blockedTaskCount: number;
   activeBackgroundAgentCount: number;
@@ -924,8 +995,11 @@ export interface AutopilotStatus {
   autonomyGates: AutopilotAutonomyGateSnapshot[];
   workSideEffects: AutopilotWorkSideEffectSnapshot[];
   workVerifications: AutopilotWorkVerificationSnapshot[];
+  workOrders?: AutopilotWorkOrderSnapshot[];
+  scheduledWork?: AutopilotScheduledWorkSnapshot[];
   toolReliability: AutopilotToolReliabilitySnapshot[];
   decisions: AutopilotDecisionSnapshot[];
+  learnedPolicies?: AutopilotLearnedPolicySnapshot[];
   latestMessageAt: number | null;
   pausedSessionCount: number;
   highAutonomyEnabled: boolean;
@@ -971,6 +1045,35 @@ export async function deleteAutopilotPolicyRule(
   id: number,
 ): Promise<ApiResult<{ ok: boolean; rules: AutonomyPolicyRule[] }>> {
   return request(`/agent/autopilot/policy/rules/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function expireLearnedPolicy(
+  id: number,
+): Promise<ApiResult<{ ok: boolean; policy: AutopilotLearnedPolicySnapshot }>> {
+  return request(`/agent/autopilot/learned-policies/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  });
+}
+
+export type AutopilotWorkOrderControlSnapshot = Pick<
+  AutopilotWorkOrderSnapshot,
+  'id' | 'sessionKey' | 'objective' | 'riskLevel' | 'status' | 'blockerReason' | 'updatedAt' | 'completedAt'
+>;
+
+export async function resolveWorkOrderBlocker(
+  id: string,
+): Promise<ApiResult<{ ok: boolean; workOrder: AutopilotWorkOrderControlSnapshot }>> {
+  return request(`/agent/autopilot/work-orders/${encodeURIComponent(id)}/resolve-blocker`, {
+    method: 'POST',
+  });
+}
+
+export async function cancelWorkOrder(
+  id: string,
+): Promise<ApiResult<{ ok: boolean; workOrder: AutopilotWorkOrderControlSnapshot }>> {
+  return request(`/agent/autopilot/work-orders/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
 }
