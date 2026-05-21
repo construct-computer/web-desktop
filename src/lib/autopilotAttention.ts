@@ -102,7 +102,7 @@ function fallbackModeAfterAttentionRemoved(status: AutopilotStatus): AutopilotSt
   ) {
     return 'running';
   }
-  return status.autopilotEnabled ? 'idle' : 'disabled';
+  return 'idle';
 }
 
 export function withoutCancelledAuthAttention(
@@ -154,7 +154,9 @@ export function withoutPassiveProviderAttention(status: AutopilotStatus | null):
     || status.pendingApprovalCount > 0
   );
   const hasPassiveDegradedIncident = status.mode === 'degraded' && status.incidents.some((incident) => (
-    incident.severity === 'info' && incident.recoverability === 'degraded'
+    incident.recoverability === 'degraded'
+    || incident.recoverability === 'failed'
+    || incident.recoverability === 'retrying'
   ));
   if (status.toolReliability.length === 0 && !hasPassiveDegradedIncident) return status;
   if (hasActionableAttention) return status;

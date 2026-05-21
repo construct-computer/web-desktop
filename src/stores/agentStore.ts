@@ -2580,19 +2580,17 @@ export const useComputerStore = create<ComputerStore>()(
         chatMessages = get().chatMessages;
       }
 
-      // If this is the first user message in the session, rename the session
-      // to the first 46 characters of the message for easy identification.
+      // If this is the first user message in the session, show an immediate
+      // placeholder title. The worker persists the first-message fallback and
+      // then replaces it with a cheap contextual title after the first run.
       const isFirstMessage = !chatMessages.some(m => m.role === 'user');
       if (isFirstMessage && content.trim()) {
         const title = content.trim().slice(0, 46);
-        // Optimistic UI update
         set(state => ({
           chatSessions: state.chatSessions.map(s =>
             s.key === activeSessionKey ? { ...s, title } : s
           ),
         }));
-        // Persist to backend so title survives refresh
-        api.renameAgentSession(instanceId, activeSessionKey, title);
       }
 
       // Add user message to chat immediately (both desktop singleton and per-agent feed)

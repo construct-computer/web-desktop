@@ -562,6 +562,8 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
           description: form.description || undefined,
           location: form.location || undefined,
           time_zone: tz,
+          all_day: form.allDay,
+          recurrence: recurrence || null,
         };
         if (form.allDay) {
           updates.start_date = form.startDate;

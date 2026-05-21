@@ -698,8 +698,7 @@ export async function getActiveAgentSessions(): Promise<ApiResult<{
   return request(`/agent/active-sessions`);
 }
 
-export type AutopilotMode = 'idle' | 'running' | 'blocked' | 'recovering' | 'degraded' | 'disabled';
-export type AutonomyMode = 'conservative' | 'standard' | 'aggressive';
+export type AutopilotMode = 'idle' | 'running' | 'blocked' | 'recovering' | 'degraded';
 export type AutopilotVerificationStatus = 'not_required' | 'pending' | 'verified' | 'blocked';
 
 export interface AutopilotRunSnapshot {
@@ -852,7 +851,6 @@ export interface AutopilotGoalSnapshot {
   sessionKey: string;
   title: string;
   status: string;
-  autonomyMode: string;
   successCriteria: string | null;
   currentActionId: string | null;
   createdAt: number;
@@ -930,8 +928,7 @@ export interface AutopilotStatus {
   decisions: AutopilotDecisionSnapshot[];
   latestMessageAt: number | null;
   pausedSessionCount: number;
-  autonomyMode: AutonomyMode;
-  autopilotEnabled: boolean;
+  highAutonomyEnabled: boolean;
   generatedAt: number;
 }
 
@@ -940,9 +937,7 @@ export async function getAutopilotStatus(): Promise<ApiResult<AutopilotStatus>> 
 }
 
 export interface AutopilotPolicy {
-  mode: AutonomyMode;
-  modes: AutonomyMode[];
-  enabled: boolean;
+  highAutonomyEnabled: boolean;
   rules: AutonomyPolicyRule[];
 }
 
@@ -951,12 +946,11 @@ export async function getAutopilotPolicy(): Promise<ApiResult<AutopilotPolicy>> 
 }
 
 export async function updateAutopilotPolicy(
-  update: AutonomyMode | { mode?: AutonomyMode; enabled?: boolean },
+  update: { highAutonomyEnabled: boolean },
 ): Promise<ApiResult<AutopilotPolicy & { ok: boolean }>> {
-  const body = typeof update === 'string' ? { mode: update } : update;
   return request(`/agent/autopilot/policy`, {
     method: 'PUT',
-    body: JSON.stringify(body),
+    body: JSON.stringify(update),
   });
 }
 
@@ -1750,11 +1744,42 @@ export async function updateAgentCalendarEvent(eventId: string, updates: {
   start_date?: string;
   end_date?: string;
   time_zone?: string;
+  all_day?: boolean;
+  recurrence?: string[] | null;
+  completedOccurrences?: string[] | null;
 }): Promise<ApiResult<{ event: AgentCalendarEvent }>> {
   return request(`/calendar/agent/events/${encodeURIComponent(eventId)}`, {
     method: 'PUT',
     body: JSON.stringify(updates),
   });
+}
+
+export interface AgentSchedule {
+  id: string;
+  user_id: string;
+  kind: 'event' | 'reminder' | 'task';
+  title: string;
+  description: string | null;
+  prompt: string | null;
+  timezone: string | null;
+  start_time: string;
+  end_time: string | null;
+  recurrence_rule: string | null;
+  status: 'active' | 'paused' | 'cancelled' | 'completed';
+  session_key: string | null;
+  source_context: string | null;
+  overlap_policy: 'queue' | 'skip_if_running' | null;
+  misfire_policy: 'coalesce' | 'run_all' | null;
+  last_fire_time: string | null;
+  next_fire_time: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listAgentSchedules(status = 'active'): Promise<ApiResult<{ schedules: AgentSchedule[] }>> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  return request(`/calendar/schedules?${params.toString()}`);
 }
 
 export async function deleteAgentCalendarEvent(eventId: string): Promise<ApiResult<{ status: string }>> {

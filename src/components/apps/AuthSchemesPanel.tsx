@@ -16,6 +16,7 @@ import {
   KeyRound, ShieldAlert, X,
 } from 'lucide-react';
 import * as api from '@/services/api';
+import { openAuthPopup } from '@/lib/utils';
 
 type Mode = 'preview' | 'connect';
 
@@ -82,15 +83,7 @@ export function AuthSchemesPanel({ appId, mode, onStatusChange, className }: Aut
         setBusy(false);
         return;
       }
-      const width = 520;
-      const height = 640;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(
-        authorizationUrl,
-        'app-oauth',
-        `width=${width},height=${height},left=${left},top=${top},popup=1`,
-      );
+      const popup = openAuthPopup(authorizationUrl, 520, 640, 'app-oauth');
       if (!popup) {
         setError('Your browser blocked the OAuth popup. Allow popups for this site and try again.');
         setBusy(false);

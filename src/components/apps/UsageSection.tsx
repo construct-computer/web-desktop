@@ -18,6 +18,7 @@ import * as api from '@/services/api';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import { formatBytes } from '@/lib/format';
+import { openCenteredPopup } from '@/lib/utils';
 
 function formatTimeRemaining(resetsAt: number | string): string {
   const ts = typeof resetsAt === 'string' ? new Date(resetsAt).getTime() : resetsAt;
@@ -351,7 +352,7 @@ export function UsageSection() {
             ) : (
               <div className="space-y-2">
                 <button
-                  onClick={() => window.open(tweetStatus.shareUrl, '_blank', 'width=600,height=400')}
+                  onClick={() => openCenteredPopup(tweetStatus.shareUrl, 600, 400, 'construct_share')}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white transition-colors"
                 >
                   <Twitter className="w-3.5 h-3.5" />

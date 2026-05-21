@@ -69,8 +69,7 @@ function autopilotStatus(overrides: Partial<AutopilotStatus>): AutopilotStatus {
     decisions: [],
     latestMessageAt: null,
     pausedSessionCount: 0,
-    autonomyMode: 'standard',
-    autopilotEnabled: true,
+    highAutonomyEnabled: true,
     generatedAt: NOW,
     ...overrides,
   };
@@ -305,6 +304,27 @@ describe('autopilot attention helpers', () => {
         severity: 'info',
         recoverability: 'degraded',
         message: 'Tool "composio" reported a limitation.',
+        toolName: 'composio',
+        sessionKey: 'session_1',
+        createdAt: NOW,
+      }],
+    }));
+
+    expect(status?.mode).toBe('idle');
+    expect(status?.summary).toBe('Ready. No active task is running.');
+    expect(getAttentionItems({ status }).map((item) => item.kind)).not.toContain('provider');
+  });
+
+  it('suppresses recovered external-tool incident-only degradation', () => {
+    const status = withoutPassiveProviderAttention(autopilotStatus({
+      mode: 'degraded',
+      summary: 'External tool "composio" failed; the agent was instructed to recover or report the blocker.',
+      incidents: [{
+        incidentId: 'inc_1',
+        kind: 'tool_failed',
+        severity: 'warn',
+        recoverability: 'degraded',
+        message: 'External tool "composio" failed; the agent was instructed to recover or report the blocker.',
         toolName: 'composio',
         sessionKey: 'session_1',
         createdAt: NOW,

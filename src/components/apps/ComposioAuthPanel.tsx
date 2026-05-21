@@ -11,6 +11,7 @@ import {
   Loader2, Check, AlertCircle, ExternalLink, KeyRound, ShieldAlert, X,
 } from 'lucide-react';
 import * as api from '@/services/api';
+import { openAuthPopup } from '@/lib/utils';
 
 type Scheme = 'OAUTH2' | 'OAUTH1' | 'API_KEY' | 'BEARER_TOKEN' | 'BASIC' | 'NO_AUTH' | string;
 
@@ -108,10 +109,7 @@ export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuth
         return;
       }
       oauthConnIdRef.current = r.data.connected_account_id || null;
-      const width = 520, height = 640;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(url, 'composio-oauth', `width=${width},height=${height},left=${left},top=${top},popup=1`);
+      const popup = openAuthPopup(url, 520, 640, 'composio-oauth');
       if (!popup) {
         setError('Your browser blocked the popup. Allow popups for this site and try again.');
         setBusyScheme(null);

@@ -1,17 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Bell,
+  CalendarDays,
   CheckCircle2,
+  Gauge,
   Loader2,
-  Power,
+  ListChecks,
+  Mail,
+  MessageCircle,
+  RefreshCw,
   ShieldAlert,
+  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
+import { useBillingStore } from '@/stores/billingStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
+import { openSettingsToSection } from '@/lib/settingsNav';
+import { openAuthRedirect } from '@/lib/utils';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { authShieldStyle } from '@/components/ui/authActionStyles';
 import * as api from '@/services/api';
@@ -46,6 +57,21 @@ type ModeCopy = {
   spin?: boolean;
 };
 
+type IdleGlanceItem = {
+  id: string;
+  Icon: LucideIcon;
+  label: string;
+  value: string;
+  onClick?: () => void;
+};
+
+type ActiveTraceItem = {
+  id: string;
+  Icon: LucideIcon;
+  label: string;
+  value: string;
+};
+
 const MODE_COPY: Record<api.AutopilotMode, ModeCopy> = {
   idle: {
     label: 'Idle',
@@ -77,12 +103,6 @@ const MODE_COPY: Record<api.AutopilotMode, ModeCopy> = {
     color: '#f87171',
     background: 'rgba(248,113,113,0.14)',
     Icon: AlertTriangle,
-  },
-  disabled: {
-    label: 'Off',
-    color: '#94a3b8',
-    background: 'rgba(148,163,184,0.12)',
-    Icon: Power,
   },
 };
 
@@ -117,6 +137,44 @@ function formatDuration(ms: number | null | undefined): string {
 function clampText(text: string, limit: number): string {
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(0, limit - 1)).trim()}...`;
+}
+
+function cleanWidgetText(text: string | null | undefined, limit = 74): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clampText(clean, limit);
+}
+
+function isGenericActionTitle(text: string | null | undefined): boolean {
+  return /^(complete|continue|resume)\s+(the\s+)?(current\s+)?agent\s+run\.?$/i.test((text || '').trim());
+}
+
+function formatEventTime(event: api.AgentCalendarEvent): string {
+  if (event.allDay) return 'All day';
+  const start = new Date(event.start);
+  if (Number.isNaN(start.getTime())) return 'Upcoming';
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const day = start.toDateString() === today.toDateString()
+    ? 'Today'
+    : start.toDateString() === tomorrow.toDateString()
+      ? 'Tomorrow'
+      : start.toLocaleDateString(undefined, { weekday: 'short' });
+  return `${day} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function resetHint(usage: api.CurrentUsage | null): string | null {
+  if (!usage) return null;
+  const maxPct = Math.max(usage.weeklyPercentUsed || 0, usage.monthlyPercentUsed || 0, usage.sessionPercentUsed || 0);
+  if (maxPct < 70) return null;
+  if (usage.weeklyPercentUsed >= usage.monthlyPercentUsed && usage.weeklyPercentUsed >= usage.sessionPercentUsed) {
+    return `Weekly usage ${Math.round(usage.weeklyPercentUsed)}%`;
+  }
+  if (usage.sessionPercentUsed >= usage.monthlyPercentUsed) {
+    return `Session usage ${Math.round(usage.sessionPercentUsed)}%`;
+  }
+  return `Monthly usage ${Math.round(usage.monthlyPercentUsed)}%`;
 }
 
 function authName(item: AttentionItem): string {
@@ -169,11 +227,17 @@ function authRequestActions(records: AuthRequestRecord[], hiddenSourceIds: Set<s
 export function AutopilotPanel() {
   const agentRunning = useComputerStore((s) => s.agentRunning);
   const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
+  const chatSessions = useComputerStore((s) => s.chatSessions);
+  const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
   const loadSessions = useComputerStore((s) => s.loadSessions);
   const switchSession = useComputerStore((s) => s.switchSession);
   const openWindow = useWindowStore((s) => s.openWindow);
   const spotlightOpen = useWindowStore((s) => s.spotlightOpen);
   const toggleSpotlight = useWindowStore((s) => s.toggleSpotlight);
+  const unreadNotificationCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
+  const openNotificationTab = useNotificationStore((s) => s.openDrawerTab);
+  const usage = useBillingStore((s) => s.usage);
+  const fetchUsage = useBillingStore((s) => s.fetchUsage);
   const authRequests = useAuthRequests();
   const [status, setStatus] = useState<api.AutopilotStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,6 +246,7 @@ export function AutopilotPanel() {
   const [pendingActions, setPendingActions] = useState<api.PendingUserAction[]>([]);
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
+  const [nextEvent, setNextEvent] = useState<api.AgentCalendarEvent | null>(null);
 
   async function loadSnapshot(isCancelled?: () => boolean) {
     const [result, pendingResult] = await Promise.all([
@@ -230,6 +295,31 @@ export function AutopilotPanel() {
       clearInterval(interval);
     };
   }, [agentRunning]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const result = await api.listAgentCalendarEvents({
+        timeMin: new Date().toISOString(),
+        timeMax: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        maxResults: 1,
+      });
+      if (cancelled) return;
+      setNextEvent(result.success ? result.data.events[0] ?? null : null);
+    };
+    void load();
+    const interval = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    void fetchUsage();
+    const interval = setInterval(() => void fetchUsage(), 60_000);
+    return () => clearInterval(interval);
+  }, [fetchUsage]);
 
   useEffect(() => {
     const cancelHandler = (event: Event) => {
@@ -326,6 +416,15 @@ export function AutopilotPanel() {
       ?? null;
   }, [displayStatus, currentGoal]);
 
+  const currentTask = useMemo(() => {
+    if (!displayStatus) return null;
+    return displayStatus.tasks.find((task) => task.status === 'in_progress')
+      ?? displayStatus.tasks.find((task) => task.status === 'pending')
+      ?? displayStatus.tasks.find((task) => task.status === 'blocked')
+      ?? displayStatus.tasks[0]
+      ?? null;
+  }, [displayStatus]);
+
   const summary = lastError
     ? 'Status temporarily unavailable.'
     : displayStatus?.summary || (loading ? 'Checking autonomous work.' : 'No active autonomous work.');
@@ -358,10 +457,17 @@ export function AutopilotPanel() {
       : mode === 'idle'
         ? 'Ready. No active task is running.'
         : summary;
+  const activeHeadline = (() => {
+    if (!hasActiveRun) return null;
+    if (currentAction?.title && !isGenericActionTitle(currentAction.title)) return currentAction.title;
+    if (currentGoal?.title) return currentGoal.title;
+    if (currentTask?.title) return currentTask.title;
+    return formatTool(currentTool);
+  })();
   const headline = attention
     ? hasGroupedAuth ? 'Connections needed' : attention.title
     : hasActiveRun
-      ? formatTool(currentTool)
+      ? activeHeadline || formatTool(currentTool)
       : copy.label;
   const footerLabel = attention
     ? authAttentionItems.length
@@ -377,13 +483,199 @@ export function AutopilotPanel() {
         ? 'Checking'
         : 'No blockers';
 
-  const openSpotlightSession = async (sessionKey?: string) => {
+  const openSpotlightSession = useCallback(async (sessionKey?: string) => {
     await loadSessions(true);
     if (sessionKey && sessionKey !== activeSessionKey) {
       await switchSession(sessionKey);
     }
     if (!spotlightOpen) toggleSpotlight();
-  };
+  }, [activeSessionKey, loadSessions, spotlightOpen, switchSession, toggleSpotlight]);
+
+  const activeSessionForOpen = primaryRun?.sessionKey || currentAction?.sessionKey || currentGoal?.sessionKey || activeSessionKey;
+  const showActiveTrace = !attention && hasActiveRun;
+  const activeTraceItems = useMemo<ActiveTraceItem[]>(() => {
+    if (!showActiveTrace || !displayStatus) return [];
+    const items: ActiveTraceItem[] = [];
+    const sessionKey = activeSessionForOpen;
+    const sameSession = <T extends { sessionKey: string }>(item: T) => !sessionKey || item.sessionKey === sessionKey;
+
+    const actionTitle = cleanWidgetText(currentAction?.title, 72);
+    const actionTool = formatTool(currentAction?.toolName || currentTool);
+    if (actionTitle && !isGenericActionTitle(actionTitle)) {
+      const isRetrying = Boolean(currentAction?.nextRunAt || currentAction?.lastError || (currentAction?.attemptCount ?? 0) > 1);
+      items.push({
+        id: 'action',
+        Icon: isRetrying ? RefreshCw : Wrench,
+        label: isRetrying ? `Attempt ${Math.max(1, currentAction?.attemptCount ?? 1)}/${Math.max(1, currentAction?.maxAttempts ?? 1)}` : actionTool,
+        value: actionTitle,
+      });
+    } else if (primaryRun?.progressReason) {
+      items.push({
+        id: 'progress',
+        Icon: Activity,
+        label: 'Step',
+        value: cleanWidgetText(primaryRun.progressReason, 72),
+      });
+    } else if (currentTool) {
+      items.push({
+        id: 'tool',
+        Icon: Wrench,
+        label: 'Using',
+        value: formatTool(currentTool),
+      });
+    }
+
+    const goalTitle = cleanWidgetText(currentGoal?.title, 72);
+    if (goalTitle && goalTitle !== actionTitle) {
+      items.push({
+        id: 'goal',
+        Icon: ListChecks,
+        label: 'Goal',
+        value: goalTitle,
+      });
+    }
+
+    const activeTask = currentTask && (currentTask.status === 'in_progress' || currentTask.status === 'pending' || currentTask.status === 'blocked')
+      ? currentTask
+      : null;
+    const taskTitle = cleanWidgetText(activeTask?.title, 72);
+    if (taskTitle && taskTitle !== actionTitle && taskTitle !== goalTitle) {
+      items.push({
+        id: 'task',
+        Icon: CheckCircle2,
+        label: activeTask?.status === 'in_progress' ? 'Task' : 'Next',
+        value: taskTitle,
+      });
+    }
+
+    const activeBackgroundAgents = displayStatus.backgroundAgents.filter((agent) => (
+      agent.status === 'pending' || agent.status === 'running' || agent.status === 'backgrounded'
+    ));
+    if (activeBackgroundAgents.length > 0) {
+      const lead = activeBackgroundAgents[0];
+      items.push({
+        id: 'agents',
+        Icon: MessageCircle,
+        label: `${activeBackgroundAgents.length} agent${activeBackgroundAgents.length === 1 ? '' : 's'}`,
+        value: cleanWidgetText(lead.task || lead.agentType, 72),
+      });
+    }
+
+    const latestDecision = [...displayStatus.decisions]
+      .filter(sameSession)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (latestDecision?.summary) {
+      items.push({
+        id: 'decision',
+        Icon: Gauge,
+        label: 'Plan',
+        value: cleanWidgetText(latestDecision.summary, 72),
+      });
+    }
+
+    const pendingVerification = [...displayStatus.workVerifications]
+      .filter((verification) => verification.status === 'pending' && sameSession(verification))
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (pendingVerification?.summary) {
+      items.push({
+        id: 'verification',
+        Icon: CheckCircle2,
+        label: 'Verify',
+        value: cleanWidgetText(pendingVerification.summary, 72),
+      });
+    }
+
+    const uniqueItems = items.filter((item, index, list) => (
+      item.value && list.findIndex((candidate) => candidate.value === item.value) === index
+    ));
+    if (uniqueItems.length > 0) return uniqueItems.slice(0, 3);
+    return [{
+      id: 'summary',
+      Icon: Activity,
+      label: 'Working',
+      value: cleanWidgetText(summary, 72) || 'Progressing current task',
+    }];
+  }, [
+    activeSessionForOpen,
+    currentAction,
+    currentGoal,
+    currentTask,
+    currentTool,
+    displayStatus,
+    primaryRun,
+    showActiveTrace,
+    summary,
+  ]);
+
+  const isIdleGlance = !attention && !hasActiveRun && mode === 'idle';
+  const idleItems = useMemo<IdleGlanceItem[]>(() => {
+    if (!isIdleGlance) return [];
+    const items: IdleGlanceItem[] = [];
+
+    if (nextEvent) {
+      items.push({
+        id: 'calendar',
+        Icon: CalendarDays,
+        label: formatEventTime(nextEvent),
+        value: nextEvent.summary || 'Upcoming event',
+        onClick: () => openWindow('calendar'),
+      });
+    }
+
+    const commParts = [
+      emailUnreadCount > 0 ? `${emailUnreadCount} email${emailUnreadCount === 1 ? '' : 's'}` : null,
+      unreadNotificationCount > 0 ? `${unreadNotificationCount} alert${unreadNotificationCount === 1 ? '' : 's'}` : null,
+    ].filter(Boolean);
+    if (commParts.length > 0) {
+      items.push({
+        id: 'inbox',
+        Icon: emailUnreadCount > 0 ? Mail : Bell,
+        label: emailUnreadCount > 0 ? 'Inbox' : 'Notifications',
+        value: commParts.join(' • '),
+        onClick: () => {
+          if (emailUnreadCount > 0) openWindow('email');
+          else openNotificationTab('notifications');
+        },
+      });
+    }
+
+    const recentSession = [...chatSessions]
+      .filter((session) => session.key !== 'overseer')
+      .sort((a, b) => (b.lastActivity || b.created || 0) - (a.lastActivity || a.created || 0))[0];
+    if (recentSession) {
+      items.push({
+        id: 'session',
+        Icon: MessageCircle,
+        label: recentSession.key === activeSessionKey ? 'Current chat' : 'Recent chat',
+        value: recentSession.title || 'Untitled session',
+        onClick: () => void openSpotlightSession(recentSession.key),
+      });
+    }
+
+    const usageHint = resetHint(usage);
+    if (usageHint) {
+      items.push({
+        id: 'usage',
+        Icon: Gauge,
+        label: 'Usage',
+        value: usageHint,
+        onClick: () => openSettingsToSection('usage'),
+      });
+    }
+
+    return items.slice(0, 3);
+  }, [
+    activeSessionKey,
+    chatSessions,
+    emailUnreadCount,
+    isIdleGlance,
+    nextEvent,
+    openSpotlightSession,
+    openNotificationTab,
+    openWindow,
+    unreadNotificationCount,
+    usage,
+  ]);
 
   const handleAttentionClick = (item: AttentionItem) => {
     if (item.kind === 'auth' && item.ctaLabel === 'Cancel request') {
@@ -410,7 +702,7 @@ export function AutopilotPanel() {
                 name: authName(item),
                 sessionKey: item.sessionKey || activeSessionKey || 'default',
               });
-              window.open(result.data.url, '_blank', 'noopener,noreferrer');
+              openAuthRedirect(result.data.url);
               return;
             }
           }
@@ -430,9 +722,7 @@ export function AutopilotPanel() {
               status: action.actionUrl && action.expiresAt && action.expiresAt <= Date.now() ? 'expired' : 'pending',
             });
           }
-          if (action.actionUrl) {
-            window.open(action.actionUrl, '_blank', 'noopener,noreferrer');
-          }
+          if (action.actionUrl) openAuthRedirect(action.actionUrl);
         }
       };
       refresh()
@@ -454,7 +744,7 @@ export function AutopilotPanel() {
           sessionKey: item.sessionKey || activeSessionKey || 'default',
         });
       }
-      window.open(item.actionUrl, '_blank', 'noopener,noreferrer');
+      openAuthRedirect(item.actionUrl);
       return;
     }
     if (item.destination === 'app-registry') {
@@ -492,7 +782,8 @@ export function AutopilotPanel() {
 
   return (
     <div
-      className="w-[260px] rounded-2xl glass-window border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)] overflow-hidden"
+      onClick={isIdleGlance || showActiveTrace ? () => void openSpotlightSession(activeSessionForOpen) : undefined}
+      className={`w-[260px] rounded-2xl glass-window border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)] overflow-hidden ${isIdleGlance || showActiveTrace ? 'cursor-pointer' : ''}`}
     >
       <div className="px-3.5 pt-3 pb-3">
         <div className="flex items-start justify-between gap-2">
@@ -520,9 +811,51 @@ export function AutopilotPanel() {
           </div>
         </div>
 
-        <div className="mt-2 text-[12px] leading-snug min-h-[32px]" style={{ color: 'rgba(255,255,255,0.62)' }}>
-          {clampText(friendlySummary, 108)}
-        </div>
+        {isIdleGlance ? (
+          <div className="mt-2 min-h-[46px] space-y-1">
+            {idleItems.length > 0 ? (
+              idleItems.map(({ id, Icon, label, value, onClick }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onClick?.();
+                  }}
+                  className="flex h-[20px] w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left transition-colors hover:bg-white/[0.035]"
+                  title={`${label}: ${value}`}
+                >
+                  <Icon size={12} strokeWidth={2.1} className="shrink-0 text-white/[0.42]" />
+                  <span className="shrink-0 text-[10px] font-medium text-white/[0.42]">{label}</span>
+                  <span className="min-w-0 truncate text-[11px] font-medium text-white/[0.70]">{value}</span>
+                </button>
+              ))
+            ) : (
+              <div className="flex h-[42px] items-center rounded-md px-1.5 text-[12px] leading-snug text-white/[0.62]">
+                Ready for a new task.
+              </div>
+            )}
+          </div>
+        ) : showActiveTrace ? (
+          <div className="mt-2 min-h-[46px] space-y-1">
+            {activeTraceItems.map(({ id, Icon, label, value }) => (
+              <div
+                key={id}
+                className="flex h-[20px] w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-1.5"
+                title={`${label}: ${value}`}
+              >
+                <Icon size={12} strokeWidth={2.1} className="shrink-0 text-cyan-200/[0.52]" />
+                <span className="max-w-[72px] shrink-0 truncate text-[10px] font-medium text-white/[0.42]">{label}</span>
+                <span className="min-w-0 truncate text-[11px] font-medium text-white/[0.72]">{value}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 text-[12px] leading-snug min-h-[32px]" style={{ color: 'rgba(255,255,255,0.62)' }}>
+            {clampText(friendlySummary, 108)}
+          </div>
+        )}
 
         {groupedAttentionItems.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -553,7 +886,7 @@ export function AutopilotPanel() {
                         <ModeIcon size={12} strokeWidth={2.4} />
                       )}
                     </span>
-                    <span className="truncate px-2 py-1.5 text-white/76">
+                    <span className="truncate px-2 py-1.5 text-white/[0.76]">
                       {refreshingActionId === item.id ? 'Refreshing...' : isAuth && item.status === 'expired' ? 'Retry' : item.ctaLabel}
                     </span>
                   </button>
@@ -567,7 +900,7 @@ export function AutopilotPanel() {
                         event.stopPropagation();
                         handleCancelAttention(item);
                       }}
-                      className="flex min-h-6 w-6 shrink-0 cursor-pointer items-center justify-center text-white/46 transition-colors hover:bg-white/[0.045] hover:text-white/76"
+                      className="flex min-h-6 w-6 shrink-0 cursor-pointer items-center justify-center text-white/[0.46] transition-colors hover:bg-white/[0.045] hover:text-white/[0.76]"
                     >
                       <X size={11} strokeWidth={2.5} />
                     </button>

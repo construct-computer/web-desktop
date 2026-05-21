@@ -64,17 +64,28 @@ export function getDocumentType(filePathOrName: string): ViewerDocType {
 export { getFileType };
 
 /**
- * Open a URL in a centered popup window (for OAuth flows like Slack).
+ * Open a URL in a centered popup window.
  * Returns the popup Window reference, or null if blocked.
  */
-export function openAuthPopup(url: string, width = 520, height = 700): Window | null {
-  const left = Math.max(0, Math.round((screen.width - width) / 2));
-  const top = Math.max(0, Math.round((screen.height - height) / 2));
+export function openCenteredPopup(url: string, width = 520, height = 700, name = 'construct_popup'): Window | null {
+  const screenLeft = window.screenX ?? window.screenLeft ?? 0;
+  const screenTop = window.screenY ?? window.screenTop ?? 0;
+  const outerWidth = window.outerWidth || window.innerWidth || screen.width;
+  const outerHeight = window.outerHeight || window.innerHeight || screen.height;
+  const left = Math.max(0, Math.round(screenLeft + (outerWidth - width) / 2));
+  const top = Math.max(0, Math.round(screenTop + (outerHeight - height) / 2));
   return window.open(
     url,
-    'construct_auth',
-    `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`,
+    name,
+    `width=${width},height=${height},left=${left},top=${top},popup=1,toolbar=no,menubar=no,scrollbars=yes,resizable=yes`,
   );
+}
+
+/**
+ * Open a URL in a centered popup window (for OAuth flows like Slack).
+ */
+export function openAuthPopup(url: string, width = 520, height = 700, name = 'construct_auth'): Window | null {
+  return openCenteredPopup(url, width, height, name);
 }
 
 /**
@@ -89,5 +100,3 @@ export function openAuthRedirect(url: string): void {
     window.location.href = url;
   }
 }
-
-
