@@ -4,7 +4,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  RefreshCw,
   Loader2,
   ArrowLeft,
   Paperclip,
@@ -16,7 +15,6 @@ import {
   ChevronUp,
   X,
   Check,
-  AlertCircle,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import {
@@ -49,6 +47,8 @@ import { EmailSetupPane } from './EmailSetupPane';
 import { EmailHtmlBody } from './email/EmailHtmlBody';
 import { formatRelativeTimeShort } from '@/lib/format';
 import { getEmailAvatarClass, getEmailInitial } from '@/services/emailUi';
+import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { useFreshness } from '@/hooks/useFreshness';
 
 function formatFullDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString('en-US', {
@@ -128,7 +128,8 @@ function markThreadReadLocally(thread: EmailThreadDetail): EmailThreadDetail {
   };
 }
 
-export function EmailWindow({ config: _config }: { config: WindowConfig }) {
+export function EmailWindow(props: { config: WindowConfig }) {
+  void props;
   const [inboxEmail, setInboxEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
@@ -224,6 +225,18 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
     setLoading(false);
   }, []);
 
+  const mailboxFreshness = useFreshness(
+    () => loadMailbox(true),
+    {
+      enabled: !loading && !notConfigured && !initError,
+      intervalMs: 30_000,
+      staleMs: 75_000,
+      refreshOnFocus: true,
+      refreshOnOnline: true,
+    },
+  );
+  const { refreshNow } = mailboxFreshness;
+
   useEffect(() => {
     void init();
   }, [init]);
@@ -245,15 +258,9 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
   }, [folder, searchQuery]);
 
   useEffect(() => {
-    if (loading || notConfigured) return;
-    const interval = window.setInterval(() => { void loadMailbox(true); }, 30_000);
-    return () => window.clearInterval(interval);
-  }, [loading, notConfigured, loadMailbox]);
-
-  useEffect(() => {
     const handler = () => {
       void init();
-      void loadMailbox(true);
+      void refreshNow();
     };
     window.addEventListener('agent-email-configured', handler);
     window.addEventListener('agent-email-refresh', handler);
@@ -261,7 +268,7 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
       window.removeEventListener('agent-email-configured', handler);
       window.removeEventListener('agent-email-refresh', handler);
     };
-  }, [init, loadMailbox]);
+  }, [init, refreshNow]);
 
   const openThread = useCallback(async (thread: EmailThread) => {
     setThreadLoading(true);
@@ -495,13 +502,19 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
             >
               <Search size={15} />
             </button>
-            <button
-              onClick={() => void loadMailbox(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
-              title="Refresh"
-            >
-              <RefreshCw size={15} className={listLoading ? 'animate-spin' : ''} />
-            </button>
+            <div className="hidden text-[10px] text-[var(--color-text-muted)] sm:block">
+              <FreshnessText
+                lastUpdatedAt={mailboxFreshness.lastUpdatedAt}
+                now={mailboxFreshness.now}
+                isRefreshing={mailboxFreshness.isRefreshing || listLoading}
+                isStale={mailboxFreshness.isStale}
+              />
+            </div>
+            <RefreshButton
+              onClick={() => void mailboxFreshness.refreshNow()}
+              refreshing={mailboxFreshness.isRefreshing || listLoading}
+              className="h-7 w-7"
+            />
           </div>
 
           {searchOpen && (
@@ -585,18 +598,27 @@ export function EmailWindow({ config: _config }: { config: WindowConfig }) {
           )}
 
           {actionError && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] text-red-200">
-              <AlertCircle size={12} className="mt-0.5 shrink-0" />
-              <span className="flex-1 leading-snug">{actionError}</span>
-              <button
-                type="button"
-                onClick={() => setActionError(null)}
-                className="text-red-200/70 hover:text-red-100 shrink-0"
-                aria-label="Dismiss error"
-              >
-                <X size={11} />
-              </button>
-            </div>
+            <StatusBanner
+              tone="error"
+              className="rounded-lg border text-[10px]"
+              action={(
+                <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss error">
+                  <X size={11} />
+                </button>
+              )}
+            >
+              {actionError}
+            </StatusBanner>
+          )}
+
+          {!actionError && mailboxFreshness.isStale && (
+            <StatusBanner
+              tone="warning"
+              className="rounded-lg border text-[10px]"
+              action={<button className="underline" onClick={() => void mailboxFreshness.refreshNow()}>Refresh</button>}
+            >
+              Mail may be out of date.
+            </StatusBanner>
           )}
         </div>
 

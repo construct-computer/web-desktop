@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { useWindowStore } from '@/stores/windowStore';
 import { Window } from './Window';
 import { MobileWindow } from './MobileWindow';
@@ -11,20 +11,20 @@ import type { WindowConfig, WindowType } from '@/types';
 
 const logger = log('WindowManager');
 
-import { BrowserWindow } from '@/components/apps/BrowserWindow';
-import { TerminalWindow } from '@/components/apps/TerminalWindow';
-import { FilesWindow } from '@/components/apps/FilesWindow';
-import { SettingsWindow } from '@/components/apps/SettingsWindow';
-import { AboutWindow } from '@/components/apps/AboutWindow';
-import { CalendarWindow } from '@/components/apps/CalendarWindow';
-import { AuditLogsWindow } from '@/components/apps/AuditLogsWindow';
-import { MemoryWindow } from '@/components/apps/MemoryWindow';
-import { EmailWindow } from '@/components/apps/EmailWindow';
-import { AccessControlWindow } from '../apps/AccessControlWindow';
-import { DocumentViewerWindow } from '../apps/DocumentViewerWindow';
-import { DocumentWorkbenchWindow } from '../apps/DocumentWorkbenchWindow';
-import { AppRegistryWindow } from '../apps/AppRegistryWindow';
-import { AppWindow } from '../apps/AppWindow';
+const BrowserWindow = lazy(() => import('@/components/apps/BrowserWindow').then((m) => ({ default: m.BrowserWindow })));
+const TerminalWindow = lazy(() => import('@/components/apps/TerminalWindow').then((m) => ({ default: m.TerminalWindow })));
+const FilesWindow = lazy(() => import('@/components/apps/FilesWindow').then((m) => ({ default: m.FilesWindow })));
+const SettingsWindow = lazy(() => import('@/components/apps/SettingsWindow').then((m) => ({ default: m.SettingsWindow })));
+const AboutWindow = lazy(() => import('@/components/apps/AboutWindow').then((m) => ({ default: m.AboutWindow })));
+const CalendarWindow = lazy(() => import('@/components/apps/CalendarWindow').then((m) => ({ default: m.CalendarWindow })));
+const AuditLogsWindow = lazy(() => import('@/components/apps/AuditLogsWindow').then((m) => ({ default: m.AuditLogsWindow })));
+const MemoryWindow = lazy(() => import('@/components/apps/MemoryWindow').then((m) => ({ default: m.MemoryWindow })));
+const EmailWindow = lazy(() => import('@/components/apps/EmailWindow').then((m) => ({ default: m.EmailWindow })));
+const AccessControlWindow = lazy(() => import('../apps/AccessControlWindow').then((m) => ({ default: m.AccessControlWindow })));
+const DocumentViewerWindow = lazy(() => import('../apps/DocumentViewerWindow').then((m) => ({ default: m.DocumentViewerWindow })));
+const DocumentWorkbenchWindow = lazy(() => import('../apps/DocumentWorkbenchWindow').then((m) => ({ default: m.DocumentWorkbenchWindow })));
+const AppRegistryWindow = lazy(() => import('../apps/AppRegistryWindow').then((m) => ({ default: m.AppRegistryWindow })));
+const AppWindow = lazy(() => import('../apps/AppWindow').then((m) => ({ default: m.AppWindow })));
 
 // Map window types to their content components.
 // Chat and Tracker are NOT standalone windows — they live as MenuBar dropdown panels only.
@@ -45,6 +45,14 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   'app-registry': AppRegistryWindow,
   app: AppWindow,
 };
+
+function WindowContentFallback({ title }: { title: string }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center surface-app text-xs text-[var(--color-text-muted)]">
+      Loading {title}...
+    </div>
+  );
+}
 
 /** Target position for a window in Mission Control mode. */
 export interface MissionControlTarget {
@@ -274,7 +282,9 @@ export function WindowManager() {
           return (
             <MobileWindow key={config.id} config={config}>
               <ErrorBoundary inline label={config.title}>
-                <ContentComponent config={config} />
+                <Suspense fallback={<WindowContentFallback title={config.title} />}>
+                  <ContentComponent config={config} />
+                </Suspense>
               </ErrorBoundary>
             </MobileWindow>
           );
@@ -303,7 +313,9 @@ export function WindowManager() {
             isStageActive={stageManagerActive && wsActives.includes(config.id)}
           >
             <ErrorBoundary inline label={config.title}>
-              <ContentComponent config={config} />
+              <Suspense fallback={<WindowContentFallback title={config.title} />}>
+                <ContentComponent config={config} />
+              </Suspense>
             </ErrorBoundary>
           </Window>
         );

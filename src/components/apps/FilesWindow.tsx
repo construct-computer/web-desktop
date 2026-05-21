@@ -16,7 +16,6 @@ import {
   Trash2,
   ChevronRight,
   ArrowUp,
-  RefreshCw,
   HardDrive,
   Loader2,
   Link,
@@ -42,6 +41,8 @@ import * as api from '@/services/api';
 import type { FileEntry, DriveFileEntry } from '@/services/api';
 import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
+import { useFreshness } from '@/hooks/useFreshness';
+import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
 import { getFileType } from '@/lib/fileTypes';
@@ -500,14 +501,16 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   }, [rawEntries, showHidden]);
 
   const loadDirectory = useCallback(
-    async (path: string) => {
+    async (path: string, opts?: { silent?: boolean }) => {
       if (!instanceId) return;
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       setError(null);
-      setSelectedName(null);
-      setRenamingName(null);
-      setCreatingType(null);
-      closePreview();
+      if (!opts?.silent) {
+        setSelectedName(null);
+        setRenamingName(null);
+        setCreatingType(null);
+        closePreview();
+      }
 
       const result = await api.listFiles(instanceId, path);
 
@@ -517,26 +520,43 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       } else {
         setError(result.error);
       }
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     },
-    [instanceId],
+    [closePreview, instanceId],
   );
 
   const refreshStorageUsage = useCallback(() => {
     api.getStorageUsage().then(r => { if (r.success && r.data) setStorageUsage(r.data); });
   }, []);
 
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    await loadDirectory(currentPath, opts);
+    refreshStorageUsage();
+  }, [loadDirectory, currentPath, refreshStorageUsage]);
+
+  const freshness = useFreshness(() => refresh({ silent: true }), {
+    intervalMs: 30_000,
+    staleMs: 90_000,
+    refreshOnFocus: true,
+    refreshOnOnline: true,
+  });
+
   useEffect(() => {
-    loadDirectory(currentPath);
     setHistory([currentPath]);
     setHistoryIndex(0);
-    refreshStorageUsage();
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      await freshness.refreshNow();
+      if (!cancelled) setLoading(false);
+    })();
     const iv = setInterval(refreshStorageUsage, 15_000);
-    return () => clearInterval(iv);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const refresh = useCallback(() => { loadDirectory(currentPath); refreshStorageUsage(); }, [loadDirectory, currentPath, refreshStorageUsage]);
 
   const navigateTo = useCallback(
     (path: string) => {
@@ -1045,13 +1065,14 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         >
           <ArrowUp className="w-4 h-4" />
         </button>
-        <button
-          onClick={activeTab === 'local' ? refresh : driveFiles.refresh}
-          className="p-1 rounded hover:bg-[var(--color-border)]"
-          title="Refresh"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
+        <RefreshButton
+          onClick={() => {
+            if (activeTab === 'local') void freshness.refreshNow();
+            else driveFiles.refresh();
+          }}
+          refreshing={activeTab === 'local' ? (loading || freshness.isRefreshing) : driveFiles.isLoading}
+          className="h-7 w-7"
+        />
 
         {/* Path bar */}
         {activeTab === 'local' ? (
@@ -1088,8 +1109,27 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             {driveFiles.folderStack.length === 0 && <span>Cloud</span>}
           </div>
         )}
+        {activeTab === 'local' && (
+          <span className="hidden shrink-0 text-[10px] text-[var(--color-text-muted)] lg:inline">
+            <FreshnessText
+              lastUpdatedAt={freshness.lastUpdatedAt}
+              now={freshness.now}
+              isRefreshing={freshness.isRefreshing || loading}
+              isStale={freshness.isStale}
+            />
+          </span>
+        )}
 
       </div>
+
+      {activeTab === 'local' && !error && freshness.isStale && (
+        <StatusBanner
+          tone="warning"
+          action={<button className="text-xs underline" onClick={() => void freshness.refreshNow()}>Refresh</button>}
+        >
+          File list may be out of date.
+        </StatusBanner>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar — always visible on desktop, togglable drawer on mobile */}
@@ -1218,7 +1258,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                     <p className="text-xs text-red-400 mb-2">{error}</p>
                     <button
                       className="text-xs text-[var(--color-accent)] hover:underline"
-                      onClick={refresh}
+                      onClick={() => void refresh()}
                     >
                       Retry
                     </button>

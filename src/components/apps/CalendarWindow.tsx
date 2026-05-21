@@ -6,7 +6,6 @@ import {
   Trash2,
   Pencil,
   Loader2,
-  RefreshCw,
   Clock,
   MapPin,
   Repeat,
@@ -20,7 +19,8 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, Input, Label, Separator, Select } from '@/components/ui';
+import { Button, FreshnessText, Input, Label, RefreshButton, Separator, Select, StatusBanner } from '@/components/ui';
+import { useFreshness } from '@/hooks/useFreshness';
 import {
   listAgentCalendarEvents,
   createAgentCalendarEvent,
@@ -383,7 +383,8 @@ interface CalendarWindowProps {
   config: WindowConfig;
 }
 
-export function CalendarWindow({ config: _config }: CalendarWindowProps) {
+export function CalendarWindow(props: CalendarWindowProps) {
+  void props;
   const isMobile = useIsMobile();
   const [events, setEvents] = useState<AgentCalendarEvent[]>([]);
   const rawEventsRef = useRef<AgentCalendarEvent[]>([]); // unexpanded originals
@@ -433,17 +434,23 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
     }
   }, [currentMonth]);
 
+  const calendarFreshness = useFreshness(fetchEvents, {
+    intervalMs: 10_000,
+    staleMs: 25_000,
+    refreshOnFocus: true,
+    refreshOnOnline: true,
+  });
+  const { refreshNow } = calendarFreshness;
+
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    void (async () => {
       setLoading(true);
-      await fetchEvents();
-      setLoading(false);
+      await refreshNow();
+      if (!cancelled) setLoading(false);
     })();
-    // Auto-refresh every 10 seconds so calendar stays up-to-date
-    // when the agent creates/completes events in the background.
-    const interval = setInterval(fetchEvents, 10_000);
-    return () => clearInterval(interval);
-  }, [fetchEvents]);
+    return () => { cancelled = true; };
+  }, [refreshNow, currentMonth]);
 
   const handlePrevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
@@ -678,9 +685,18 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
             List
           </button>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={fetchEvents} title="Refresh">
-          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-        </Button>
+        <div className="hidden items-center text-[10px] text-[var(--color-text-muted)] md:flex">
+          <FreshnessText
+            lastUpdatedAt={calendarFreshness.lastUpdatedAt}
+            now={calendarFreshness.now}
+            isRefreshing={calendarFreshness.isRefreshing || loading}
+            isStale={calendarFreshness.isStale}
+          />
+        </div>
+        <RefreshButton
+          onClick={() => void refreshNow()}
+          refreshing={calendarFreshness.isRefreshing || loading}
+        />
         <Button variant="primary" size="sm" onClick={() => handleNewEvent()} className="text-xs">
           <Plus className="w-3.5 h-3.5 mr-1" />
           {isMobile ? 'New' : 'New Event'}
@@ -689,11 +705,18 @@ export function CalendarWindow({ config: _config }: CalendarWindowProps) {
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 text-red-600 dark:text-red-400 text-xs">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+        <StatusBanner tone="error" action={<button className="text-xs underline" onClick={() => setError(null)}>dismiss</button>}>
           <span className="truncate">{error}</span>
-          <button className="ml-auto text-xs underline" onClick={() => setError(null)}>dismiss</button>
-        </div>
+        </StatusBanner>
+      )}
+
+      {!error && calendarFreshness.isStale && (
+        <StatusBanner
+          tone="warning"
+          action={<button className="text-xs underline" onClick={() => void calendarFreshness.refreshNow()}>Refresh</button>}
+        >
+          Calendar may be out of date.
+        </StatusBanner>
       )}
 
       {loading ? (

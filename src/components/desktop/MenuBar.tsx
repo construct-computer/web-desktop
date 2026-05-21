@@ -328,8 +328,9 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {!isMobile && hasBillingIssue && (
           <button
             onClick={() => openSettingsToSection('subscription')}
-            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-red-500/35 surface-control pl-1.5 pr-2.5 text-red-600 transition-all duration-150 hover:border-red-500/50 hover:bg-red-500/10 active:scale-95 dark:border-red-400/30 dark:text-red-400 dark:hover:border-red-400/45 dark:hover:bg-red-500/15"
+            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-red-500/35 surface-control pl-1.5 pr-1.5 text-red-600 transition-all duration-150 hover:border-red-500/50 hover:bg-red-500/10 active:scale-95 dark:border-red-400/30 dark:text-red-400 dark:hover:border-red-400/45 dark:hover:bg-red-500/15 xl:pr-2.5"
             title="Payment issue - open subscription settings"
+            aria-label="Payment issue - open subscription settings"
           >
             <span
               className="pointer-events-none absolute inset-0 rounded-[inherit] bg-red-500/15 dark:bg-red-500/20"
@@ -337,15 +338,16 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             />
             <span className="relative flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span className="text-xs font-medium">Payment issue</span>
+              <span className="hidden text-xs font-medium xl:inline">Payment issue</span>
             </span>
           </button>
         )}
         {!isMobile && !hasBillingIssue && (!userPlan || userPlan === 'free') && (
           <button
             onClick={() => openSettingsToSection('subscription')}
-            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
+            className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-1.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09] xl:pr-2.5"
             title="Upgrade Plan"
+            aria-label="Upgrade plan"
           >
             <span
               className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
@@ -353,7 +355,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             />
             <span className="relative flex items-center gap-1">
               <Crown className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span className="text-xs font-medium">Upgrade</span>
+              <span className="hidden text-xs font-medium xl:inline">Upgrade</span>
             </span>
           </button>
         )}
@@ -364,26 +366,28 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             <button
               onClick={installPWA}
               disabled={!deferredPrompt}
-              className={`flex items-center justify-center gap-1.5 h-6 pl-2 pr-2.5 mr-1 rounded-md transition-all ${
+              className={`flex items-center justify-center gap-1.5 h-6 pl-2 pr-2 mr-1 rounded-md transition-all xl:pr-2.5 ${
                 deferredPrompt 
                   ? 'bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 cursor-pointer'
                   : 'text-black/30 dark:text-white/30 cursor-default'
               }`}
               title="Install App"
+              aria-label="Install app"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="text-xs font-medium">Install App</span>
+              <span className="hidden text-xs font-medium xl:inline">Install App</span>
             </button>
           ) : (
             <button
               onClick={() => {
                 alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
               }}
-              className="flex items-center justify-center gap-1.5 h-6 pl-2 pr-2.5 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400"
+              className="flex items-center justify-center gap-1.5 h-6 pl-2 pr-2 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 xl:pr-2.5"
               title="Open in App"
+              aria-label="Open in app"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="text-xs font-medium">Open in App</span>
+              <span className="hidden text-xs font-medium xl:inline">Open in App</span>
             </button>
           )
         )}

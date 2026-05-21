@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Bot,
-  Shield, RefreshCw, Check, X, UserPlus, Trash2,
+  Shield, Check, X, UserPlus, Trash2,
   MessageSquare, Mail, Hash, Loader2,
   Link2, Plus,
 } from 'lucide-react';
@@ -25,7 +25,8 @@ import {
   type AutonomyRiskLevel,
 } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
-import { Select } from '@/components/ui';
+import { FreshnessText, RefreshButton, Select, StatusBanner } from '@/components/ui';
+import { useFreshness } from '@/hooks/useFreshness';
 import { PanelError } from './AppShared';
 
 type Tab = 'queue' | 'list' | 'settings';
@@ -76,8 +77,8 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
 
   const pendingApprovalCount = useComputerStore(s => s.pendingApprovalCount);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const [q, l, s, b] = await Promise.all([
@@ -98,12 +99,20 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
+  const freshness = useFreshness(() => refresh({ silent: true }), {
+    intervalMs: 15_000,
+    staleMs: 35_000,
+    refreshOnFocus: true,
+    refreshOnOnline: true,
+  });
+  const { refreshNow } = freshness;
+
   useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { if (pendingApprovalCount > 0) refresh(); }, [pendingApprovalCount, refresh]);
+  useEffect(() => { if (pendingApprovalCount > 0) void refreshNow(); }, [pendingApprovalCount, refreshNow]);
 
   const pendingCount = queue.filter(r => r.status === 'pending').length;
 
@@ -113,10 +122,16 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
         <Shield size={16} className="text-[var(--color-accent)]" />
         <span className="font-medium">Access Control</span>
+        <span className="hidden text-[10px] text-[var(--color-text-muted)] sm:inline">
+          <FreshnessText
+            lastUpdatedAt={freshness.lastUpdatedAt}
+            now={freshness.now}
+            isRefreshing={freshness.isRefreshing || loading}
+            isStale={freshness.isStale}
+          />
+        </span>
         <div className="flex-1" />
-        <button onClick={refresh} className="p-1 rounded hover:bg-white/10" title="Refresh">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <RefreshButton onClick={() => void refresh()} refreshing={loading || freshness.isRefreshing} />
       </div>
 
       {/* Tabs */}
@@ -143,6 +158,15 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
       {/* Error banner */}
       {error && (
         <PanelError message={error} onRetry={refresh} onDismiss={() => setError(null)} />
+      )}
+
+      {!error && freshness.isStale && (
+        <StatusBanner
+          tone="warning"
+          action={<button className="text-xs underline" onClick={() => void refreshNow()}>Refresh</button>}
+        >
+          Access data may be out of date.
+        </StatusBanner>
       )}
 
       {/* Content */}

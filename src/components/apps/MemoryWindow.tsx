@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2,
-  AlertCircle,
   Brain,
-  RefreshCw,
   Search,
   List,
   Network,
   Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { useFreshness } from '@/hooks/useFreshness';
 import { getMemories, deleteMemory, type Mem0Memory, type Mem0Relation } from '@/services/api';
 import type { WindowConfig } from '@/types';
 
@@ -434,11 +434,18 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
     }
   }, []);
 
+  const freshness = useFreshness(fetchData, {
+    intervalMs: 60_000,
+    staleMs: 150_000,
+    refreshOnFocus: true,
+    refreshOnOnline: true,
+  });
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await fetchData();
+      await freshness.refreshNow();
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -447,7 +454,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
 
   const handleRefresh = async () => {
     setLoading(true);
-    await fetchData();
+    await freshness.refreshNow();
     setLoading(false);
   };
 
@@ -489,6 +496,15 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
 
         <div className="flex-1" />
 
+        <span className="hidden text-[10px] text-[var(--color-text-muted)] md:inline">
+          <FreshnessText
+            lastUpdatedAt={freshness.lastUpdatedAt}
+            now={freshness.now}
+            isRefreshing={freshness.isRefreshing || loading}
+            isStale={freshness.isStale}
+          />
+        </span>
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--color-text-muted)]" />
@@ -509,23 +525,23 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
         </span>
 
         {/* Refresh */}
-        <button
-          onClick={handleRefresh}
-          disabled={loading}
-          className="p-1 rounded hover:bg-[var(--color-accent-muted)] transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-        </button>
+        <RefreshButton onClick={() => void handleRefresh()} refreshing={loading || freshness.isRefreshing} />
       </div>
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 text-red-600 dark:text-red-400 text-xs">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+        <StatusBanner tone="error" action={<button className="text-xs underline" onClick={() => setError(null)}>dismiss</button>}>
           <span className="truncate">{error}</span>
-          <button className="ml-auto text-xs underline" onClick={() => setError(null)}>dismiss</button>
-        </div>
+        </StatusBanner>
+      )}
+
+      {!error && freshness.isStale && (
+        <StatusBanner
+          tone="warning"
+          action={<button className="text-xs underline" onClick={() => void handleRefresh()}>Refresh</button>}
+        >
+          Memory may be out of date.
+        </StatusBanner>
       )}
 
       {/* Content */}
