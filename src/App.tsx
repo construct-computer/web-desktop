@@ -20,7 +20,7 @@ import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tab
 import * as api from '@/services/api';
 import analytics from '@/lib/analytics';
 import { hasAgentAccess } from '@/lib/plans';
-import { getCurrentDeviceId, isNativePlatform, syncNativePushRegistration } from '@/native';
+import { getCurrentDeviceId, getNativePlatform, isNativePlatform, syncNativePushRegistration } from '@/native';
 
 // Telegram Mini App — lazy loaded only when running inside Telegram.
 const MiniApp = lazy(() =>
@@ -37,6 +37,28 @@ const AdminDashboard = lazy(() =>
 );
 
 type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
+type AuthSessionSurface = 'web' | 'mobile_app' | 'desktop_app' | 'telegram_mini';
+
+function detectAuthSessionSurface(): AuthSessionSurface {
+  if (isNativePlatform()) return 'mobile_app';
+  if (/ConstructDesktop/i.test(navigator.userAgent || '')) return 'desktop_app';
+  return 'web';
+}
+
+function currentDeviceLabel(surface: AuthSessionSurface): string | undefined {
+  const platform = navigator.platform || '';
+  const ua = navigator.userAgent || '';
+  const mobile = /iPhone|iPad|Android/i.exec(ua)?.[0];
+  if (surface === 'mobile_app') {
+    const nativePlatform = getNativePlatform();
+    const label = nativePlatform === 'ios' ? 'iOS app' : nativePlatform === 'android' ? 'Android app' : 'Mobile app';
+    return [label, mobile || platform].filter(Boolean).join(' · ');
+  }
+  if (surface === 'desktop_app') {
+    return ['Desktop app', platform].filter(Boolean).join(' · ');
+  }
+  return undefined;
+}
 
 /**
  * App orchestrates the full boot flow:
@@ -251,9 +273,11 @@ function WebAppShell() {
     const heartbeat = async () => {
       if (checkingSession) return;
       checkingSession = true;
+      const surface = detectAuthSessionSurface();
       const result = await api.heartbeatAuthSession({
-        surface: isNativePlatform() ? 'mobile_app' : 'web',
+        surface,
         deviceId: getCurrentDeviceId(),
+        deviceLabel: currentDeviceLabel(surface),
         userAgent: navigator.userAgent,
       });
       checkingSession = false;

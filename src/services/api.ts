@@ -382,6 +382,14 @@ export async function revokeAuthSession(id: string): Promise<ApiResult<{ ok: boo
   });
 }
 
+export async function removeLoggedOutAuthSession(id: string): Promise<ApiResult<{ ok: boolean; deleted: number }>> {
+  return request(`/devices/sessions/${encodeURIComponent(id)}/record`, {
+    method: 'DELETE',
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
 export async function revokeOtherAuthSessions(): Promise<ApiResult<{ ok: boolean; revoked: number }>> {
   return request('/devices/sessions/others', {
     method: 'DELETE',

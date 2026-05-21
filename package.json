@@ -18,6 +18,7 @@
     "cap:sync:production": "pnpm build:capacitor:production && capacitor sync",
     "cap:open:android": "capacitor open android",
     "cap:open:ios": "capacitor open ios",
+    "assets:capacitor": "python3 scripts/generate-capacitor-assets.py",
     "ota:bundle": "node scripts/publish-ota.mjs --skipBuild",
     "ota:publish:staging": "node scripts/publish-ota.mjs --env staging --channel staging --upload",
     "ota:publish:production": "node scripts/publish-ota.mjs --env production --channel production --upload",

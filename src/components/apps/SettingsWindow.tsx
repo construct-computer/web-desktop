@@ -15,7 +15,7 @@ import {
   Image,
   Loader2, Check, AlertCircle, Unplug, Send, Save, ChevronRight,
   Code2, Upload, Mail, Lock, Globe, Search, Plug, MessageCircle,
-  Zap, ExternalLink, MonitorSmartphone, RefreshCw, LogOut,
+  Zap, ExternalLink, RefreshCw, LogOut, Trash2,
 } from 'lucide-react';
 import { Button, Input, Select } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
@@ -36,7 +36,7 @@ import {
   getComposioToolkitDetail,
   getPlatformModelSettings, updatePlatformModel,
   getAutopilotPolicy, updateAutopilotPolicy,
-  listAuthSessions, revokeAuthSession, revokeOtherAuthSessions,
+  listAuthSessions, removeLoggedOutAuthSession, revokeAuthSession, revokeOtherAuthSessions,
   type PlatformModelSettings,
   type AutopilotPolicy,
   type AutonomyMode,
@@ -69,14 +69,27 @@ interface SectionDef {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+type DeviceSvgProps = { className?: string };
+
+function DeviceSidebarIcon({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 18h5M10.5 14v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <rect x="15" y="10" width="5" height="8" rx="1.8" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M17 16.2h1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const SECTIONS: SectionDef[] = [
   { id: 'user', label: 'User', icon: User },
-  { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'agent', label: 'Agent', icon: Bot },
   { id: 'connections', label: 'Connections', icon: Link2 },
-  { id: 'customisation', label: 'Customisation', icon: Paintbrush },
   { id: 'subscription', label: 'Subscription', icon: CreditCard },
   { id: 'usage', label: 'Usage', icon: Zap },
+  { id: 'customisation', label: 'Customisation', icon: Paintbrush },
+  { id: 'devices', label: 'Devices', icon: DeviceSidebarIcon },
   { id: 'developer', label: 'Developer', icon: Code2 },
 ];
 
@@ -240,6 +253,197 @@ function surfaceLabel(surface: string): string {
   return 'Web';
 }
 
+type DeviceIconKind = 'macos' | 'windows' | 'linux' | 'ios' | 'android' | 'mobile-app' | 'desktop-app' | 'web' | 'unknown';
+
+function sessionIconKind(session: AuthSessionRecord): DeviceIconKind {
+  const os = (session.os || '').toLowerCase();
+  if (os.includes('ios') || os.includes('iphone') || os.includes('ipad')) return 'ios';
+  if (os.includes('android')) return 'android';
+  if (os.includes('mac')) return 'macos';
+  if (os.includes('windows')) return 'windows';
+  if (os.includes('linux')) return 'linux';
+  if (session.surface === 'mobile_app') return 'mobile-app';
+  if (session.surface === 'desktop_app') return 'desktop-app';
+  if (session.surface === 'web') return 'web';
+  return 'unknown';
+}
+
+function deviceIconTone(kind: DeviceIconKind): string {
+  switch (kind) {
+    case 'macos': return 'bg-sky-500/12 text-sky-400 ring-sky-400/12';
+    case 'windows': return 'bg-cyan-500/12 text-cyan-400 ring-cyan-400/12';
+    case 'linux': return 'bg-amber-500/12 text-amber-300 ring-amber-300/12';
+    case 'ios': return 'bg-violet-500/12 text-violet-300 ring-violet-300/12';
+    case 'android': return 'bg-emerald-500/12 text-emerald-400 ring-emerald-400/12';
+    case 'mobile-app': return 'bg-fuchsia-500/12 text-fuchsia-300 ring-fuchsia-300/12';
+    case 'desktop-app': return 'bg-blue-500/12 text-blue-300 ring-blue-300/12';
+    case 'web': return 'bg-indigo-500/12 text-indigo-300 ring-indigo-300/12';
+    default: return 'bg-white/[0.06] text-[var(--color-text-muted)] ring-white/10';
+  }
+}
+
+function MacosDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4.2" y="5.2" width="15.6" height="10.2" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.2 18.8h5.6M12 15.5v3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M8.4 8.9c.7-.8 1.7-1.2 3.1-1.2s2.4.4 3.1 1.2M9.4 11.8h5.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="12" cy="13.2" r="0.75" fill="currentColor" />
+    </svg>
+  );
+}
+
+function WindowsDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4.2" y="5.2" width="15.6" height="10.2" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8.3 8.2h3.1v3.1H8.3zM12.6 8.2h3.1v3.1h-3.1zM8.3 12.3h3.1v3.1H8.3zM12.6 12.3h3.1v3.1h-3.1z" fill="currentColor" />
+      <path d="M9.2 18.8h5.6M12 15.5v3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LinuxDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4" y="5.4" width="16" height="13.2" rx="2.4" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M4.8 9.1h14.4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="7.1" cy="7.3" r="0.7" fill="currentColor" />
+      <circle cx="9.2" cy="7.3" r="0.7" fill="currentColor" opacity="0.65" />
+      <path d="M8 12.2l2 1.8-2 1.8M11.6 16h4.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IosDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="7" y="3.5" width="10" height="17" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M10.2 6h3.6M10.4 18h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9.4 8.4h5.2v7.4H9.4z" stroke="currentColor" strokeWidth="1.2" opacity="0.65" />
+    </svg>
+  );
+}
+
+function AndroidDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="6.4" y="3.8" width="11.2" height="16.4" rx="2.6" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.4 10.1h5.2v4.1a1.5 1.5 0 0 1-1.5 1.5h-2.2a1.5 1.5 0 0 1-1.5-1.5v-4.1z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10 8.8l-1-1.3M14 8.8l1-1.3M10 17.6h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="10.8" cy="12" r="0.55" fill="currentColor" />
+      <circle cx="13.2" cy="12" r="0.55" fill="currentColor" />
+    </svg>
+  );
+}
+
+function MobileAppDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="7" y="3.6" width="10" height="16.8" rx="2.8" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.6 8h2.1v2.1H9.6zM12.8 8h2.1v2.1h-2.1zM9.6 11.3h2.1v2.1H9.6zM12.8 11.3h2.1v2.1h-2.1z" fill="currentColor" />
+      <path d="M10.6 17.4h2.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DesktopAppDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="11" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M7.2 8.4h9.6M7.2 11.1h5.2M9.2 19h5.6M12 16.2V19" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M15.2 11.2l2.5 2.5M17.7 11.2l-2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function WebDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="13.5" rx="2.4" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M4.8 8.8h14.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8.6 13.7a3.4 3.4 0 1 0 6.8 0 3.4 3.4 0 0 0-6.8 0zM9 13.7h6M12 10.4c.9.9 1.3 2 1.3 3.3s-.4 2.4-1.3 3.3M12 10.4c-.9.9-1.3 2-1.3 3.3s.4 2.4 1.3 3.3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <circle cx="7" cy="6.9" r="0.55" fill="currentColor" />
+    </svg>
+  );
+}
+
+function UnknownDeviceSvg({ className }: DeviceSvgProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <rect x="4.5" y="5.2" width="13.2" height="9.2" rx="2" stroke="currentColor" strokeWidth="1.7" />
+      <rect x="14.4" y="10.2" width="5.1" height="8.4" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.2 18.5h3.2M10.8 14.6v3.8M16.3 16.4h1.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DeviceSessionIcon({ session, className }: { session: AuthSessionRecord; className?: string }) {
+  switch (sessionIconKind(session)) {
+    case 'macos': return <MacosDeviceSvg className={className} />;
+    case 'windows': return <WindowsDeviceSvg className={className} />;
+    case 'linux': return <LinuxDeviceSvg className={className} />;
+    case 'ios': return <IosDeviceSvg className={className} />;
+    case 'android': return <AndroidDeviceSvg className={className} />;
+    case 'mobile-app': return <MobileAppDeviceSvg className={className} />;
+    case 'desktop-app': return <DesktopAppDeviceSvg className={className} />;
+    case 'web': return <WebDeviceSvg className={className} />;
+    default: return <UnknownDeviceSvg className={className} />;
+  }
+}
+
+type DisplayAuthSession = AuthSessionRecord & {
+  sessionIds: string[];
+  activeSessionIds: string[];
+  revokedSessionIds: string[];
+  duplicateCount: number;
+};
+
+function deviceGroupKey(session: AuthSessionRecord): string {
+  if (session.deviceId) return `device:${session.deviceId}`;
+  return [
+    'fingerprint',
+    session.surface || '',
+    session.deviceType || '',
+    session.browser || '',
+    session.os || '',
+    session.ipAddress || '',
+    session.location || '',
+    session.timezone || '',
+  ].join('|').toLowerCase();
+}
+
+function compareSessionsForDisplay(a: AuthSessionRecord, b: AuthSessionRecord): number {
+  if (a.current !== b.current) return a.current ? -1 : 1;
+  const aRevoked = Boolean(a.revokedAt);
+  const bRevoked = Boolean(b.revokedAt);
+  if (aRevoked !== bRevoked) return aRevoked ? 1 : -1;
+  if (a.online !== b.online) return a.online ? -1 : 1;
+  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0) || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
+function dedupeAuthSessions(sessions: AuthSessionRecord[]): DisplayAuthSession[] {
+  const groups = new Map<string, AuthSessionRecord[]>();
+  for (const session of sessions) {
+    const key = deviceGroupKey(session);
+    groups.set(key, [...(groups.get(key) || []), session]);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const sorted = [...group].sort(compareSessionsForDisplay);
+      const representative = sorted[0];
+      return {
+        ...representative,
+        sessionIds: sorted.map((session) => session.id),
+        activeSessionIds: sorted.filter((session) => !session.revokedAt && !session.current).map((session) => session.id),
+        revokedSessionIds: sorted.filter((session) => session.revokedAt).map((session) => session.id),
+        duplicateCount: sorted.length,
+      };
+    })
+    .sort(compareSessionsForDisplay);
+}
+
 function DevicesSection() {
   const [sessions, setSessions] = useState<AuthSessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -263,10 +467,29 @@ function DevicesSection() {
     return () => window.clearInterval(interval);
   }, [refresh]);
 
-  const revokeOne = async (id: string) => {
-    setBusy(id);
-    const result = await revokeAuthSession(id);
-    if (!result.success) setError(result.error || 'Failed to log out device');
+  const revokeOne = async (session: DisplayAuthSession) => {
+    setBusy(`revoke:${session.id}`);
+    const ids = session.activeSessionIds.length > 0 ? session.activeSessionIds : [session.id];
+    for (const id of ids) {
+      const result = await revokeAuthSession(id);
+      if (!result.success) {
+        setError(result.error || 'Failed to log out device');
+        break;
+      }
+    }
+    await refresh();
+    setBusy(null);
+  };
+
+  const removeLoggedOut = async (session: DisplayAuthSession) => {
+    setBusy(`remove:${session.id}`);
+    for (const id of session.revokedSessionIds) {
+      const result = await removeLoggedOutAuthSession(id);
+      if (!result.success) {
+        setError(result.error || 'Failed to remove logged out device');
+        break;
+      }
+    }
     await refresh();
     setBusy(null);
   };
@@ -281,6 +504,7 @@ function DevicesSection() {
 
   const activeSessions = sessions.filter((session) => !session.revokedAt);
   const otherActiveCount = activeSessions.filter((session) => !session.current).length;
+  const displaySessions = dedupeAuthSessions(sessions);
 
   return (
     <SectionPanel
@@ -310,19 +534,22 @@ function DevicesSection() {
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading devices...
           </div>
-        ) : sessions.length === 0 ? (
-          <div className="px-4 py-5 text-[13px] text-[var(--color-text-muted)]">No active sessions found.</div>
+        ) : displaySessions.length === 0 ? (
+          <div className="px-4 py-5 text-[13px] text-[var(--color-text-muted)]">No devices found.</div>
         ) : (
-          sessions.map((session) => {
+          displaySessions.map((session) => {
             const revoked = Boolean(session.revokedAt);
             const title = session.deviceLabel || [session.browser, session.os].filter(Boolean).join(' on ') || 'Unknown device';
+            const revokeBusy = busy === `revoke:${session.id}`;
+            const removeBusy = busy === `remove:${session.id}`;
+            const iconKind = sessionIconKind(session);
             return (
               <div
                 key={session.id}
                 className="flex items-start gap-3 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0"
               >
-                <div className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)]">
-                  <MonitorSmartphone className="w-4.5 h-4.5" />
+                <div className={`relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${deviceIconTone(iconKind)} ${revoked ? 'opacity-60' : ''}`}>
+                  <DeviceSessionIcon session={session} className="h-[22px] w-[22px]" />
                   <span className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-surface)] ${
                     revoked ? 'bg-zinc-500' : session.online ? 'bg-emerald-500' : 'bg-zinc-400'
                   }`} />
@@ -355,9 +582,15 @@ function DevicesSection() {
                     {session.timezone ? ` · ${session.timezone}` : ''}
                   </p>
                 </div>
-                {!session.current && !revoked && (
-                  <Button size="sm" variant="ghost" onClick={() => void revokeOne(session.id)} disabled={busy === session.id}>
-                    {busy === session.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Log out'}
+                {!revoked && session.activeSessionIds.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => void revokeOne(session)} disabled={revokeBusy}>
+                    {revokeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : session.current ? 'Log out others' : 'Log out'}
+                  </Button>
+                )}
+                {revoked && session.revokedSessionIds.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => void removeLoggedOut(session)} disabled={removeBusy}>
+                    {removeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    Remove
                   </Button>
                 )}
               </div>
