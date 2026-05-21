@@ -205,7 +205,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     chromeHeight: 88, // titlebar(32) + navbar(33) + statusbar(23)
   },
   terminal: {
-    title: 'Agent Terminal',
+    title: 'Terminal',
     width: 600,
     height: 540,
     minWidth: 350,
@@ -250,7 +250,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxHeight: 600,
   },
   calendar: {
-    title: 'Agent Calendar',
+    title: 'Calendar',
     width: 660,
     height: 620,
     minWidth: 500,
@@ -259,7 +259,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxHeight: 900,
   },
   auditlogs: {
-    title: 'Audit Logs',
+    title: 'Activity',
     width: 600,
     height: 560,
     minWidth: 450,
@@ -268,7 +268,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxHeight: 900,
   },
   memory: {
-    title: 'Memory',
+    title: 'Knowledge',
     width: 760,
     height: 600,
     minWidth: 520,
@@ -284,14 +284,14 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     minHeight: 400,
   },
   'access-control': {
-    title: 'Access Control',
+    title: 'Approvals',
     width: 560,
     height: 640,
     minWidth: 420,
     minHeight: 400,
   },
   'app-registry': {
-    title: 'App Registry',
+    title: 'Apps',
     width: 780,
     height: 620,
     minWidth: 520,

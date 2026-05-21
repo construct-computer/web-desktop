@@ -418,9 +418,18 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     const interval = window.setInterval(() => {
       void refreshActiveBrowserSessions();
     }, 15_000);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refreshActiveBrowserSessions();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('online', refreshActiveBrowserSessions);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('online', refreshActiveBrowserSessions);
     };
   }, [hydrateBrowserSessions]);
 
@@ -950,7 +959,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
                 Remote browser
               </p>
               <p className="text-xs text-[var(--color-text-subtle)] opacity-60">
-                Your agent will use this browser to search the web and visit pages. Ask it to look something up!
+                Construct will use this browser to search the web and visit pages. Ask it to look something up.
               </p>
             </div>
           </div>
@@ -997,7 +1006,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             <>
               <Globe className="w-3 h-3 text-[var(--color-text-subtle)] shrink-0" />
               <span className="truncate text-[var(--color-text-subtle)] flex-1">
-                Agent-controlled browser
+                Construct-controlled browser
               </span>
             </>
           )}
@@ -1083,7 +1092,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
               <div className="flex flex-col items-center gap-2 text-[var(--color-text-subtle)] max-w-sm text-center px-4">
                 <Globe className="w-10 h-10 opacity-20" />
                 <p className="text-xs">
-                  {isLoading ? loadingPhase : 'Your agent will browse here when needed'}
+                  {isLoading ? loadingPhase : 'Construct will browse here when needed'}
                 </p>
               </div>
             ) : null}
@@ -1123,7 +1132,7 @@ function ChromeBar() {
         <div className="flex-1 h-[28px] px-2.5 flex items-center text-[12px] font-mono rounded-md shadow-inner
                         surface-control border border-[var(--color-border)]">
           <Globe className="w-3 h-3 text-[var(--color-text-subtle)] mr-2" />
-          <span className="text-[var(--color-text-subtle)]">Agent-controlled browser</span>
+          <span className="text-[var(--color-text-subtle)]">Construct-controlled browser</span>
         </div>
       </div>
     </div>
@@ -1202,7 +1211,7 @@ const StatusBar = memo(function StatusBar({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-warning)]" />
             </span>
-            Web Agent
+            Construct Browser
           </span>
         )}
         <span

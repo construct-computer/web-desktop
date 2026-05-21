@@ -7,7 +7,8 @@ interface AboutWindowProps {
   config: WindowConfig;
 }
 
-export function AboutWindow({ config: _config }: AboutWindowProps) {
+export function AboutWindow(props: AboutWindowProps) {
+  void props;
   return (
     <div className="flex flex-col items-center justify-center h-full bg-[var(--color-surface)] p-8 text-center">
       <img
@@ -22,17 +23,15 @@ export function AboutWindow({ config: _config }: AboutWindowProps) {
       </h1>
 
       <p className="text-sm text-[var(--color-text-muted)] mt-1">
-        Your personal AI agent platform
+        Your AI workspace for getting business work done
       </p>
 
       <div className="mt-6 text-sm text-[var(--color-text-muted)] max-w-sm leading-relaxed space-y-3">
         <p>
-          A serverless AI agent that runs 24/7 with persistent memory,
-          email, calendar, and third-party integrations.
+          Construct works across email, calendar, files, browser, and connected apps.
         </p>
         <p>
-          Connects across Slack, Telegram, email, and the web — orchestrating
-          sub-agents, managing files, and executing scheduled tasks on your behalf.
+          It can handle tasks, keep useful knowledge, and run scheduled work on your behalf.
         </p>
       </div>
 

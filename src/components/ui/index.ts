@@ -17,3 +17,4 @@ export { ErrorBoundary } from './ErrorBoundary';
 export { Toasts } from './Toasts';
 export { MarkdownRenderer } from './MarkdownRenderer';
 export { RefreshButton, FreshnessText, StatusBanner } from './freshness';
+export { InfoHint } from './InfoHint';

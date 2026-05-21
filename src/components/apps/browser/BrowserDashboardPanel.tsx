@@ -96,7 +96,7 @@ export function BrowserDashboardPanel({
             onClick={onStopAll}
             disabled={stopping || stoppableCount === 0}
             className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-red-500/20 bg-red-500/[0.06] text-[10px] text-red-400/80 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Stop all Browser Use resources"
+            title="Stop all live browser sessions"
           >
             <StopCircle className="w-3 h-3" />
             {stopping ? 'Stopping' : 'Stop all'}
@@ -184,7 +184,7 @@ function BrowserSessionList({
     return (
       <div className="h-full overflow-y-auto p-3">
         <EmptyState>
-          Browser Use sessions will appear here when the agent or screenshot tools open a live browser.
+          Browser sessions will appear here when Construct or screenshot actions open a live browser.
         </EmptyState>
       </div>
     );
@@ -261,7 +261,7 @@ function BrowserFilesPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {files.length === 0 ? (
           <EmptyState>
-            Synced Browser Use files will appear here after tasks create or download artifacts.
+            Synced browser files will appear here after tasks create or download files.
           </EmptyState>
         ) : files.map((file) => (
           <div key={`${file.sessionId}:${file.workspacePath}`} className="rounded-md border border-white/[0.08] bg-black/10 p-2">

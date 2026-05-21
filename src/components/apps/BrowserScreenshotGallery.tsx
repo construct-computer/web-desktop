@@ -139,7 +139,7 @@ export function BrowserScreenshotGallery({
         <p className="text-xs text-[var(--color-text-subtle)] opacity-50">
           {runId || subagentId
             ? 'No screenshots are linked to the selected session yet.'
-            : 'No browser screenshots yet. The agent saves a snapshot on every browser-use run completion.'}
+            : 'No browser screenshots yet. Construct saves a snapshot when each browser run finishes.'}
         </p>
       )}
 

@@ -362,7 +362,7 @@ function GraphCanvas({
         <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--color-text-muted)] pointer-events-none">
           <Network className="w-10 h-10 opacity-30 mb-2" />
           <p className="text-sm opacity-60">No graph relations yet</p>
-          <p className="text-xs opacity-40 mt-1">Relations will appear as the agent builds knowledge</p>
+          <p className="text-xs opacity-40 mt-1">Connections will appear as Construct builds knowledge</p>
         </div>
       )}
     </div>
@@ -481,7 +481,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
             )}
             onClick={() => setView('graph')}
           >
-            <Network className="w-3 h-3" /> Graph
+            <Network className="w-3 h-3" /> Connections
           </button>
           <button
             className={cn(
@@ -510,7 +510,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--color-text-muted)]" />
           <input
             type="text"
-            placeholder="Search memories..."
+            placeholder="Search knowledge..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-7 pr-2 py-1 w-full max-w-[180px] min-w-0 text-xs rounded-md border border-[var(--color-border)]
@@ -520,8 +520,8 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
 
         {/* Stats */}
         <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
-          {memories.length} memor{memories.length !== 1 ? 'ies' : 'y'}
-          {relations.length > 0 && <>, {relations.length} relation{relations.length !== 1 ? 's' : ''}</>}
+          {memories.length} item{memories.length !== 1 ? 's' : ''}
+          {relations.length > 0 && <>, {relations.length} connection{relations.length !== 1 ? 's' : ''}</>}
         </span>
 
         {/* Refresh */}
@@ -540,7 +540,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
           tone="warning"
           action={<button className="text-xs underline" onClick={() => void handleRefresh()}>Refresh</button>}
         >
-          Memory may be out of date.
+          Knowledge may be out of date.
         </StatusBanner>
       )}
 
@@ -582,7 +582,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
 
               {/* Connected relations */}
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide mb-1">Relations</p>
+                <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide mb-1">Connections</p>
                 {relations
                   .filter(r => r.source === selectedNode || r.target === selectedNode)
                   .map((r, i) => {
@@ -604,7 +604,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                 {/* Related memories */}
                 {displayMemories.length > 0 && (
                   <>
-                    <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide mt-3 mb-1">Memories</p>
+                    <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide mt-3 mb-1">Knowledge</p>
                     {displayMemories.slice(0, 10).map(m => (
                       <div key={m.id} className="group px-2 py-1.5 rounded bg-black/[0.03] dark:bg-white/[0.03] text-[11px] leading-relaxed flex items-start gap-1">
                         <span className="flex-1 min-w-0">{m.memory}</span>
@@ -612,7 +612,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                           onClick={(e) => { e.stopPropagation(); handleDeleteMemory(m.id); }}
                           disabled={deletingId === m.id}
                           className="touch-target shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-500 transition-all"
-                          title="Delete memory"
+                          title="Delete knowledge item"
                         >
                           {deletingId === m.id
                             ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -632,9 +632,9 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
           {displayMemories.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)] h-full min-h-[200px]">
               <Brain className="w-10 h-10 opacity-40" />
-              <p className="text-sm">No memories yet</p>
+              <p className="text-sm">No saved knowledge yet</p>
               <p className="text-xs opacity-60">
-                {searchQuery ? 'Try a different search term' : 'Memories will appear as you interact with the agent'}
+                {searchQuery ? 'Try a different search term' : 'Knowledge will appear as you work with Construct'}
               </p>
             </div>
           ) : (
@@ -669,15 +669,11 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                       <div className="px-3 pb-3 pt-0">
                         <div className="ml-6.5 p-2.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.03] border border-[var(--color-border)]/50 space-y-1.5">
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--color-text-muted)]">
-                            <span>ID: <strong className="font-mono text-[var(--color-text)]">{memory.id.slice(0, 12)}...</strong></span>
                             {memory.created_at && (
                               <span>Created: <strong className="text-[var(--color-text)]">{formatMemoryDate(memory.created_at)}</strong></span>
                             )}
                             {memory.updated_at && (
                               <span>Updated: <strong className="text-[var(--color-text)]">{formatMemoryDate(memory.updated_at)}</strong></span>
-                            )}
-                            {memory.hash && (
-                              <span>Hash: <strong className="font-mono text-[var(--color-text)]">{memory.hash.slice(0, 8)}</strong></span>
                             )}
                           </div>
                           <button
@@ -689,7 +685,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                             {deletingId === memory.id
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Trash2 className="w-3 h-3" />}
-                            Delete memory
+                            Delete item
                           </button>
                         </div>
                       </div>
@@ -705,7 +701,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
       {/* Graph legend — only in graph view when there are relations */}
       {view === 'graph' && relations.length > 0 && (
         <div className="flex items-center gap-3 px-3 py-1.5 border-t border-[var(--color-border)] bg-[var(--color-titlebar)]">
-          <span className="text-[10px] text-[var(--color-text-muted)]">Entity types:</span>
+          <span className="text-[10px] text-[var(--color-text-muted)]">Connection types:</span>
           {Array.from(new Set(
             relations.flatMap(r => [
               { type: r.source_type, color: getTypeColor(r.source_type) },

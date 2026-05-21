@@ -2,14 +2,15 @@
  * Settings — macOS System Settings-style app with sidebar navigation.
  *
  * Sections:
- *   User         — Agent status, profile name, agent name, email
- *   Agent        — Autonomy and recovery behavior
+ *   Profile      — User profile, Construct name, email
+ *   Construct    — Autonomy and recovery behavior
  *   Connections  — Slack + Telegram connect/disconnect
  *   Customisation — Wallpaper, sound, and voice preferences
  *   Subscription — Billing, usage, top-ups
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import {
   User, Bot, Link2, Paintbrush, Volume2, CreditCard,
   Image,
@@ -17,7 +18,7 @@ import {
   Code2, Upload, Mail, Lock, Globe, Search, Plug, MessageCircle,
   Zap, ExternalLink, RefreshCw, LogOut, Trash2,
 } from 'lucide-react';
-import { Button, Input, Select } from '@/components/ui';
+import { Button, Input, Select, InfoHint } from '@/components/ui';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { getPlatformDisplayName } from '@/lib/platforms';
 import { useSettingsStore, WALLPAPERS, getWallpaperSrc, saveCustomWallpaper } from '@/stores/settingsStore';
@@ -82,14 +83,14 @@ function DeviceSidebarIcon({ className }: DeviceSvgProps) {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'user', label: 'User', icon: User },
-  { id: 'agent', label: 'Agent', icon: Bot },
+  { id: 'user', label: 'Profile', icon: User },
+  { id: 'agent', label: 'Construct', icon: Bot },
   { id: 'connections', label: 'Connections', icon: Link2 },
-  { id: 'subscription', label: 'Subscription', icon: CreditCard },
+  { id: 'subscription', label: 'Plan', icon: CreditCard },
   { id: 'usage', label: 'Usage', icon: Zap },
-  { id: 'customisation', label: 'Customisation', icon: Paintbrush },
+  { id: 'customisation', label: 'Appearance', icon: Paintbrush },
   { id: 'devices', label: 'Devices', icon: DeviceSidebarIcon },
-  { id: 'developer', label: 'Developer', icon: Code2 },
+  { id: 'developer', label: 'App Builder', icon: Code2 },
 ];
 
 // ── macOS-style toggle switch ──
@@ -186,8 +187,8 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
 function SectionPanel({ title, subtitle, action, children }: {
   title: string;
   subtitle?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="px-7 py-6">
@@ -206,7 +207,7 @@ function SectionPanel({ title, subtitle, action, children }: {
 
 // ── Grouped settings card ──
 
-function SettingsCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function SettingsCard({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div className={`rounded-lg surface-card border border-black/[0.06] dark:border-white/[0.06] overflow-visible ${className}`}>
       {children}
@@ -214,10 +215,11 @@ function SettingsCard({ children, className = '' }: { children: React.ReactNode;
   );
 }
 
-function SettingsRow({ label, description, children, noBorder }: {
+function SettingsRow({ label, description, info, children, noBorder }: {
   label: string;
   description?: string;
-  children: React.ReactNode;
+  info?: ReactNode;
+  children: ReactNode;
   noBorder?: boolean;
 }) {
   return (
@@ -225,7 +227,10 @@ function SettingsRow({ label, description, children, noBorder }: {
       !noBorder ? 'border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0' : ''
     }`}>
       <div className="flex-1 min-w-0">
-        <span className="text-[13px]">{label}</span>
+        <span className="inline-flex items-center gap-1.5 text-[13px]">
+          {label}
+          {info && <InfoHint side="top">{info}</InfoHint>}
+        </span>
         {description && <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug">{description}</p>}
       </div>
       <div className="flex-shrink-0">{children}</div>
@@ -620,7 +625,7 @@ function UserSection() {
 
       const updateData: Parameters<typeof updateComputer>[0] = {
         ownerName: displayName.trim(),
-        agentName: agentName.trim() || 'Construct Agent',
+        agentName: agentName.trim() || 'Construct',
       };
 
       // Include email username only if not already set and user is on a paid plan.
@@ -648,7 +653,7 @@ function UserSection() {
   };
 
   return (
-    <SectionPanel title="User" subtitle="Manage your profile and agent identity.">
+    <SectionPanel title="Profile" subtitle="Manage your profile, Construct name, and email.">
       {error && (
         <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
@@ -687,20 +692,20 @@ function UserSection() {
         </SettingsRow>
       </SettingsCard>
 
-      {/* Agent — name + email */}
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mt-5 mb-1.5">Agent</h3>
+      {/* Construct — name + email */}
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mt-5 mb-1.5">Construct</h3>
       <SettingsCard>
         <div className="px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06]">
-          <label className="text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5 block">Agent Name</label>
+          <label className="text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5 block">Construct Name</label>
           <Input
             value={agentName}
             onChange={(e) => setAgentName(e.target.value)}
-            placeholder="Construct Agent"
+            placeholder="Construct"
             className="!bg-transparent !border-0 !shadow-none !ring-0 !px-0 text-[13px] focus-visible:!ring-0"
           />
         </div>
 
-        <SettingsRow label="Agent Email" noBorder>
+        <SettingsRow label="Construct Email" info="A dedicated inbox Construct can use for business email when your plan includes it." noBorder>
           {emailLocked ? (
             <div className="flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
@@ -797,7 +802,7 @@ function AgentSection() {
         setPolicy(result.data);
         setError(null);
       } else {
-        setError(result.error || 'Failed to load agent settings');
+        setError(result.error || 'Failed to load Construct settings');
       }
       setLoading(false);
     });
@@ -819,7 +824,7 @@ function AgentSection() {
       setPolicy(result.data);
     } else {
       setPolicy(previous);
-      setError(result.error || 'Failed to save agent settings');
+      setError(result.error || 'Failed to save Construct settings');
     }
     setSavingKey(null);
   };
@@ -835,7 +840,7 @@ function AgentSection() {
   };
 
   return (
-    <SectionPanel title="Agent" subtitle="The agent self-manages behavior, recovery, risk, and scheduling.">
+    <SectionPanel title="Construct" subtitle="Control how much Construct can handle on its own.">
       {error && (
         <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
@@ -845,7 +850,8 @@ function AgentSection() {
       <SettingsCard>
         <SettingsRow
           label="High autonomy failsafe"
-          description="Master switch for high autonomy. When on, the agent chooses its own autonomy/risk level, recovers work, and proceeds with routine owner-trusted actions by default."
+          info="Lets Construct continue routine trusted work without asking every time. It still asks before sensitive actions."
+          description="When on, Construct can recover work and continue routine trusted actions by default."
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
@@ -860,9 +866,9 @@ function AgentSection() {
 
         <div className="px-4 py-3.5">
           <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.035] px-3 py-2.5">
-            <h3 className="text-[13px] font-medium">Self-managed behavior</h3>
+            <h3 className="text-[13px] font-medium">Self-managed work</h3>
             <p className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug">
-              The agent no longer uses user-selected autonomy modes. It decides the right level of autonomy, risk, recovery, and scheduling from task context, prior outcomes, and policy memory.
+              Construct chooses how much it can do from the task, prior outcomes, and your saved preferences.
             </p>
             <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-snug">
               It still asks before credentials, destructive actions, payments or financial commitments, legal commitments, broad data exposure, or access from unknown or unauthorized people.
@@ -872,7 +878,7 @@ function AgentSection() {
           {!loading && !highAutonomyEnabled && (
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/15 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>High autonomy is off. Recovery stays on, but the agent uses stricter approval boundaries for external side effects.</span>
+              <span>High autonomy is off. Recovery stays on, but Construct asks more often before actions outside your workspace.</span>
             </div>
           )}
         </div>
@@ -928,7 +934,7 @@ function inferAuthType(schemes?: string[], noAuth?: boolean): AuthType | undefin
 }
 
 const AUTH_BADGE_CONFIG: Record<AuthType, { label: string; className: string }> = {
-  oauth:      { label: 'OAuth',      className: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
+  oauth:      { label: 'Sign in',    className: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
   'api-key':  { label: 'API Key',    className: 'bg-amber-500/15 text-amber-400 border-amber-500/20' },
   bearer:     { label: 'Token',      className: 'bg-purple-500/15 text-purple-300 border-purple-500/20' },
   basic:      { label: 'Basic',      className: 'bg-slate-500/15 text-slate-300 border-slate-500/20' },
@@ -1267,7 +1273,7 @@ function ConnectionsSection() {
   );
 
   return (
-    <SectionPanel title="Connections" subtitle="Connect your agent to messaging platforms and third-party services.">
+    <SectionPanel title="Connections" subtitle="Connect Construct to messaging platforms and business services.">
       {error && (
         <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-3">
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
@@ -1280,7 +1286,7 @@ function ConnectionsSection() {
         <span className="text-[13px] font-semibold">Built-in</span>
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
-        Chat with your agent on the messaging platforms you already use.
+        Chat with Construct on the messaging platforms you already use.
       </p>
       <SettingsCard>
         {/* Slack row */}
@@ -1290,7 +1296,7 @@ function ConnectionsSection() {
           description={
             slackConnected
               ? `Connected to ${slackTeamName || 'workspace'}`
-              : 'Connect your agent to a Slack workspace.'
+              : 'Connect Construct to a Slack workspace.'
           }
           authType="oauth"
           isConnected={slackConnected}
@@ -1307,7 +1313,7 @@ function ConnectionsSection() {
           description={
             telegramConnected
               ? `Linked via @${telegramBotUsername || 'bot'}`
-              : 'Chat with your agent directly in Telegram.'
+              : 'Chat with Construct directly in Telegram.'
           }
           authType="oauth"
           isConnected={telegramConnected}
@@ -1342,7 +1348,7 @@ function ConnectionsSection() {
           onClick={() => {
             import('@/stores/windowStore').then(({ useWindowStore }) => {
               useWindowStore.getState().openWindow('app-registry', {
-                title: 'App Store',
+                title: 'Apps',
                 metadata: { view: 'integrations' },
               });
             });
@@ -1354,7 +1360,7 @@ function ConnectionsSection() {
         </button>
       </div>
       <p className="text-[11px] text-[var(--color-text-muted)] mb-3 px-1 leading-snug">
-        Connect services your agent can use from chat. Browse the App Store for the full integration catalog.
+        Connect services Construct can use from chat. Browse Apps for the full catalog.
       </p>
 
       {/* Search */}
@@ -1446,12 +1452,12 @@ function ConnectionsSection() {
                             {composioDetails[r.slug]?.loading ? (
                               <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                                 <Loader2 className="w-3 h-3 animate-spin" />
-                                Loading tools...
+                                Loading actions...
                               </div>
                             ) : composioDetails[r.slug]?.toolsCount ? (
                               <div>
                                 <div className="text-[11px] text-[var(--color-text-muted)] mb-2">
-                                  Tools ({composioDetails[r.slug].toolsCount}):
+                                  Actions ({composioDetails[r.slug].toolsCount}):
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                   {composioDetails[r.slug].tools.slice(0, 7).map(tool => (
@@ -1472,7 +1478,7 @@ function ConnectionsSection() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-[11px] text-[var(--color-text-muted)]">No tools available</div>
+                              <div className="text-[11px] text-[var(--color-text-muted)]">No actions available</div>
                             )}
                           </div>
                         ) : null
@@ -1541,12 +1547,12 @@ function ConnectionsSection() {
                             {composioDetails[def.slug]?.loading ? (
                               <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                                 <Loader2 className="w-3 h-3 animate-spin" />
-                                Loading tools...
+                                Loading actions...
                               </div>
                             ) : composioDetails[def.slug]?.toolsCount ? (
                               <div>
                                 <div className="text-[11px] text-[var(--color-text-muted)] mb-2">
-                                  Tools ({composioDetails[def.slug].toolsCount}):
+                                  Actions ({composioDetails[def.slug].toolsCount}):
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                   {composioDetails[def.slug].tools.slice(0, 7).map(tool => (
@@ -1567,7 +1573,7 @@ function ConnectionsSection() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-[11px] text-[var(--color-text-muted)]">No tools available</div>
+                              <div className="text-[11px] text-[var(--color-text-muted)]">No actions available</div>
                             )}
                           </div>
                         ) : null
@@ -1590,7 +1596,7 @@ function ConnectionRow({
   icon, name, description, authType, isConnected, isPending, isLoading, disabled, disabledReason,
   onConnect, onDisconnect, expanded, isLast, onToggleExpand, isExpanded,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   name: string;
   description: string;
   authType?: AuthType;
@@ -1601,7 +1607,7 @@ function ConnectionRow({
   disabledReason?: string;
   onConnect: () => void;
   onDisconnect: () => void;
-  expanded?: React.ReactNode;
+  expanded?: ReactNode;
   isLast?: boolean;
   onToggleExpand?: () => void;
   isExpanded?: boolean;
@@ -1763,7 +1769,7 @@ function CustomisationSection() {
   } = useSettingsStore();
 
   return (
-    <SectionPanel title="Customisation" subtitle="Customise your desktop look, sound, and voice behavior.">
+    <SectionPanel title="Appearance" subtitle="Customize your desktop look, sound, and voice behavior.">
       {/* Theme toggle removed — dark mode is permanent */}
 
       {/* Wallpaper */}
@@ -1831,7 +1837,11 @@ function CustomisationSection() {
           <SettingsRow label="UI Sounds" description="Play sounds for clicks, notifications, and other actions.">
             <Toggle checked={soundEnabled} onChange={toggleSound} />
           </SettingsRow>
-          <SettingsRow label="Voice Auto-Send" description="Automatically send transcribed voice messages instead of placing them in the input for review.">
+          <SettingsRow
+            label="Voice Auto-Send"
+            info="When this is on, spoken messages are sent as soon as transcription finishes."
+            description="Automatically send transcribed voice messages instead of placing them in the input for review."
+          >
             <Toggle checked={voiceAutoSend} onChange={setVoiceAutoSend} />
           </SettingsRow>
         </SettingsCard>
@@ -1949,21 +1959,6 @@ function SubscriptionSection() {
   );
 }
 
-// ── Usage Section ──
-
-function formatModelPrice(value: number | null | undefined): string {
-  if (value == null) return 'n/a';
-  if (value === 0) return '$0';
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  if (value < 1) return `$${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}`;
-  return `$${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
-}
-
-function platformPricingText(option: PlatformModelSettings['options'][number] | undefined): string {
-  if (!option) return 'Input n/a / Output n/a / Cache n/a per 1M tokens';
-  return `Input ${formatModelPrice(option.pricing.input)} / Output ${formatModelPrice(option.pricing.output)} / Cache ${formatModelPrice(option.pricing.cache)} per 1M tokens`;
-}
-
 function PlatformModelPickerCard() {
   const [platformModel, setPlatformModel] = useState<PlatformModelSettings | null>(null);
   const [platformModelLoading, setPlatformModelLoading] = useState(true);
@@ -2006,10 +2001,13 @@ function PlatformModelPickerCard() {
         <div className="px-4 pt-3.5 pb-4 space-y-3">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-[var(--color-text-muted)]" />
-            <span className="text-[13px] font-medium">Primary Agent Model</span>
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
+              Primary Model
+              <InfoHint side="top">Choose the AI model Construct uses for its main work. The default is recommended for most teams.</InfoHint>
+            </span>
           </div>
           <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-            Choose the platform model used for your main agent orchestration. OpenRouter BYOK models stay separate.
+            Choose the main model Construct uses. BYOK models stay separate.
           </p>
           {platformModelLoading ? (
             <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]">
@@ -2027,17 +2025,17 @@ function PlatformModelPickerCard() {
                   {
                     value: '__default__',
                     label: `Default (${platformModel.defaultModel})`,
-                    description: `Use the platform-optimized model stack. ${platformPricingText(platformModel.options.find((option) => option.id === platformModel.defaultModel))}`,
+                    description: 'Use Construct’s recommended default.',
                   },
                   ...platformModel.options.map((option) => ({
                     value: option.id,
                     label: option.label,
-                    description: `${option.provider} • ${Math.round(option.contextWindow / 1000)}k context${option.vision ? ' • vision' : ''}${option.reasoning ? ' • reasoning' : ''} • ${platformPricingText(option)}`,
+                    description: `${option.provider} • ${option.vision ? 'image support' : 'text'}${option.reasoning ? ' • stronger reasoning' : ''}`,
                   })),
                 ]}
               />
               <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-muted)]">
-                <span>Effective model: <span className="font-mono">{platformModel.effectiveModel}</span></span>
+                <span>Current model: <span className="font-mono">{platformModel.effectiveModel}</span></span>
                 {platformModelSaving && <Loader2 className="w-3 h-3 animate-spin" />}
               </div>
             </div>
@@ -2056,14 +2054,17 @@ function PlatformModelPickerCard() {
 
 function UsageSectionWrapper() {
   return (
-    <SectionPanel title="Usage" subtitle="AI usage, model selection, and storage statistics.">
+    <SectionPanel title="Usage" subtitle="Track limits, storage, and AI key settings.">
       <UsageSection />
       <PlatformModelPickerCard />
       <div className="mt-6 pt-5 border-t border-black/[0.06] dark:border-white/[0.06]">
         <div className="mb-3">
-          <h3 className="text-[14px] font-semibold">Bring your own OpenRouter key</h3>
+          <h3 className="inline-flex items-center gap-1.5 text-[14px] font-semibold">
+            BYOK
+            <InfoHint side="top">Bring your own key. Construct can use your OpenRouter key when you want more control over cost or model choice.</InfoHint>
+          </h3>
           <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
-            Power fallback inference, or replace the platform AI entirely, with your own OpenRouter key.
+            Use your own OpenRouter key as a backup or as the default AI provider.
           </p>
         </div>
         <ByokSection />
@@ -2099,9 +2100,13 @@ function DeveloperSection() {
   };
 
   return (
-    <SectionPanel title="Developer" subtitle="Tools for app development and testing.">
+    <SectionPanel title="App Builder" subtitle="Connect and test custom apps.">
       <SettingsCard>
-        <SettingsRow label="Developer Mode" description="Enable developer tools for building and testing Construct apps.">
+        <SettingsRow
+          label="App Builder Mode"
+          info="Turns on local app testing controls. Useful when you are building or connecting a custom app."
+          description="Enable controls for building and testing Construct apps."
+        >
           <Toggle checked={developerMode} onChange={setDeveloperMode} />
         </SettingsRow>
       </SettingsCard>
@@ -2112,10 +2117,13 @@ function DeveloperSection() {
             <div className="px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06]">
               <div className="flex items-center gap-2 mb-1">
                 <Code2 className="w-4 h-4 opacity-50" />
-                <span className="text-[13px] font-medium">Connect Dev Server</span>
+                <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
+                  Connect Local App
+                  <InfoHint side="top">Use this when your app is running on your computer and you want Construct to test it.</InfoHint>
+                </span>
               </div>
               <p className="text-[11px] text-[var(--color-text-muted)] leading-snug">
-                Run <code className="px-1 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] font-mono text-[10px]">wrangler dev</code> locally, then enter the URL to connect your app for testing.
+                Run your app locally, then enter its URL to connect it for testing.
               </p>
             </div>
 
@@ -2141,7 +2149,7 @@ function DeveloperSection() {
                       </div>
                       <p className="text-[11px] text-[var(--color-text-muted)] truncate">{appInfo.description}</p>
                     </div>
-                    <span className="text-[11px] opacity-40 flex-shrink-0">{appInfo.tools.length} tool{appInfo.tools.length !== 1 ? 's' : ''}</span>
+                    <span className="text-[11px] opacity-40 flex-shrink-0">{appInfo.tools.length} action{appInfo.tools.length !== 1 ? 's' : ''}</span>
                   </div>
                   <p className="text-[10px] font-mono text-[var(--color-text-muted)] opacity-60">{devUrl}</p>
                   {appInfo.tools.length > 0 && (
@@ -2166,7 +2174,7 @@ function DeveloperSection() {
                       onClick={refreshTools}
                       className="px-3 py-1.5 text-[11px] font-medium rounded-md bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors"
                     >
-                      Refresh Tools
+                      Refresh Actions
                     </button>
                     <button
                       onClick={disconnect}
@@ -2224,7 +2232,7 @@ function DeveloperSection() {
 
           <div className="mt-3 px-1">
             <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-              Your app must serve <code className="px-1 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] font-mono text-[10px]">/mcp</code> (JSON-RPC) and <code className="px-1 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] font-mono text-[10px]">/health</code> endpoints. The agent will be able to call your app's tools while connected.
+              Your app must serve <code className="px-1 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] font-mono text-[10px]">/mcp</code> and <code className="px-1 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] font-mono text-[10px]">/health</code>. Construct can use the app’s actions while it is connected.
             </p>
           </div>
         </div>

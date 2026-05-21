@@ -1,5 +1,5 @@
 /**
- * App Registry — discovery and management of Construct apps.
+ * Apps — discovery and management of Construct apps.
  * Now Unified with all sources (Registry, Smithery, Composio, Skills).
  */
 
@@ -20,6 +20,8 @@ import { ComposioAuthPanel } from './ComposioAuthPanel';
 import {
   AppHeroHeader, HeaderIconButton, InfoCard, ToolsList
 } from './AppShared';
+import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
+import { useFreshness } from '@/hooks/useFreshness';
 import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hooks/useAppDiscovery';
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 
@@ -80,9 +82,9 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
   if (app.source === 'installed' || app.source === 'smithery' || text.includes('mcp') || text.includes('pipedream')) {
     return [
       `Check what ${app.name} can do`,
-      `Call a read-only ${app.name} tool`,
+      `Use a read-only ${app.name} action`,
       `Use ${app.name} for this task`,
-      `Show me the tools available in ${app.name}`,
+      `Show me the actions available in ${app.name}`,
     ];
   }
   if (app.source === 'composio') {
@@ -90,7 +92,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       `Use ${app.name} to help with this task`,
       `Search ${app.name} for relevant items`,
       `Create something in ${app.name}`,
-      `Show me what ${app.name} tools are available`,
+      `Show me what ${app.name} actions are available`,
     ];
   }
   return [];
@@ -110,6 +112,14 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
     installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected
   } = useAppDiscovery();
+  const freshness = useFreshness(async () => {
+    await handleRefresh();
+  }, {
+    intervalMs: 60_000,
+    staleMs: 90_000,
+    refreshOnFocus: true,
+    refreshOnOnline: true,
+  });
 
   useEffect(() => {
     const meta = (config.metadata || {}) as { view?: string; category?: string; search?: string; tab?: string; composioSlug?: string };
@@ -329,7 +339,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
       return;
     }
     if (!probeMeta) {
-      setError('Run “Check URL” first so we can reach your MCP server.');
+      setError('Run “Check URL” first so we can reach your MCP app.');
       return;
     }
     if (atAppLimit) {
@@ -528,9 +538,9 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           : isSkill
             ? 'Skill'
             : isSmithery
-              ? 'MCP Server'
+              ? 'MCP App'
               : 'Construct App');
-    const sourceBadge = isComposio ? 'Integration' : isSkill ? 'Skill' : isCustomUrlInstall ? 'From URL' : 'App';
+    const sourceBadge = isComposio ? 'Integration' : isSkill ? 'Skill' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
 
     return (
       <div className="flex flex-col h-full text-[var(--color-text)] select-none bg-[var(--color-bg-secondary)]">
@@ -548,7 +558,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             name={detail.name}
             subtitle={`${sourceLabel} · ${CATEGORY_LABELS[detail.category] || detail.category}`}
             description={detail.description || 'No description available.'}
-            status={installed ? { label: isComposio ? 'Connected' : 'Installed', tone: 'emerald' } : undefined}
+            status={installed ? { label: isComposio ? 'Connected' : 'Added', tone: 'emerald' } : undefined}
             badges={[
               sourceBadge,
               ...(detail.tags || []),
@@ -630,7 +640,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           {examples.length > 0 && (
             <InfoCard
               title={installed ? 'Ready to try' : 'What you can do'}
-              subtitle={installed ? `${toolCount || 'Multiple'} tool${toolCount === 1 ? '' : 's'} available to the agent.` : 'Connect once, then ask the agent in plain English.'}
+              subtitle={installed ? `${toolCount || 'Multiple'} action${toolCount === 1 ? '' : 's'} available to Construct.` : 'Connect once, then ask Construct in plain English.'}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {examples.map((example) => (
@@ -652,7 +662,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                       useComputerStore.getState().sendChatMessage(example);
                     }}
                     className="text-left text-[11px] px-2.5 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.05] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/5 transition-colors"
-                    title="Ask the agent with this integration context"
+                    title="Ask Construct with this integration context"
                   >
                     {example}
                   </button>
@@ -662,7 +672,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           )}
 
           {installed && (isComposio || detail.source === 'installed' || detail.registryApp) && (
-            <InfoCard title="Connection status" subtitle="The agent can use this from chat.">
+            <InfoCard title="Connection status" subtitle="Construct can use this from chat.">
               <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
                 <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                 <div className="min-w-0">
@@ -671,8 +681,8 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   </p>
                   <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
                     {toolCount > 0
-                      ? `${toolCount} tool${toolCount === 1 ? '' : 's'} discovered. Try one of the prompts above.`
-                      : 'Tools are available to the agent; refresh the tool list if this panel looks stale.'}
+                      ? `${toolCount} action${toolCount === 1 ? '' : 's'} available. Try one of the prompts above.`
+                      : 'Actions are available to Construct; refresh the action list if this panel looks stale.'}
                   </p>
                 </div>
               </div>
@@ -690,11 +700,10 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           )}
 
           {isCustomUrlInstall && (
-            <InfoCard title="About this install" subtitle="Connect & OAuth">
+            <InfoCard title="About this install" subtitle="MCP connection">
               <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                Apps added by URL are not in the Construct registry, so the App Store cannot show OAuth or API-key Connect
-                flows for them. The agent can still call tools if the MCP endpoint is reachable and does not require
-                per-user credentials stored in Construct. For full Connect support, publish the app to the registry.
+                Apps added by URL are not listed in Apps, so Construct cannot show built-in sign-in flows for them.
+                Construct can still use actions if the MCP connection is reachable and does not require stored user credentials.
               </p>
             </InfoCard>
           )}
@@ -753,7 +762,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           )}
 
           {isSkill && detail.skillContent && (
-            <InfoCard title="Skill Content">
+            <InfoCard title="Skill details">
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                 <pre className="text-[11px] text-[var(--color-text-muted)] whitespace-pre-wrap leading-relaxed font-mono p-2 bg-black/[0.04] dark:bg-white/[0.06] rounded-md">
                   {detail.skillContent}
@@ -775,13 +784,13 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             const togglePending = !!pendingActions[`toggle-${ia.id}`];
             const refreshPending = !!pendingActions[`refresh-${ia.id}`];
             return (
-              <InfoCard title="Manage app" subtitle={enabled ? 'Active for the agent' : 'Hidden from the agent'}>
+              <InfoCard title="Manage app" subtitle={enabled ? 'Active for Construct' : 'Hidden from Construct'}>
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
                       {enabled
-                        ? 'The agent can call this app\'s tools. Disable to hide it without uninstalling.'
-                        : 'This app is currently hidden from the agent. Enable to make its tools available again.'}
+                        ? 'Construct can use this app’s actions. Disable to hide it without uninstalling.'
+                        : 'This app is currently hidden from Construct. Enable to make its actions available again.'}
                     </div>
                     <button
                       onClick={() => handleToggleEnabled(ia.id, !enabled)}
@@ -799,16 +808,16 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   </div>
                   <div className="flex items-center justify-between gap-3 pt-2 border-t border-black/[0.05] dark:border-white/[0.05]">
                     <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
-                      Re-fetch this app's tool list from its MCP endpoint.
+                      Re-fetch this app's actions from its MCP connection.
                     </div>
                     <button
                       onClick={() => handleRefreshTools(ia.id)}
                       disabled={refreshPending}
                       className="px-3 py-1 rounded-md text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text)] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                      title="Refresh tools"
+                      title="Refresh actions"
                     >
                       {refreshPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      Refresh tools
+                      Refresh actions
                     </button>
                   </div>
                 </div>
@@ -832,7 +841,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
       <div className="flex-shrink-0 px-5 pt-4 pb-0">
         <div className="flex items-center justify-between mb-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-lg font-bold">App Store</h1>
+            <h1 className="text-lg font-bold">Apps</h1>
             {sourceFilter === 'integrations' && (
               <button
                 type="button"
@@ -846,6 +855,14 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             )}
           </div>
           <div className="flex items-center gap-1">
+            <span className="hidden text-[10px] text-[var(--color-text-muted)] md:inline">
+              <FreshnessText
+                lastUpdatedAt={freshness.lastUpdatedAt}
+                now={freshness.now}
+                isRefreshing={freshness.isRefreshing || loading}
+                isStale={freshness.isStale}
+              />
+            </span>
             <a
               href={PUBLISH_URL}
               target="_blank"
@@ -855,15 +872,17 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             >
               <Upload className="w-3 h-3" /> Publish
             </a>
-            <button
-              onClick={handleRefresh}
-              className="p-1.5 rounded-md hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors text-black/40 dark:text-white/40"
-              title="Refresh"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
+            <RefreshButton onClick={() => void freshness.refreshNow()} refreshing={freshness.isRefreshing || loading} />
           </div>
         </div>
+        {freshness.isStale && (
+          <StatusBanner
+            tone="warning"
+            action={<button className="text-xs underline" onClick={() => void freshness.refreshNow()}>Refresh</button>}
+          >
+            Apps may be out of date.
+          </StatusBanner>
+        )}
 
         {/* Tab bar */}
         <div className="flex gap-0 mb-3 border-b border-black/[0.06] dark:border-white/[0.06]">
@@ -875,7 +894,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60'
             }`}
           >
-            Discover
+            Available
             {tab === 'discover' && (
               <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[var(--color-accent)] rounded-full" />
             )}
@@ -888,7 +907,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60'
             }`}
           >
-            Installed
+            Connected
             {yourApps.length > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-bold rounded-full bg-black/[0.06] dark:bg-white/[0.08] text-black/50 dark:text-white/50">
                 {yourApps.length}
@@ -906,7 +925,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60'
             }`}
           >
-            From URL
+            Custom / MCP
             {tab === 'from_url' && (
               <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[var(--color-accent)] rounded-full" />
             )}
@@ -922,12 +941,12 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             className={`w-full pl-9 ${search ? 'pr-8' : 'pr-4'} py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-sm outline-none focus:border-[var(--color-accent)] transition-colors placeholder:text-black/30 dark:placeholder:text-white/25 disabled:opacity-40 disabled:cursor-not-allowed`}
             placeholder={
               tab === 'from_url'
-                ? 'Search is on Discover / Installed…'
+                ? 'Search is on Available / Connected…'
                 : tab === 'installed'
-                  ? 'Filter installed apps...'
+                  ? 'Filter connected apps...'
                   : sourceFilter === 'integrations'
                     ? 'Search integrations (GitHub, Gmail, Notion...)'
-                    : 'Search all apps, integrations, servers...'
+                    : 'Search all apps, integrations, and MCP apps...'
             }
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
@@ -981,7 +1000,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             {lastInstalledName && (
               <div className="flex items-center gap-2 text-[12px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 rounded-[12px] px-3 py-2">
                 <Check className="w-4 h-4 shrink-0" />
-                <span className="flex-1"><strong>{lastInstalledName}</strong> is installed and ready for the agent.</span>
+                <span className="flex-1"><strong>{lastInstalledName}</strong> is added and ready for Construct.</span>
                 <button onClick={() => setTab('installed')} className="text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500/15">
                   Open installed
                 </button>
@@ -990,18 +1009,19 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
             <InfoCard
               title="Server"
-              subtitle="Paste once. Auto-checks reachability, transport, tools, and UI."
+              subtitle="Paste once. Construct checks reachability, actions, and app UI."
               right={
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full border border-(--color-accent)/15 bg-(--color-accent)/8 px-2 py-1 text-[10px] font-medium text-(--color-accent)/90"
                   title="Install any remote MCP"
                 >
                   <Sparkles className="w-3 h-3" />
-                  Remote MCP
+                  MCP app
+                  <InfoHint side="left">MCP is a standard way for Construct to use actions from an external app.</InfoHint>
                 </span>
               }
             >
-              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP URL</label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-muted)] mb-1">MCP connection URL</label>
               <div className="relative mb-2">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]/60 pointer-events-none" />
                 <input
@@ -1069,21 +1089,21 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 icon={<Server className="w-4 h-4" />}
                 title="Reachable"
                 tone={probeMeta ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
-                value={probeMeta ? 'Server responded' : probing ? 'Checking endpoint' : probeAttempted ? 'Needs attention' : 'Waiting for URL'}
+                value={probeMeta ? 'App responded' : probing ? 'Checking connection' : probeAttempted ? 'Needs attention' : 'Waiting for URL'}
                 detail={probeMeta ? `${probeMeta.origin}${probeMeta.mcp_path}` : 'Construct calls this from the cloud. Private IPs and localhost are blocked.'}
               />
               <UrlCheckCard
                 icon={<Wrench className="w-4 h-4" />}
-                title="MCP tools"
+                title="MCP actions"
                 tone={probeTools?.length ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
-                value={probeTools ? `${probeTools.length} discovered` : probing ? 'Listing tools' : 'Not checked yet'}
-                detail={probeMeta?.transport === 'sse' ? 'Streamable HTTP supported' : probeMeta?.transport === 'json' ? 'JSON response supported' : 'We verify tools/list before install.'}
+                value={probeTools ? `${probeTools.length} found` : probing ? 'Listing actions' : 'Not checked yet'}
+                detail={probeMeta ? 'Connection verified.' : 'Construct checks available actions before install.'}
               />
               <UrlCheckCard
                 icon={<Eye className="w-4 h-4" />}
                 title="Interface"
                 tone={fromHasUi ? 'emerald' : probeMeta ? 'gray' : 'gray'}
-                value={fromHasUi ? 'Will open as an app' : probeMeta?.has_ui_guess ? 'UI detected' : 'Tools-only by default'}
+                value={fromHasUi ? 'Will open as an app' : probeMeta?.has_ui_guess ? 'UI detected' : 'Actions-only by default'}
                 detail="Enable this only when the server also hosts a user-facing web UI."
                 action={
                   <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
@@ -1102,7 +1122,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 title="Ready"
                 tone={probeMeta && !atAppLimit ? 'emerald' : atAppLimit ? 'red' : 'gray'}
                 value={atAppLimit ? 'Plan limit reached' : probeMeta ? 'Ready to install' : 'Check required'}
-                detail={atAppLimit ? `You have reached ${maxApps} installed apps.` : 'Install saves the tool list and makes it available to the agent.'}
+                detail={atAppLimit ? `You have reached ${maxApps} added apps.` : 'Install saves the action list and makes it available to Construct.'}
               />
             </div>
 
@@ -1133,18 +1153,18 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             </div>
 
             {probeMeta && probeTools && (
-              <InfoCard title="Tool Preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} tool(s)`}>
+              <InfoCard title="Action preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} action(s)`}>
                 {probeTools.length > 0 ? (
                   <ToolsList tools={probeTools.map((t) => ({ slug: t.name, name: t.name, description: t.description }))} />
                 ) : (
-                  <p className="text-[11px] text-[var(--color-text-muted)]">No tools returned by this server.</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">No actions returned by this app.</p>
                 )}
               </InfoCard>
             )}
           </div>
         ) : tab === 'installed' ? (
           yourApps.length === 0 ? (
-            <EmptyState message={search ? 'No installed apps match your filter.' : 'No apps installed yet. Browse Discover to find some.'} />
+            <EmptyState message={search ? 'No connected apps match your filter.' : 'No connected apps yet. Browse Available to find some.'} />
           ) : (
             (() => {
               const q = search.toLowerCase().trim();
@@ -1152,7 +1172,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 ? yourApps.filter(a => a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q))
                 : yourApps;
               if (filtered.length === 0) {
-                return <EmptyState message={`No installed apps match "${search}".`} />;
+                return <EmptyState message={`No connected apps match "${search}".`} />;
               }
               const mcpApps = filtered.filter(a => a.source !== 'composio' && !a.isSkill);
               const skillApps = filtered.filter(a => a.isSkill);
@@ -1293,7 +1313,7 @@ function isProbeableUrl(value: string): boolean {
 }
 
 function formatEndpointPreview(rawUrl: string, rawPath: string): string {
-  if (!rawUrl.trim()) return 'Paste an MCP URL';
+  if (!rawUrl.trim()) return 'Paste an MCP connection URL';
   try {
     const parsed = new URL(rawUrl.trim());
     const explicitPath = rawPath.trim();
@@ -1333,7 +1353,7 @@ function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void
         </p>
         <div className="mt-2 flex items-center gap-1.5">
           {isInstalled ? (
-            <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 rounded-full">{isComposio ? 'Connected' : 'Installed'}</span>
+            <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 rounded-full">{isComposio ? 'Connected' : 'Added'}</span>
           ) : app.requiresUpgrade ? (
             <span className="text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 rounded-full flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" /> Upgrade</span>
           ) : (
@@ -1341,7 +1361,7 @@ function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void
           )}
           {isSkill && <span className="text-[10px] font-semibold text-purple-500 bg-purple-500/10 px-1.5 rounded-full">Skill</span>}
           {app.tags?.includes('from-url') && (
-            <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 rounded-full">From URL</span>
+            <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 rounded-full">Custom / MCP</span>
           )}
         </div>
       </div>

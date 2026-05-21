@@ -196,7 +196,7 @@ const TOOL_ACTIVITY_VERB: Record<string, string> = {
   app: 'Apps',
   browser: 'Browser',
   remote_browser_session: 'Browser session',
-  cancel_agents: 'Cancelling agents',
+  cancel_agents: 'Cancelling helpers',
   coding_guide: 'Loading guide',
   local_app_guide: 'Loading guide',
   web_design_guide: 'Loading guide',
@@ -333,10 +333,10 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   if (tool === 'memory') {
     const action = p.action as string | undefined;
     switch (action) {
-      case 'recall': return { text: 'Recalling memories', activityType: 'tool' };
-      case 'list': return { text: 'Listing memories', activityType: 'tool' };
-      case 'forget': return { text: 'Forgetting memory', activityType: 'tool' };
-      default: return { text: `Memory: ${action || 'operation'}`, activityType: 'tool' };
+      case 'recall': return { text: 'Checking knowledge', activityType: 'tool' };
+      case 'list': return { text: 'Listing knowledge', activityType: 'tool' };
+      case 'forget': return { text: 'Removing saved knowledge', activityType: 'tool' };
+      default: return { text: `Knowledge: ${action || 'operation'}`, activityType: 'tool' };
     }
   }
 
@@ -576,7 +576,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const subtasks = p.subtasks;
     const count = Array.isArray(subtasks) ? subtasks.length : '?';
     const shortGoal = goal ? (goal.length > 50 ? goal.slice(0, 50) + '...' : goal) : 'complex task';
-    return { text: `Delegating: ${shortGoal} (${count} subagents)`, activityType: 'delegation' };
+    return { text: `Delegating: ${shortGoal} (${count} helper${count === 1 ? '' : 's'})`, activityType: 'delegation' };
   }
 
   if (tool === 'consult_experts') {
@@ -601,7 +601,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const agentType = p.agent_type as string | undefined;
     const body = (taskText || 'task').slice(0, 58) + ((taskText && taskText.length > 58) ? '…' : '');
     const label = agentType ? `${agentType}: ${body}` : body;
-    return { text: `Spawning agent: ${label}`, activityType: 'delegation' };
+    return { text: `Starting helper: ${label}`, activityType: 'delegation' };
   }
   if (tool === 'spawn_agents') {
     const tasks = p.tasks as Array<{ agent_type?: string; task?: string }> | undefined;
@@ -609,23 +609,23 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
       const first = tasks[0].task || tasks[0].agent_type || 'task';
       const preview = first.slice(0, 44) + (first.length > 44 ? '…' : '');
       const extra = tasks.length > 1 ? ` (+${tasks.length - 1} more)` : '';
-      return { text: `Spawning ${tasks.length} agents: ${preview}${extra}`, activityType: 'delegation' };
+      return { text: `Starting ${tasks.length} helpers: ${preview}${extra}`, activityType: 'delegation' };
     }
-    return { text: 'Spawning agents', activityType: 'delegation' };
+    return { text: 'Starting helpers', activityType: 'delegation' };
   }
   if (tool === 'wait_for_agents') {
     const ids = (p.child_ids as string[] | undefined) || (p.agent_ids as string[] | undefined);
     const n = ids?.length ?? 0;
-    return { text: `Waiting for ${n} agent${n === 1 ? '' : 's'}`, activityType: 'delegation' };
+    return { text: `Waiting for ${n} helper${n === 1 ? '' : 's'}`, activityType: 'delegation' };
   }
   if (tool === 'cancel_agents') {
     const ids = (p.child_ids as string[] | undefined) || (p.agent_ids as string[] | undefined);
     const n = ids?.length ?? 0;
-    return { text: `Cancelling ${n} agent${n === 1 ? '' : 's'}`, activityType: 'delegation' };
+    return { text: `Cancelling ${n} helper${n === 1 ? '' : 's'}`, activityType: 'delegation' };
   }
-  if (tool === 'check_agent_status') return { text: 'Checking agent status', activityType: 'delegation' };
-  if (tool === 'cancel_agent') return { text: 'Cancelling agent', activityType: 'delegation' };
-  if (tool === 'list_active_agents') return { text: 'Listing active agents', activityType: 'delegation' };
+  if (tool === 'check_agent_status') return { text: 'Checking helper status', activityType: 'delegation' };
+  if (tool === 'cancel_agent') return { text: 'Cancelling helper', activityType: 'delegation' };
+  if (tool === 'list_active_agents') return { text: 'Listing active helpers', activityType: 'delegation' };
   if (tool === 'update_plan') {
     if ((p.action as string) === 'create') return { text: `Planning: ${((p.goal as string) || 'task').slice(0, 50)}`, activityType: 'tool' };
     return { text: 'Updating plan', activityType: 'tool' };

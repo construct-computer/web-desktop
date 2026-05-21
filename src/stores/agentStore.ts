@@ -1372,8 +1372,8 @@ export const useComputerStore = create<ComputerStore>()(
               model: '',
               goals: [],
               schedules: [],
-              identityName: agentIdentityName || 'Construct Agent',
-              identityDescription: 'Your AI assistant',
+              identityName: agentIdentityName || 'Construct',
+              identityDescription: 'Your AI workspace assistant',
               agentmailEmail,
             },
           };
@@ -2257,7 +2257,7 @@ export const useComputerStore = create<ComputerStore>()(
                         tracker.addSubAgent(operationId, {
                           id: s.id || `${operationId}_s${si}`,
                           type: 'subagent',
-                          label: `Subagent ${si}`,
+                          label: `Helper ${si + 1}`,
                           goal: s.goal,
                           status: s.status === 'completed' ? 'complete' : s.status === 'failed' ? 'failed' : 'complete',
                           startedAt: Date.now(),
@@ -2273,7 +2273,7 @@ export const useComputerStore = create<ComputerStore>()(
                   }
 
                   history.push({
-                    role: 'activity', content: `Delegation: ${shortGoal} (${count} subagents)`,
+                    role: 'activity', content: `Delegation: ${shortGoal} (${count} helper${count === 1 ? '' : 's'})`,
                     timestamp: new Date(msg.created_at), tool, activityType: 'delegation-group', operationId,
                   });
                   continue;
@@ -2419,13 +2419,13 @@ export const useComputerStore = create<ComputerStore>()(
                 const operationId = payload.operationId as string | undefined;
                 if (!childId || !operationId || liveChildIds.has(childId)) break;
                 if (!tracker.operations[operationId]) {
-                  const goal = (payload.task as string) || (payload.goal as string) || 'Subagent';
+                  const goal = (payload.task as string) || (payload.goal as string) || 'Helper';
                   tracker.startOperation(operationId, 'orchestration', goal, 1, undefined, requestedSessionKey);
                 }
                 tracker.addSubAgent(operationId, {
                   id: childId,
                   type: 'subagent',
-                  label: (payload.agentType as string) || (payload.label as string) || 'Subagent',
+                  label: (payload.agentType as string) || (payload.label as string) || 'Helper',
                   goal: (payload.task as string) || (payload.goal as string) || '',
                   status: 'running',
                   startedAt: eventTs,
@@ -2561,8 +2561,8 @@ export const useComputerStore = create<ComputerStore>()(
         useNotificationStore.getState().addNotification(
           {
             title: 'External session is read-only',
-            body: 'Reply from the source platform or manage sender access from Access Control.',
-            source: 'Agent',
+            body: 'Reply from the source platform or manage sender access from Approvals.',
+            source: 'Construct',
             variant: 'info',
             onClick: () => useWindowStore.getState().ensureWindowOpen('access-control'),
           },
@@ -2673,7 +2673,7 @@ export const useComputerStore = create<ComputerStore>()(
         set(state => ({
           chatMessages: appendMessage(state.chatMessages, {
             role: 'agent',
-            content: 'Not connected to agent. Please wait for the connection and try again.',
+            content: 'Not connected to Construct. Please wait for the connection and try again.',
             timestamp: new Date(),
             isError: true,
           }),
@@ -2682,9 +2682,9 @@ export const useComputerStore = create<ComputerStore>()(
         }));
         useNotificationStore.getState().addNotification(
           {
-            title: 'Agent reconnecting',
+            title: 'Construct reconnecting',
             body: 'Your message was not delivered. Reconnect, then send it again.',
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -2798,9 +2798,9 @@ export const useComputerStore = create<ComputerStore>()(
       if (!sent) {
         useNotificationStore.getState().addNotification(
           {
-            title: 'Stop may not have reached the agent',
+            title: 'Stop may not have reached Construct',
             body: 'Reconnecting. If work keeps running, try Stop again.',
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -2816,9 +2816,9 @@ export const useComputerStore = create<ComputerStore>()(
       if (!sent) {
         useNotificationStore.getState().addNotification(
           {
-            title: 'Stop may not have reached the agent',
+            title: 'Stop may not have reached Construct',
             body: "Reconnecting. If the task keeps running, try Stop again.",
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -2849,7 +2849,7 @@ export const useComputerStore = create<ComputerStore>()(
           {
             title: "Can't target a chat to stop",
             body: "Reconnect, then use Stop again.",
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           6000,
@@ -2891,9 +2891,9 @@ export const useComputerStore = create<ComputerStore>()(
       if (!sent) {
         useNotificationStore.getState().addNotification(
           {
-            title: 'Stop may not have reached the agent',
+            title: 'Stop may not have reached Construct',
             body: "Reconnecting. If the task keeps running, try Stop again.",
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -2941,9 +2941,9 @@ export const useComputerStore = create<ComputerStore>()(
       if (!sent) {
         useNotificationStore.getState().addNotification(
           {
-            title: 'Stop may not have reached the agent',
+            title: 'Stop may not have reached Construct',
             body: "Reconnecting. If the task keeps running, try Stop again.",
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -3006,7 +3006,7 @@ export const useComputerStore = create<ComputerStore>()(
           {
             title: 'Could not send interrupt',
             body: "Reconnect, then try Interrupt + send again.",
-            source: 'Agent',
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -3024,9 +3024,9 @@ export const useComputerStore = create<ComputerStore>()(
       if (!stopped) {
         useNotificationStore.getState().addNotification(
           {
-            title: 'Could not reach agent to clear history',
-            body: "Reconnect, then try clearing again if the agent is still running.",
-            source: 'Agent',
+            title: 'Could not reach Construct to clear history',
+            body: "Reconnect, then try clearing again if Construct is still running.",
+            source: 'Construct',
             variant: 'error',
           },
           8000,
@@ -4277,9 +4277,9 @@ export const useComputerStore = create<ComputerStore>()(
               closeAllAutoOpened(2000);
               if (get().agentRunning && document.hidden) {
                 useNotificationStore.getState().addNotification({
-                  title: 'Agent finished',
+                  title: 'Done',
                   body: 'Your request has been completed.',
-                  source: 'agent',
+                  source: 'Construct',
                   variant: 'success',
                 }, 3000);
               }
@@ -4390,9 +4390,9 @@ export const useComputerStore = create<ComputerStore>()(
           // watchdog stays quiet by default.
           if (severity === 'error' && origin !== 'watchdog') {
             useNotificationStore.getState().addNotification({
-              title: 'Agent status',
+              title: 'Construct status',
               body: text,
-              source: 'agent',
+              source: 'Construct',
               variant: 'error',
             }, 5000);
           }
@@ -4405,9 +4405,9 @@ export const useComputerStore = create<ComputerStore>()(
             appendToAgentChat(notice);
             if (notice.isError) {
               useNotificationStore.getState().addNotification({
-                title: 'Agent issue',
-                body: notice.content.split('\n')[0] || 'The agent hit an issue.',
-                source: 'agent',
+                title: 'Construct issue',
+                body: notice.content.split('\n')[0] || 'Construct hit an issue.',
+                source: 'Construct',
                 variant: 'error',
               }, 5000);
             }
@@ -4513,7 +4513,7 @@ export const useComputerStore = create<ComputerStore>()(
           useNotificationStore.getState().addNotification({
             title: 'Session queued',
             body: reason,
-            source: 'agent',
+            source: 'Construct',
             variant: 'info',
           }, 3500);
           break;
@@ -4913,7 +4913,7 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'notification': {
           // Agent sent a desktop notification — show it as a toast
-          const title = event.data?.title as string || 'Agent Notification';
+          const title = event.data?.title as string || 'Construct notification';
           const body = event.data?.body as string | undefined;
           const source = event.data?.source as string | undefined;
           const variant = event.data?.variant as 'info' | 'success' | 'error' | undefined;
@@ -5016,12 +5016,12 @@ export const useComputerStore = create<ComputerStore>()(
           // opens the Access Control window when clicked.
           set(state => ({ pendingApprovalCount: state.pendingApprovalCount + 1 }));
           const userName = (event.data?.displayName as string) || (event.data?.slackUsername as string) || 'A Slack user';
-          const toolName = event.data?.toolName as string || 'a restricted tool';
+          const toolName = event.data?.toolName as string || 'a restricted action';
           useNotificationStore.getState().addNotification(
             {
-              title: `Permission Request`,
+              title: 'Approval request',
               body: `${userName} wants to use ${toolName}`,
-              source: 'Access Control',
+              source: 'Approvals',
               variant: 'info',
               onClick: () => {
                 useWindowStore.getState().ensureWindowOpen('access-control');
@@ -5044,13 +5044,13 @@ export const useComputerStore = create<ComputerStore>()(
           const accessBody = accessPlatform === 'agent' && accessToolName
             ? `${accessUserName} needs approval for ${accessToolName}`
             : accessPlatform === 'email'
-            ? `${accessUserName} sent your agent an email`
+            ? `${accessUserName} sent Construct an email`
             : accessToolName
               ? `${accessUserName} wants to use ${accessToolName}`
               : `${accessUserName} is requesting access via ${accessPlatform || 'an external platform'}`;
           const approvalNotice: ChatMessage = {
             role: 'notice',
-            content: `${accessBody}. Review it in Access Control.`,
+            content: `${accessBody}. Review it in Approvals.`,
             timestamp: new Date(),
             source: isExternalPlatform(accessPlatform) ? accessPlatform : undefined,
           };
@@ -5065,12 +5065,12 @@ export const useComputerStore = create<ComputerStore>()(
           useNotificationStore.getState().addNotification(
             {
               title: accessPlatform === 'email'
-                ? 'New Email from Unknown Sender'
+                ? 'New email from unknown sender'
                 : accessPlatform === 'agent'
-                  ? 'Tool Approval Required'
-                  : 'Permission Request',
+                  ? 'Approval required'
+                  : 'Approval request',
               body: accessBody,
-              source: 'Access Control',
+              source: 'Approvals',
               variant: 'info',
               onClick: () => {
                 useWindowStore.getState().ensureWindowOpen('access-control');
@@ -5340,7 +5340,7 @@ export const useComputerStore = create<ComputerStore>()(
           useNotificationStore.getState().addNotification({
             title: 'Background task failed',
             body: error.length > 100 ? error.slice(0, 100) + '...' : error,
-            source: 'agent',
+            source: 'Construct',
             variant: 'error',
           });
           break;
@@ -5486,9 +5486,9 @@ export const useComputerStore = create<ComputerStore>()(
           }
           if (!isUsageBlock) {
             useNotificationStore.getState().addNotification({
-              title: 'Agent error',
+              title: 'Construct issue',
               body: message,
-              source: 'agent',
+              source: 'Construct',
               variant: 'error',
             }, 8000);
           } else {
@@ -5832,7 +5832,7 @@ export const useComputerStore = create<ComputerStore>()(
             let tfWindowId = findWindowForBrowser(tfSubagentId);
             if (!tfWindowId) {
               tfWindowId = getOrCreateBrowserAppWindow({
-                title: isSubagent ? 'Web Agent (sub-agent)' : 'Web Agent',
+                title: isSubagent ? 'Construct Browser' : 'Construct Browser',
                 metadata: {
                   browserSubagentId: tfSubagentId,
                   browserStreamUrl: streamingUrl,
@@ -6270,21 +6270,22 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'ask_permission': {
-          // Permission system: agent needs user approval for a tool call
+          // Permission system: Construct needs user approval for an action.
           const permTool = event.data?.tool as string || 'unknown';
           const permToolCallId = event.data?.toolCallId as string || '';
           const permArgs = event.data?.args as Record<string, unknown> || {};
           const permReason = event.data?.reason as string || `${permTool} requires your approval`;
+          const permDetails = JSON.stringify(permArgs).slice(0, 200);
           const permMsg: ChatMessage = {
             role: 'agent',
-            content: `**Permission Required**: ${permReason}\n\nTool: \`${permTool}\`\nArguments: \`${JSON.stringify(permArgs).slice(0, 200)}\``,
+            content: `**Approval needed**: ${permReason}\n\nAction: \`${permTool}\`${permDetails && permDetails !== '{}' ? `\nDetails: \`${permDetails}\`` : ''}`,
             timestamp: new Date(),
             askUser: {
               questionId: permToolCallId,
               question: permReason,
               options: [
-                { label: 'Allow', value: 'allow', description: `Allow ${permTool} to execute` },
-                { label: 'Deny', value: 'deny', description: 'Block this tool call' },
+                { label: 'Allow', value: 'allow', description: `Let Construct run ${permTool}` },
+                { label: 'Deny', value: 'deny', description: 'Block this action' },
               ],
               allowCustom: false,
             },
@@ -6292,9 +6293,9 @@ export const useComputerStore = create<ComputerStore>()(
           if (isActiveSession) set({ chatMessages: appendMessage(get().chatMessages, permMsg) });
           // Also show as toast so user doesn't miss it if chat is scrolled/hidden
           useNotificationStore.getState().addNotification({
-            title: 'Permission Required',
+            title: 'Approval needed',
             body: permReason,
-            source: 'agent',
+            source: 'Approvals',
             variant: 'info',
           }, 15_000);
           break;
@@ -6333,7 +6334,7 @@ export const useComputerStore = create<ComputerStore>()(
           const mbCount = event.data?.count as number || 1;
           const mailboxMsg: ChatMessage = {
             role: 'activity',
-            content: `Received ${mbCount} message${mbCount !== 1 ? 's' : ''} from background agent${mbCount !== 1 ? 's' : ''}`,
+            content: `Received ${mbCount} message${mbCount !== 1 ? 's' : ''} from background task${mbCount !== 1 ? 's' : ''}`,
             timestamp: new Date(),
             activityType: 'tool',
           };

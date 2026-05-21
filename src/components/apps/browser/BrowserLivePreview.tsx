@@ -57,14 +57,14 @@ function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessi
   const message = useMemo(() => {
     if (!session && requestedUrl) {
       return {
-        title: 'Ready for a Browser Use session',
-        body: `Ask the agent to open ${requestedUrl}. Live previews, screenshots, and run files will appear here.`,
+        title: 'Ready for a browser session',
+        body: `Ask Construct to open ${requestedUrl}. Live previews, screenshots, and files will appear here.`,
       };
     }
     if (!session) {
       return {
-        title: 'Waiting for a Browser Use session',
-        body: 'When the agent opens a remote browser, the live preview will appear here.',
+        title: 'Waiting for a browser session',
+        body: 'When Construct opens a remote browser, the live preview will appear here.',
       };
     }
     if (session.status === 'complete') {
@@ -82,7 +82,7 @@ function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessi
     if (session.status === 'expired') {
       return {
         title: 'Preview expired',
-        body: 'Browser Use live URLs are intentionally short-lived. Results, screenshots, and files remain available in the dashboard.',
+        body: 'Live browser links are short-lived. Results, screenshots, and files remain available in the dashboard.',
       };
     }
     if (session.status === 'error') {
@@ -93,7 +93,7 @@ function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessi
     }
     return {
       title: 'Waiting for live URL',
-      body: 'The agent has started a remote browser. The Browser Use preview will attach as soon as the live URL arrives.',
+      body: 'Construct has started a remote browser. The live preview will attach as soon as it is ready.',
     };
   }, [requestedUrl, session]);
 
@@ -152,10 +152,10 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   const headerLabel = isErr
     ? `Run failed${runErrorDetail ? `: ${runErrorDetail.slice(0, 140)}${runErrorDetail.length > 140 ? '...' : ''}` : ''}`
     : isComplete
-      ? 'Run finished. Preview may freeze after Browser Use ends the session.'
+      ? 'Run finished. Preview may freeze after the browser session ends.'
       : reloadKey > 0 && !isDead
         ? `Live preview reconnecting, attempt ${reloadKey}`
-        : 'Live preview. Agent is controlling the browser';
+        : 'Live preview. Construct is controlling the browser';
 
   const barClass = isErr
     ? 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/25'
@@ -238,7 +238,7 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
           key={`${streamUrl}:${reloadKey}`}
           src={streamUrl}
           className="flex-1 w-full bg-white border-0"
-          title="Browser Use live preview"
+          title="Live browser preview"
           allow="clipboard-read; clipboard-write"
           onLoad={onLoad}
           onError={onError}

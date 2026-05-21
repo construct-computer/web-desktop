@@ -102,13 +102,25 @@ export function UsageSection() {
   }, [fetchUsage, fetchSubscription, fetchTweetStatus]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const refresh = () => {
       fetchUsage();
       fetchTweetStatus();
       fetchSubscription();
       api.getStorageUsage().then(r => { if (r.success && r.data) setStorage(r.data); });
-    }, 15_000);
-    return () => clearInterval(interval);
+    };
+    const refreshWhenVisible = () => {
+      if (!document.hidden) refresh();
+    };
+    const interval = setInterval(refresh, 15_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('online', refresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('online', refresh);
+    };
   }, [fetchUsage, fetchTweetStatus, fetchSubscription]);
 
   const [weeklyTimeLeft, setWeeklyTimeLeft] = useState('');

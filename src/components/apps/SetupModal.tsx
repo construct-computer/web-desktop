@@ -65,7 +65,7 @@ export function SetupModal() {
 
   // Profile fields
   const [ownerName, setOwnerName] = useState(user?.displayName || '');
-  const [agentName, setAgentName] = useState('Construct Agent');
+  const [agentName, setAgentName] = useState('Construct');
   const [nameError, setNameError] = useState('');
 
   // Email fields
@@ -177,7 +177,7 @@ export function SetupModal() {
       if (emailAvailable === false) return;
     }
 
-    const trimmedAgentName = agentName.trim() || 'Construct Agent';
+    const trimmedAgentName = agentName.trim() || 'Construct';
     const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
 
     setIsSaving(true);
@@ -226,9 +226,9 @@ export function SetupModal() {
               <Sparkles className="w-8 h-8 text-black/40 dark:text-white/40 drop-shadow-sm" />
             </div>
           )}
-          <h2 className="text-xl font-semibold tracking-tight">Set Up Your Computer</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Set Up Construct</h2>
           <p className="text-xs text-[var(--color-text-muted)]">
-            Configure your profile and agent email to get started.
+            Set your profile and Construct email to get started.
           </p>
         </div>
 
@@ -265,26 +265,26 @@ export function SetupModal() {
             </p>
           </div>
 
-          {/* Agent Name */}
+          {/* Construct Name */}
           <div className="space-y-1">
-            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Agent Name</Label>
+            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Construct Name</Label>
             <Input
               type="text"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-              placeholder="Construct Agent"
+              placeholder="Construct"
             />
             <p className="text-[10px] text-[var(--color-text-muted)] ml-1">
-              The name your agent uses when joining meetings or sending messages.
+              The name Construct uses when joining meetings or sending messages.
             </p>
           </div>
 
-          {/* Agent Email */}
+          {/* Construct Email */}
           <div className="space-y-1">
             <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5" />
-              Agent Email Address
+              Construct Email Address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
               {!emailLocked && !isPaid && (
                 <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-black/5 dark:bg-white/10 text-[var(--color-text-muted)] font-semibold tracking-wide uppercase normal-case ml-1">Optional</span>
@@ -296,7 +296,7 @@ export function SetupModal() {
               ) : (
                 <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02]">
                   <p className="text-[11px] text-[var(--color-text-muted)]">
-                    Give your agent a dedicated inbox
+                    Give Construct a dedicated inbox
                   </p>
                   <button
                     type="button"
@@ -402,7 +402,7 @@ function SetupModalUpgradeCard({
     <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5 animate-in fade-in slide-in-from-top-1">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-          Give your agent a <span className="font-medium text-[var(--color-text)]">@{AGENT_EMAIL_DOMAIN}</span> inbox — available on any paid plan.
+          Give Construct a <span className="font-medium text-[var(--color-text)]">@{AGENT_EMAIL_DOMAIN}</span> inbox - available on any paid plan.
         </p>
         {onCancel && (
           <button

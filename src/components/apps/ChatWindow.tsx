@@ -8,6 +8,8 @@ import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
 import { ActivityIcon as ToolActivityIcon } from '@/components/desktop/spotlight/ActivityIcon';
 import { ChatEventRow } from '@/components/desktop/spotlight/ChatEventRow';
+import { MessageList } from '@/components/desktop/spotlight/MessageList';
+import { SpotlightInput } from '@/components/desktop/spotlight/SpotlightInput';
 import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -426,7 +428,7 @@ interface ChatWindowProps {
 
 const DRAFT_STORAGE_KEY = 'construct:chat-draft';
 
-export function ChatWindow({ config }: ChatWindowProps) {
+export function LegacyChatWindow({ config }: ChatWindowProps) {
   const [message, setMessage] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -803,6 +805,83 @@ export function ChatWindow({ config }: ChatWindowProps) {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function ChatWindow(props: ChatWindowProps) {
+  void props;
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { play } = useSound();
+
+  const computer = useComputerStore((s) => s.computer);
+  const agentConnected = useComputerStore((s) => s.agentConnected);
+  const chatSessions = useComputerStore((s) => s.chatSessions);
+  const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
+  const createSession = useComputerStore((s) => s.createSession);
+  const activeSession = chatSessions.find(s => s.key === activeSessionKey);
+  const isConnected = computer?.status === 'running';
+
+  const toggleDropdown = useCallback(() => {
+    if (dropdownOpen) {
+      setDropdownOpen(false);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setAnchorRect(rect);
+      setDropdownOpen(true);
+    }
+  }, [dropdownOpen]);
+
+  const handleNewChat = useCallback(() => {
+    play('click');
+    analytics.chatSessionCreated();
+    createSession();
+  }, [createSession, play]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[var(--color-surface)]">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)] surface-toolbar px-3 py-2">
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${
+            agentConnected
+              ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.6)]'
+              : isConnected
+                ? 'animate-pulse bg-amber-400'
+                : 'bg-neutral-400'
+          }`}
+          title={agentConnected ? 'Online' : isConnected ? 'Connecting' : 'Offline'}
+        />
+        <button
+          ref={triggerRef}
+          className="flex min-w-0 items-center gap-0.5 text-xs font-medium transition-colors hover:text-[var(--color-accent)]"
+          onClick={toggleDropdown}
+        >
+          <span className="truncate">{activeSession?.title || 'Chat'}</span>
+          <ChevronDown className={`h-3 w-3 shrink-0 opacity-40 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+        <div className="flex-1" />
+        <button
+          className="rounded-md p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-accent)]"
+          onClick={handleNewChat}
+          title="New chat"
+        >
+          <SquarePen className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {dropdownOpen && anchorRect && (
+        <SessionDropdown
+          anchorRect={anchorRect}
+          onClose={() => setDropdownOpen(false)}
+        />
+      )}
+
+      <MessageList paddingTopClass="pt-4" />
+      <SpotlightInput />
     </div>
   );
 }

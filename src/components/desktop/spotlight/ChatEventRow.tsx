@@ -35,7 +35,7 @@ function eventMeta(msg: ChatMessage): {
 } {
   if (msg.noticeKind === 'incident') {
     const severity = msg.noticeSeverity || (msg.isError ? 'error' : 'warn');
-    const title = msg.noticeTitle || msg.content.split('\n')[0] || 'Agent issue';
+    const title = msg.noticeTitle || msg.content.split('\n')[0] || 'Construct issue';
     return {
       title,
       detail: msg.noticeDetail,

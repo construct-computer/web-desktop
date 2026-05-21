@@ -17,6 +17,7 @@ import { openSettingsToSection } from '@/lib/settingsNav';
 import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { Download, ExternalLink, Crown, AlertTriangle } from 'lucide-react';
+import { InfoHint } from '@/components/ui';
 
 // Lazy panel imports (these are the full window components rendered inline)
 import { ChatWindow } from '@/components/apps/ChatWindow';
@@ -248,12 +249,12 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             )}
 
             {/* Apps & configuration */}
-            <MenuItem label="App Registry..." isMobile={isMobile} icon={<Package className="w-3.5 h-3.5" />} onClick={() => { openWindow('app-registry'); setMenu({ open: null }); }} />
+            <MenuItem label="Apps..." isMobile={isMobile} icon={<Package className="w-3.5 h-3.5" />} onClick={() => { openWindow('app-registry'); setMenu({ open: null }); }} />
             <MenuItem label="Settings..." isMobile={isMobile} icon={<Settings className="w-3.5 h-3.5" />} onClick={() => { openWindow('settings'); setMenu({ open: null }); }} />
             <MenuDivider />
-            <MenuItem label="Access Control" isMobile={isMobile} icon={<Shield className="w-3.5 h-3.5" />} onClick={() => { openWindow('access-control'); setMenu({ open: null }); }} />
-            <MenuItem label="Audit Logs" isMobile={isMobile} icon={<FileText className="w-3.5 h-3.5" />} onClick={() => { openWindow('auditlogs'); setMenu({ open: null }); }} />
-            <MenuItem label="Memory" isMobile={isMobile} icon={<Brain className="w-3.5 h-3.5" />} onClick={() => { openWindow('memory'); setMenu({ open: null }); }} />
+            <MenuItem label="Approvals" isMobile={isMobile} icon={<Shield className="w-3.5 h-3.5" />} onClick={() => { openWindow('access-control'); setMenu({ open: null }); }} />
+            <MenuItem label="Activity" isMobile={isMobile} icon={<FileText className="w-3.5 h-3.5" />} onClick={() => { openWindow('auditlogs'); setMenu({ open: null }); }} />
+            <MenuItem label="Knowledge" isMobile={isMobile} icon={<Brain className="w-3.5 h-3.5" />} onClick={() => { openWindow('memory'); setMenu({ open: null }); }} />
             <MenuDivider />
             <MenuItem label="Take a Tour" isMobile={isMobile} icon={<Map className="w-3.5 h-3.5" />} onClick={() => { setMenu({ open: null }); window.dispatchEvent(new Event('construct:force-tour')); }} />
             <MenuDivider />
@@ -592,7 +593,7 @@ function AgentActivityIndicator() {
     <button
       onClick={toggleSpotlight}
       className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/8 max-w-[180px] hover:bg-black/10 dark:hover:bg-white/15 transition cursor-pointer"
-      title="Show agent chat (Ctrl+Space)"
+      title="Show Construct chat (Ctrl+Space)"
     >
       {/* Status dot */}
       <span className="relative flex-shrink-0 flex h-2 w-2">
@@ -692,7 +693,10 @@ function LatencyPopover({ anchorRef, latency }: { anchorRef: React.RefObject<HTM
       onMouseEnter={(e) => e.stopPropagation()}
     >
       <div className="text-[10px] uppercase tracking-wider text-black/50 dark:text-white/50 mb-0.5">
-        Latency
+        <span className="inline-flex items-center gap-1">
+          Connection quality
+          <InfoHint side="left">Shows how quickly this app can reach Construct. Lower is better.</InfoHint>
+        </span>
       </div>
       <div className={`font-mono text-sm font-semibold tabular-nums ${color}`}>
         {ms === null ? '…' : `${ms} ms`}

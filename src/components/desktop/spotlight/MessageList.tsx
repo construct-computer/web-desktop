@@ -265,7 +265,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
           <div className="text-center max-w-sm">
             <p className="text-[18px] font-light text-[var(--color-text)]/60">{meta.label} session</p>
             <p className="text-[13px] text-[var(--color-text-muted)]/40 mt-2">
-              Messages from this external platform will appear here after they pass access control.
+              Messages from this external platform will appear here after they are approved.
             </p>
           </div>
         </div>
@@ -278,7 +278,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
             <p className="text-[18px] font-light text-[var(--color-text)]/60">What can I help you with?</p>
             <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
             {!isMobile && (
-              <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl/Alt+Space</span> to toggle the agent anytime</p>
+              <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl/Alt+Space</span> to open Construct anytime</p>
             )}
             <div
               className={cn(

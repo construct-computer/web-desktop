@@ -23,7 +23,7 @@ const TOOL_LABELS: Record<string, string> = {
   save_to_workspace: 'Save', load_from_workspace: 'Load', browser: 'Browser',
   web_search: 'Search', remote_browser: 'Browse', read_file: 'Read', write_file: 'Write',
   list_directory: 'List files', email: 'Email', calendar: 'Calendar',
-  agent_calendar: 'Calendar', slack: 'Slack', telegram: 'Telegram', memory: 'Memory',
+  agent_calendar: 'Calendar', slack: 'Slack', telegram: 'Telegram', memory: 'Knowledge',
   spawn_agent: 'Spawn', composio: 'Integration', desktop: 'Desktop',
   document_guide: 'Doc guide', view_image: 'View image',
 };
@@ -180,7 +180,7 @@ export function StatusWidget() {
       {/* ── Agent status ── */}
       <div className="flex items-baseline justify-between">
         <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Agent
+          Construct
         </span>
         <div className="flex items-center gap-1.5">
           <span

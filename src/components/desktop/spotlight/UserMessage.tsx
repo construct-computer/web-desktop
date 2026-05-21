@@ -83,7 +83,7 @@ const PLATFORM_ICONS: Record<string, typeof Send> = {
 function parseReply(content: string): { quote: string; who: string; body: string } | null {
   const match = content.match(/^\(Replying to (my earlier message|your earlier response): "([\s\S]*?)"\)\n\n([\s\S]*)$/);
   if (!match) return null;
-  return { who: match[1] === 'my earlier message' ? 'You' : 'Agent', quote: match[2], body: match[3] };
+  return { who: match[1] === 'my earlier message' ? 'You' : 'Construct', quote: match[2], body: match[3] };
 }
 
 export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
@@ -222,7 +222,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
           <div className="flex w-full items-center justify-end gap-2 pr-0.5 pt-0.5">
             <span
               className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/55"
-              title="Queued — will be soft-injected at the next safe point in the agent's turn"
+              title="Queued - Construct will read it next"
             >
               <Clock className="h-2.5 w-2.5" />
               Queued

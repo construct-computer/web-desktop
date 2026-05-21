@@ -91,6 +91,15 @@ export function Tooltip({
     setVisible(false);
   };
 
+  const toggleTooltip = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setTooltipPosition(null);
+    setVisible((current) => !current);
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (followCursor) {
       setPos({ x: e.clientX, y: e.clientY });
@@ -116,6 +125,24 @@ export function Tooltip({
       window.removeEventListener('scroll', updateTooltipPosition, true);
     };
   }, [visible, followCursor, content, updateTooltipPosition]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || tooltipRef.current?.contains(target)) return;
+      hideTooltip();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') hideTooltip();
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [visible]);
 
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
   const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
@@ -157,6 +184,7 @@ export function Tooltip({
       onMouseMove={handleMouseMove}
       onFocus={() => showTooltip()}
       onBlur={hideTooltip}
+      onClick={toggleTooltip}
     >
       {children}
       {visible && !followCursor && createPortal(

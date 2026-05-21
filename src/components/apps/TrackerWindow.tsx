@@ -47,7 +47,15 @@ function platformLabel(p: string): string {
 }
 
 function opLabel(t: OperationType): string {
-  return { delegation: 'Delegation', consultation: 'Consultation', background: 'Background', orchestration: 'Orchestration' }[t] || t;
+  return { delegation: 'Helper task', consultation: 'Review', background: 'Background task', orchestration: 'Parallel work' }[t] || t;
+}
+
+function formatActionName(name: string): string {
+  return name
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ── Status Indicators ────────────────────────────────────────────────
@@ -127,7 +135,7 @@ function AgentCard({
         {/* Current tool pill */}
         {isRunning && agent.currentTool && (
           <span className="text-[10px] font-mono text-[var(--color-accent)] bg-[var(--color-accent)]/10 px-1.5 py-0.5 rounded truncate max-w-[100px]">
-            {agent.currentTool}
+            {formatActionName(agent.currentTool)}
           </span>
         )}
 
@@ -206,13 +214,13 @@ function AgentCard({
                       </div>
                     ) : msg.role === 'agent' ? (
                       <div className="flex-1 min-w-0">
-                        <span className="text-emerald-400 font-medium">Agent </span>
+                        <span className="text-emerald-400 font-medium">Construct </span>
                         <span className="text-[var(--color-text)] break-words">{msg.content}</span>
                       </div>
                     ) : msg.role === 'activity' ? (
                       <div className="flex-1 min-w-0 flex items-start gap-1 text-[var(--color-text-muted)]">
                         <Wrench className="w-2.5 h-2.5 shrink-0 mt-px opacity-40" />
-                        {msg.tool && <span className="font-mono text-[var(--color-accent)] shrink-0">{msg.tool}</span>}
+                        {msg.tool && <span className="text-[var(--color-accent)] shrink-0">{formatActionName(msg.tool)}</span>}
                         <span className="break-words">{msg.content}</span>
                       </div>
                     ) : msg.isError || msg.isStopped ? (
@@ -281,7 +289,7 @@ function SubAgentRow({ agent, onCancel }: { agent: TrackedSubAgent; onCancel?: (
           <button
             onClick={(e) => { e.stopPropagation(); onCancel(agent.id); }}
             className="p-0.5 rounded hover:bg-orange-500/20 text-[var(--color-text-muted)]/40 hover:text-orange-400 transition-colors shrink-0"
-            title="Cancel this agent"
+            title="Cancel this helper"
           >
             <Ban className="w-3 h-3" />
           </button>
@@ -415,7 +423,7 @@ function SwarmSectionHeader({ hosts, workers }: { hosts: number; workers: number
   return (
     <div className="mb-3 space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Agent swarm</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Active work</span>
         <div className="flex-1 h-px bg-[var(--color-border)]/50" />
       </div>
       <p className="text-[10px] text-[var(--color-text-secondary)] pl-0.5">
@@ -546,7 +554,7 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
             <button onClick={() => setShowAgentHistory(!showAgentHistory)} className="flex items-center gap-1 mb-2 group w-full">
               {showAgentHistory ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
               <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors">
-                Agent History ({completedAgents.length})
+                Work History ({completedAgents.length})
               </span>
               <div className="flex-1 h-px bg-[var(--color-border)]/50" />
             </button>
@@ -571,7 +579,7 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
               <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1 mb-2 group w-full">
                 {showHistory ? <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors">
-                  Operation History ({orphanedHistory.length})
+                  Task History ({orphanedHistory.length})
                 </span>
                 <div className="flex-1 h-px bg-[var(--color-border)]/50" />
               </button>
@@ -588,7 +596,7 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
         {!hasAnything && (
           <div className="flex flex-col items-center justify-center h-full py-12 text-[var(--color-text-muted)]">
             <Bot className="w-8 h-8 opacity-20 mb-3" />
-            <p className="text-xs opacity-50">No active agents</p>
+            <p className="text-xs opacity-50">No active work</p>
           </div>
         )}
       </div>

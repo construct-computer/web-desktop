@@ -48,7 +48,7 @@ const DIVIDER_APPROX_W = 10;
 // Pinned dock items (always present)
 const pinnedItems: DockItemConfig[] = getSystemAppsByIds(DESKTOP_DOCK_APP_IDS).map((app) => ({
   id: app.id,
-  label: app.id === 'calendar' ? 'Agent Calendar' : app.label,
+  label: app.label,
   icon: app.icon,
   windowType: app.windowType,
 }));
@@ -104,7 +104,7 @@ function CalendarDockIcon({ size }: { size: number }) {
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <img src={iconCalendar} alt="Agent Calendar" style={{ width: size, height: size }} draggable={false} />
+      <img src={iconCalendar} alt="Calendar" style={{ width: size, height: size }} draggable={false} />
       {/* Month in the red header band */}
       <span
         className="absolute inset-x-0 text-center font-semibold leading-none text-white pointer-events-none select-none"

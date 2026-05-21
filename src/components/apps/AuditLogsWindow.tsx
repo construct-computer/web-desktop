@@ -21,7 +21,7 @@ import type { WindowConfig } from '@/types';
 
 const CATEGORY_OPTIONS = [
   { value: '', label: 'All activity' },
-  { value: 'tool', label: 'Tools & Actions' },
+  { value: 'tool', label: 'Actions' },
   { value: 'message', label: 'Messages' },
   { value: 'system', label: 'System events' },
   { value: 'error', label: 'Errors' },
@@ -393,7 +393,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
             <p className="text-xs opacity-80 max-w-[250px] leading-relaxed">
               {category || dateRange !== 'all' || searchQuery 
                 ? 'Try adjusting your filters or search query to find what you are looking for.' 
-                : 'Activity logs will appear here automatically as the agent works.'}
+                : 'Activity will appear here automatically as Construct works.'}
             </p>
           </div>
           {(category || dateRange !== 'all' || searchQuery) && (
@@ -496,18 +496,6 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                                    <span className="text-[12px] text-[var(--color-text)]">{entry.sourceType}</span>
                                  </div>
                                )}
-                               {entry.relatedEventId && (
-                                 <div className="flex flex-col gap-0.5">
-                                   <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Event ID</span>
-                                   <span className="text-[12px] text-[var(--color-text)] font-mono">{entry.relatedEventId}</span>
-                                 </div>
-                               )}
-                               {entry.sessionKey && (
-                                 <div className="flex flex-col gap-0.5">
-                                   <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">Session</span>
-                                   <span className="text-[12px] text-[var(--color-text)] font-mono">{entry.sessionKey.slice(0, 8)}...</span>
-                                 </div>
-                               )}
                              </div>
 
                              {/* Result detail */}
@@ -526,7 +514,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                                if (!detailStr || detailStr === '{}' || detailStr === '[]') return null;
                                return (
                                  <div>
-                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Details:</span>
+                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Extra details:</span>
                                    <pre className="mt-1.5 p-2.5 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)]/50 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[200px] overflow-y-auto">
                                      {detailStr}
                                    </pre>
@@ -540,7 +528,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                                if (!metaStr || metaStr === '{}' || metaStr === '[]') return null;
                                return (
                                  <div>
-                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Source Meta:</span>
+                                   <span className="text-[11px] font-medium text-[var(--color-text)] uppercase tracking-wider opacity-60">Source details:</span>
                                    <pre className="mt-1.5 p-2.5 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)]/50 text-[11px] font-mono whitespace-pre-wrap break-all text-[var(--color-text)] max-h-[120px] overflow-y-auto">
                                      {metaStr}
                                    </pre>

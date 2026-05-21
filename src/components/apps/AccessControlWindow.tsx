@@ -25,7 +25,7 @@ import {
   type AutonomyRiskLevel,
 } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
-import { FreshnessText, RefreshButton, Select, StatusBanner } from '@/components/ui';
+import { FreshnessText, RefreshButton, Select, StatusBanner, InfoHint } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
 import { PanelError } from './AppShared';
 
@@ -45,6 +45,13 @@ const platformIcons: Record<string, typeof MessageSquare> = {
   agent: Bot,
 };
 
+const RISK_KIND_LABELS: Record<string, string> = {
+  '*': 'Any action',
+  external_write: 'Change external data',
+  filesystem_write: 'Change workspace files',
+  code_execution: 'Run compute',
+};
+
 function PlatformBadge({ platform }: { platform: string }) {
   const Icon = platformIcons[platform] || MessageSquare;
   return (
@@ -62,6 +69,19 @@ function formatTime(ts: number | null): string {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return new Date(ts).toLocaleDateString();
+}
+
+function formatRuleDecision(decision: string): string {
+  if (decision === 'allow') return 'Allow';
+  if (decision === 'deny') return 'Block';
+  if (decision === 'ask') return 'Ask';
+  return decision;
+}
+
+function formatRuleRisk(kind: string, level: string): string {
+  const kindLabel = RISK_KIND_LABELS[kind] || kind.replace(/[_-]/g, ' ');
+  const levelLabel = level === '*' ? 'any level' : level;
+  return `${kindLabel} · ${levelLabel}`;
 }
 
 export function AccessControlWindow(props: { config: WindowConfig }) {
@@ -121,7 +141,10 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
         <Shield size={16} className="text-[var(--color-accent)]" />
-        <span className="font-medium">Access Control</span>
+        <span className="inline-flex items-center gap-1.5 font-medium">
+          Approvals
+          <InfoHint side="bottom">Review who can contact Construct and which sensitive actions need your approval.</InfoHint>
+        </span>
         <span className="hidden text-[10px] text-[var(--color-text-muted)] sm:inline">
           <FreshnessText
             lastUpdatedAt={freshness.lastUpdatedAt}
@@ -144,7 +167,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
               tab === t ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
             }`}
           >
-            {t === 'queue' ? 'Approval Queue' : t === 'list' ? 'Access List' : 'Settings'}
+            {t === 'queue' ? 'Requests' : t === 'list' ? 'Trusted & Blocked' : 'Rules'}
             {t === 'queue' && pendingCount > 0 && (
               <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--color-error)] text-white text-[10px] font-bold">
                 {pendingCount > 9 ? '9+' : pendingCount}
@@ -165,7 +188,7 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
           tone="warning"
           action={<button className="text-xs underline" onClick={() => void refreshNow()}>Refresh</button>}
         >
-          Access data may be out of date.
+          Approvals may be out of date.
         </StatusBanner>
       )}
 
@@ -253,17 +276,17 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
         riskLevel: '*',
         decision,
         reason: decision === 'allow'
-          ? `Repeated approval from Access Control for ${req.toolName || 'tool'}.`
-          : `Repeated denial from Access Control for ${req.toolName || 'tool'}.`,
+          ? `Repeated approval from Approvals for ${req.toolName || 'this action'}.`
+          : `Repeated denial from Approvals for ${req.toolName || 'this action'}.`,
       });
       if (!result.success) {
-        throw new Error(result.error || 'Failed to save the Autopilot policy rule.');
+        throw new Error(result.error || 'Failed to save the approval rule.');
       }
       if (decision === 'allow') await approveRequest(req.id);
       else await denyRequest(req.id);
       onRefresh();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to update approval policy.');
+      setActionError(err instanceof Error ? err.message : 'Failed to update the approval rule.');
     } finally { setBusy(false); }
   };
 
@@ -272,7 +295,7 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
       <div className="flex items-center gap-2 mb-1">
         <PlatformBadge platform={req.platform} />
         <span className="font-medium text-xs">
-          {isToolApproval ? 'Autopilot action' : (req.senderName || req.senderHandle || req.senderId)}
+          {isToolApproval ? 'Construct action' : (req.senderName || req.senderHandle || req.senderId)}
         </span>
         {req.channelInfo && (
           <span className="text-[10px] text-[var(--color-text-muted)]">
@@ -306,7 +329,7 @@ function ApprovalCard({ request: req, onRefresh }: { request: ApprovalQueueEntry
           <div className="flex gap-1.5 mt-1">
             <button disabled={busy} onClick={() => handleAction('approve')}
               className="px-2 py-1 rounded text-[11px] font-medium bg-[var(--color-success-muted)] text-[var(--color-success)] hover:brightness-110 disabled:opacity-50">
-              {isToolApproval ? 'Approve' : 'Allow once'}
+              {isToolApproval ? 'Allow' : 'Allow once'}
             </button>
             {!isToolApproval && (
               <button disabled={busy} onClick={() => handleAction('approve', true)}
@@ -445,7 +468,7 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
             />
           </div>
           <input value={addSenderId} onChange={e => setAddSenderId(e.target.value)}
-            placeholder="User ID / email address"
+            placeholder="Name, handle, or email address"
             className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
           <input value={addName} onChange={e => setAddName(e.target.value)}
             placeholder="Display name (optional)"
@@ -460,7 +483,7 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
       {/* List */}
       {filtered.length === 0 ? (
         <div className="text-center text-[var(--color-text-muted)] text-xs py-6">
-          No entries
+          No people yet
         </div>
       ) : (
         filtered.map(entry => (
@@ -553,7 +576,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
         reason: ruleReason,
       });
       if (!result.success) {
-        throw new Error(result.error || 'Failed to save the Autopilot policy rule.');
+        throw new Error(result.error || 'Failed to save the approval rule.');
       }
       setRuleToolPattern('*');
       setRuleRiskKind('*');
@@ -562,7 +585,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
       setRuleReason('');
       onRefresh();
     } catch (err) {
-      setRuleError(err instanceof Error ? err.message : 'Failed to save the Autopilot policy rule.');
+      setRuleError(err instanceof Error ? err.message : 'Failed to save the approval rule.');
     } finally { setRuleBusy(false); }
   };
 
@@ -572,29 +595,32 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
     try {
       const result = await deleteAutopilotPolicyRule(id);
       if (!result.success) {
-        throw new Error(result.error || 'Failed to delete the Autopilot policy rule.');
+        throw new Error(result.error || 'Failed to delete the approval rule.');
       }
       onRefresh();
     } catch (err) {
-      setRuleError(err instanceof Error ? err.message : 'Failed to delete the Autopilot policy rule.');
+      setRuleError(err instanceof Error ? err.message : 'Failed to delete the approval rule.');
     } finally { setRuleBusy(false); }
   };
 
   const modes = [
-    { value: 'open', label: 'Open' },
-    { value: 'approval_required', label: 'Approval Required' },
-    { value: 'block', label: 'Block Unknown' },
-    { value: 'closed', label: 'Closed' },
+    { value: 'open', label: 'Allow all' },
+    { value: 'approval_required', label: 'Ask first' },
+    { value: 'block', label: 'Block unknown' },
+    { value: 'closed', label: 'Block all' },
   ];
 
   return (
     <div className="p-3 space-y-4">
       <div>
-        <h3 className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Autopilot Approval Rules</h3>
+        <h3 className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-muted)] mb-2">
+          Approval rules
+          <InfoHint side="top">Rules let Construct repeat a decision automatically for actions you trust or block.</InfoHint>
+        </h3>
         <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-surface-raised)] p-2 space-y-2">
           <div className="grid grid-cols-2 gap-1.5">
             <input value={ruleToolPattern} onChange={e => setRuleToolPattern(e.target.value)}
-              placeholder="Tool pattern, e.g. email"
+              placeholder="Action name, e.g. email"
               className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
             <Select
               value={ruleDecision}
@@ -612,14 +638,14 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
               options={[
                 { value: '*', label: 'Any risk' },
                 { value: 'communication', label: 'Communication' },
-                { value: 'external_write', label: 'External write' },
+                { value: 'external_write', label: 'Change external data' },
                 { value: 'browser', label: 'Browser' },
                 { value: 'destructive', label: 'Destructive' },
                 { value: 'financial', label: 'Financial' },
                 { value: 'credential', label: 'Credential' },
-                { value: 'workspace_write', label: 'Workspace write' },
+                { value: 'workspace_write', label: 'Change workspace files' },
                 { value: 'automation', label: 'Automation' },
-                { value: 'compute', label: 'Compute' },
+                { value: 'compute', label: 'Run compute' },
                 { value: 'read', label: 'Read' },
               ]}
               inline
@@ -639,7 +665,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
           </div>
           <div className="flex gap-1.5">
             <input value={ruleReason} onChange={e => setRuleReason(e.target.value)}
-              placeholder="Reason shown to the agent"
+              placeholder="Why this rule exists"
               className="flex-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
             <button onClick={handleAddAutonomyRule} disabled={ruleBusy}
               className="px-2 py-1 rounded text-xs bg-[var(--color-accent)] text-white disabled:opacity-50">
@@ -652,7 +678,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
             </div>
           )}
           {(autopilotPolicy?.rules || []).length === 0 ? (
-            <p className="text-[11px] text-[var(--color-text-muted)]">No custom Autopilot rules.</p>
+            <p className="text-[11px] text-[var(--color-text-muted)]">No custom approval rules.</p>
           ) : (
             <div className="space-y-1">
               {(autopilotPolicy?.rules || []).map(rule => (
@@ -664,11 +690,11 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
                         ? 'bg-[var(--color-error-muted)] text-[var(--color-error)]'
                         : 'bg-[var(--color-warning-muted)] text-[var(--color-warning)]'
                   }`}>
-                    {rule.decision}
+                    {formatRuleDecision(rule.decision)}
                   </span>
-                  <span className="font-mono text-[11px]">{rule.tool_pattern}</span>
+                  <span className="text-[11px]">{rule.tool_pattern}</span>
                   <span className="text-[var(--color-text-muted)] truncate">
-                    {rule.risk_kind}/{rule.risk_level}{rule.reason ? ` - ${rule.reason}` : ''}
+                    {formatRuleRisk(rule.risk_kind, rule.risk_level)}{rule.reason ? ` - ${rule.reason}` : ''}
                   </span>
                   <div className="flex-1" />
                   <button disabled={ruleBusy} onClick={() => handleDeleteAutonomyRule(rule.id)}
@@ -684,7 +710,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
 
       {/* Per-platform access modes */}
       <div>
-        <h3 className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Access Mode by Platform</h3>
+        <h3 className="text-xs font-medium text-[var(--color-text-muted)] mb-2">Message rules by channel</h3>
         {['slack', 'telegram', 'email'].map(platform => (
           <div key={platform} className="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0">
             <div className="flex items-center gap-2">
@@ -700,7 +726,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
           </div>
         ))}
         <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
-          Open — anyone can message your agent. Approval Required — unknown senders are held for review. Block Unknown — unknown senders are dropped. Closed — only trusted contacts can reach your agent.
+          Allow all lets anyone message Construct. Ask first holds unknown senders for review. Block unknown ignores unknown senders. Block all only lets trusted contacts reach Construct.
         </p>
       </div>
 
@@ -727,7 +753,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
         <div className="mt-2 space-y-1">
           <button onClick={handleGenerateBindCode}
             className="text-xs text-[var(--color-accent)] hover:underline">
-            Generate bind code for desktop
+            Generate bind code for this workspace
           </button>
           {bindCode && (
             <div className="text-[11px] bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded p-2">
@@ -741,7 +767,7 @@ function SettingsTab({ settings, bindings, autopilotPolicy, onRefresh }: {
         {/* Manual add */}
         <div className="mt-2 flex gap-1">
           <input value={addGroupId} onChange={e => setAddGroupId(e.target.value)}
-            placeholder="Group Chat ID"
+            placeholder="Group chat ID"
             className="flex-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-xs" />
           <input value={addGroupName} onChange={e => setAddGroupName(e.target.value)}
             placeholder="Name"

@@ -41,16 +41,16 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
     let stateLabel = 'Working…';
 
     if (agentStatusLabel === 'compacting') {
-      stateLabel = 'Compacting memory…';
+      stateLabel = 'Updating knowledge…';
     } else if (agentThinkingStream != null && !currentTool) {
       // Model is streaming tokens (thinking/generating)
-      stateLabel = 'Thinking…';
+      stateLabel = 'Working…';
     } else if (currentTool) {
       // Currently executing a tool — show a friendly label
       const toolLabels: Record<string, string> = {
         local_browser: 'Using local browser',
         browser: 'Using browser',
-        exec: 'Running terminal',
+        exec: 'Running Terminal',
         file_read: 'Reading file',
         file_write: 'Writing file',
         file_edit: 'Editing file',
@@ -64,13 +64,13 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
         google_calendar: 'Checking calendar',
         google_drive: 'Accessing Drive',
         delegate_task: 'Delegating task',
-        spawn_agent: 'Spawning agent',
-        wait_for_agents: 'Waiting on agents',
+        spawn_agent: 'Starting helper',
+        wait_for_agents: 'Waiting on helpers',
         notify: 'Sending notification',
         render_markdown: 'Rendering markdown',
         terminal: 'Running command',
-        sandbox_write_file: 'Writing to sandbox',
-        sandbox_read_file: 'Reading from sandbox',
+        sandbox_write_file: 'Writing to workspace',
+        sandbox_read_file: 'Reading from workspace',
         save_to_workspace: 'Saving to workspace',
         load_from_workspace: 'Loading from workspace',
         view_image: 'Viewing image',
@@ -101,7 +101,7 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
         const suffix =
           runningInView.length === 0 && runningAny.length > 0 ? ' (other chat)' : '';
         stateLabel =
-          (total > 0 ? `Orchestrating (${running}/${total})` : 'Orchestrating…') + suffix;
+          (total > 0 ? `Working (${running}/${total})` : 'Working…') + suffix;
       }
     }
 
@@ -136,7 +136,7 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
     const isIdle = !isActive && !scrollText;
 
     return {
-      stateLabel: isIdle ? 'Idle' : stateLabel,
+      stateLabel: isIdle ? 'Ready' : stateLabel,
       scrollText,
       isActive,
       isIdle,

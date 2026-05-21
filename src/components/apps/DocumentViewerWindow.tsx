@@ -272,7 +272,7 @@ function DiagramViewer({ text, fileName }: { text: string; fileName: string }) {
   return (
     <div className="w-full h-full grid grid-rows-[auto_minmax(0,1fr)]">
       <div className="px-4 py-2 border-b border-white/[0.06] text-xs text-[var(--color-text-muted)]">
-        {ext === 'dot' || ext === 'gv' ? 'Graphviz source. If the agent generated SVG/PNG/PDF output next to this file, open that artifact for the rendered diagram.' : 'Mermaid source. Rendered SVG/PNG artifacts open as images.'}
+        {ext === 'dot' || ext === 'gv' ? 'Graphviz source. If Construct generated SVG/PNG/PDF output next to this file, open that artifact for the rendered diagram.' : 'Mermaid source. Rendered SVG/PNG artifacts open as images.'}
       </div>
       <pre className="overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">{text}</pre>
     </div>

@@ -227,7 +227,7 @@ export function NotificationCenter() {
                 }`}
               >
                 <Activity className="w-3 h-3" />
-                Agents
+                Work Status
                 {activeAgentCount > 0 && (
                   <span className="text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full bg-blue-500 text-white font-semibold px-1">
                     {activeAgentCount}
@@ -286,9 +286,9 @@ export function NotificationCenter() {
             </div>
           </>
         ) : (
-          /* Agents tracker tab */
+          /* Work status tracker tab */
           <div className="flex-1 overflow-y-auto">
-            <TrackerWindow config={{ type: 'settings' as any, id: 'nc-tracker', title: 'Agents', x: 0, y: 0, width: 360, height: 600, minWidth: 360, minHeight: 400, state: 'normal', zIndex: 0, workspaceId: 'main' }} />
+            <TrackerWindow config={{ type: 'settings' as any, id: 'nc-tracker', title: 'Work Status', x: 0, y: 0, width: 360, height: 600, minWidth: 360, minHeight: 400, state: 'normal', zIndex: 0, workspaceId: 'main' }} />
           </div>
         )}
       </div>

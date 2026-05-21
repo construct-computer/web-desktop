@@ -150,7 +150,7 @@ export function MiniApp() {
       if (!meRes.ok) { setErrorMsg('Failed to authenticate'); setState('error'); return; }
       const meData = await meRes.json();
       const instanceId = meData.user?.id;
-      if (!instanceId) { setErrorMsg('No agent instance found'); setState('error'); return; }
+      if (!instanceId) { setErrorMsg('No Construct session found'); setState('error'); return; }
 
       useAuthStore.setState({ user: meData.user, isAuthenticated: true });
       useComputerStore.setState({ instanceId });

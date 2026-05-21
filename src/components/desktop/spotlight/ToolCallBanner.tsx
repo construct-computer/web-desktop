@@ -138,7 +138,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
         {!expanded && (
           <span className="text-[10px] text-[var(--color-text-muted)]/30 ml-auto shrink-0">
             {hasSubAgents
-              ? `${subAgents.length} agent${subAgents.length !== 1 ? 's' : ''}`
+              ? `${subAgents.length} helper${subAgents.length !== 1 ? 's' : ''}`
               : `${stepCount} step${stepCount !== 1 ? 's' : ''}`}
           </span>
         )}

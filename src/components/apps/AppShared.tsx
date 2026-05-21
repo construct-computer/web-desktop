@@ -242,14 +242,14 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
       return (
         <div className="text-center py-8">
           <Check className="w-6 h-6 mx-auto mb-2 text-emerald-500/40" />
-          <p className="text-xs opacity-40">Integration is connected. Tools are available to the agent.</p>
+          <p className="text-xs opacity-40">Integration is connected. Actions are available to Construct.</p>
         </div>
       );
     }
     return (
       <div className="text-center py-8">
         <Package className="w-6 h-6 mx-auto mb-2 opacity-20" />
-        <p className="text-xs opacity-40">No tools cached. Try refreshing.</p>
+        <p className="text-xs opacity-40">No actions cached. Try refreshing.</p>
       </div>
     );
   }
@@ -258,7 +258,7 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
     <div>
       <div className="flex items-center justify-between mb-2 px-0.5">
         <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-          Tools · {tools.length}
+          Actions · {tools.length}
         </h3>
       </div>
       {tools.length > 6 && (
@@ -268,7 +268,7 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${tools.length} tools...`}
+            placeholder={`Search ${tools.length} actions...`}
             className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md surface-control border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
           />
         </div>
@@ -314,7 +314,7 @@ export function ToolCard({ tool }: { tool: DisplayTool }) {
       <button
         onClick={handleCopy}
         className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
-        title="Copy tool name"
+        title="Copy action name"
       >
         {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-50" />}
       </button>

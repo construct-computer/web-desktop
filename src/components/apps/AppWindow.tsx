@@ -481,14 +481,14 @@ function GenericAppPanel({
         actions={
           <>
             {repoUrl && (
-              <HeaderIconButton href={repoUrl} title="Source repository">
+              <HeaderIconButton href={repoUrl} title="Source page">
                 <ExternalLink className="w-3.5 h-3.5" />
               </HeaderIconButton>
             )}
             <HeaderIconButton
               onClick={async () => { setRefreshing(true); await api.refreshAppTools(appId); await refresh(); }}
               disabled={refreshing}
-              title="Refresh tools"
+              title="Refresh actions"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             </HeaderIconButton>
@@ -502,7 +502,7 @@ function GenericAppPanel({
         {appData.installed_at && (
           <InfoRow
             icon={<Calendar className="w-3 h-3" />}
-            label="Installed"
+            label="Added"
             value={formatDate(appData.installed_at)}
           />
         )}
@@ -513,7 +513,7 @@ function GenericAppPanel({
           title="Authentication"
           subtitle={connectionStatus?.connected
             ? undefined
-            : 'Connect an account to let this app\'s tools run.'}
+            : 'Connect an account to let this app run its actions.'}
         >
           <AuthSchemesPanel
             appId={appId}
@@ -673,17 +673,8 @@ function ComposioAppPanel({
               value={account.displayName ? `${account.displayName}${account.email ? ` · ${account.email}` : ''}` : account.email!}
             />
           )}
-          {account.accountId && (
-            <InfoRow
-              icon={<Hash className="w-3 h-3" />}
-              label="Account ID"
-              value={account.accountId}
-              mono
-              copyable
-            />
-          )}
           {authLabel && (
-            <InfoRow icon={<Shield className="w-3 h-3" />} label="Auth type" value={authLabel} />
+            <InfoRow icon={<Shield className="w-3 h-3" />} label="Sign-in type" value={authLabel} />
           )}
           {account.createdAt && (
             <InfoRow

@@ -515,7 +515,7 @@ export function SpotlightInput() {
           <div className="w-0.5 h-6 rounded-full bg-[var(--color-accent)] shrink-0" />
           <div className="flex-1 min-w-0">
             <span className="text-[10px] font-medium text-[var(--color-accent)]">
-              Replying to {replyingTo.role === 'user' ? 'yourself' : 'agent'}
+              Replying to {replyingTo.role === 'user' ? 'yourself' : 'Construct'}
             </span>
             <p className="text-[12px] text-[var(--color-text-muted)]/60 truncate">
               {replyingTo.content.slice(0, 100)}
@@ -753,11 +753,11 @@ export function SpotlightInput() {
                     ? `Reply from ${externalLabel}. This Spotlight view is read-only.`
                     : isConnected
                       ? agentConnecting && !agentConnected
-                        ? 'Queue a message while the agent reconnects...'
+                        ? 'Queue a message while Construct reconnects...'
                         : 'Ask anything... (@ to reference files)'
                       : agentConnected
-                        ? 'Starting agent...'
-                        : 'Reconnecting to agent...'
+                        ? 'Starting Construct...'
+                        : 'Reconnecting to Construct...'
               }
               disabled={!isConnected || isExternal}
               rows={1}
@@ -798,7 +798,7 @@ export function SpotlightInput() {
               <>
                 {queuedCount > 0 && !isExternal && (
                   <Tooltip
-                    content={`${queuedCount} message${queuedCount === 1 ? '' : 's'} queued — will inject at the next safe point`}
+                    content={`${queuedCount} message${queuedCount === 1 ? '' : 's'} queued - will send next`}
                     side="top"
                   >
                     <span
@@ -822,14 +822,14 @@ export function SpotlightInput() {
                   </button>
                 </Tooltip>
                 {(message.trim() || attachments.length > 0) && !isExternal && (
-                  <Tooltip content="Queue this message — it will soft-inject at the next safe point. Use “Send now” on a queued bubble to interrupt instead." side="top">
+                  <Tooltip content="Queue this message. Construct will read it next. Use Send now on a queued message to interrupt." side="top">
                     <button
                       type="button"
                       onClick={handleSend}
                       disabled={!isConnected || isExternal}
                       className="touch-target p-1.5 rounded-md hover:bg-[var(--color-accent)]/10 text-[var(--color-accent)]/80 hover:text-[var(--color-accent)] disabled:opacity-20 transition-colors"
-                      aria-label="Send as soft-inject"
-                      title="Send as soft-inject"
+                      aria-label="Send next"
+                      title="Send next"
                     >
                       <Send className="w-4.5 h-4.5" />
                     </button>

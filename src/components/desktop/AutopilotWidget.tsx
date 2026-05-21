@@ -24,6 +24,7 @@ import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { openAuthRedirect } from '@/lib/utils';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
+import { InfoHint } from '@/components/ui';
 import { authShieldStyle } from '@/components/ui/authActionStyles';
 import * as api from '@/services/api';
 import {
@@ -75,32 +76,32 @@ type ActiveTraceItem = {
 
 const MODE_COPY: Record<api.AutopilotMode, ModeCopy> = {
   idle: {
-    label: 'Idle',
+    label: 'Ready',
     color: '#94a3b8',
     background: 'rgba(148,163,184,0.12)',
     Icon: CheckCircle2,
   },
   running: {
-    label: 'Running',
+    label: 'Working',
     color: '#22d3ee',
     background: 'rgba(34,211,238,0.12)',
     Icon: Activity,
   },
   blocked: {
-    label: 'Waiting',
+    label: 'Needs you',
     color: '#60a5fa',
     background: 'rgba(96,165,250,0.14)',
     Icon: ShieldAlert,
   },
   recovering: {
-    label: 'Recovering',
+    label: 'Working',
     color: '#a78bfa',
     background: 'rgba(167,139,250,0.14)',
     Icon: Loader2,
     spin: true,
   },
   degraded: {
-    label: 'Degraded',
+    label: 'Issue',
     color: '#f87171',
     background: 'rgba(248,113,113,0.14)',
     Icon: AlertTriangle,
@@ -249,7 +250,7 @@ function authRequestActions(records: AuthRequestRecord[], hiddenSourceIds: Set<s
       sourceId: record.sourceId,
       sessionKey: record.sessionKey || 'default',
       title: `Connect ${record.name}`,
-      body: record.description || `Authorize ${record.name} in chat, then I'll continue automatically.`,
+      body: record.description || `Sign in to ${record.name} in chat, then Construct will continue automatically.`,
       actionUrl: record.actionUrl || '',
       status: record.status === 'expired' ? 'expired' : 'pending',
       metadata: { event: { name: record.name, toolkit: record.toolkit, appId: record.appId } },
@@ -334,9 +335,18 @@ export function AutopilotPanel() {
 
     void poll();
     const interval = setInterval(poll, agentRunning ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void poll();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('online', poll);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('online', poll);
     };
   }, [agentRunning]);
 
@@ -479,7 +489,7 @@ export function AutopilotPanel() {
 
   const summary = lastError
     ? 'Status temporarily unavailable.'
-    : displayStatus?.summary || (loading ? 'Checking autonomous work.' : 'No active autonomous work.');
+    : displayStatus?.summary || (loading ? 'Checking current work.' : 'No active work.');
   const currentTool = primaryRun?.activeToolName || primaryRun?.lastToolName || currentAction?.toolName || null;
   const hasActiveRun = !!primaryRun && (primaryRun.status === 'running' || primaryRun.status === 'recovering');
   const attention = getPrimaryAttention({
@@ -497,7 +507,7 @@ export function AutopilotPanel() {
   const hasGroupedAuth = authAttentionItems.length > 1;
   const isWaitingForUser = Boolean(attention && (mode === 'blocked' || combinedPendingActions.length > 0));
   const copy = isWaitingForUser
-    ? { ...rawCopy, label: 'Waiting for you', color: '#60a5fa', background: 'rgba(96,165,250,0.14)' }
+    ? { ...rawCopy, label: 'Needs you', color: '#60a5fa', background: 'rgba(96,165,250,0.14)' }
     : rawCopy;
   const ModeIcon = copy.Icon;
   const friendlySummary = attention
@@ -621,7 +631,7 @@ export function AutopilotPanel() {
       items.push({
         id: 'agents',
         Icon: MessageCircle,
-        label: `${activeBackgroundAgents.length} agent${activeBackgroundAgents.length === 1 ? '' : 's'}`,
+        label: `${activeBackgroundAgents.length} helper${activeBackgroundAgents.length === 1 ? '' : 's'}`,
         value: cleanWidgetText(lead.task || lead.agentType, 72),
       });
     }
@@ -953,7 +963,7 @@ export function AutopilotPanel() {
             </div>
             <div className="min-w-0">
               <div className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.38)' }}>
-                Agent
+                Construct
               </div>
               <div className="text-[13px] font-medium truncate max-w-[160px]" style={{ color: 'rgba(255,255,255,0.78)' }}>
                 {clampText(headline, 46)}
@@ -1073,7 +1083,10 @@ export function AutopilotPanel() {
             {visibleWorkOrders.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
-                  <span>Work orders</span>
+                  <span className="inline-flex items-center gap-1">
+                    Background tasks
+                    <InfoHint side="top" className="text-white/40 hover:text-white/80">Tasks Construct can continue while you do other work.</InfoHint>
+                  </span>
                   <span>{displayStatus?.activeWorkOrderCount ?? visibleWorkOrders.length}</span>
                 </div>
                 {visibleWorkOrders.map((order) => {
@@ -1139,8 +1152,8 @@ export function AutopilotPanel() {
                           {canCancel && (
                             <button
                               type="button"
-                              aria-label={`Cancel Work Order: ${order.objective}`}
-                              title="Cancel Work Order"
+                              aria-label={`Cancel background task: ${order.objective}`}
+                              title="Cancel background task"
                               disabled={workOrderActionId !== null}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {
@@ -1167,7 +1180,10 @@ export function AutopilotPanel() {
             {visibleLearnedPolicies.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
-                  <span>Learned policies</span>
+                  <span className="inline-flex items-center gap-1">
+                    Saved preferences
+                    <InfoHint side="top" className="text-white/40 hover:text-white/80">Choices Construct can remember so it does not ask you the same thing again.</InfoHint>
+                  </span>
                   <span>{displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length}</span>
                 </div>
                 {visibleLearnedPolicies.map((policy) => (
@@ -1188,8 +1204,8 @@ export function AutopilotPanel() {
                     </span>
                     <button
                       type="button"
-                      aria-label={`Disable learned policy: ${policy.summary}`}
-                      title="Disable learned policy"
+                      aria-label={`Disable saved preference: ${policy.summary}`}
+                      title="Disable saved preference"
                       disabled={expiringPolicyId !== null}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => {

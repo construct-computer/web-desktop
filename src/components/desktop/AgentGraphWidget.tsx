@@ -462,7 +462,7 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
         terminal: 'Running command', web_search: 'Searching web', remote_browser: 'Browsing',
         read_file: 'Reading file', write_file: 'Writing file', email: 'Email',
         slack: 'Slack', telegram: 'Telegram', memory_recall: 'Recalling', memory_store: 'Remembering',
-        spawn_agent: 'Spawning agent', spawn_agents: 'Parallel agent swarm', composio: 'Integration', app: 'Using app',
+        spawn_agent: 'Starting helper', spawn_agents: 'Parallel work', composio: 'Integration', app: 'Using app',
         view_image: 'Viewing image', agent_calendar: 'Calendar',
       };
       activitySpecs.push({

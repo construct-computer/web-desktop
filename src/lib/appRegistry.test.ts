@@ -28,6 +28,6 @@ describe('app registry navigation definitions', () => {
   it('has metadata for dynamic system windows used by mobile and desktop chrome', () => {
     expect(SYSTEM_WINDOW_METADATA.settings?.label).toBe('Settings');
     expect(SYSTEM_WINDOW_METADATA.memory?.icon).toBeTruthy();
-    expect(SYSTEM_WINDOW_METADATA['access-control']?.label).toBe('Access Control');
+    expect(SYSTEM_WINDOW_METADATA['access-control']?.label).toBe('Approvals');
   });
 });

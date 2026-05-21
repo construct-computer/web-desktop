@@ -166,7 +166,7 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
       const runningTerminal = agentRuns.some(run => run.status === 'running');
       return {
         id: agent.id,
-        label: agent.label || 'Subagent',
+        label: agent.label || 'Helper',
         goal: truncate(agent.goal || 'Working on task', 86),
         status: agent.status,
         currentActivity: truncate(agent.currentActivity || lastActivity?.text || agent.goal || 'Starting up', 82),
@@ -207,7 +207,7 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
       if (!latest?.text.trim()) continue;
       feed.push({
         id: `subagent:${agent.id}:${latest.timestamp}`,
-        actor: agent.label || 'Subagent',
+        actor: agent.label || 'Helper',
         text: truncate(latest.text, 86),
         kind: normalizeKind(latest.activityType),
         timestamp: latest.timestamp,

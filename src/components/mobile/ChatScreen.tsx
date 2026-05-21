@@ -26,7 +26,7 @@ export function ChatScreen() {
       >
         <Sparkles size={16} className="opacity-50" />
         <h2 className="text-[16px] font-semibold flex-1" style={{ color: textColor() }}>
-          Agent
+          Construct
         </h2>
         {agentConnected ? (
           <span className="flex items-center gap-1.5 text-[11px] font-medium opacity-50">

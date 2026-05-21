@@ -11,6 +11,7 @@ import {
   type TerminalRun,
 } from '@/stores/terminalStore';
 import { useComputerStore } from '@/stores/agentStore';
+import { InfoHint } from '@/components/ui';
 
 const TERMINAL_THEME = {
   background: 'transparent',
@@ -79,7 +80,7 @@ function writeWelcome(xterm: XTerm, terminalId: string) {
   const lane = terminalId !== 'main' ? `  ${A.gray}${terminalId}${A.reset}` : '';
   xterm.writeln(`  ${A.cyan}${A.bold}Ready${A.reset}${lane}`);
   xterm.writeln('');
-  xterm.writeln(`  ${A.gray}Read-only sandbox. Agent commands stream here automatically.${A.reset}`);
+  xterm.writeln(`  ${A.gray}Read-only. Commands Construct runs appear here automatically.${A.reset}`);
   xterm.writeln('');
 }
 
@@ -385,8 +386,9 @@ export function AgentTerminalWindow({ config }: AgentTerminalWindowProps) {
             </span>
           )}
           <span className="hidden truncate font-mono text-white/35 sm:inline">
-            {selectedRun?.command || 'waiting for agent command'}
+            {selectedRun?.command || 'waiting for Construct command'}
           </span>
+          <InfoHint side="bottom" className="text-white/35 hover:text-white/80">Terminal shows commands Construct ran and their output. It is read-only here.</InfoHint>
         </div>
 
         <div className="relative flex min-w-0 items-center gap-1 text-[10px]">
@@ -509,10 +511,10 @@ export function AgentTerminalWindow({ config }: AgentTerminalWindowProps) {
       {inspectorOpen && selectedRun && (
         <div className="relative z-20 border-t border-white/8 bg-zinc-950/95 px-3 py-2 font-mono text-[10px] text-white/45">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <span>tool: {selectedRun.toolCallId || 'n/a'}</span>
+            <span>action: {selectedRun.toolCallId || 'n/a'}</span>
             <span>session: {selectedRun.sessionKey || 'n/a'}</span>
-            <span>sandbox: {selectedRun.sandboxInstanceId || 'active user sandbox'}</span>
-            <span>subagent: {selectedRun.subagentId || 'main'}</span>
+            <span>workspace: {selectedRun.sandboxInstanceId || 'active workspace'}</span>
+            <span>task: {selectedRun.subagentId ? 'background task' : 'main session'}</span>
             <span>duration: {formatDuration(selectedRun.durationMs)}</span>
             <span>stdout: {formatBytes(selectedRun.stdoutBytes)}</span>
             <span>stderr: {formatBytes(selectedRun.stderrBytes)}</span>

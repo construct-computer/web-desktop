@@ -150,14 +150,14 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
       ? { view: 'integrations', search: displayName, composioSlug: payload.toolkit }
       : { view: 'integrations', search: displayName, appId: payload.appId || statusKey }
     const windowId = store.openWindow('app-registry', {
-      title: 'App Store',
+      title: 'Apps',
       metadata: {
         ...registryMetadata,
         authUrl: payload.url,
       },
     })
     if (windowId) {
-      store.updateWindow(windowId, { title: 'App Store', metadata: { ...registryMetadata, authUrl: payload.url } })
+      store.updateWindow(windowId, { title: 'Apps', metadata: { ...registryMetadata, authUrl: payload.url } })
     }
   }
 

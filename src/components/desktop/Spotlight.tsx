@@ -650,9 +650,9 @@ export function Spotlight() {
                   <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
                     <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
                   </div>
-                  <h3 className="text-[15px] font-semibold text-[var(--color-text)] mb-1">Meet your AI agent</h3>
+                  <h3 className="text-[15px] font-semibold text-[var(--color-text)] mb-1">Meet Construct</h3>
                   <p className="text-[13px] text-[var(--color-text-muted)] leading-relaxed">
-                    Subscribe to start chatting with your personal AI agent. It can browse the web, write code, manage files, send emails, and more.
+                    Subscribe to start chatting with Construct. It can browse the web, write code, manage files, send emails, and more.
                   </p>
                 </div>
               </div>
@@ -667,4 +667,3 @@ export function Spotlight() {
     document.body,
   );
 }
-

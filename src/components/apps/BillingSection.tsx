@@ -11,7 +11,7 @@ import {
   Minus,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Tooltip } from '@/components/ui';
+import { Button, InfoHint } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import type { SubscriptionInfo } from '@/services/api';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
@@ -144,6 +144,17 @@ export function BillingSection() {
   // Fetch data on mount
   useEffect(() => {
     fetchSubscription();
+    const refreshWhenVisible = () => {
+      if (!document.hidden) fetchSubscription();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('online', fetchSubscription);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('online', fetchSubscription);
+    };
   }, [fetchSubscription]);
 
   const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
@@ -252,16 +263,16 @@ type FeatureRow = {
 };
 
 const PLAN_FEATURES: FeatureRow[] = [
-  { label: 'Agent Model Quality', tooltip: 'All plans use the same best available platform model stack; paid plans increase usage, concurrency, and runtime headroom.', free: 'Best available', starter: 'Best available', pro: 'Best available', freeHas: true, starterHas: true, proHas: true },
-  { label: 'Agent Reasoning Depth', tooltip: 'How deeply the agent thinks before giving up on a task. Higher steps allow it to solve much harder multi-step problems autonomously.', free: '20 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Task Execution Timeout',tooltip: 'Maximum continuous time an agent is allowed to run a single task in the background sandbox.', free: '5 minutes',       starter: '1 hour',        pro: '3 hours',        freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Concurrent Subagents',  tooltip: 'How many separate tasks or workers the agent can parallelize at the exact same time to speed up bulk work.', free: '2 active',        starter: '6 active',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Scheduled Tasks',       tooltip: 'Routines and cron-jobs you can tell your agent to run repeatedly on a schedule (e.g. "Check my email every morning").', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Model quality', tooltip: 'All plans use the best available Construct model setup. Paid plans add more usage, parallel work, and runtime.', free: 'Best available', starter: 'Best available', pro: 'Best available', freeHas: true, starterHas: true, proHas: true },
+  { label: 'Reasoning depth', tooltip: 'How many steps Construct can take before stopping on a task. Higher limits help with harder multi-step work.', free: '20 steps/task',   starter: '50 steps/task', pro: '100 steps/task', freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Task runtime', tooltip: 'Maximum continuous time Construct can spend on one background task.', free: '5 minutes',       starter: '1 hour',        pro: '3 hours',        freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Parallel work',  tooltip: 'How many tasks Construct can work on at the same time.', free: '2 active',        starter: '6 active',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Scheduled tasks',       tooltip: 'Routines you can ask Construct to repeat on a schedule, such as checking email each morning.', free: 'Up to 3',         starter: 'Up to 10',      pro: 'Unlimited',      freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Cloud Storage',         tooltip: 'Space for files, PDFs, images, and documents stored in your virtual workspace.', free: '100 MB',          starter: '1 GB',          pro: '3 GB',           freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Platform Integrations', tooltip: 'Connect external apps (Slack, Gmail, GitHub, Notion, etc.) for your agent to interact with.', free: 'Full Library',    starter: 'Full Library',  pro: 'Full Library',   freeHas: true,  starterHas: true,  proHas: true },
-  { label: 'Agent Email Address',   tooltip: `Get a dedicated @${AGENT_EMAIL_DOMAIN} email address that your agent can autonomously read and reply from.`, free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
-  { label: 'Background Execution',  tooltip: 'Allow agents to continue long-running tasks asynchronously even after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
-  { label: 'Bring Your Own Keys',   tooltip: 'Use your own LLM API keys through supported providers to completely bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Connected apps', tooltip: 'Connect Slack, Gmail, GitHub, Notion, and other apps for Construct to use.', free: 'Full Library',    starter: 'Full Library',  pro: 'Full Library',   freeHas: true,  starterHas: true,  proHas: true },
+  { label: 'Construct Email Address',   tooltip: `Get a dedicated @${AGENT_EMAIL_DOMAIN} email address that Construct can read and reply from.`, free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
+  { label: 'Background tasks',  tooltip: 'Let Construct continue longer tasks after you close the app or go offline.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
+  { label: 'BYOK',   tooltip: 'Use your own supported AI provider key to bypass standard platform usage caps.', free: '',                starter: '',              pro: '',               freeHas: true,  starterHas: true,  proHas: true },
   { label: 'Priority Support',      tooltip: 'Get 24/7 dedicated support with fast response times from our engineering team.', free: '',                starter: '',              pro: '',               freeHas: false, starterHas: true,  proHas: true },
 ];
 
@@ -305,7 +316,7 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
   const proRatio     = WEEKLY_CAPS.pro     / WEEKLY_CAPS[effective];
   const usageRow: FeatureRow = {
     label: 'Usage',
-    tooltip: 'Standard platform LLM usage included relative to your current plan. Heavy tasks burn through this budget. Bring Your Own Keys (BYOK) bypasses this.',
+    tooltip: 'Standard AI usage included relative to your current plan. Heavy tasks use more of this budget. BYOK bypasses this.',
     free:    formatMultiplier(freeRatio),
     starter: formatMultiplier(starterRatio),
     pro:     formatMultiplier(proRatio),
@@ -381,16 +392,11 @@ function PlanSelector({ currentPlan, isDevMode, checkoutLoading, onSwitchPlan, o
               i % 2 === 0 ? '' : 'bg-black/[0.015] dark:bg-white/[0.015]'
             }`}
           >
-            <div className="flex items-center">
-              <Tooltip 
-                content={f.tooltip} 
-                followCursor
-                delay={0}
-              >
-                <span className="text-[var(--color-text-muted)] select-none transition-colors">
-                  {f.label}
-                </span>
-              </Tooltip>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[var(--color-text-muted)] select-none transition-colors">
+                {f.label}
+              </span>
+              <InfoHint side="top">{f.tooltip}</InfoHint>
             </div>
             {(['free', 'starter', 'pro'] as const).map((tier) => {
               const has = f[`${tier}Has`];

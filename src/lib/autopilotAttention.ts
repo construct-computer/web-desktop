@@ -67,7 +67,7 @@ function actionSummary(action: PendingUserAction): string {
       .replace(/\n{2,}/g, ' ')
       .trim()
       || action.title
-      || 'The agent needs your attention before it can continue.',
+      || 'Construct needs your attention before it can continue.',
     110,
   );
 }
@@ -233,7 +233,7 @@ export function getAttentionItems(input: {
       id: 'approval',
       kind: 'approval',
       title: 'Approval needed',
-      summary: 'A request is waiting in Access Control.',
+      summary: 'A request is waiting in Approvals.',
       ctaLabel: 'Review approval',
       destination: 'access-control',
       createdAt: input.status?.generatedAt ?? Date.now(),
@@ -269,7 +269,7 @@ export function getAttentionItems(input: {
       id: fallbackBlocker.blockerId,
       kind: 'blocker',
       title: fallbackBlocker.requiredFrom || DEFAULT_BLOCKED_TITLE,
-      summary: clampText(fallbackBlocker.summary || 'The agent is blocked.', 110),
+      summary: clampText(fallbackBlocker.summary || 'Construct is blocked.', 110),
       ctaLabel: 'Open blocked chat',
       destination: 'spotlight-session',
       sessionKey: fallbackBlocker.sessionKey,
@@ -284,7 +284,7 @@ export function getAttentionItems(input: {
       id: deadLetter.actionId,
       kind: 'dead-letter',
       title: 'Retry limit reached',
-      summary: clampText(deadLetter.title || deadLetter.lastError || 'An autonomous action stopped retrying.', 110),
+      summary: clampText(deadLetter.title || deadLetter.lastError || 'A background action stopped retrying.', 110),
       ctaLabel: 'Open blocked chat',
       destination: 'spotlight-session',
       sessionKey: deadLetter.sessionKey,
@@ -310,7 +310,7 @@ export function getAttentionItems(input: {
       id: 'side-effect',
       kind: 'side-effect',
       title: 'Check recent action',
-      summary: 'The agent needs confirmation before retrying.',
+      summary: 'Construct needs confirmation before retrying.',
       ctaLabel: 'Open chat',
       destination: 'spotlight',
       createdAt: input.status?.generatedAt ?? Date.now(),

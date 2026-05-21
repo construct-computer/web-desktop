@@ -16,23 +16,23 @@ import { useBillingStore } from '@/stores/billingStore';
 import constructLogo from '@/assets/logo.png';
 
 const STARTER_FEATURES = [
-  { icon: Bot, text: 'Fast AI model (Workers AI)' },
+  { icon: Bot, text: 'Fast AI model' },
   { icon: Search, text: 'Web search & browser' },
   { icon: Terminal, text: 'Terminal & code execution' },
   { icon: Calendar, text: 'Calendar & reminders' },
-  { icon: Cpu, text: 'Memory & context' },
+  { icon: Cpu, text: 'Knowledge & context' },
   { icon: HardDrive, text: '1 GB cloud storage' },
-  { icon: Code, text: 'Bring your own API key' },
+  { icon: Code, text: 'BYOK support' },
 ];
 
 const PRO_FEATURES = [
-  { icon: Sparkles, text: 'Premium AI (Gemini 2.5 Pro)', highlight: true },
+  { icon: Sparkles, text: 'Premium AI model', highlight: true },
   { icon: Globe, text: 'Web search & browser', highlight: false },
   { icon: Terminal, text: 'Terminal & code execution' },
-  { icon: Mail, text: 'Agent email inbox', highlight: true },
-  { icon: Calendar, text: 'Calendar & memory' },
+  { icon: Mail, text: 'Construct email inbox', highlight: true },
+  { icon: Calendar, text: 'Calendar & knowledge' },
   { icon: HardDrive, text: '2 GB cloud storage' },
-  { icon: Bot, text: 'Background agents & scheduled tasks', highlight: true },
+  { icon: Bot, text: 'Background tasks & scheduled work', highlight: true },
   { icon: Shield, text: 'Priority support' },
 ];
 
@@ -73,7 +73,7 @@ export function SubscriptionOverlay() {
             Your personal AI computer
           </h1>
           <p className="text-[13px] text-gray-500 dark:text-white/40 max-w-md mx-auto leading-relaxed">
-            An AI agent with its own desktop, browser, terminal, email, and calendar.
+            Construct has its own desktop, browser, Terminal, email, and calendar.
             Choose a plan to get started.
           </p>
         </div>

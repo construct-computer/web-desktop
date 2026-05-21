@@ -1021,7 +1021,7 @@ function SubagentTile({ agent, compact }: {
               fontWeight: 700,
             }}
           >
-            term
+            Terminal
           </span>
         )}
       </div>

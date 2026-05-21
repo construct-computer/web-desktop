@@ -129,10 +129,10 @@ export function BrowserActivityRow({
             <button
               onClick={(e) => { e.stopPropagation(); setShowPayload((v) => !v); }}
               className="text-[10px] text-[var(--color-text-muted)]/40 hover:text-[var(--color-text-muted)]/70 shrink-0 flex items-center gap-0.5"
-              title="Toggle payload"
+              title="Toggle details"
             >
               {showPayload ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
-              payload
+              details
             </button>
           )}
         </div>

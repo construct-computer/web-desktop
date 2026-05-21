@@ -22,7 +22,7 @@ interface MobileAppItem {
 
 const pinnedItems: MobileAppItem[] = getSystemAppsByIds(MOBILE_APP_BAR_APP_IDS).map((app) => ({
   id: app.id,
-  label: app.id === 'app-registry' ? 'App Store' : app.label,
+  label: app.label,
   icon: app.icon,
   windowType: app.windowType,
 }));

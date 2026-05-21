@@ -1,5 +1,5 @@
 /**
- * App Registry — central source of truth for all launchable apps.
+ * Apps — central source of truth for all launchable apps.
  *
  * System apps are built-in and always present. Installed apps
  * come from the app store (future: fetched from backend API).
@@ -58,10 +58,10 @@ export interface AppDefinition {
  * Dock-pinned apps first, then utilities.
  */
 export const SYSTEM_APPS: AppDefinition[] = [
-  // ── App Registry ──
+  // ── Apps ──
   {
     id: 'app-registry',
-    label: 'App Registry',
+    label: 'Apps',
     windowType: 'app-registry',
     icon: iconAppStore,
     category: 'system',
@@ -79,7 +79,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
   },
   {
     id: 'auditlogs',
-    label: 'Audit Logs',
+    label: 'Activity',
     windowType: 'auditlogs',
     icon: iconAccessLogs,
     category: 'system',
@@ -87,15 +87,15 @@ export const SYSTEM_APPS: AppDefinition[] = [
   },
   {
     id: 'access-control',
-    label: 'Access Control',
+    label: 'Approvals',
     windowType: 'access-control',
     icon: iconAccessControl,
     category: 'system',
-    keywords: ['permissions', 'security', 'rules', 'policies'],
+    keywords: ['approvals', 'permissions', 'security', 'rules', 'saved preferences'],
   },
   {
     id: 'memory',
-    label: 'Memory',
+    label: 'Knowledge',
     windowType: 'memory',
     icon: iconMemory,
     category: 'system',
@@ -165,12 +165,12 @@ export const MOBILE_HOME_APP_IDS = ['chat', 'files', 'calendar', 'email', 'app-r
 /** Shared fallback metadata for dynamic system windows. */
 export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string; icon: string }>> = {
   settings: { label: 'Settings', icon: iconSettings },
-  auditlogs: { label: 'Access Logs', icon: iconAccessLogs },
-  'access-control': { label: 'Access Control', icon: iconAccessControl },
-  memory: { label: 'Memory', icon: iconMemory },
+  auditlogs: { label: 'Activity', icon: iconAccessLogs },
+  'access-control': { label: 'Approvals', icon: iconAccessControl },
+  memory: { label: 'Knowledge', icon: iconMemory },
   editor: { label: 'Editor', icon: iconText },
   'document-viewer': { label: 'Editor', icon: iconText },
-  'app-registry': { label: 'App Registry', icon: iconAppStore },
+  'app-registry': { label: 'Apps', icon: iconAppStore },
   about: { label: 'About', icon: iconGeneric },
 };
 

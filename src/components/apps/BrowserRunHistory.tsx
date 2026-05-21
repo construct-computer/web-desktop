@@ -130,7 +130,7 @@ export function BrowserRunHistory() {
       useNotificationStore.getState().addNotification(
         {
           title: 'Live view no longer available',
-          body: 'Browser Use live URLs expire after the 15-minute browser lifetime.',
+          body: 'Live browser links expire after the 15-minute browser lifetime.',
           source: 'Browser',
           variant: 'info',
         },

@@ -80,7 +80,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="setup"]',
     popover: {
       title: 'Welcome to Construct',
-      description: 'Fill in your name and agent details, then hit <strong>Save</strong> to get started.',
+      description: 'Fill in your name and Construct details, then hit <strong>Save</strong> to get started.',
       side: 'left',
       align: 'center',
       showButtons: ['next', 'previous'],
@@ -92,8 +92,8 @@ const steps: DriveStep[] = [
   {
     element: '[data-tour="chat"]',
     popover: {
-      title: 'Your Agent',
-      description: `${gifTag(tourChat, '3074/2160')}This is your Construct agent. Click it or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
+      title: 'Construct',
+      description: `${gifTag(tourChat, '3074/2160')}Click Construct or press <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Ctrl</kbd> + <kbd style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);font-family:monospace;font-size:0.85em">Space</kbd> to chat. Drag it anywhere you like.`,
       side: 'top',
       align: 'center',
     },
@@ -102,7 +102,7 @@ const steps: DriveStep[] = [
     element: '[data-tour="dock"]',
     popover: {
       title: 'Dock & Launchpad',
-      description: `${gifCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click the Launchpad to browse and install all system tools, MCP servers, and connected services.`,
+      description: `${gifCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click Launchpad to browse system tools, MCP apps, and connected services.`,
       side: 'top',
       align: 'center',
     },
@@ -111,7 +111,7 @@ const steps: DriveStep[] = [
     element: '#notification-center-drawer',
     popover: {
       title: 'Control Center',
-      description: `${gifTag(tourNotification, '512/361', 'Notifications demo')}View your latest notifications, emails, and active agent processes in the side panel.`,
+      description: `${gifTag(tourNotification, '512/361', 'Notifications demo')}View your latest notifications, emails, and active work in the side panel.`,
       side: 'left',
       align: 'start',
     },
@@ -120,7 +120,7 @@ const steps: DriveStep[] = [
     element: '#tour-menu-overlay',
     popover: {
       title: 'Menu',
-      description: 'Access settings, the app registry, and more from this menu.',
+      description: 'Access settings, Apps, Approvals, Activity, and Knowledge from this menu.',
       side: 'bottom',
       align: 'start',
     },
@@ -226,7 +226,7 @@ export function useDesktopTour() {
           sampleNotificationId = ns.addNotification({
             variant: 'info',
             title: 'Welcome to Construct!',
-            body: 'This side panel is where your agent reports back. Completed tasks, new emails, and active processes appear here.',
+            body: 'This side panel shows completed tasks, new emails, and active work.',
             source: 'SYSTEM',
           });
         },

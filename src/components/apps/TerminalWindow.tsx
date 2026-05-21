@@ -73,8 +73,8 @@ function writeWelcome(xterm: XTerm) {
   xterm.writeln('');
   xterm.writeln(`  ${A.cyan}${A.bold}construct.computer${A.reset}  ${A.gray}sandbox terminal${A.reset}`);
   xterm.writeln('');
-  xterm.writeln(`  ${A.gray}Agent commands and output stream here in real-time.${A.reset}`);
-  xterm.writeln(`  ${A.gray}This terminal is read-only \u2014 the agent controls the sandbox.${A.reset}`);
+  xterm.writeln(`  ${A.gray}Construct commands and output stream here in real time.${A.reset}`);
+  xterm.writeln(`  ${A.gray}This terminal is read-only \u2014 Construct controls the workspace.${A.reset}`);
   xterm.writeln('');
   xterm.writeln(`  ${A.gray}\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500${A.reset}`);
   xterm.writeln('');

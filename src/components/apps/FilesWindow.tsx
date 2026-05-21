@@ -42,7 +42,7 @@ import type { FileEntry, DriveFileEntry } from '@/services/api';
 import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
 import { useFreshness } from '@/hooks/useFreshness';
-import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
 import { getFileType } from '@/lib/fileTypes';
@@ -1149,7 +1149,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           isMobile ? 'absolute inset-y-0 left-0 z-20 w-56 shadow-lg glass-drawer' : 'w-48 surface-sidebar'
         }`}>
           <div className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
-            Local Storage
+            Workspace Files
           </div>
           {storageUsage && (
             <div className="mb-2 px-1">
@@ -1584,8 +1584,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                 title={showHidden ? 'Hide hidden files' : 'Show hidden files'}
               >
                 {showHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                <span>{showHidden ? 'Hide dotfiles' : 'Show dotfiles'}</span>
+                <span>{showHidden ? 'Hide hidden files' : 'Show hidden files'}</span>
               </button>
+              <InfoHint side="top">Hidden files usually store app or system settings. Show them only when you need to inspect or edit those settings.</InfoHint>
               {selectedName && <span className="ml-auto">{selectedName}</span>}
             </div>
           ) : (

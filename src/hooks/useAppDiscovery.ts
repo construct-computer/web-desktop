@@ -303,6 +303,7 @@ export function useAppDiscovery() {
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const searchRunIdRef = useRef(0);
 
   const [curatedApps, setCuratedApps] = useState<CuratedDef[]>(FALLBACK_CURATED);
   const [registryApps, setRegistryApps] = useState<RegistryApp[]>([]);
@@ -367,6 +368,7 @@ export function useAppDiscovery() {
   }, [fetchCurated, fetchRegistry, fetchInstalled, fetchConnected, fetchSubscription]);
 
   const executeSearch = useCallback(async (query: string) => {
+    const runId = ++searchRunIdRef.current;
     if (query.length < 2) {
       setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
       setSearching(false); return;
@@ -377,6 +379,7 @@ export function useAppDiscovery() {
       api.searchComposioToolkits(query),
       api.searchSmitherySkills(query),
     ]);
+    if (runId !== searchRunIdRef.current) return;
     if (smithery.status === 'fulfilled' && smithery.value?.success && smithery.value.data) setSmitheryResults((smithery.value.data.servers || []) as unknown as SmitheryServer[]);
     if (composio.status === 'fulfilled' && composio.value?.success && composio.value.data) setComposioResults(composio.value.data.toolkits || []);
     if (skills.status === 'fulfilled' && skills.value?.success && skills.value.data) setSkillResults((skills.value.data.skills || []) as unknown as SmitherySkill[]);
@@ -387,6 +390,7 @@ export function useAppDiscovery() {
     setSearch(query);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (query.length < 2) {
+      searchRunIdRef.current += 1;
       setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
       setSearching(false); return;
     }
@@ -457,7 +461,7 @@ export function useAppDiscovery() {
 
   const handleRefresh = () => {
     setLoading(true);
-    Promise.all([fetchRegistry(), fetchInstalled(), fetchConnected()]).finally(() => setLoading(false));
+    return Promise.all([fetchRegistry(), fetchInstalled(), fetchConnected()]).finally(() => setLoading(false));
   };
 
   return {
