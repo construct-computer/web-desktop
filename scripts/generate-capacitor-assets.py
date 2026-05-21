@@ -2,8 +2,8 @@
 """Generate Construct Capacitor app icons and launch images.
 
 This script intentionally keeps the source of truth inside this repository:
-src/assets/logo.png is composited onto a dark Construct-style background, then
-resized into the Android and iOS native asset slots.
+src/assets/logo.png is used directly for transparent web/PWA icons, and is
+composited onto platform-required native icon/splash backgrounds where needed.
 """
 
 from __future__ import annotations
@@ -138,6 +138,15 @@ def build_icon_source(logo: Image.Image, size: int = 1024) -> Image.Image:
     return place_logo(base, logo, round(size * 0.72), shadow_alpha=95)
 
 
+def build_transparent_icon_source(logo: Image.Image, size: int = 1024) -> Image.Image:
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    resized = logo.resize((round(size * 0.86), round(logo.height * (size * 0.86) / logo.width)), Image.Resampling.LANCZOS)
+    x = (size - resized.width) // 2
+    y = (size - resized.height) // 2
+    canvas.alpha_composite(resized, (x, y))
+    return canvas
+
+
 def build_foreground_source(logo: Image.Image, size: int = 1024) -> Image.Image:
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     return place_logo(canvas, logo, round(size * 0.68), shadow_alpha=70)
@@ -155,6 +164,7 @@ def main() -> None:
     RESOURCE_DIR.mkdir(parents=True, exist_ok=True)
 
     icon = build_icon_source(logo)
+    web_icon = build_transparent_icon_source(logo)
     foreground = build_foreground_source(logo)
     splash_square = build_splash(logo, (2732, 2732))
 
@@ -163,14 +173,14 @@ def main() -> None:
     save_png(splash_square, RESOURCE_DIR / "splash.png")
 
     for filename, size in PUBLIC_ICONS.items():
-        save_png(icon.resize((size, size), Image.Resampling.LANCZOS), ROOT / "public" / filename)
+        save_png(web_icon.resize((size, size), Image.Resampling.LANCZOS), ROOT / "public" / filename, "RGBA")
 
     save_png(icon, IOS_ICON)
     for filename in ["splash-2732x2732.png", "splash-2732x2732-1.png", "splash-2732x2732-2.png"]:
         save_png(splash_square, IOS_SPLASH_DIR / filename)
 
     for density, size in ANDROID_LEGACY_ICON_SIZES.items():
-        resized = icon.resize((size, size), Image.Resampling.LANCZOS)
+        resized = web_icon.resize((size, size), Image.Resampling.LANCZOS)
         save_png(resized, ANDROID_RES / density / "ic_launcher.png", "RGBA")
         save_png(resized, ANDROID_RES / density / "ic_launcher_round.png", "RGBA")
 
