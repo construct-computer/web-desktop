@@ -47,7 +47,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       )}
     >
       {/* Mobile Title Bar */}
-      <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none surface-toolbar">
+      <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none surface-sidebar">
         {/* Back / Close button */}
         <button
           onClick={handleClose}

@@ -1026,7 +1026,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   ];
 
   return (
-    <div ref={filesContainerRef} tabIndex={-1} className="relative flex flex-col h-full surface-app text-sm select-none outline-none">
+    <div ref={filesContainerRef} tabIndex={-1} className="relative flex flex-col h-full text-sm select-none outline-none">
       {/* Toolbar */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         {/* Mobile sidebar toggle */}
@@ -1235,7 +1235,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         >
           {/* Column headers (shared) */}
           {(!isMobile || !previewFile) && (
-            <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] surface-card-raised text-[11px] text-[var(--color-text-muted)] font-medium">
+            <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] surface-card text-[11px] text-[var(--color-text-muted)] font-medium">
               <div className="flex-1 min-w-0">Name</div>
               {!isMobile && (
                 <>
@@ -1473,9 +1473,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
             {/* Preview panel (shared — renders for both local and cloud tabs) */}
             {previewFile && (
-              <div className={`${isMobile ? 'flex-1' : 'w-1/2'} flex flex-col bg-[var(--color-surface)] overflow-hidden`}>
+              <div className={`${isMobile ? 'flex-1' : 'w-1/2'} flex flex-col surface-app overflow-hidden`}>
                 {/* Preview header */}
-                <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)]">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-border)] surface-card">
                   <span className="text-xs truncate text-[var(--color-text-muted)]">{previewFile.name}</span>
                   <button
                     onClick={closePreview}
@@ -1540,7 +1540,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
           {/* Transfer progress bar */}
           {transfers.length > 0 && (
-            <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)]">
+            <div className="border-t border-[var(--color-border)] surface-toolbar">
               {transfers.map((t) => (
                 <div key={t.id} className="flex items-center gap-2 px-3 py-1">
                   {t.status === 'active' ? (
@@ -1574,7 +1574,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
           {/* Status bar (tab-specific) */}
           {activeTab === 'local' ? (
-            <div className="flex items-center px-3 py-1 border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[11px] text-[var(--color-text-muted)]">
+            <div className="flex items-center px-3 py-1 border-t border-[var(--color-border)] surface-toolbar text-[11px] text-[var(--color-text-muted)]">
               <span>
                 {entries.length} item{entries.length !== 1 ? 's' : ''}
               </span>
@@ -1590,7 +1590,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
               {selectedName && <span className="ml-auto">{selectedName}</span>}
             </div>
           ) : (
-            <div className="flex items-center px-3 py-1 border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[11px] text-[var(--color-text-muted)]">
+            <div className="flex items-center px-3 py-1 border-t border-[var(--color-border)] surface-toolbar text-[11px] text-[var(--color-text-muted)]">
               <Cloud className="w-3 h-3 mr-1" />
               <span>
                 {driveFiles.files.length} item{driveFiles.files.length !== 1 ? 's' : ''}

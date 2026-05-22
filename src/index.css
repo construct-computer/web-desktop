@@ -24,10 +24,11 @@
 
   /* Default (light) — frosted white glass */
   --color-bg: #f4f4f5; /* zinc-100 */
-  --color-surface: rgba(255, 255, 255, 0.35);
-  --color-surface-raised: rgba(255, 255, 255, 0.45);
-  --color-sidebar: rgba(244, 244, 245, 0.65);
-  --color-toolbar: rgba(255, 255, 255, 0.75);
+  --color-bg-secondary: rgba(255, 255, 255, 0.32);
+  --color-surface: rgba(255, 255, 255, 0.32);
+  --color-surface-raised: rgba(255, 255, 255, 0.56);
+  --color-sidebar: rgba(244, 244, 245, 0.62);
+  --color-toolbar: rgba(255, 255, 255, 0.58);
   --color-item-hover: rgba(0, 0, 0, 0.05);
   --color-item-active: rgba(0, 0, 0, 0.1);
   --color-border: rgba(0, 0, 0, 0.12);
@@ -82,10 +83,11 @@
 /* Dark theme — glass on dark wallpaper */
 html.dark {
   --color-bg: #09090b; /* zinc-950 */
-  --color-surface: rgba(255, 255, 255, 0.04);
-  --color-surface-raised: rgba(255, 255, 255, 0.08);
-  --color-sidebar: rgba(24, 24, 27, 0.55);
-  --color-toolbar: rgba(39, 39, 42, 0.65);
+  --color-bg-secondary: rgba(10, 12, 20, 0.22);
+  --color-surface: rgba(10, 12, 20, 0.22);
+  --color-surface-raised: rgba(255, 255, 255, 0.075);
+  --color-sidebar: rgba(8, 9, 14, 0.48);
+  --color-toolbar: rgba(10, 12, 18, 0.44);
   --color-item-hover: rgba(255, 255, 255, 0.1);
   --color-item-active: rgba(255, 255, 255, 0.15);
   --color-border: rgba(255, 255, 255, 0.10);
@@ -102,8 +104,8 @@ html.dark {
   --color-success-muted: rgba(74, 222, 128, 0.12);
   --color-warning: #FACC15;
   --color-warning-muted: rgba(250, 204, 21, 0.12);
-  --color-titlebar: rgba(255, 255, 255, 0.03);
-  --color-titlebar-inactive: rgba(255, 255, 255, 0.01);
+  --color-titlebar: rgba(8, 9, 14, 0.48);
+  --color-titlebar-inactive: rgba(8, 9, 14, 0.34);
   --color-taskbar: rgba(0, 0, 0, 0.2);
   --color-selection: #60A5FA;
 
@@ -305,26 +307,26 @@ html, body {
    ═══════════════════════════════════════════════ */
 
 :root {
-  --surface-app-bg: rgba(255, 255, 255, 0.36);
-  --surface-card-bg: rgba(255, 255, 255, 0.52);
-  --surface-card-raised-bg: rgba(255, 255, 255, 0.62);
-  --surface-control-bg: rgba(255, 255, 255, 0.58);
-  --surface-toolbar-bg: rgba(255, 255, 255, 0.66);
-  --surface-sidebar-bg: rgba(244, 244, 245, 0.74);
-  --glass-window-bg: rgba(255, 255, 255, 0.74);
+  --surface-app-bg: rgba(255, 255, 255, 0.32);
+  --surface-card-bg: rgba(255, 255, 255, 0.46);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.56);
+  --surface-control-bg: rgba(255, 255, 255, 0.50);
+  --surface-toolbar-bg: rgba(255, 255, 255, 0.58);
+  --surface-sidebar-bg: rgba(244, 244, 245, 0.62);
+  --glass-window-bg: rgba(255, 255, 255, 0.64);
   --glass-drawer-bg: rgba(255, 255, 255, 0.80);
   --glass-popover-bg: rgba(255, 255, 255, 0.88);
   --glass-scrim-bg: rgba(0, 0, 0, 0.28);
 }
 
 html.dark {
-  --surface-app-bg: rgba(255, 255, 255, 0.06);
-  --surface-card-bg: rgba(255, 255, 255, 0.085);
-  --surface-card-raised-bg: rgba(255, 255, 255, 0.11);
-  --surface-control-bg: rgba(255, 255, 255, 0.095);
-  --surface-toolbar-bg: rgba(255, 255, 255, 0.075);
-  --surface-sidebar-bg: rgba(9, 9, 11, 0.56);
-  --glass-window-bg: rgba(0, 0, 0, 0.55);
+  --surface-app-bg: rgba(10, 12, 20, 0.22);
+  --surface-card-bg: rgba(255, 255, 255, 0.055);
+  --surface-card-raised-bg: rgba(255, 255, 255, 0.075);
+  --surface-control-bg: rgba(255, 255, 255, 0.065);
+  --surface-toolbar-bg: rgba(10, 12, 18, 0.44);
+  --surface-sidebar-bg: rgba(8, 9, 14, 0.48);
+  --glass-window-bg: rgba(5, 6, 11, 0.54);
   --glass-drawer-bg: rgba(9, 9, 11, 0.82);
   --glass-popover-bg: rgba(12, 12, 14, 0.90);
   --glass-scrim-bg: rgba(0, 0, 0, 0.42);

@@ -2720,10 +2720,21 @@ export async function captureBrowserScreenshot(
 // ── Local Apps ──
 
 export interface LocalAppManifest {
+  version: 2;
   name: string;
-  description?: string;
+  description: string;
   icon?: string;
-  window?: { width?: number; height?: number; minWidth?: number; minHeight?: number };
+  window: { width: number; height: number; minWidth?: number; minHeight?: number };
+  ui: { entry: string };
+  permissions?: {
+    network?: string[];
+    uses?: {
+      tools?: string[];
+      apps?: Array<{ app_id: string; tools: string[] }>;
+      inference?: boolean;
+    };
+  };
+  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
 }
 
 export interface LocalApp {
@@ -2734,6 +2745,10 @@ export interface LocalApp {
 
 export async function listLocalApps(): Promise<ApiResult<{ apps: LocalApp[] }>> {
   return request('/apps/local-list');
+}
+
+export async function mintLocalAppToken(appId: string): Promise<ApiResult<{ token: string; appId: string; expiresIn: number }>> {
+  return request(`/apps/local-token/${encodeURIComponent(appId)}`, { method: 'POST' });
 }
 
 export async function getLocalAppState(appId: string): Promise<ApiResult<Record<string, unknown>>> {

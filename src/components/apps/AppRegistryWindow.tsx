@@ -402,9 +402,9 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const sourceBadge = isComposio ? 'Integration' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
 
     return (
-      <div className="flex flex-col h-full text-[var(--color-text)] select-none bg-[var(--color-bg-secondary)]">
+      <div className="flex flex-col h-full text-[var(--color-text)] select-none surface-app">
         {/* Detail header */}
-        <div className="flex-shrink-0 px-5 pt-4 pb-0 border-b border-black/[0.06] dark:border-white/[0.06] bg-[var(--color-bg-secondary)] z-10">
+        <div className="flex-shrink-0 px-5 pt-4 pb-0 border-b border-black/[0.06] dark:border-white/[0.06] surface-toolbar z-10">
           <button
             onClick={closeDetail}
             className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors mb-3"

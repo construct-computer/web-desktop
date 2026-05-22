@@ -69,7 +69,7 @@ export function AppWindow({ config }: { config: WindowConfig }) {
 
   if (!appId) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
+      <div className="w-full h-full flex items-center justify-center surface-app">
         <div className="text-center">
           <Package className="w-10 h-10 mx-auto mb-3 opacity-40" />
           <p className="text-sm opacity-50">No app specified</p>
@@ -110,7 +110,7 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   // App not found yet — if we haven't fetched, show loading spinner
   if (!fetched) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[var(--color-bg-secondary)]">
+      <div className="w-full h-full flex items-center justify-center surface-app">
         <div className="text-center">
           <Loader2 className="w-8 h-8 mx-auto mb-3 opacity-40 animate-spin" />
           <p className="text-sm opacity-40">Loading app...</p>
@@ -143,6 +143,7 @@ function IframeAppView({
   const [checkingFrame, setCheckingFrame] = useState(false);
   const [useProxy, setUseProxy] = useState(false);
   const [proxyReason, setProxyReason] = useState<string | null>(null);
+  const [localAppToken, setLocalAppToken] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Register iframe ref for local apps so agentStore can trigger live reloads
@@ -207,12 +208,32 @@ function IframeAppView({
     return () => { cancelled = true; };
   }, [appId, isCustomUrlApp]);
 
-  // Local apps need auth token in URL since the sandboxed iframe can't send headers/cookies
-  const token = (isLocal || useProxy) ? localStorage.getItem(STORAGE_KEYS.token) : null;
+  useEffect(() => {
+    if (!isLocal) {
+      setLocalAppToken(null);
+      return;
+    }
+    let cancelled = false;
+    api.mintLocalAppToken(appId).then((res) => {
+      if (cancelled) return;
+      if (res.success) {
+        if (res.data?.token) setLocalAppToken(res.data.token);
+        else setError('Failed to prepare local app session');
+      } else {
+        setError(res.error || 'Failed to prepare local app session');
+      }
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+    });
+    return () => { cancelled = true; };
+  }, [isLocal, appId]);
+
+  // Local apps use an app-scoped token; custom proxy still uses the user session token.
+  const token = useProxy ? localStorage.getItem(STORAGE_KEYS.token) : null;
   const directUiUrl = isCustomUrlApp ? withTrailingSlash(baseUrl) : `${baseUrl}/ui/`;
   const proxyUiUrl = `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/ui-proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   const uiUrl = isLocal
-    ? `${baseUrl}/${token ? `?token=${encodeURIComponent(token)}` : ''}`
+    ? `${baseUrl}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}` : ''}`
     : useProxy
       ? proxyUiUrl
       : directUiUrl;
@@ -234,7 +255,7 @@ function IframeAppView({
     : 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
 
   return (
-    <div className="w-full h-full relative bg-[var(--color-bg-secondary)]">
+    <div className="w-full h-full relative surface-app">
       {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="text-center">
@@ -255,7 +276,7 @@ function IframeAppView({
           </div>
         </div>
       )}
-      {!checkingFrame && (
+      {!checkingFrame && (!isLocal || localAppToken) && (
         <iframe
           ref={iframeRef}
           src={uiUrl}
@@ -331,7 +352,7 @@ function DevAppIframeView({ config, appId, devUrl }: { config: WindowConfig; app
   }, [handleMessage]);
 
   return (
-    <div className="w-full h-full relative bg-[var(--color-bg-secondary)]">
+    <div className="w-full h-full relative surface-app">
       {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="text-center">

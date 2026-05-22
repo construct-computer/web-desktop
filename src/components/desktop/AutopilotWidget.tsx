@@ -147,6 +147,24 @@ function cleanWidgetText(text: string | null | undefined, limit = 74): string {
   return clampText(clean, limit);
 }
 
+function canonicalTraceText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(the|a|an|current|agent|run|task|work|goal)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isDuplicateTraceValue(a: string, b: string): boolean {
+  const left = canonicalTraceText(a);
+  const right = canonicalTraceText(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const min = Math.min(left.length, right.length);
+  return min >= 32 && (left.startsWith(right.slice(0, min)) || right.startsWith(left.slice(0, min)));
+}
+
 function formatLedgerStatus(status: string | null | undefined): string {
   return (status || 'unknown')
     .replace(/[_-]/g, ' ')
@@ -190,6 +208,10 @@ function formatPolicyFlags(policy: Record<string, unknown> | null | undefined): 
 
 function isGenericActionTitle(text: string | null | undefined): boolean {
   return /^(complete|continue|resume)\s+(the\s+)?(current\s+)?agent\s+run\.?$/i.test((text || '').trim());
+}
+
+function isNoisyProgressReason(text: string | null | undefined): boolean {
+  return /^loop:(heartbeat|tick|poll)$/i.test((text || '').trim());
 }
 
 function formatEventTime(event: api.AgentCalendarEvent): string {
@@ -559,6 +581,10 @@ export function AutopilotPanel() {
   const activeTraceItems = useMemo<ActiveTraceItem[]>(() => {
     if (!showActiveTrace || !displayStatus) return [];
     const items: ActiveTraceItem[] = [];
+    const addTraceItem = (item: ActiveTraceItem) => {
+      if (!item.value || items.some((existing) => isDuplicateTraceValue(existing.value, item.value))) return;
+      items.push(item);
+    };
     const sessionKey = activeSessionForOpen;
     const sameSession = <T extends { sessionKey: string }>(item: T) => !sessionKey || item.sessionKey === sessionKey;
 
@@ -566,21 +592,21 @@ export function AutopilotPanel() {
     const actionTool = formatTool(currentAction?.toolName || currentTool);
     if (actionTitle && !isGenericActionTitle(actionTitle)) {
       const isRetrying = Boolean(currentAction?.nextRunAt || currentAction?.lastError || (currentAction?.attemptCount ?? 0) > 1);
-      items.push({
+      addTraceItem({
         id: 'action',
         Icon: isRetrying ? RefreshCw : Wrench,
         label: isRetrying ? `Attempt ${Math.max(1, currentAction?.attemptCount ?? 1)}/${Math.max(1, currentAction?.maxAttempts ?? 1)}` : actionTool,
         value: actionTitle,
       });
-    } else if (primaryRun?.progressReason) {
-      items.push({
+    } else if (primaryRun?.progressReason && !isNoisyProgressReason(primaryRun.progressReason)) {
+      addTraceItem({
         id: 'progress',
         Icon: Activity,
         label: 'Step',
         value: cleanWidgetText(primaryRun.progressReason, 72),
       });
     } else if (currentTool) {
-      items.push({
+      addTraceItem({
         id: 'tool',
         Icon: Wrench,
         label: 'Using',
@@ -590,7 +616,7 @@ export function AutopilotPanel() {
 
     const workOrderObjective = cleanWidgetText(currentWorkOrder?.objective, 72);
     if (workOrderObjective && workOrderObjective !== actionTitle) {
-      items.push({
+      addTraceItem({
         id: 'work-order',
         Icon: ListChecks,
         label: currentWorkOrder?.status === 'blocked' ? 'Blocked' : 'Work',
@@ -602,10 +628,10 @@ export function AutopilotPanel() {
 
     const goalTitle = cleanWidgetText(currentGoal?.title, 72);
     if (goalTitle && goalTitle !== actionTitle && goalTitle !== workOrderObjective) {
-      items.push({
+      addTraceItem({
         id: 'goal',
         Icon: ListChecks,
-        label: 'Goal',
+        label: 'Plan',
         value: goalTitle,
       });
     }
@@ -615,7 +641,7 @@ export function AutopilotPanel() {
       : null;
     const taskTitle = cleanWidgetText(activeTask?.title, 72);
     if (taskTitle && taskTitle !== actionTitle && taskTitle !== goalTitle && taskTitle !== workOrderObjective) {
-      items.push({
+      addTraceItem({
         id: 'task',
         Icon: CheckCircle2,
         label: activeTask?.status === 'in_progress' ? 'Task' : 'Next',
@@ -628,7 +654,7 @@ export function AutopilotPanel() {
     ));
     if (activeBackgroundAgents.length > 0) {
       const lead = activeBackgroundAgents[0];
-      items.push({
+      addTraceItem({
         id: 'agents',
         Icon: MessageCircle,
         label: `${activeBackgroundAgents.length} helper${activeBackgroundAgents.length === 1 ? '' : 's'}`,
@@ -640,7 +666,7 @@ export function AutopilotPanel() {
       .filter(sameSession)
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (latestDecision?.summary) {
-      items.push({
+      addTraceItem({
         id: 'decision',
         Icon: Gauge,
         label: 'Plan',
@@ -652,7 +678,7 @@ export function AutopilotPanel() {
       .filter((verification) => verification.status === 'pending' && sameSession(verification))
       .sort((a, b) => b.createdAt - a.createdAt)[0];
     if (pendingVerification?.summary) {
-      items.push({
+      addTraceItem({
         id: 'verification',
         Icon: CheckCircle2,
         label: 'Verify',
@@ -660,10 +686,7 @@ export function AutopilotPanel() {
       });
     }
 
-    const uniqueItems = items.filter((item, index, list) => (
-      item.value && list.findIndex((candidate) => candidate.value === item.value) === index
-    ));
-    if (uniqueItems.length > 0) return uniqueItems.slice(0, 3);
+    if (items.length > 0) return items.slice(0, 3);
     return [{
       id: 'summary',
       Icon: Activity,
@@ -686,8 +709,9 @@ export function AutopilotPanel() {
   const visibleWorkOrders = useMemo(() => (
     (displayStatus?.workOrders || [])
       .filter((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status))
+      .filter((order) => !hasActiveRun || order.sessionKey !== primaryRun?.sessionKey)
       .slice(0, 3)
-  ), [displayStatus]);
+  ), [displayStatus, hasActiveRun, primaryRun?.sessionKey]);
   const visibleLearnedPolicies = useMemo(() => (
     (displayStatus?.learnedPolicies || []).slice(0, 3)
   ), [displayStatus]);

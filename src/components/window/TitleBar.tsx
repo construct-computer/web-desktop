@@ -35,7 +35,7 @@ export function TitleBar({
   return (
     <div
       className={cn(
-        'flex items-center select-none shrink-0 touch-none',
+        'flex items-center select-none shrink-0 touch-none surface-sidebar border-b border-black/[0.06] dark:border-white/[0.06]',
         isMobile ? 'h-11 px-3' : 'h-8 px-2.5',
       )}
       onPointerDown={onPointerDown}
