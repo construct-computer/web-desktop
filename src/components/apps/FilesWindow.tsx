@@ -7,11 +7,14 @@ import {
   FileCode,
   FileImage,
   FileArchive,
+  FileSpreadsheet,
   FileEdit,
   FilePlus,
   FolderPlus,
   FileAudio,
   FileVideo,
+  Braces,
+  Presentation,
   Pencil,
   Trash2,
   ChevronRight,
@@ -45,7 +48,7 @@ import { useFreshness } from '@/hooks/useFreshness';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
-import { getFileType } from '@/lib/fileTypes';
+import { getFileIconKind, getFileType } from '@/lib/fileTypes';
 
 const logger = log('Files');
 
@@ -75,15 +78,23 @@ function getFileIcon(entry: FileEntry) {
   if (entry.type === 'directory') return Folder;
   if (entry.type === 'symlink') return Link;
 
-  const fileType = getFileType(entry.name);
-  if (fileType?.category === 'image') return FileImage;
-  if (fileType?.renderer === 'audio') return FileAudio;
-  if (fileType?.renderer === 'video') return FileVideo;
-  if (fileType?.category === 'archive') return FileArchive;
-  const ext = entry.name.split('.').pop()?.toLowerCase() ?? '';
-  if (['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'sh', 'bash', 'yaml', 'yml', 'toml', 'json', 'xml', 'html', 'css', 'scss'].includes(ext)) return FileCode;
-  if (['txt', 'md', 'log', 'csv', 'env', 'cfg', 'ini', 'conf'].includes(ext)) return FileText;
-  return File;
+  switch (getFileIconKind(entry.name)) {
+    case 'image': return FileImage;
+    case 'audio': return FileAudio;
+    case 'video': return FileVideo;
+    case 'archive': return FileArchive;
+    case 'spreadsheet': return FileSpreadsheet;
+    case 'slides': return Presentation;
+    case 'json': return Braces;
+    case 'html':
+    case 'code': return FileCode;
+    case 'pdf':
+    case 'document':
+    case 'markdown':
+    case 'text':
+    case 'data': return FileText;
+    default: return File;
+  }
 }
 
 import { isTextFile, isDocumentFile } from '../../lib/utils';
@@ -92,6 +103,7 @@ import { openDocumentViewer, openCloudDocumentViewer } from '../../stores/docume
 // ─── Media file detection ──────────────────────────────────────────────────
 
 type FileCategory = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'binary';
+type SortKey = 'name' | 'size' | 'modified';
 
 function getFileCategory(name: string): FileCategory {
   const fileType = getFileType(name);
@@ -381,6 +393,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   }, [localApps]);
   const isReadOnly = false; // R2 workspace is always writable
   const [rawEntries, setRawEntries] = useState<FileEntry[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -498,9 +512,25 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           if (a.type === 'directory') return -1;
           if (b.type === 'directory') return 1;
         }
-        return a.name.localeCompare(b.name);
+        let value = 0;
+        if (sortKey === 'name') value = a.name.localeCompare(b.name);
+        else if (sortKey === 'size') value = a.size - b.size;
+        else value = new Date(a.modified || 0).getTime() - new Date(b.modified || 0).getTime();
+        if (value === 0) value = a.name.localeCompare(b.name);
+        return sortDirection === 'asc' ? value : -value;
       });
-  }, [rawEntries, showHidden]);
+  }, [rawEntries, showHidden, sortDirection, sortKey]);
+
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortKey((current) => {
+      if (current === key) {
+        setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc');
+        return current;
+      }
+      setSortDirection(key === 'name' ? 'asc' : 'desc');
+      return key;
+    });
+  }, []);
 
   const loadDirectory = useCallback(
     async (path: string, opts?: { silent?: boolean }) => {
@@ -988,6 +1018,14 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         if (entry) handleOpenLocalItem(entry);
         return;
       }
+      if (e.key === ' ' && selectedName) {
+        const entry = entries.find((en) => en.name === selectedName);
+        if (entry?.type === 'file' && isPreviewable(entry.name)) {
+          e.preventDefault();
+          openPreview(entry.name, joinPath(currentPath, entry.name));
+        }
+        return;
+      }
       if (e.key === 'Backspace') {
         goUp();
         return;
@@ -1017,7 +1055,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [entries, selectedName, goUp, renamingName, creatingType, handleDelete, handleOpenLocalItem, previewFile, closePreview]);
+  }, [entries, selectedName, goUp, renamingName, creatingType, handleDelete, handleOpenLocalItem, previewFile, closePreview, openPreview, currentPath]);
 
   const pathParts = currentPath.split('/').filter(Boolean);
 
@@ -1236,11 +1274,32 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           {/* Column headers (shared) */}
           {(!isMobile || !previewFile) && (
             <div className="flex items-center px-3 py-1 border-b border-[var(--color-border)] surface-card text-[11px] text-[var(--color-text-muted)] font-medium">
-              <div className="flex-1 min-w-0">Name</div>
+              <button
+                type="button"
+                onClick={() => toggleSort('name')}
+                className="flex-1 min-w-0 text-left hover:text-[var(--color-text)]"
+                title="Sort by name"
+              >
+                Name{sortKey === 'name' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
+              </button>
               {!isMobile && (
                 <>
-                  <div className="w-20 text-right flex-shrink-0">Size</div>
-                  <div className="w-32 text-right flex-shrink-0">Modified</div>
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('size')}
+                    className="w-20 text-right flex-shrink-0 hover:text-[var(--color-text)]"
+                    title="Sort by size"
+                  >
+                    Size{sortKey === 'size' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('modified')}
+                    className="w-32 text-right flex-shrink-0 hover:text-[var(--color-text)]"
+                    title="Sort by modified date"
+                  >
+                    Modified{sortKey === 'modified' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
+                  </button>
                 </>
               )}
             </div>

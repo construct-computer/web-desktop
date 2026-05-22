@@ -13,6 +13,8 @@ export interface EditorFileState {
   loading: boolean;
   saving: boolean;
   error: string | null;
+  revision?: string;
+  conflict?: boolean;
 }
 
 interface EditorStore {
@@ -81,6 +83,8 @@ export const useEditorStore = create<EditorStore>()(
         loading: true,
         saving: false,
         error: null,
+        revision: undefined,
+        conflict: false,
       };
 
       set({ files: { ...get().files, [windowId]: fileState } });
@@ -115,6 +119,8 @@ export const useEditorStore = create<EditorStore>()(
                 savedContent: result.data.content,
                 loading: false,
                 error: null,
+                revision: result.data.revision,
+                conflict: false,
               },
             },
           });
@@ -153,6 +159,8 @@ export const useEditorStore = create<EditorStore>()(
                 ...files[windowId],
                 content: result.data.content,
                 savedContent: result.data.content,
+                revision: result.data.revision,
+                conflict: false,
               },
             },
           });
@@ -194,7 +202,7 @@ export const useEditorStore = create<EditorStore>()(
         files: { ...get().files, [windowId]: { ...get().files[windowId], saving: true } },
       });
 
-      const result = await api.writeFile(instanceId, file.filePath, file.content);
+      const result = await api.writeFile(instanceId, file.filePath, file.content, file.revision);
 
       const files = get().files;
       if (!files[windowId]) return;
@@ -206,6 +214,9 @@ export const useEditorStore = create<EditorStore>()(
             ...files[windowId],
             saving: false,
             savedContent: result.success ? file.content : files[windowId].savedContent,
+            revision: result.success ? result.data.revision : files[windowId].revision,
+            error: result.success ? null : result.error,
+            conflict: !result.success && result.status === 409,
           },
         },
       });

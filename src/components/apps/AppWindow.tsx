@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import type { WindowConfig } from '@/types';
-import type { InstalledApp, RegistryAppDetail, ComposioAccountDetail } from '@/services/api';
+import type { InstalledApp, LocalApp, RegistryAppDetail, ComposioAccountDetail } from '@/services/api';
 import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAppStore, localAppIframeRefs } from '@/stores/appStore';
@@ -91,10 +91,9 @@ export function AppWindow({ config }: { config: WindowConfig }) {
   }
 
   // Local app — agent-created, served from R2 (detected by localApps list, not DB)
-  const isLocal = localApps.some((a) => a.id === appId);
-  if (isLocal) {
-    const localBaseUrl = `/api/apps/local/${appId}`;
-    return <IframeAppView config={config} appId={appId} baseUrl={localBaseUrl} isLocal />;
+  const localApp = localApps.find((a) => a.id === appId);
+  if (localApp) {
+    return <LocalAppView config={config} appId={appId} app={localApp} />;
   }
 
   // Find the installed MCP app data
@@ -421,6 +420,138 @@ function InstalledAppView({
     return <GenericAppPanel config={config} appId={appId} appData={appData} />;
   }
   return <IframeAppView config={config} appId={appId} baseUrl={appData.base_url} appData={appData} />;
+}
+
+// ── Local App with UI — iframe + info-toggle to manifest/tool details ──
+
+function LocalAppView({
+  config, appId, app,
+}: {
+  config: WindowConfig;
+  appId: string;
+  app: LocalApp;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+
+  useWindowTitleBarAccessory(
+    config.id,
+    <button
+      onClick={() => setShowDetails((v) => !v)}
+      className={`p-1 rounded-[5px] transition-colors ${
+        showDetails
+          ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+          : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+      }`}
+      title={showDetails ? 'Show app UI' : 'Show app details'}
+      aria-label={showDetails ? 'Show app UI' : 'Show app details'}
+    >
+      <Info className="w-3.5 h-3.5" />
+    </button>,
+  );
+
+  if (showDetails) {
+    return <LocalAppPanel appId={appId} app={app} onShowUi={() => setShowDetails(false)} />;
+  }
+
+  return <IframeAppView config={config} appId={appId} baseUrl={`/api/apps/local/${appId}`} isLocal />;
+}
+
+function LocalAppPanel({
+  appId,
+  app,
+  onShowUi,
+}: {
+  appId: string;
+  app: LocalApp;
+  onShowUi: () => void;
+}) {
+  const manifest = app.manifest;
+  const tools = manifest.tools.map((tool) => ({
+    slug: tool.name,
+    name: tool.name,
+    description: tool.description,
+  }));
+  const uses = manifest.permissions?.uses;
+  const managedTools = uses?.tools ?? [];
+  const appCalls = uses?.apps ?? [];
+  const networkHosts = manifest.permissions?.network ?? [];
+  const windowSize = [
+    `${manifest.window.width} x ${manifest.window.height}`,
+    manifest.window.minWidth && manifest.window.minHeight
+      ? `min ${manifest.window.minWidth} x ${manifest.window.minHeight}`
+      : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <AppShell>
+      <AppHeroHeader
+        icon={app.icon_url || manifest.icon}
+        fallbackIcon={<Package className="w-7 h-7 opacity-40" />}
+        name={manifest.name || appId}
+        subtitle="Agent-created local app"
+        description={manifest.description}
+        status={{ label: 'Local', tone: 'blue' }}
+        badges={[
+          'Local App',
+          'Has UI',
+          ...(tools.length ? [`${tools.length} Tool${tools.length === 1 ? '' : 's'}`] : []),
+          ...(uses?.inference ? ['Inference'] : []),
+          ...(networkHosts.length ? ['Network'] : []),
+        ]}
+        primaryAction={
+          <button
+            onClick={onShowUi}
+            className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity shadow-sm"
+          >
+            Open Interface
+          </button>
+        }
+      />
+
+      <InfoCard title="Details">
+        <InfoRow icon={<Hash className="w-3 h-3" />} label="App ID" value={appId} mono copyable />
+        <InfoRow icon={<Package className="w-3 h-3" />} label="UI entry" value={manifest.ui.entry} mono />
+        <InfoRow icon={<Wrench className="w-3 h-3" />} label="Window" value={windowSize} />
+      </InfoCard>
+
+      {(networkHosts.length > 0 || managedTools.length > 0 || appCalls.length > 0 || uses?.inference) && (
+        <InfoCard title="Capabilities" subtitle="Resources this local app is allowed to use.">
+          <div className="flex flex-wrap gap-1.5">
+            {uses?.inference && (
+              <span className="text-[11px] px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                Agent inference
+              </span>
+            )}
+            {managedTools.map((name) => (
+              <span key={`tool:${name}`} className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                tool:{name}
+              </span>
+            ))}
+            {appCalls.flatMap((target) => target.tools.map((tool) => (
+              <span key={`app:${target.app_id}:${tool}`} className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                {target.app_id}.{tool}
+              </span>
+            )))}
+            {networkHosts.map((host) => (
+              <span key={`network:${host}`} className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06]">
+                {host}
+              </span>
+            ))}
+          </div>
+        </InfoCard>
+      )}
+
+      {tools.length > 0 ? (
+        <ToolsList tools={tools} />
+      ) : (
+        <InfoCard title="Tools" subtitle="This app does not expose callable tools.">
+          <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+            It is available as a local UI app, but Construct has no app-specific actions to call from chat.
+          </p>
+        </InfoCard>
+      )}
+    </AppShell>
+  );
 }
 
 // ── Generic App Management Panel ──

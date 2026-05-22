@@ -28,7 +28,14 @@ export default defineConfig(({ mode }) => {
         enabled: true
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        globPatterns: ['**/*.{js,css,woff,woff2,ttf,webmanifest}'],
         maximumFileSizeToCacheInBytes: 5000000,
+        // Keep navigations network-first. A cached SPA shell is what makes
+        // installed PWAs keep loading stale chunk hashes after deployments.
+        navigateFallback: undefined,
         // Do not let the SPA "offline shell" hijack top-level navigations to the API
         // (e.g. Google OAuth start URL /api/auth/google -> must hit the network / worker).
         navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/v1\//, /^\/health$/],

@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { log } from '@/lib/logger';
+import { isChunkLoadError, recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -29,6 +30,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     log(`ErrorBoundary${this.props.label ? `:${this.props.label}` : ''}`).error(error, info.componentStack);
+    void recoverFromChunkLoadError(error);
   }
 
   handleReset = () => {
@@ -42,6 +44,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
 
     const message = this.state.error?.message || 'Something went wrong';
+    const isRecoveringChunk = isChunkLoadError(this.state.error);
 
     if (this.props.inline) {
       return (
@@ -52,7 +55,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               {this.props.label ? `${this.props.label} crashed` : 'Something went wrong'}
             </p>
             <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs break-words">
-              {message}
+              {isRecoveringChunk ? 'Refreshing stale app assets...' : message}
             </p>
           </div>
           <button

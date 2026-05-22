@@ -1327,10 +1327,35 @@ export async function listFiles(_instanceId: string, path = '/home/sandbox/works
 export interface FileContentResponse {
   path: string;
   content: string;
+  encoding?: 'utf8' | 'base64';
+  binary?: boolean;
+  truncated?: boolean;
+  size?: number;
+  modified?: string;
+  revision?: string;
+  mimeType?: string;
+}
+
+export interface FileMetaResponse {
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+  modified: string;
+  revision: string;
+  mimeType: string;
 }
 
 export async function readFile(_instanceId: string, path: string): Promise<ApiResult<FileContentResponse>> {
-  return request(`/files/read?path=${encodeURIComponent(path)}`);
+  return request(`/files/content?path=${encodeURIComponent(path)}&encoding=utf8`);
+}
+
+export async function readFileBase64(_instanceId: string, path: string): Promise<ApiResult<FileContentResponse>> {
+  return request(`/files/content?path=${encodeURIComponent(path)}&encoding=base64`);
+}
+
+export async function getFileMeta(_instanceId: string, path: string): Promise<ApiResult<FileMetaResponse>> {
+  return request(`/files/meta?path=${encodeURIComponent(path)}`);
 }
 
 /**
@@ -1358,6 +1383,24 @@ export async function downloadContainerFile(_instanceId: string, path: string): 
  */
 export async function previewContainerFile(_instanceId: string, path: string): Promise<Response> {
   const url = `${API_BASE_URL}/files/preview?path=${encodeURIComponent(path)}`;
+  const doFetch = () => {
+    const token = getToken();
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
+  const res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await ensureTokenRefreshed();
+    if (refreshed) return doFetch();
+  }
+  return res;
+}
+
+export async function blobContainerFile(
+  _instanceId: string,
+  path: string,
+  disposition: 'inline' | 'attachment' = 'inline',
+): Promise<Response> {
+  const url = `${API_BASE_URL}/files/blob?path=${encodeURIComponent(path)}&disposition=${disposition}`;
   const doFetch = () => {
     const token = getToken();
     return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -1428,10 +1471,15 @@ export async function checkFileExists(_instanceId: string, path: string): Promis
   return request(`/files/exists?path=${encodeURIComponent(path)}`);
 }
 
-export async function writeFile(_instanceId: string, path: string, content: string): Promise<ApiResult<{ status: string; path: string }>> {
-  return request(`/files/write`, {
+export async function writeFile(
+  _instanceId: string,
+  path: string,
+  content: string,
+  expectedRevision?: string,
+): Promise<ApiResult<{ status: string; path: string; revision?: string }>> {
+  return request(`/files/content`, {
     method: 'PUT',
-    body: JSON.stringify({ path, content }),
+    body: JSON.stringify({ path, content, encoding: 'utf8', expectedRevision }),
   });
 }
 

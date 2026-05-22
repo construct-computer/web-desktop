@@ -153,6 +153,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
   const isAppInstalled = (app: UnifiedApp): boolean => {
     if (app.status !== 'available') return true;
+    if (app.source === 'local') return true;
     if (app.registryApp && installedIds.has(app.registryApp.id)) return true;
     if (app.composioSlug && connectedToolkits.has(app.composioSlug)) return true;
     if (app.source === 'installed') return true;
@@ -339,11 +340,12 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     setPendingActions(prev => { const n = { ...prev }; delete n[`composio-${toolkit}`]; return n; });
   };
 
-  const handleOpenInstalled = (app: UnifiedApp) => {
+  const handleOpenInstalled = async (app: UnifiedApp) => {
     // Prefer ids from this panel's install list (`installedIds` from fetchInstalled on mount).
     // useAppStore.installedApps is often still empty after a hard refresh until fetchApps()
     // runs elsewhere (e.g. Launchpad), so do not rely on it for registry opens alone.
     let appId =
+      app.localApp?.id ??
       app.installedApp?.id ??
       (app.registryApp && installedIds.has(app.registryApp.id) ? app.registryApp.id : undefined);
     if (!appId && installedIds.has(app.id) && app.id !== 'app-registry') {
@@ -357,6 +359,9 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
       appId = row?.id;
     }
     if (!appId) return;
+    if (app.source === 'local') {
+      await useAppStore.getState().fetchApps();
+    }
     openWindow('app', {
       title: app.name,
       icon: app.icon,
@@ -393,13 +398,16 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const isCustomUrlInstall =
       detail.source === 'installed' && detail.installedApp && detail.installedApp.registry_linked === false;
     const sourceLabel =
+      detail.source === 'local'
+        ? 'Local app'
+        :
       detail.author ||
       (isCustomUrlInstall
         ? 'Custom URL'
         : isComposio
           ? 'Integration'
           : 'Construct App');
-    const sourceBadge = isComposio ? 'Integration' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
+    const sourceBadge = detail.source === 'local' ? 'Local App' : isComposio ? 'Integration' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
 
     return (
       <div className="flex flex-col h-full text-[var(--color-text)] select-none surface-app">
@@ -417,7 +425,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             name={detail.name}
             subtitle={`${sourceLabel} · ${CATEGORY_LABELS[detail.category] || detail.category}`}
             description={detail.description || 'No description available.'}
-            status={installed ? { label: isComposio ? 'Connected' : 'Added', tone: 'emerald' } : undefined}
+            status={installed ? { label: detail.source === 'local' ? 'Local' : isComposio ? 'Connected' : 'Added', tone: detail.source === 'local' ? 'blue' : 'emerald' } : undefined}
             badges={[
               sourceBadge,
               ...(detail.tags || []),
@@ -442,7 +450,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   </button>
                 ) : installed ? (
                   <>
-                    {(detail.hasUi || detail.source === 'installed' || detail.source === 'registry') && (
+                    {(detail.hasUi || detail.source === 'installed' || detail.source === 'registry' || detail.source === 'local') && (
                       <button
                         onClick={() => handleOpenInstalled(detail)}
                         className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity shadow-sm"
@@ -494,13 +502,13 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             </div>
           )}
 
-          {installed && (isComposio || detail.source === 'installed' || detail.registryApp) && (
+          {installed && (isComposio || detail.source === 'installed' || detail.source === 'local' || detail.registryApp) && (
             <InfoCard title="Connection status" subtitle="Construct can use this from chat.">
               <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
                 <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
-                    {isComposio ? 'Integration connected' : 'App installed'}
+                    {detail.source === 'local' ? 'Local app available' : isComposio ? 'Integration connected' : 'App installed'}
                   </p>
                   <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
                     {toolCount > 0
@@ -949,9 +957,11 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
               if (filtered.length === 0) {
                 return <EmptyState message={`No connected apps match "${search}".`} />;
               }
-              const mcpApps = filtered.filter(a => a.source !== 'composio');
+              const localApps = filtered.filter(a => a.source === 'local');
+              const mcpApps = filtered.filter(a => a.source !== 'composio' && a.source !== 'local');
               const composioApps = filtered.filter(a => a.source === 'composio');
               const groups: Array<[string, typeof filtered]> = [];
+              if (localApps.length > 0) groups.push(['Local Apps', localApps]);
               if (mcpApps.length > 0) groups.push(['MCP Apps', mcpApps]);
               if (composioApps.length > 0) groups.push(['Integrations', composioApps]);
               const showHeaders = groups.length > 1;
@@ -1125,7 +1135,7 @@ function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void
         </p>
         <div className="mt-2 flex items-center gap-1.5">
           {isInstalled ? (
-            <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 rounded-full">{isComposio ? 'Connected' : 'Added'}</span>
+            <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 rounded-full">{app.source === 'local' ? 'Local' : isComposio ? 'Connected' : 'Added'}</span>
           ) : app.requiresUpgrade ? (
             <span className="text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 rounded-full flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" /> Upgrade</span>
           ) : (

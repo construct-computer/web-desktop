@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '@/services/api';
-import type { InstalledApp } from '@/services/api';
+import type { InstalledApp, LocalApp } from '@/services/api';
 
-export type { InstalledApp };
+export type { InstalledApp, LocalApp };
 
 // ── Types ──
 
@@ -39,7 +39,7 @@ export type Category =
 export interface UnifiedApp {
   id: string; name: string; description: string;
   icon?: string; category: string; tags: string[];
-  source: 'registry' | 'composio' | 'installed';
+  source: 'registry' | 'composio' | 'installed' | 'local';
   tools: Array<{ name: string; description?: string | null }>;
   hasUi: boolean;
   status: 'available' | 'installed' | 'connected';
@@ -48,6 +48,7 @@ export interface UnifiedApp {
   author?: string; authorUrl?: string; sourceUrl?: string;
   registryApp?: RegistryApp;
   installedApp?: InstalledApp;
+  localApp?: LocalApp;
   composioSlug?: string; composioLogo?: string;
   authSchemes?: string[];
   authConfig?: Array<{ mode: string; fields: Array<{ name: string; displayName: string; description?: string; required: boolean }> }>;
@@ -94,7 +95,7 @@ export const FALLBACK_CURATED: CuratedDef[] = [
 ];
 
 export const HIDDEN_SLUGS = new Set(['slack', 'telegram']);
-const SOURCE_PRIORITY: Record<string, number> = { installed: 0, composio: 1, registry: 2 };
+const SOURCE_PRIORITY: Record<string, number> = { local: 0, installed: 1, composio: 2, registry: 3 };
 
 export const CATEGORY_LABELS: Record<string, string> = {
   productivity: 'Productivity', communication: 'Communication',
@@ -230,6 +231,23 @@ export function installedToUnified(app: InstalledApp): UnifiedApp {
   };
 }
 
+export function localToUnified(app: LocalApp): UnifiedApp {
+  const manifest = app.manifest;
+  return {
+    id: app.id,
+    name: manifest.name || app.id,
+    description: manifest.description || '',
+    icon: app.icon_url || manifest.icon,
+    category: inferCategory(app.id, manifest.name || app.id, manifest.description || ''),
+    tags: ['local', 'agent-created'],
+    source: 'local',
+    tools: manifest.tools || [],
+    hasUi: !!manifest.ui?.entry,
+    status: 'installed',
+    localApp: app,
+  };
+}
+
 // ── Hook ──
 
 export function formatDate(ts: number): string {
@@ -266,6 +284,7 @@ export function useAppDiscovery() {
   const [composioResults, setComposioResults] = useState<Array<any>>([]);
 
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [localApps, setLocalApps] = useState<LocalApp[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [connectedToolkits, setConnectedToolkits] = useState<Set<string>>(new Set());
   const [userPlan, setUserPlan] = useState<string>('free');
@@ -278,6 +297,14 @@ export function useAppDiscovery() {
       const apps = data?.success && data?.data ? data.data.apps : [];
       setInstalledApps(apps);
       setInstalledIds(new Set(apps.map((a: any) => a.id)));
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchLocal = useCallback(async () => {
+    try {
+      const data = await api.listLocalApps();
+      const apps = data?.success && data?.data ? data.data.apps : [];
+      setLocalApps(apps);
     } catch { /* ignore */ }
   }, []);
 
@@ -317,9 +344,9 @@ export function useAppDiscovery() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchConnected(), fetchSubscription()])
+    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected(), fetchSubscription()])
       .finally(() => setLoading(false));
-  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchConnected, fetchSubscription]);
+  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchLocal, fetchConnected, fetchSubscription]);
 
   const executeSearch = useCallback(async (query: string) => {
     const runId = ++searchRunIdRef.current;
@@ -364,6 +391,7 @@ export function useAppDiscovery() {
         status: 'connected' as const, composioSlug: slug, verified: true,
       } satisfies UnifiedApp;
     }),
+    ...localApps.map(localToUnified),
     ...installedApps.map(installedToUnified),
   ].filter(a => category === 'all' || a.category === category);
 
@@ -402,7 +430,7 @@ export function useAppDiscovery() {
 
   const handleRefresh = () => {
     setLoading(true);
-    return Promise.all([fetchRegistry(), fetchInstalled(), fetchConnected()]).finally(() => setLoading(false));
+    return Promise.all([fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected()]).finally(() => setLoading(false));
   };
 
   return {

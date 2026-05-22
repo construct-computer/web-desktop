@@ -2,15 +2,33 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, previewContainerFile, writeFile } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
-import { type ViewerDocType } from '@/lib/fileTypes';
+import {
+  getLanguageLabel,
+  getFileIconKind,
+  getMonacoLanguage,
+  hasRawToggle as fileHasRawToggle,
+  type ViewerDocType,
+} from '@/lib/fileTypes';
 import { useEditorStore } from '@/stores/editorStore';
 import { useDocViewerSignalStore } from '@/stores/documentViewerStore';
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import type { WindowConfig } from '@/types';
-import { FileText, Table, Presentation, Image, File, Download, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Code, Eye, Save, Volume2, Film, Archive, Maximize2 } from 'lucide-react';
+import { FileText, Table, Presentation, Image, File, Download, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Code, Eye, Save, Volume2, Film, Archive, Maximize2, Braces, Search, ArrowUpDown } from 'lucide-react';
 
 import MonacoEditor, { type OnMount } from '@monaco-editor/react';
 import type { editor as monacoEditor } from 'monaco-editor';
+import Papa from 'papaparse';
+import { JsonView } from 'react-json-view-lite';
+import 'react-json-view-lite/dist/index.css';
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from '@tanstack/react-table';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -22,6 +40,11 @@ interface SheetData {
   rows: string[][];
 }
 
+interface TableRow {
+  cells: string[];
+  rowNumber: number;
+}
+
 interface ConversionFrame {
   previewPath: string;
   contentType?: string;
@@ -29,48 +52,24 @@ interface ConversionFrame {
   pageIndex?: number;
 }
 
-// ── Monaco language detection (ported from EditorWindow) ─────────────────
-
-const MONACO_LANG_MAP: Record<string, string> = {
-  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  ts: 'typescript', tsx: 'typescript',
-  py: 'python', rb: 'ruby', rs: 'rust', go: 'go',
-  c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-  java: 'java', kt: 'kotlin', swift: 'swift',
-  sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
-  json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini',
-  xml: 'xml', html: 'html', htm: 'html',
-  css: 'css', scss: 'scss', less: 'less',
-  md: 'markdown', txt: 'plaintext', log: 'plaintext', csv: 'plaintext',
-  sql: 'sql', graphql: 'graphql', gql: 'graphql',
-  dockerfile: 'dockerfile', makefile: 'plaintext',
-  env: 'ini', ini: 'ini', conf: 'ini', cfg: 'ini',
-  svg: 'xml', prisma: 'plaintext', lock: 'plaintext',
-  gitignore: 'plaintext', dockerignore: 'plaintext', editorconfig: 'ini',
+const JSON_TREE_STYLES = {
+  container: 'font-mono text-[12px] leading-6 text-[var(--color-text)]',
+  basicChildStyle: 'pl-4',
+  label: 'mr-1 font-semibold text-[var(--color-text)]',
+  clickableLabel: 'mr-1 font-semibold text-[var(--color-text)] hover:text-[var(--color-accent)] cursor-pointer',
+  nullValue: 'text-purple-300',
+  undefinedValue: 'text-purple-300',
+  numberValue: 'text-pink-300',
+  stringValue: 'text-emerald-300',
+  booleanValue: 'text-cyan-300',
+  otherValue: 'text-[var(--color-text)]',
+  punctuation: 'text-[var(--color-text-muted)]',
+  expandIcon: 'inline-flex w-4 cursor-pointer select-none text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+  collapseIcon: 'inline-flex w-4 cursor-pointer select-none text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+  collapsedContent: 'text-[var(--color-text-muted)]',
+  childFieldsContainer: 'ml-3 border-l border-white/[0.08] pl-3',
+  quotesForFieldNames: false,
 };
-
-const LANGUAGE_LABELS: Record<string, string> = {
-  javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python',
-  ruby: 'Ruby', rust: 'Rust', go: 'Go', c: 'C', cpp: 'C++',
-  java: 'Java', kotlin: 'Kotlin', swift: 'Swift', shell: 'Shell',
-  json: 'JSON', yaml: 'YAML', ini: 'INI', xml: 'XML',
-  html: 'HTML', css: 'CSS', scss: 'SCSS', less: 'Less',
-  markdown: 'Markdown', plaintext: 'Plain Text',
-  sql: 'SQL', graphql: 'GraphQL', dockerfile: 'Dockerfile',
-};
-
-function getMonacoLanguage(filename: string): string {
-  const lower = filename.toLowerCase();
-  const baseName = lower.split('/').pop() ?? lower;
-  if (baseName === 'dockerfile') return 'dockerfile';
-  if (baseName === 'makefile' || baseName === 'cmakelists.txt') return 'plaintext';
-  if (baseName.startsWith('.')) {
-    const withoutDot = baseName.slice(1);
-    if (MONACO_LANG_MAP[withoutDot]) return MONACO_LANG_MAP[withoutDot];
-  }
-  const ext = baseName.split('.').pop() ?? '';
-  return MONACO_LANG_MAP[ext] || 'plaintext';
-}
 
 const MONACO_OPTIONS: import('monaco-editor').editor.IStandaloneEditorConstructionOptions = {
   fontSize: 13,
@@ -165,6 +164,146 @@ function DocxViewer({ htmlContent }: { htmlContent: string }) {
   );
 }
 
+function spreadsheetColumnName(index: number): string {
+  let name = '';
+  let n = index + 1;
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    n = Math.floor((n - 1) / 26);
+  }
+  return name;
+}
+
+function DataTableViewer({ sheet }: { sheet: SheetData }) {
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  const data = useMemo<TableRow[]>(
+    () => sheet.rows.map((cells, index) => ({ cells, rowNumber: index + 1 })),
+    [sheet.rows],
+  );
+
+  const columns = useMemo<ColumnDef<TableRow>[]>(
+    () => [
+      {
+        id: '__row',
+        header: '#',
+        accessorFn: row => row.rowNumber,
+        enableSorting: false,
+        cell: info => info.row.original.rowNumber,
+      },
+      ...sheet.headers.map<ColumnDef<TableRow>>((header, index) => ({
+        id: `col_${index}`,
+        header: header || spreadsheetColumnName(index),
+        accessorFn: (row: TableRow) => row.cells[index] ?? '',
+        cell: info => String(info.getValue() ?? ''),
+      })),
+    ],
+    [sheet.headers],
+  );
+
+  const table = useReactTable({
+    data,
+    columns,
+    state: { sorting, globalFilter },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const query = String(filterValue ?? '').trim().toLowerCase();
+      if (!query) return true;
+      return row.original.cells.some(cell => cell.toLowerCase().includes(query));
+    },
+  });
+
+  const visibleRows = table.getRowModel().rows;
+
+  return (
+    <div className="w-full h-full flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.06] surface-toolbar">
+        <Search className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+        <input
+          value={globalFilter}
+          onChange={(event) => setGlobalFilter(event.target.value)}
+          placeholder="Search table"
+          className="w-full max-w-xs bg-transparent text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none"
+        />
+        <span className="ml-auto text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
+          {visibleRows.length} of {sheet.rows.length} rows
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        <table className="min-w-full border-collapse text-xs">
+          <thead className="sticky top-0 z-10">
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map(header => {
+                  const sorted = header.column.getIsSorted();
+                  const isRowColumn = header.column.id === '__row';
+                  return (
+                    <th
+                      key={header.id}
+                      className={`${isRowColumn ? 'sticky left-0 z-20 w-10 text-center' : 'text-left'} bg-[var(--color-surface-raised)] border border-white/10 px-2 py-1 font-medium text-[var(--color-text-muted)] whitespace-nowrap`}
+                    >
+                      {header.isPlaceholder ? null : (
+                        <button
+                          type="button"
+                          disabled={!header.column.getCanSort()}
+                          onClick={header.column.getToggleSortingHandler()}
+                          className={`${isRowColumn ? 'justify-center' : 'justify-between'} flex w-full items-center gap-2 text-left disabled:cursor-default`}
+                          title={header.column.getCanSort() ? 'Sort column' : undefined}
+                        >
+                          <span className="truncate">
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          </span>
+                          {header.column.getCanSort() && (
+                            <span className="shrink-0 text-[9px] uppercase text-[var(--color-text-muted)]">
+                              {sorted === 'asc' ? 'Asc' : sorted === 'desc' ? 'Desc' : <ArrowUpDown className="w-3 h-3" />}
+                            </span>
+                          )}
+                        </button>
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {visibleRows.map(row => (
+              <tr key={row.id} className="hover:bg-white/5">
+                {row.getVisibleCells().map(cell => {
+                  const isRowColumn = cell.column.id === '__row';
+                  const value = String(cell.getValue() ?? '');
+                  return (
+                    <td
+                      key={cell.id}
+                      className={`${isRowColumn ? 'sticky left-0 bg-[var(--color-surface-raised)] text-center text-[var(--color-text-muted)] font-mono' : 'text-[var(--color-text)]'} border border-white/10 px-2 py-0.5 whitespace-nowrap max-w-[320px] truncate`}
+                      title={isRowColumn ? undefined : value}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {visibleRows.length === 0 && (
+              <tr>
+                <td colSpan={Math.max(1, sheet.headers.length + 1)} className="px-3 py-8 text-center text-[var(--color-text-muted)]">
+                  No matching rows
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
   const [activeSheet, setActiveSheet] = useState(0);
   const sheet = sheets[activeSheet];
@@ -178,27 +317,8 @@ function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
           ))}
         </div>
       )}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead className="sticky top-0 z-10">
-            <tr>
-              <th className="bg-white/5 border border-white/10 px-2 py-1 text-[var(--color-text-muted)] font-medium text-center w-10">#</th>
-              {sheet.headers.map((h, ci) => (
-                <th key={ci} className="bg-white/5 border border-white/10 px-2 py-1 text-[var(--color-text-muted)] font-medium text-left whitespace-nowrap">{h || String.fromCharCode(65 + ci)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sheet.rows.map((row, ri) => (
-              <tr key={ri} className="hover:bg-white/5">
-                <td className="bg-white/5 border border-white/10 px-2 py-0.5 text-[var(--color-text-muted)] text-center font-mono">{ri + 1}</td>
-                {row.map((cell, ci) => (
-                  <td key={ci} className="border border-white/10 px-2 py-0.5 text-[var(--color-text)] whitespace-nowrap max-w-[300px] truncate" title={cell}>{cell}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex-1 min-h-0">
+        <DataTableViewer sheet={sheet} />
       </div>
       <div className="flex items-center gap-4 px-3 py-1 border-t border-[var(--color-border)] surface-toolbar text-[10px] text-[var(--color-text-muted)]">
         <span>{sheet.rows.length} rows</span>
@@ -257,13 +377,61 @@ function JsonViewer({ text }: { text: string }) {
   }, [parsed]);
 
   if (tableRows) {
-    return <XlsxViewer sheets={[{ name: 'JSON', headers: tableRows.headers, rows: tableRows.rows }]} />;
+    return (
+      <div className="w-full h-full flex flex-col">
+        <div className="shrink-0 px-3 py-1.5 border-b border-white/[0.06] text-[11px] text-[var(--color-text-muted)]">
+          Array of {Array.isArray(parsed) ? parsed.length : 0} objects. Showing {tableRows.rows.length} rows and {tableRows.headers.length} columns.
+        </div>
+        <div className="flex-1 min-h-0">
+          <XlsxViewer sheets={[{ name: 'JSON', headers: tableRows.headers, rows: tableRows.rows }]} />
+        </div>
+      </div>
+    );
   }
 
+  if (parsed === undefined) {
+    return (
+      <div className="w-full h-full flex flex-col">
+        <div className="shrink-0 px-3 py-1.5 border-b border-red-500/20 bg-red-500/10 text-[11px] text-red-300">
+          Invalid JSON. Switch to source to edit the raw content.
+        </div>
+        <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
+          {text}
+        </pre>
+      </div>
+    );
+  }
+
+  const summary = parsed === null
+    ? 'Empty JSON file'
+    : Array.isArray(parsed)
+      ? `Array with ${parsed.length} item${parsed.length === 1 ? '' : 's'}`
+      : typeof parsed === 'object'
+        ? `Object with ${Object.keys(parsed as Record<string, unknown>).length} key${Object.keys(parsed as Record<string, unknown>).length === 1 ? '' : 's'}`
+        : `${typeof parsed} value`;
+
   return (
-    <pre className="w-full h-full overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
-      {parsed === undefined ? text : JSON.stringify(parsed, null, 2)}
-    </pre>
+    <div className="w-full h-full flex flex-col">
+      <div className="shrink-0 px-3 py-1.5 border-b border-white/[0.06] text-[11px] text-[var(--color-text-muted)]">
+        {summary}
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto p-4 text-xs">
+        {parsed && typeof parsed === 'object' ? (
+          <div className="min-w-max rounded-md border border-white/[0.08] bg-black/[0.14] px-3 py-2">
+            <JsonView
+              data={parsed as Record<string, unknown> | unknown[]}
+              style={JSON_TREE_STYLES}
+              shouldExpandNode={(level) => level < 2}
+              clickToExpandNode
+            />
+          </div>
+        ) : (
+          <pre className="font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
+            {JSON.stringify(parsed, null, 2)}
+          </pre>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -525,11 +693,22 @@ function PptxViewer({ slides }: { slides: string[] }) {
 
 // ── File type icon helper ────────────────────────────────────────────────
 
-function DocTypeIcon({ type, className = 'w-4 h-4' }: { type: DocType; className?: string }) {
+function DocTypeIcon({ type, fileName, className = 'w-4 h-4' }: { type: DocType; fileName: string; className?: string }) {
+  const iconKind = getFileIconKind(fileName);
+  if (iconKind === 'json') return <Braces className={`${className} text-cyan-400`} />;
+  if (iconKind === 'spreadsheet') return <Table className={`${className} text-green-400`} />;
+  if (iconKind === 'slides') return <Presentation className={`${className} text-orange-400`} />;
+  if (iconKind === 'image') return <Image className={`${className} text-purple-400`} />;
+  if (iconKind === 'audio') return <Volume2 className={`${className} text-purple-400`} />;
+  if (iconKind === 'video') return <Film className={`${className} text-purple-400`} />;
+  if (iconKind === 'archive') return <Archive className={`${className} text-yellow-400`} />;
+  if (iconKind === 'html' || iconKind === 'code') return <Code className={`${className} text-orange-400`} />;
+  if (iconKind === 'markdown') return <FileText className={`${className} text-[var(--color-accent)]`} />;
   switch (type) {
     case 'pdf': return <FileText className={`${className} text-red-400`} />;
     case 'docx': case 'convertible': return <FileText className={`${className} text-blue-400`} />;
-    case 'xlsx': case 'csv': case 'tsv': case 'json': return <Table className={`${className} text-green-400`} />;
+    case 'xlsx': case 'csv': case 'tsv': return <Table className={`${className} text-green-400`} />;
+    case 'json': return <Braces className={`${className} text-cyan-400`} />;
     case 'pptx': return <Presentation className={`${className} text-orange-400`} />;
     case 'image': return <Image className={`${className} text-purple-400`} />;
     case 'audio': return <Volume2 className={`${className} text-purple-400`} />;
@@ -573,34 +752,18 @@ function getMimeLabel(ext: string): string {
 }
 
 function parseDelimitedRows(text: string, delimiter: ',' | '\t'): SheetData[] {
-  const XLSX = { rows: text.split(/\r?\n/).filter((line, index, lines) => line.length > 0 || index < lines.length - 1) };
-  const parsed = XLSX.rows.map((line) => {
-    const cells: string[] = [];
-    let current = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (quoted && line[i + 1] === '"') {
-          current += '"';
-          i += 1;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (ch === delimiter && !quoted) {
-        cells.push(current);
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    cells.push(current);
-    return cells;
+  const result = Papa.parse<string[]>(text, {
+    delimiter,
+    skipEmptyLines: 'greedy',
   });
+  const parsed = result.data.map(row => row.map(cell => cell == null ? '' : String(cell)));
+  const columnCount = parsed.reduce((max, row) => Math.max(max, row.length), 0);
+  const firstRow = parsed[0] || [];
+  const headers = Array.from({ length: columnCount }, (_, index) => firstRow[index] || spreadsheetColumnName(index));
   return [{
     name: delimiter === '\t' ? 'TSV' : 'CSV',
-    headers: (parsed[0] || []).map(String),
-    rows: parsed.slice(1),
+    headers,
+    rows: parsed.slice(1).map(row => Array.from({ length: columnCount }, (_, index) => row[index] || '')),
   }];
 }
 
@@ -634,7 +797,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const saveEditorFile = useEditorStore(s => s.saveFile);
 
   const monacoLang = useMemo(() => fileName ? getMonacoLanguage(fileName) : 'plaintext', [fileName]);
-  const languageLabel = LANGUAGE_LABELS[monacoLang] || monacoLang;
+  const languageLabel = getLanguageLabel(monacoLang);
 
   // ── Document viewing state ──
   const [loading, setLoading] = useState(!isTextMode);
@@ -651,7 +814,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [saving, setSaving] = useState(false);
   const [conversionFrames, setConversionFrames] = useState<ConversionFrame[] | null>(null);
 
-  const hasRawToggle = ['markdown', 'csv', 'tsv', 'html', 'json', 'diagram', 'excalidraw'].includes(docType);
+  const hasRawToggle = fileHasRawToggle(fileName);
   const canEdit = (hasRawToggle || isTextMode) && !driveFileId && !!instanceId && !!filePath;
   const isDirtyDoc = editedText !== null && editedText !== rawText;
   const isDirtyText = isTextMode && editorFile ? editorFile.content !== editorFile.savedContent : false;
@@ -673,6 +836,12 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   // ── Monaco mount handler ──
   const handleEditorMount: OnMount = useCallback((_editor, monaco) => {
     editorRef.current = _editor;
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      allowComments: false,
+      trailingCommas: 'error',
+      enableSchemaRequest: true,
+    });
 
     // Save
     _editor.addAction({
@@ -680,6 +849,20 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
       label: 'Save File',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
       run: () => saveRef.current(),
+    });
+
+    _editor.addAction({
+      id: 'format-document',
+      label: 'Format Document',
+      keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+      run: (ed) => ed.getAction('editor.action.formatDocument')?.run(),
+    });
+
+    _editor.addAction({
+      id: 'toggle-word-wrap',
+      label: 'Toggle Word Wrap',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyZ],
+      run: (ed) => ed.updateOptions({ wordWrap: ed.getOption(monaco.editor.EditorOption.wordWrap) === 'on' ? 'off' : 'on' }),
     });
 
     // Track cursor position and selection
@@ -770,10 +953,8 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           setDocxHtml(result.value);
           break;
         }
-        case 'xlsx':
-        case 'csv': {
+        case 'xlsx': {
           const arrayBuffer = await blob.arrayBuffer();
-          if (docType === 'csv') setRawText(new TextDecoder().decode(arrayBuffer));
           const XLSX = await import('xlsx');
           const workbook = XLSX.read(arrayBuffer, { type: 'array' });
           const sheets: SheetData[] = workbook.SheetNames.map(name => {
@@ -784,6 +965,12 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             return { name, headers, rows };
           });
           setXlsxSheets(sheets);
+          break;
+        }
+        case 'csv': {
+          const text = await blob.text();
+          setRawText(text);
+          setXlsxSheets(parseDelimitedRows(text, ','));
           break;
         }
         case 'tsv': {
@@ -883,24 +1070,16 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     try {
       const result = await writeFile(instanceId!, filePath!, editedText);
       if (result.success) {
+        setError(null);
         setRawText(editedText);
         if (docType === 'markdown') setMarkdownText(editedText);
         else if (docType === 'html') setHtmlContent(editedText);
         else if (docType === 'tsv') setXlsxSheets(parseDelimitedRows(editedText, '\t'));
+        else if (docType === 'csv') setXlsxSheets(parseDelimitedRows(editedText, ','));
         else if (docType === 'json' || docType === 'diagram' || docType === 'excalidraw') setRawText(editedText);
-        else if (docType === 'csv') {
-          const XLSX = await import('xlsx');
-          const workbook = XLSX.read(editedText, { type: 'string' });
-          const sheets: SheetData[] = workbook.SheetNames.map(name => {
-            const ws = workbook.Sheets[name];
-            const jsonData = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 });
-            const headers = (jsonData[0] || []).map(String);
-            const rows = jsonData.slice(1).map(row => Array.isArray(row) ? row.map(cell => cell != null ? String(cell) : '') : []);
-            return { name, headers, rows };
-          });
-          setXlsxSheets(sheets);
-        }
         setEditedText(null);
+      } else {
+        setError(result.status === 409 ? 'File changed on the server. Reload before saving again.' : result.error || 'Save failed');
       }
     } finally {
       setSaving(false);
@@ -1004,6 +1183,8 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             )}
             {isDirtyText && <span className="px-1.5 text-yellow-400/80">Modified</span>}
             {file?.saving && <span className="px-1.5 text-[var(--color-accent)]">Saving...</span>}
+            {file?.conflict && <span className="px-1.5 text-red-300">Conflict: reload before saving</span>}
+            {file?.error && !file.loading && <span className="px-1.5 text-red-300 truncate max-w-[260px]" title={file.error}>{file.error}</span>}
           </div>
           <div className="flex items-center">
             {/* Word wrap toggle */}
@@ -1035,7 +1216,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     <div className="w-full h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.06]">
-        <DocTypeIcon type={docType} />
+        <DocTypeIcon type={docType} fileName={fileName} />
         <span className="text-xs font-medium text-[var(--color-text)] truncate flex-1" title={filePath}>{fileName}</span>
         {hasRawToggle && (
           <button
@@ -1084,7 +1265,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
               {canEdit ? (
                 <MonacoEditor
                   height="100%"
-                  language={docType === 'markdown' ? 'markdown' : docType === 'html' ? 'html' : docType === 'json' || docType === 'excalidraw' ? 'json' : 'plaintext'}
+                  language={getMonacoLanguage(fileName)}
                   value={editedText ?? rawText}
                   onChange={(v) => setEditedText(v ?? '')}
                   onMount={handleEditorMount}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useWindowStore } from './windowStore';
-import { getDocumentType, isTextFile } from '@/lib/utils';
+import { getFileIconKind } from '@/lib/fileTypes';
 
 import iconDocs from '@/icons/docs.png';
 import iconSheet from '@/icons/sheet.png';
@@ -11,19 +11,28 @@ import iconGeneric from '@/icons/generic.png';
 
 /** Pick a dock icon based on file extension / document type. */
 export function getFileIcon(filePath: string): string {
-  const docType = getDocumentType(filePath);
-  switch (docType) {
-    case 'pdf': return iconDocs;
-    case 'docx': return iconDocs;
-    case 'convertible': return iconDocs;
-    case 'xlsx': case 'csv': case 'tsv': case 'json': return iconSheet;
-    case 'pptx': return iconSlides;
-    case 'image': case 'diagram': case 'excalidraw': return iconPreview;
-    case 'audio': case 'video': return iconPreview;
-    case 'archive': return iconGeneric;
-    case 'html': case 'markdown': case 'text': return iconText;
+  switch (getFileIconKind(filePath)) {
+    case 'pdf':
+    case 'document':
+      return iconDocs;
+    case 'spreadsheet':
+      return iconSheet;
+    case 'slides':
+      return iconSlides;
+    case 'image':
+    case 'audio':
+    case 'video':
+      return iconPreview;
+    case 'json':
+    case 'html':
+    case 'markdown':
+    case 'text':
+    case 'code':
+    case 'data':
+      return iconText;
+    case 'archive':
+    case 'generic':
     default:
-      if (isTextFile(filePath)) return iconText;
       return iconGeneric;
   }
 }

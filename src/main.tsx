@@ -4,12 +4,20 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from '@/components/ui'
 import { initAnalytics } from '@/lib/analytics'
+import { recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery'
 import { installLiveUpdates, installNativeBridge } from '@/native'
 
 // Initialize PostHog analytics before rendering
 initAnalytics();
 void installNativeBridge();
 void installLiveUpdates();
+
+window.addEventListener('error', (event) => {
+  void recoverFromChunkLoadError(event.error || event.message);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  void recoverFromChunkLoadError(event.reason);
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
