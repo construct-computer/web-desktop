@@ -14,40 +14,6 @@ export interface RegistryApp {
   featured: boolean; verified?: boolean;
 }
 
-export interface SmitheryServer {
-  qualifiedName: string; displayName: string; description: string;
-  iconUrl?: string; useCount: number; verified: boolean; remote: boolean;
-  isDeployed?: boolean;
-}
-
-export interface SmitheryServerDetail {
-  qualifiedName: string; displayName: string; description: string;
-  iconUrl: string | null; remote: boolean;
-  connections: Array<{
-    type: 'stdio' | 'http';
-    configSchema?: ConfigSchema;
-    deploymentUrl?: string;
-  }>;
-  tools: Array<{ name: string; description: string | null }> | null;
-  security: { scanPassed: boolean } | null;
-}
-
-export interface SmitherySkill {
-  qualifiedName: string; displayName: string; description: string;
-  namespace?: string; gitUrl?: string; categories?: string[];
-  totalActivations?: number; externalStars?: number;
-  verified?: boolean; qualityScore?: number;
-}
-
-export interface SmitherySkillDetail extends SmitherySkill {
-  prompt?: string; skillContent?: string;
-}
-
-export interface ConfigSchema {
-  type: string; required?: string[];
-  properties?: Record<string, { type: string; description?: string; default?: unknown; enum?: unknown[] }>;
-}
-
 export interface CuratedDef {
   slug: string; name: string; description: string;
   category: Category;
@@ -55,31 +21,37 @@ export interface CuratedDef {
 
 // ── Unified App Model ──
 
-export type Category = 'all' | 'productivity' | 'communication' | 'dev-tools' | 'data' | 'search';
+export type Category =
+  | 'all'
+  | 'productivity'
+  | 'communication'
+  | 'dev-tools'
+  | 'data'
+  | 'search'
+  | 'utilities'
+  | 'shopping'
+  | 'finance'
+  | 'media'
+  | 'ai-tools'
+  | 'integrations'
+  | 'games';
 
 export interface UnifiedApp {
   id: string; name: string; description: string;
   icon?: string; category: string; tags: string[];
-  source: 'registry' | 'smithery' | 'composio' | 'installed' | 'skill';
+  source: 'registry' | 'composio' | 'installed';
   tools: Array<{ name: string; description?: string | null }>;
-  hasUi: boolean; isSkill?: boolean;
+  hasUi: boolean;
   status: 'available' | 'installed' | 'connected';
   featured?: boolean; verified?: boolean;
   popularity?: number; version?: string;
   author?: string; authorUrl?: string; sourceUrl?: string;
   registryApp?: RegistryApp;
-  smitheryServer?: SmitheryServer;
-  smitheryDetail?: SmitheryServerDetail;
   installedApp?: InstalledApp;
   composioSlug?: string; composioLogo?: string;
-  configSchema?: ConfigSchema;
-  smitherySkill?: SmitherySkill;
-  smitherySkillDetail?: SmitherySkillDetail;
-  skillContent?: string;
   authSchemes?: string[];
   authConfig?: Array<{ mode: string; fields: Array<{ name: string; displayName: string; description?: string; required: boolean }> }>;
   composioManaged?: boolean;
-  unavailable?: boolean;
   requiresUpgrade?: boolean;
   available?: boolean;
 }
@@ -93,6 +65,13 @@ export const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: 'dev-tools', label: 'Developer Tools' },
   { id: 'data', label: 'Data & Files' },
   { id: 'search', label: 'Search & Web' },
+  { id: 'utilities', label: 'Utilities' },
+  { id: 'shopping', label: 'Shopping' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'media', label: 'Media' },
+  { id: 'ai-tools', label: 'AI Tools' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'games', label: 'Games' },
 ];
 
 export const FALLBACK_CURATED: CuratedDef[] = [
@@ -115,11 +94,14 @@ export const FALLBACK_CURATED: CuratedDef[] = [
 ];
 
 export const HIDDEN_SLUGS = new Set(['slack', 'telegram']);
-const SOURCE_PRIORITY: Record<string, number> = { installed: 0, composio: 1, registry: 2, skill: 3, smithery: 4 };
+const SOURCE_PRIORITY: Record<string, number> = { installed: 0, composio: 1, registry: 2 };
 
 export const CATEGORY_LABELS: Record<string, string> = {
   productivity: 'Productivity', communication: 'Communication',
   'dev-tools': 'Developer Tools', data: 'Data & Files', search: 'Search & Web',
+  utilities: 'Utilities', shopping: 'Shopping', finance: 'Finance',
+  media: 'Media', 'ai-tools': 'AI Tools', integrations: 'Integrations',
+  games: 'Games',
 };
 
 // ── Helpers ──
@@ -132,26 +114,34 @@ export function inferCategory(slug: string, name: string, desc: string, curated?
   const known = (curated || FALLBACK_CURATED).find(f => f.slug === slug.toLowerCase());
   if (known) return known.category;
   const text = `${slug} ${name} ${desc}`.toLowerCase();
+  if (text.match(/\b(shop|shopping|commerce|store|market|mercado|product|price|sku|catalog)\b/)) return 'shopping';
+  if (text.match(/\b(finance|bank|payment|invoice|accounting|tax|budget|stripe)\b/)) return 'finance';
+  if (text.match(/\b(image|video|audio|media|photo|music|transcript)\b/)) return 'media';
+  if (text.match(/\b(ai|llm|model|prompt|embedding|agent)\b/)) return 'ai-tools';
+  if (text.match(/\b(game|chess|puzzle)\b/)) return 'games';
   if (text.match(/\b(git|code|repo|deploy|dev|build|test|ide|docker|sentry|jira|linear)\b/)) return 'dev-tools';
   if (text.match(/\b(email|mail|chat|messag|slack|discord|sms|zoom)\b/)) return 'communication';
   if (text.match(/\b(file|drive|storage|sheet|data|database|csv|pdf|dropbox|airtable|notion)\b/)) return 'data';
   if (text.match(/\b(search|web|browse|scrape|crawl|seo|google|bing)\b/)) return 'search';
+  if (text.match(/\b(util|format|convert|encode|decode|hash|uuid|timestamp|calculator)\b/)) return 'utilities';
   return 'productivity';
 }
 
 export function mapRegistryCategory(cat?: string): Category {
   if (!cat) return 'productivity';
   const l = cat.toLowerCase();
-  if (l.includes('dev') || l.includes('code') || l.includes('git')) return 'dev-tools';
-  if (l.includes('data') || l.includes('file') || l.includes('storage')) return 'data';
-  if (l.includes('search') || l.includes('web') || l.includes('browser')) return 'search';
-  if (l.includes('comm') || l.includes('email') || l.includes('chat')) return 'communication';
+  if (l === 'developer-tools' || l === 'dev-tools' || l.includes('dev') || l.includes('code') || l.includes('git')) return 'dev-tools';
+  if (l === 'shopping' || l.includes('shop') || l.includes('commerce') || l.includes('market')) return 'shopping';
+  if (l === 'finance' || l.includes('financ') || l.includes('bank') || l.includes('payment')) return 'finance';
+  if (l === 'media' || l.includes('media') || l.includes('image') || l.includes('video') || l.includes('audio')) return 'media';
+  if (l === 'ai-tools' || l.includes('ai') || l.includes('model') || l.includes('llm')) return 'ai-tools';
+  if (l === 'integrations' || l.includes('integration')) return 'integrations';
+  if (l === 'games' || l.includes('game')) return 'games';
+  if (l === 'utilities' || l.includes('util') || l.includes('tool')) return 'utilities';
+  if (l === 'data' || l.includes('data') || l.includes('file') || l.includes('storage')) return 'data';
+  if (l === 'search' || l.includes('search') || l.includes('web') || l.includes('browser')) return 'search';
+  if (l === 'communication' || l.includes('comm') || l.includes('email') || l.includes('chat')) return 'communication';
   return 'productivity';
-}
-
-export function isSensitiveField(name: string): boolean {
-  const l = name.toLowerCase();
-  return ['key', 'secret', 'token', 'password', 'api_key', 'apikey', 'auth'].some(s => l.includes(s));
 }
 
 export function getHostname(url: string): string {
@@ -180,10 +170,6 @@ export function deduplicateApps(apps: UnifiedApp[]): UnifiedApp[] {
   return result;
 }
 
-export function skillAvatarUrl(ns?: string): string | undefined {
-  return ns ? `https://avatars.githubusercontent.com/${encodeURIComponent(ns)}?s=64` : undefined;
-}
-
 // ── Normalizers ──
 
 export function registryToUnified(app: RegistryApp, installed: boolean): UnifiedApp {
@@ -196,20 +182,6 @@ export function registryToUnified(app: RegistryApp, installed: boolean): Unified
     popularity: app.install_count, version: app.latest_version,
     author: app.author?.name, authorUrl: app.author?.url,
     sourceUrl: app.repo_url || undefined, registryApp: app,
-  };
-}
-
-export function smitheryToUnified(srv: SmitheryServer, installed: boolean, curated?: CuratedDef[]): UnifiedApp {
-  const normalizedId = `smithery-${srv.qualifiedName}`.replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase();
-  return {
-    id: normalizedId, name: srv.displayName || srv.qualifiedName,
-    description: srv.description, icon: srv.iconUrl,
-    category: inferCategory(srv.qualifiedName, srv.displayName, srv.description, curated),
-    tags: ['mcp'], source: 'smithery', tools: [], hasUi: false,
-    status: installed ? 'installed' : 'available',
-    verified: srv.verified, popularity: srv.useCount || 0,
-    sourceUrl: `https://smithery.ai/server/${srv.qualifiedName}`,
-    smitheryServer: srv, unavailable: srv.isDeployed === false || undefined,
   };
 }
 
@@ -258,22 +230,6 @@ export function installedToUnified(app: InstalledApp): UnifiedApp {
   };
 }
 
-export function skillToUnified(sk: SmitherySkill, installed: boolean): UnifiedApp {
-  const ns = sk.namespace || sk.qualifiedName?.split('/')[0];
-  return {
-    id: `skill-${sk.qualifiedName}`.replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase(),
-    name: sk.qualifiedName || sk.displayName,
-    description: sk.description || 'Smithery Skill',
-    icon: skillAvatarUrl(ns), category: inferCategory(sk.qualifiedName, sk.displayName, sk.description || ''),
-    tags: sk.categories || ['skill'], source: 'skill', tools: [], hasUi: false,
-    isSkill: true, status: installed ? 'installed' : 'available',
-    author: ns, verified: sk.verified || false,
-    popularity: sk.totalActivations || 0,
-    sourceUrl: `https://smithery.ai/skills/${sk.qualifiedName}`,
-    smitherySkill: sk,
-  };
-}
-
 // ── Hook ──
 
 export function formatDate(ts: number): string {
@@ -307,9 +263,7 @@ export function useAppDiscovery() {
 
   const [curatedApps, setCuratedApps] = useState<CuratedDef[]>(FALLBACK_CURATED);
   const [registryApps, setRegistryApps] = useState<RegistryApp[]>([]);
-  const [smitheryResults, setSmitheryResults] = useState<SmitheryServer[]>([]);
   const [composioResults, setComposioResults] = useState<Array<any>>([]);
-  const [skillResults, setSkillResults] = useState<SmitherySkill[]>([]);
 
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
@@ -370,19 +324,15 @@ export function useAppDiscovery() {
   const executeSearch = useCallback(async (query: string) => {
     const runId = ++searchRunIdRef.current;
     if (query.length < 2) {
-      setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
+      setComposioResults([]);
       setSearching(false); return;
     }
     setSearching(true);
-    const [smithery, composio, skills] = await Promise.allSettled([
-      api.searchSmithery(query),
+    const [composio] = await Promise.allSettled([
       api.searchComposioToolkits(query),
-      api.searchSmitherySkills(query),
     ]);
     if (runId !== searchRunIdRef.current) return;
-    if (smithery.status === 'fulfilled' && smithery.value?.success && smithery.value.data) setSmitheryResults((smithery.value.data.servers || []) as unknown as SmitheryServer[]);
     if (composio.status === 'fulfilled' && composio.value?.success && composio.value.data) setComposioResults(composio.value.data.toolkits || []);
-    if (skills.status === 'fulfilled' && skills.value?.success && skills.value.data) setSkillResults((skills.value.data.skills || []) as unknown as SmitherySkill[]);
     setSearching(false);
   }, []);
 
@@ -391,7 +341,7 @@ export function useAppDiscovery() {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (query.length < 2) {
       searchRunIdRef.current += 1;
-      setSmitheryResults([]); setComposioResults([]); setSkillResults([]);
+      setComposioResults([]);
       setSearching(false); return;
     }
     searchTimerRef.current = setTimeout(() => executeSearch(query), 400);
@@ -418,7 +368,7 @@ export function useAppDiscovery() {
   ].filter(a => category === 'all' || a.category === category);
 
   const suggestedByCategory = (() => {
-    const order = ['productivity', 'communication', 'dev-tools', 'data', 'search'];
+    const order = ['productivity', 'communication', 'dev-tools', 'data', 'search', 'utilities', 'shopping', 'finance', 'media', 'ai-tools', 'integrations', 'games'];
     const groups = new Map<string, UnifiedApp[]>();
     for (const app of suggested) {
       const cat = app.category as string;
@@ -439,16 +389,7 @@ export function useAppDiscovery() {
   const searchResults: UnifiedApp[] = isSearching ? deduplicateApps([
     ...composioResults.filter(t => !HIDDEN_SLUGS.has(t.slug.toLowerCase())).map(t => composioSearchToUnified(t, connectedToolkits.has(t.slug), curatedApps)),
     ...registryList,
-    ...smitheryResults.filter(srv => !srv.remote).filter(srv => !HIDDEN_SLUGS.has((srv.qualifiedName || '').split('/').pop()?.toLowerCase() || '')).map(srv => {
-      const app = smitheryToUnified(srv, false, curatedApps);
-      return { ...app, status: installedIds.has(app.id) ? 'installed' as const : 'available' as const };
-    }),
-    ...[...skillResults].sort((a, b) => (b.totalActivations || 0) - (a.totalActivations || 0)).map(sk => {
-      const app = skillToUnified(sk, false);
-      return { ...app, status: installedIds.has(app.id) ? 'installed' as const : 'available' as const };
-    }),
-  ]).filter(a => !(a.unavailable && !a.verified))
-    .filter(a => category === 'all' || a.category === category)
+  ]).filter(a => category === 'all' || a.category === category)
     .sort((a, b) => {
       const q = search.toLowerCase().trim();
       if (q) { const ae = a.name.toLowerCase() === q ? 1 : 0; const be = b.name.toLowerCase() === q ? 1 : 0; if (ae !== be) return be - ae; }

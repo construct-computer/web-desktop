@@ -1,6 +1,6 @@
 /**
  * Apps — discovery and management of Construct apps.
- * Now Unified with all sources (Registry, Smithery, Composio, Skills).
+ * Unified discovery across Construct registry, Composio, custom MCP URLs, and installed apps.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -8,7 +8,7 @@ import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Upload, Wrench, Shield,
   Globe, Download, BadgeCheck, Sparkles,
-  Lock, KeyRound, Package, Link2, Server, Eye,
+  Lock, Package, Link2, Server, Eye,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -79,7 +79,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'Summarize open project work',
     ];
   }
-  if (app.source === 'installed' || app.source === 'smithery' || text.includes('mcp') || text.includes('pipedream')) {
+  if (app.source === 'installed' || text.includes('mcp') || text.includes('pipedream')) {
     return [
       `Check what ${app.name} can do`,
       `Use a read-only ${app.name} action`,
@@ -160,7 +160,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   // Detail view
   const [detail, setDetail] = useState<UnifiedApp | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
 
   // Plan limits
@@ -177,36 +176,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
   const openDetail = async (app: UnifiedApp) => {
     setDetail(app);
-    setConfigValues({});
     setError(null);
-
-    if (app.source === 'smithery' && app.smitheryServer) {
-      setDetailLoading(true);
-      const res = await api.getSmitheryServerDetail(app.smitheryServer.qualifiedName);
-      if (res.success && res.data) {
-        const d = res.data;
-        const conn = d.connections?.find((c: any) => c.type === 'http') || d.connections?.[0];
-        setDetail(prev => prev ? {
-          ...prev, tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
-          smitheryDetail: d as any, configSchema: conn?.configSchema as any,
-        } : null);
-        const props = conn?.configSchema?.properties || {};
-        const defaults: Record<string, string> = {};
-        for (const [key, prop] of Object.entries(props)) { if ((prop as any).default !== undefined) defaults[key] = String((prop as any).default); }
-        setConfigValues(defaults);
-      }
-      setDetailLoading(false);
-    }
-
-    if (app.isSkill && app.smitherySkill) {
-      setDetailLoading(true);
-      const res = await api.getSmitherySkillDetail(app.smitherySkill.qualifiedName);
-      if (res.success && res.data) {
-        const d = res.data;
-        setDetail(prev => prev ? { ...prev, smitherySkillDetail: d as any, skillContent: d.skillContent || d.prompt, tags: d.categories?.length ? d.categories : prev.tags } : null);
-      }
-      setDetailLoading(false);
-    }
 
     if (app.source === 'composio' && app.composioSlug) {
       setDetailLoading(true);
@@ -384,33 +354,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
   };
 
-  const handleInstallSmithery = async (app: UnifiedApp) => {
-    if (!app.smitheryServer) return;
-    if (atAppLimit && !installedIds.has(app.id)) { setError(`App limit reached (${maxApps} apps on your plan). Uninstall an app or upgrade.`); return; }
-    const required = new Set(app.configSchema?.required || []);
-    for (const field of required) { if (!configValues[field]?.trim()) { setError(`Required field "${field}" is empty`); return; } }
-    setPendingActions(prev => ({ ...prev, [app.id]: true }));
-    try {
-      const res = await api.installSmitheryServer(app.smitheryServer.qualifiedName, configValues, app.name);
-      if (res.success) await refreshAfterInstall();
-      else setError('Install failed: ' + res.error);
-    } catch (err) { setError(`Install failed: ${err instanceof Error ? err.message : err}`); }
-    setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
-  };
-
-  const handleInstallSkill = async (app: UnifiedApp) => {
-    if (!app.smitherySkill) return;
-    if (atAppLimit && !installedIds.has(app.id)) { setError(`App limit reached (${maxApps} apps on your plan). Uninstall an app or upgrade.`); return; }
-    setPendingActions(prev => ({ ...prev, [app.id]: true }));
-    const gitUrl = app.smitherySkillDetail?.gitUrl || app.smitherySkill.gitUrl;
-    try {
-      const res = await api.installSmitherySkill(app.smitherySkill.qualifiedName, app.smitherySkill.displayName, app.description, gitUrl);
-      if (res.success) await refreshAfterInstall();
-      else setError('Install failed: ' + res.error);
-    } catch (err) { setError(`Install failed: ${err instanceof Error ? err.message : err}`); }
-    setPendingActions(prev => { const n = { ...prev }; delete n[app.id]; return n; });
-  };
-
   const handleUninstall = async (appId: string) => {
     setPendingActions(prev => ({ ...prev, [appId]: true }));
     try {
@@ -504,16 +447,12 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const installed = isAppInstalled(detail);
     const isPending = !!pendingActions[detail.id] || !!pendingActions[`composio-${detail.composioSlug}`];
     const isComposio = detail.source === 'composio';
-    const isSmithery = detail.source === 'smithery';
-    const isSkill = !!detail.isSkill;
     const toolCount = detail.tools?.length || 0;
-    const hasConfig = !!(detail.configSchema?.properties && Object.keys(detail.configSchema.properties).length > 0);
     const examples = getIntegrationExamples(detail);
 
     const getUninstallTarget = (): string | null => {
       if (detail.installedApp && detail.installedApp.id !== 'app-registry') return detail.installedApp.id;
       if (detail.registryApp && installedIds.has(detail.registryApp.id)) return detail.registryApp.id;
-      if (detail.smitheryServer && installedIds.has(detail.id)) return detail.id;
       if (installedIds.has(detail.id) && detail.id !== 'app-registry') return detail.id;
       return null;
     };
@@ -522,10 +461,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     // For Composio apps the connect UI lives in the body (ComposioAuthPanel),
     // so we don't surface a top-level "Connect" button — the panel's per-scheme
     // buttons handle OAuth / API key / etc.
-    const getAction = detail.registryApp ? () => handleInstallRegistry(detail)
-      : detail.smitheryServer && (!detail.smitheryDetail || detail.smitheryDetail.connections.length > 0) ? () => handleInstallSmithery(detail)
-      : isSkill && detail.smitherySkill ? () => handleInstallSkill(detail)
-      : null;
+    const getAction = detail.registryApp ? () => handleInstallRegistry(detail) : null;
 
     const isCustomUrlInstall =
       detail.source === 'installed' && detail.installedApp && detail.installedApp.registry_linked === false;
@@ -535,12 +471,8 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         ? 'Custom URL'
         : isComposio
           ? 'Integration'
-          : isSkill
-            ? 'Skill'
-            : isSmithery
-              ? 'MCP App'
-              : 'Construct App');
-    const sourceBadge = isComposio ? 'Integration' : isSkill ? 'Skill' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
+          : 'Construct App');
+    const sourceBadge = isComposio ? 'Integration' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
 
     return (
       <div className="flex flex-col h-full text-[var(--color-text)] select-none bg-[var(--color-bg-secondary)]">
@@ -620,8 +552,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   >
                     Install
                   </button>
-                ) : isSmithery && detail.smitheryDetail && detail.smitheryDetail.connections.length === 0 ? (
-                  <span className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] shadow-sm">Unavailable</span>
                 ) : null}
               </>
             }
@@ -723,54 +653,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             </InfoCard>
           )}
 
-          {/* Configuration */}
-          {isSmithery && !installed && hasConfig && (
-            <InfoCard title="Configuration">
-              {Object.entries(detail.configSchema!.properties!).map(([key, prop]) => {
-                const isRequired = detail.configSchema!.required?.includes(key);
-                const sensitive = typeof key === 'string' && ['key', 'secret', 'token', 'password', 'api_key', 'apikey', 'auth'].some(s => key.toLowerCase().includes(s));
-                const hasEnum = prop.enum && prop.enum.length > 0;
-                return (
-                  <div key={key} className="mb-2 last:mb-0">
-                    <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-text-muted)] mb-1">
-                      {sensitive && <KeyRound className="w-3 h-3 text-amber-500" />}
-                      {key}{isRequired && <span className="text-red-400">*</span>}
-                    </label>
-                    {hasEnum ? (
-                      <select
-                        value={configValues[key] || ''}
-                        onChange={e => setConfigValues(prev => ({ ...prev, [key]: e.target.value }))}
-                        className="w-full text-[12px] px-2.5 py-1.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50"
-                      >
-                        <option value="">Select...</option>
-                        {prop.enum!.map((opt: unknown) => <option key={String(opt)} value={String(opt)}>{String(opt)}</option>)}
-                      </select>
-                    ) : (
-                      <input
-                        type={sensitive ? 'password' : 'text'}
-                        value={configValues[key] || ''}
-                        onChange={e => setConfigValues(prev => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={prop.default !== undefined ? String(prop.default) : isRequired ? 'Required' : 'Optional'}
-                        className="w-full text-[12px] px-2.5 py-1.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-black/30 dark:placeholder:text-white/30"
-                      />
-                    )}
-                    {prop.description && <p className="text-[10px] text-[var(--color-text-muted)] mt-1">{prop.description}</p>}
-                  </div>
-                );
-              })}
-            </InfoCard>
-          )}
-
-          {isSkill && detail.skillContent && (
-            <InfoCard title="Skill details">
-              <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                <pre className="text-[11px] text-[var(--color-text-muted)] whitespace-pre-wrap leading-relaxed font-mono p-2 bg-black/[0.04] dark:bg-white/[0.06] rounded-md">
-                  {detail.skillContent}
-                </pre>
-              </div>
-            </InfoCard>
-          )}
-
           {detailLoading && toolCount === 0 && (
             <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] mb-4">
               <Loader2 className="w-3 h-3 animate-spin" /> Loading details...
@@ -825,7 +707,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             );
           })()}
 
-          {!isSkill && toolCount > 0 && (
+          {toolCount > 0 && (
             <ToolsList tools={detail.tools.map(t => ({ slug: t.name, name: t.name, description: t.description || undefined }))} />
           )}
         </div>
@@ -1174,12 +1056,10 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
               if (filtered.length === 0) {
                 return <EmptyState message={`No connected apps match "${search}".`} />;
               }
-              const mcpApps = filtered.filter(a => a.source !== 'composio' && !a.isSkill);
-              const skillApps = filtered.filter(a => a.isSkill);
+              const mcpApps = filtered.filter(a => a.source !== 'composio');
               const composioApps = filtered.filter(a => a.source === 'composio');
               const groups: Array<[string, typeof filtered]> = [];
               if (mcpApps.length > 0) groups.push(['MCP Apps', mcpApps]);
-              if (skillApps.length > 0) groups.push(['Skills', skillApps]);
               if (composioApps.length > 0) groups.push(['Integrations', composioApps]);
               const showHeaders = groups.length > 1;
               return (
@@ -1327,7 +1207,6 @@ function formatEndpointPreview(rawUrl: string, rawPath: string): string {
 function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void }) {
   const isInstalled = app.status !== 'available';
   const isComposio = app.source === 'composio';
-  const isSkill = app.isSkill;
 
   return (
     <button
@@ -1359,7 +1238,6 @@ function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void
           ) : (
             <span className="text-[10px] font-semibold text-[var(--color-text-muted)]">Available</span>
           )}
-          {isSkill && <span className="text-[10px] font-semibold text-purple-500 bg-purple-500/10 px-1.5 rounded-full">Skill</span>}
           {app.tags?.includes('from-url') && (
             <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 rounded-full">Custom / MCP</span>
           )}

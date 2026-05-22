@@ -65,7 +65,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
     windowType: 'app-registry',
     icon: iconAppStore,
     category: 'system',
-    keywords: ['apps', 'store', 'install', 'marketplace', 'registry', 'smithery', 'mcp', 'plugins', 'extensions'],
+    keywords: ['apps', 'store', 'install', 'marketplace', 'registry', 'mcp', 'plugins', 'extensions'],
   },
 
   // ── System utilities ──
