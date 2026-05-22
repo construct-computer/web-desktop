@@ -29,9 +29,31 @@ const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
 function getIntegrationExamples(app: UnifiedApp): string[] {
   const slug = (app.composioSlug || app.id || app.name).toLowerCase();
-  const text = `${slug} ${app.name} ${app.description}`.toLowerCase();
+  const identity = `${slug} ${app.name}`.toLowerCase();
+  const text = `${identity} ${app.description}`.toLowerCase();
+  const toolText = (app.tools || [])
+    .map((tool) => `${tool.name} ${tool.description || ''}`)
+    .join(' ')
+    .toLowerCase();
 
-  if (text.includes('github') || text.includes('git hub')) {
+  if (toolText.match(/\b(slugify|word_count|json_format|base64|hash|uuid|timestamp|url_encode|reverse)\b/)) {
+    return [
+      'Format this JSON and explain any errors',
+      'Encode this text as Base64',
+      'Generate five UUIDs',
+      'Turn this title into a URL-safe slug',
+    ];
+  }
+  if (toolText.includes('mercadolibre')) {
+    return [
+      'Resolve this Mercado Libre product code',
+      'Prepare a CSV scaffold for these product codes',
+      'Create browser-ready Mercado Libre URLs',
+      'Resolve these product URLs in bulk',
+    ];
+  }
+
+  if (identity.includes('github') || identity.includes('git hub')) {
     return [
       'List my open GitHub pull requests',
       'Create a GitHub issue from this summary',
@@ -39,7 +61,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'Search my repos for recent issues',
     ];
   }
-  if (text.includes('google') && text.includes('drive')) {
+  if (identity.includes('google') && identity.includes('drive')) {
     return [
       'Find the latest file about the launch plan',
       'Summarize this Google Drive document',
@@ -47,7 +69,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'List recently modified Drive files',
     ];
   }
-  if (text.includes('gmail') || text.includes('mail')) {
+  if (identity.includes('gmail') || identity.includes('mail')) {
     return [
       'Summarize emails from today',
       'Draft a reply to the latest customer email',
@@ -55,7 +77,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'Send a follow-up email',
     ];
   }
-  if (text.includes('calendar')) {
+  if (identity.includes('calendar')) {
     return [
       'List my meetings tomorrow',
       'Schedule a 30 minute follow-up',
@@ -63,7 +85,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'Create a calendar event from this plan',
     ];
   }
-  if (text.includes('notion')) {
+  if (identity.includes('notion')) {
     return [
       'Search my Notion workspace',
       'Create a Notion page from this summary',
@@ -71,7 +93,7 @@ function getIntegrationExamples(app: UnifiedApp): string[] {
       'Add these action items to Notion',
     ];
   }
-  if (text.includes('linear') || text.includes('jira')) {
+  if (identity.includes('linear') || identity.includes('jira')) {
     return [
       'List my assigned issues',
       'Create a bug from this report',
