@@ -13,7 +13,6 @@ import {
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
-import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
@@ -26,99 +25,6 @@ import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hoo
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 
 const PUBLISH_URL = 'https://registry.construct.computer/publish';
-
-function getIntegrationExamples(app: UnifiedApp): string[] {
-  const slug = (app.composioSlug || app.id || app.name).toLowerCase();
-  const identity = `${slug} ${app.name}`.toLowerCase();
-  const text = `${identity} ${app.description}`.toLowerCase();
-  const toolText = (app.tools || [])
-    .map((tool) => `${tool.name} ${tool.description || ''}`)
-    .join(' ')
-    .toLowerCase();
-
-  if (toolText.match(/\b(slugify|word_count|json_format|base64|hash|uuid|timestamp|url_encode|reverse)\b/)) {
-    return [
-      'Format this JSON and explain any errors',
-      'Encode this text as Base64',
-      'Generate five UUIDs',
-      'Turn this title into a URL-safe slug',
-    ];
-  }
-  if (toolText.includes('mercadolibre')) {
-    return [
-      'Resolve this Mercado Libre product code',
-      'Prepare a CSV scaffold for these product codes',
-      'Create browser-ready Mercado Libre URLs',
-      'Resolve these product URLs in bulk',
-    ];
-  }
-
-  if (identity.includes('github') || identity.includes('git hub')) {
-    return [
-      'List my open GitHub pull requests',
-      'Create a GitHub issue from this summary',
-      'Review the latest failing PR checks',
-      'Search my repos for recent issues',
-    ];
-  }
-  if (identity.includes('google') && identity.includes('drive')) {
-    return [
-      'Find the latest file about the launch plan',
-      'Summarize this Google Drive document',
-      'Create a project folder in Drive',
-      'List recently modified Drive files',
-    ];
-  }
-  if (identity.includes('gmail') || identity.includes('mail')) {
-    return [
-      'Summarize emails from today',
-      'Draft a reply to the latest customer email',
-      'Find invoices in my mailbox',
-      'Send a follow-up email',
-    ];
-  }
-  if (identity.includes('calendar')) {
-    return [
-      'List my meetings tomorrow',
-      'Schedule a 30 minute follow-up',
-      'Find open time this week',
-      'Create a calendar event from this plan',
-    ];
-  }
-  if (identity.includes('notion')) {
-    return [
-      'Search my Notion workspace',
-      'Create a Notion page from this summary',
-      'Find notes about the roadmap',
-      'Add these action items to Notion',
-    ];
-  }
-  if (identity.includes('linear') || identity.includes('jira')) {
-    return [
-      'List my assigned issues',
-      'Create a bug from this report',
-      'Move this issue to in progress',
-      'Summarize open project work',
-    ];
-  }
-  if (app.source === 'installed' || text.includes('mcp') || text.includes('pipedream')) {
-    return [
-      `Check what ${app.name} can do`,
-      `Use a read-only ${app.name} action`,
-      `Use ${app.name} for this task`,
-      `Show me the actions available in ${app.name}`,
-    ];
-  }
-  if (app.source === 'composio') {
-    return [
-      `Use ${app.name} to help with this task`,
-      `Search ${app.name} for relevant items`,
-      `Create something in ${app.name}`,
-      `Show me what ${app.name} actions are available`,
-    ];
-  }
-  return [];
-}
 
 // ── Main Component ──
 
@@ -470,7 +376,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const isPending = !!pendingActions[detail.id] || !!pendingActions[`composio-${detail.composioSlug}`];
     const isComposio = detail.source === 'composio';
     const toolCount = detail.tools?.length || 0;
-    const examples = getIntegrationExamples(detail);
 
     const getUninstallTarget = (): string | null => {
       if (detail.installedApp && detail.installedApp.id !== 'app-registry') return detail.installedApp.id;
@@ -589,40 +494,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             </div>
           )}
 
-          {examples.length > 0 && (
-            <InfoCard
-              title={installed ? 'Ready to try' : 'What you can do'}
-              subtitle={installed ? `${toolCount || 'Multiple'} action${toolCount === 1 ? '' : 's'} available to Construct.` : 'Connect once, then ask Construct in plain English.'}
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {examples.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => {
-                      useWindowStore.getState().updateWindow(config.id, {
-                        metadata: {
-                          ...(config.metadata || {}),
-                          launchedFrom: 'app-registry-example',
-                          selectedIntegrationSlug: detail.composioSlug,
-                          selectedCapability: example,
-                          selectedAppId: detail.id,
-                          selectedAppName: detail.name,
-                          selectedAppSource: detail.source,
-                        },
-                      });
-                      useComputerStore.getState().sendChatMessage(example);
-                    }}
-                    className="text-left text-[11px] px-2.5 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.05] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/5 transition-colors"
-                    title="Ask Construct with this integration context"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-            </InfoCard>
-          )}
-
           {installed && (isComposio || detail.source === 'installed' || detail.registryApp) && (
             <InfoCard title="Connection status" subtitle="Construct can use this from chat.">
               <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
@@ -633,7 +504,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   </p>
                   <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
                     {toolCount > 0
-                      ? `${toolCount} action${toolCount === 1 ? '' : 's'} available. Try one of the prompts above.`
+                      ? `${toolCount} action${toolCount === 1 ? '' : 's'} available. Open the interface or ask Construct to use this app.`
                       : 'Actions are available to Construct; refresh the action list if this panel looks stale.'}
                   </p>
                 </div>
