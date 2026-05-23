@@ -71,7 +71,7 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       tone: 'danger',
       title: 'Subscription inactive',
       body: 'Your paid subscription is no longer active, so this workspace is using the Free plan.',
-      action: subscription.dodoSubscriptionId ? 'Manage billing' : undefined,
+      action: subscription.dodoCustomerId ? 'Manage subscription' : undefined,
     };
   }
 
@@ -83,7 +83,7 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       body: endDate
         ? `Your paid access remains active until ${endDate}. After that, your workspace will move to the Free plan.`
         : 'Your paid access remains active until the current billing period ends.',
-      action: subscription.dodoSubscriptionId ? 'Manage billing' : undefined,
+      action: subscription.dodoCustomerId ? 'Manage subscription' : undefined,
     };
   }
 
@@ -211,7 +211,7 @@ export function BillingSection() {
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const isDevMode = isNonProd || !subscription?.dodoSubscriptionId;
   const billingNotice = getBillingNotice(subscription);
-  const canManageBilling = !isDevMode && !!subscription?.dodoSubscriptionId;
+  const canManageBilling = !isNonProd && !!subscription?.dodoCustomerId;
 
   return (
     <div className="space-y-4">
@@ -231,7 +231,7 @@ export function BillingSection() {
                 </div>
                 <p className="mt-0.5 text-[11px] text-text-muted">
                   {canManageBilling
-                    ? 'Manage invoices, payment details, and cancellation in the billing portal.'
+                    ? 'Manage your subscription, invoices, payment details, and cancellation in the Dodo Payments portal.'
                     : isNonProd
                       ? 'Plan changes are handled directly in this environment.'
                       : 'Billing portal becomes available after checkout.'}

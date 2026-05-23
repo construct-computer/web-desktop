@@ -192,12 +192,12 @@ function SectionPanel({ title, subtitle, action, children }: {
 }) {
   return (
     <div className="px-7 py-6">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className={`mb-4 grid gap-3 ${action ? "grid-cols-[minmax(0,1fr)_auto] items-start" : ""}`}>
         <div className="min-w-0">
           <h2 className="text-[22px] font-bold mb-1 tracking-tight">{title}</h2>
           {subtitle && <p className="text-[13px] text-[var(--color-text-muted)]">{subtitle}</p>}
         </div>
-        {action}
+        {action && <div className="justify-self-end">{action}</div>}
       </div>
       {!subtitle && !action && <div className="mb-1" />}
       {children}
@@ -1925,7 +1925,8 @@ function SubscriptionSection() {
   const [portalLoading, setPortalLoading] = useState(false);
 
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
-  const canManageBilling = !isNonProd && !!subscription?.dodoSubscriptionId;
+  const hasDodoCustomer = !!subscription?.dodoCustomerId;
+  const canManageSubscription = hasDodoCustomer && !isNonProd;
 
   const handleManageBilling = useCallback(async () => {
     setPortalLoading(true);
@@ -1941,16 +1942,16 @@ function SubscriptionSection() {
     <SectionPanel
       title="Subscription"
       subtitle="Manage your plan and earn bonus credits."
-      action={canManageBilling ? (
+      action={(hasDodoCustomer || isNonProd) ? (
         <Button
           size="md"
           variant="default"
           onClick={handleManageBilling}
-          disabled={portalLoading}
+          disabled={portalLoading || !canManageSubscription}
           className="shrink-0 gap-1.5"
         >
           {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-          Manage billing
+          Manage subscription
         </Button>
       ) : undefined}
     >
