@@ -12,6 +12,7 @@ import {
   sourceContext,
   sourceLabel,
 } from '@/lib/externalPlatforms';
+import { fileNameFromWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
 
 interface PlatformMessage {
   platform: string;
@@ -116,7 +117,8 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
   const showPending = Boolean(msg.pendingInjection) && !isExternalSessionKey(activeSessionKey);
   const wasPending = useRef(false);
   const [injectionLanded, setInjectionLanded] = useState(false);
-  const reply = parseReply(msg.content);
+  const displayContent = stripAttachedWorkspaceReferences(msg.content, msg.attachments);
+  const reply = parseReply(displayContent);
 
   useEffect(() => {
     if (wasPending.current && !showPending) {
@@ -205,14 +207,18 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                 </>
               );
             }
-            return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
+            return <p className="whitespace-pre-wrap break-words">{displayContent}</p>;
           })()}
           {msg.attachments && msg.attachments.length > 0 && (
             <div className="flex flex-wrap justify-end gap-1 mt-1.5">
               {msg.attachments.map((filePath, i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 text-[11px]">
+                <span
+                  key={i}
+                  title={workspaceDisplayPath(filePath)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 text-[11px]"
+                >
                   <FileText className="w-2.5 h-2.5" />
-                  {filePath.split('/').pop()}
+                  {fileNameFromWorkspacePath(filePath)}
                 </span>
               ))}
             </div>
@@ -229,7 +235,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             </span>
             <button
               type="button"
-              onClick={() => { onForceSend(msg.content, msg.clientId); }}
+              onClick={() => { onForceSend(displayContent, msg.clientId); }}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]/75 hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 active:text-[var(--color-accent)] transition-colors"
               title="Interrupt the current turn and send this message immediately"
             >

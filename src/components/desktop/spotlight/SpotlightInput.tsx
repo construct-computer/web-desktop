@@ -18,6 +18,7 @@ import { useSlashCommands } from './hooks';
 import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
+import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
 
 const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -220,7 +221,7 @@ export function SpotlightInput() {
     const lastSlash = query.lastIndexOf('/');
     const dirSuffix = lastSlash >= 0 ? '/' + query.slice(0, lastSlash) : '';
     const searchName = lastSlash >= 0 ? query.slice(lastSlash + 1) : query;
-    const dirPath = `/home/sandbox/workspace${dirSuffix}`;
+    const dirPath = normalizeWorkspacePath(dirSuffix) || '/';
 
     const cached = fsCacheRef.current.get(dirPath);
     if (cached && Date.now() - cached.ts < 5000) {
@@ -240,7 +241,7 @@ export function SpotlightInput() {
         .map(e => {
           const isDir = e.type === 'directory';
           const baseName = dirSuffix ? `${dirSuffix.slice(1)}/${e.name}` : e.name;
-          return { id: `${dirPath}/${e.name}`, display: isDir ? `${baseName}/` : baseName, isDir };
+          return { id: normalizeWorkspacePath(baseName), display: isDir ? `${baseName}/` : baseName, isDir };
         })
         .sort((a, b) => {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
@@ -279,38 +280,49 @@ export function SpotlightInput() {
     el.focus();
     const start = fsAtPosRef.current;
     const end = el.selectionStart ?? el.value.length;
-    const insert = `@${item.display}${item.isDir ? '' : ' '}`;
-    const nextValue = `${message.slice(0, start)}${insert}${message.slice(end)}`;
-    const nextCursor = start + insert.length;
+
+    if (item.isDir) {
+      const insert = `@${item.display}`;
+      const nextValue = `${message.slice(0, start)}${insert}${message.slice(end)}`;
+      const nextCursor = start + insert.length;
+      setMessage(nextValue);
+      requestAnimationFrame(() => {
+        el.setSelectionRange(nextCursor, nextCursor);
+        autoResize();
+        detectFileTrigger(nextValue, nextCursor);
+      });
+      return;
+    }
+
+    const before = message.slice(0, start);
+    const after = message.slice(end);
+    const separator = before && after && !/\s$/.test(before) && !/^\s/.test(after) ? ' ' : '';
+    const nextValue = `${before}${separator}${after}`.replace(/[ \t]{2,}/g, ' ');
+    const nextCursor = before.length + separator.length;
     setMessage(nextValue);
     requestAnimationFrame(() => {
       el.setSelectionRange(nextCursor, nextCursor);
       autoResize();
-      detectFileTrigger(nextValue, nextCursor);
     });
 
-    if (item.isDir) {
-      return;
-    } else {
-      atMentionedFilesRef.current.add(item.display);
-      setAttachments(prev => {
-        if (prev.some(a => a.path === item.id)) return prev;
-        return [...prev, { name: item.display, path: item.id }];
-      });
-      setFsOpen(false);
+    const normalizedPath = normalizeWorkspacePath(item.id);
+    setAttachments(prev => {
+      if (prev.some(a => normalizeWorkspacePath(a.path) === normalizedPath)) return prev;
+      return [...prev, { name: fileNameFromWorkspacePath(normalizedPath), path: normalizedPath }];
+    });
+    setFsOpen(false);
 
-      if (IMAGE_EXTS.test(item.display) && instanceId) {
-        downloadContainerFile(instanceId, item.id).then(async (res) => {
-          if (!res.ok) return;
-          const blob = await res.blob();
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            setSessionPendingImages(prev => [...prev, dataUrl]);
-          };
-          reader.readAsDataURL(blob);
-        }).catch(() => {});
-      }
+    if (IMAGE_EXTS.test(item.display) && instanceId) {
+      downloadContainerFile(instanceId, item.id).then(async (res) => {
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          setSessionPendingImages(prev => [...prev, dataUrl]);
+        };
+        reader.readAsDataURL(blob);
+      }).catch(() => {});
     }
   }, [instanceId, message, setMessage, autoResize, detectFileTrigger, setAttachments, setSessionPendingImages]);
 
@@ -333,7 +345,12 @@ export function SpotlightInput() {
           continue;
         }
         const result = await uploadAttachment(instanceId, file);
-        setAttachments(prev => [...prev, { name: result.name, path: result.path }]);
+        const normalizedPath = normalizeWorkspacePath(result.path);
+        setAttachments(prev => (
+          prev.some(att => normalizeWorkspacePath(att.path) === normalizedPath)
+            ? prev
+            : [...prev, { name: result.name, path: normalizedPath }]
+        ));
         const isImage = IMAGE_EXTS.test(file.name) || IMAGE_MIME.test(file.type);
         if (isImage) {
           const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -396,24 +413,23 @@ export function SpotlightInput() {
     requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
   }, [activeSessionKey]);
 
-  const executeSlashCommand = useCallback((cmd: { action: () => void }) => {
+  const executeSlashCommand = useCallback(async (cmd: { action: () => void | Promise<void> }) => {
     play('click');
     if (isMobile) hapticLight();
-    cmd.action();
+    await cmd.action();
     clearDraft();
   }, [play, clearDraft, isMobile]);
 
   const handleSend = useCallback(() => {
     if (isExternal) return;
-    const text = message.trim();
-    if (!text && attachments.length === 0) return;
+    const allPaths = [...new Set(attachments.map(a => normalizeWorkspacePath(a.path)).filter(Boolean))];
+    const text = stripAttachedWorkspaceReferences(message, allPaths).trim();
+    if (!text && allPaths.length === 0) return;
     if (filteredCommands.length > 0 && showSlash) {
-      executeSlashCommand(filteredCommands[slashSelected] || filteredCommands[0]);
+      void executeSlashCommand(filteredCommands[slashSelected] || filteredCommands[0]);
       return;
     }
     if (!isConnected) return;
-
-    const allPaths = [...new Set(attachments.map(a => a.path))];
 
     // Prepend reply context if replying to a message
     let fullText = text || 'See attached files';
@@ -539,7 +555,7 @@ export function SpotlightInput() {
                 i === slashSelected ? 'bg-[var(--color-accent)]/10' : 'hover:bg-white/5'
               }`}
               onMouseEnter={() => setSlashSelected(i)}
-              onClick={() => executeSlashCommand(cmd)}
+              onClick={() => { void executeSlashCommand(cmd); }}
             >
               <span className="text-[13px] font-mono font-medium text-[var(--color-accent)]">{cmd.name}</span>
               <span className="text-[12px] text-[var(--color-text-muted)]/40">{cmd.description}</span>
@@ -616,9 +632,13 @@ export function SpotlightInput() {
               </span>
             ))}
             {attachments.filter(att => !IMAGE_EXTS.test(att.name)).map((att, i) => (
-              <span key={`file-${i}`} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] text-[11px]">
+              <span
+                key={`file-${i}`}
+                title={workspaceDisplayPath(att.path)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] text-[11px]"
+              >
                 <FileText className="w-3 h-3" />
-                {att.name}
+                {fileNameFromWorkspacePath(att.path || att.name)}
                 <button onClick={() => setAttachments(prev => prev.filter(a => a.path !== att.path))} className="ml-0.5 hover:text-red-400 transition-colors">
                   <XCircle className="w-3 h-3" />
                 </button>
