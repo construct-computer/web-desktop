@@ -17,6 +17,9 @@ const agentLog = log('AgentWS');
 export interface AgentFileAttachment {
   type: string;
   url: string;
+  path?: string;
+  mime?: string;
+  kind?: 'workspace_file' | 'image';
   name?: string;
 }
 

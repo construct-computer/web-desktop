@@ -895,6 +895,8 @@ function buildFileAttachmentPayload(paths: string[]): AgentFileAttachment[] {
   return paths.map((path) => ({
     type: 'file',
     url: path,
+    path,
+    kind: isImageWorkspacePath(path) ? 'image' : 'workspace_file',
     name: fileNameFromWorkspacePath(path),
   }));
 }
@@ -4948,7 +4950,8 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'local_app_code_preview': {
+        case 'local_app_code_preview':
+        case 'artifact_preview': {
           upsertCodePreview(event.data || {});
           break;
         }
