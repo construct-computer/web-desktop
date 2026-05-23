@@ -16,6 +16,7 @@ export const localAppIframeRefs = new Map<string, React.RefObject<HTMLIFrameElem
 const logger = log('AppStore');
 const TOOLKIT_DETAIL_TTL_MS = 10 * 60_000;
 const toolkitDetailCache = new Map<string, { fetchedAt: number; detail: { name?: string; description?: string; logo?: string } }>();
+let fetchRunId = 0;
 
 async function getCachedToolkitDetail(toolkit: string) {
   const cached = toolkitDetailCache.get(toolkit);
@@ -76,52 +77,73 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   fetchApps: async () => {
     if (get().loading) return;
 
+    const runId = ++fetchRunId;
+    const stillCurrent = () => runId === fetchRunId;
+
     set({ loading: true, error: null });
+
+    const appsPromise = api.listInstalledApps()
+      .then((result) => {
+        if (!stillCurrent()) return;
+        const installedApps = result?.success && result.data ? result.data.apps : [];
+        set({ installedApps });
+      })
+      .catch((err) => {
+        logger.warn('Failed to fetch installed apps:', err);
+        if (stillCurrent()) set({ installedApps: [] });
+      });
+
+    const localPromise = api.listLocalApps()
+      .then((result) => {
+        if (!stillCurrent()) return;
+        const localApps = result?.success && result.data ? result.data.apps : [];
+        set({ localApps });
+      })
+      .catch((err) => {
+        logger.warn('Failed to fetch local apps:', err);
+        if (stillCurrent()) set({ localApps: [] });
+      });
+
+    const composioPromise = api.getComposioConnected()
+      .then(async (result) => {
+        if (!stillCurrent()) return;
+        const raw = result?.success && result.data?.connected
+          ? result.data.connected.filter(t => t.toolkit)
+          : [];
+        const initialToolkits: ConnectedToolkit[] = raw.map((t) => ({ ...t, name: t.toolkit }));
+        set({ connectedToolkits: initialToolkits });
+
+        if (raw.length === 0) return;
+        void Promise.all(raw.map(async (t) => {
+          try {
+            const detail = await getCachedToolkitDetail(t.toolkit);
+            if (detail) {
+              return {
+                ...t,
+                name: detail.name,
+                description: detail.description,
+                logo: detail.logo,
+              };
+            }
+          } catch { /* ignore */ }
+          return { ...t, name: t.toolkit };
+        })).then((enriched) => {
+          if (stillCurrent()) set({ connectedToolkits: enriched });
+        });
+      })
+      .catch((err) => {
+        logger.warn('Failed to fetch connected toolkits:', err);
+        if (stillCurrent()) set({ connectedToolkits: [] });
+      });
+
     try {
-      // Fetch MCP apps, local apps, and Composio toolkits in parallel
-      const [appsResult, localResult, composioResult] = await Promise.all([
-        api.listInstalledApps().catch(() => null),
-        api.listLocalApps().catch(() => null),
-        api.getComposioConnected().catch(() => null),
-      ]);
-
-      const installedApps = appsResult?.success && appsResult.data
-        ? appsResult.data.apps
-        : [];
-
-      const localApps = localResult?.success && localResult.data
-        ? localResult.data.apps
-        : [];
-
-      // Enrich connected toolkits with detail metadata (name, logo)
-      let connectedToolkits: ConnectedToolkit[] = [];
-      if (composioResult?.success && composioResult.data?.connected) {
-        const raw = composioResult.data.connected.filter(t => t.toolkit);
-        const enriched = await Promise.all(
-          raw.map(async (t) => {
-            try {
-              const detail = await getCachedToolkitDetail(t.toolkit);
-              if (detail) {
-                return {
-                  ...t,
-                  name: detail.name,
-                  description: detail.description,
-                  logo: detail.logo,
-                };
-              }
-            } catch { /* ignore */ }
-            return { ...t, name: t.toolkit };
-          }),
-        );
-        connectedToolkits = enriched;
-      }
-
-      set({ installedApps, localApps, connectedToolkits, fetched: true });
+      await Promise.allSettled([appsPromise, localPromise, composioPromise]);
+      if (stillCurrent()) set({ fetched: true });
     } catch (err) {
       logger.warn('Failed to fetch apps:', err);
-      set({ error: err instanceof Error ? err.message : String(err) });
+      if (stillCurrent()) set({ error: err instanceof Error ? err.message : String(err) });
     } finally {
-      set({ loading: false });
+      if (stillCurrent()) set({ loading: false });
     }
   },
 

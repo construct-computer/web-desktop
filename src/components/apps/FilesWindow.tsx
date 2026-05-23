@@ -58,6 +58,11 @@ interface FilesWindowProps {
 
 /** Root path for the R2-backed workspace. All files live here. */
 const WORKSPACE_PATH = '/';
+const FILE_ROW_CLASS = 'flex h-7 min-h-7 items-center overflow-hidden px-3 cursor-default';
+const FILE_ROW_NAME_CELL_CLASS = 'flex min-w-[13rem] flex-1 shrink-0 items-center gap-2 overflow-hidden';
+const FILE_ROW_TEXT_CLASS = 'block min-w-0 truncate whitespace-nowrap text-xs leading-none';
+const FILE_ROW_META_CLASS = 'w-20 min-w-[3.25rem] shrink overflow-hidden truncate whitespace-nowrap text-right text-[11px] leading-none';
+const FILE_ROW_DATE_CLASS = 'ml-4 w-48 min-w-[4.5rem] shrink-[3] overflow-hidden truncate whitespace-nowrap text-right text-[11px] leading-none';
 
 const formatSize = (bytes: number) => formatBytes(bytes, { zeroLabel: '--' });
 
@@ -359,7 +364,7 @@ function InlineNameInput({
   return (
     <input
       ref={inputRef}
-      className="bg-[#1a1a2e] border border-[var(--color-accent)] text-[var(--color-text)] text-xs px-1 py-0.5 rounded outline-none w-full min-w-[60px] shadow-sm"
+      className="h-5 min-w-0 w-full rounded border border-[var(--color-accent)] bg-[#1a1a2e] px-1 text-xs leading-none text-[var(--color-text)] shadow-sm outline-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
@@ -1277,7 +1282,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
               <button
                 type="button"
                 onClick={() => toggleSort('name')}
-                className="flex-1 min-w-0 text-left hover:text-[var(--color-text)]"
+                className="min-w-[13rem] flex-1 shrink-0 text-left hover:text-[var(--color-text)]"
                 title="Sort by name"
               >
                 Name{sortKey === 'name' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
@@ -1287,7 +1292,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                   <button
                     type="button"
                     onClick={() => toggleSort('size')}
-                    className="w-20 text-right flex-shrink-0 hover:text-[var(--color-text)]"
+                    className="w-20 min-w-[3.25rem] shrink overflow-hidden truncate whitespace-nowrap text-right hover:text-[var(--color-text)]"
                     title="Sort by size"
                   >
                     Size{sortKey === 'size' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
@@ -1295,7 +1300,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                   <button
                     type="button"
                     onClick={() => toggleSort('modified')}
-                    className="w-32 text-right flex-shrink-0 hover:text-[var(--color-text)]"
+                    className="ml-4 w-48 min-w-[4.5rem] shrink-[3] overflow-hidden truncate whitespace-nowrap text-right hover:text-[var(--color-text)]"
                     title="Sort by modified date"
                   >
                     Modified{sortKey === 'modified' ? (sortDirection === 'asc' ? ' ^' : ' v') : ''}
@@ -1355,7 +1360,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                         <div
                           key={entry.name}
                           data-file-entry
-                          className={`flex items-center px-3 py-[3px] cursor-default ${
+                          className={`${FILE_ROW_CLASS} ${
                             isSelected
                               ? 'bg-[var(--color-accent)] text-white'
                               : 'hover:bg-[var(--color-accent-muted)]'
@@ -1371,7 +1376,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                           onTouchEnd={endLongPress}
                           onTouchCancel={endLongPress}
                         >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className={FILE_ROW_NAME_CELL_CLASS}>
                             {appIconUrl ? (
                               <img src={appIconUrl} alt="" className="w-4 h-4 flex-shrink-0 rounded-[2px]" />
                             ) : (
@@ -1392,20 +1397,20 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                                 onCancel={() => setRenamingName(null)}
                               />
                             ) : (
-                              <span className="truncate text-xs">{entry.name}</span>
+                              <span className={FILE_ROW_TEXT_CLASS}>{entry.name}</span>
                             )}
                           </div>
                           {!isMobile && (
                             <>
                               <div
-                                className={`w-20 text-right text-[11px] flex-shrink-0 ${
+                                className={`${FILE_ROW_META_CLASS} ${
                                   isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
                                 }`}
                               >
                                 {entry.size > 0 ? formatSize(entry.size) : '--'}
                               </div>
                               <div
-                                className={`w-32 text-right text-[11px] flex-shrink-0 ${
+                                className={`${FILE_ROW_DATE_CLASS} ${
                                   isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
                                 }`}
                               >
@@ -1419,8 +1424,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
                     {/* Inline new file/folder input */}
                     {creatingType && (
-                      <div className="flex items-center px-3 py-[3px] bg-[var(--color-accent-muted)]">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className={`${FILE_ROW_CLASS} bg-[var(--color-accent-muted)]`}>
+                        <div className={FILE_ROW_NAME_CELL_CLASS}>
                           {creatingType === 'folder' ? (
                             <Folder className="w-4 h-4 flex-shrink-0 text-[var(--color-accent)]" />
                           ) : (
@@ -1434,8 +1439,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                         </div>
                         {!isMobile && (
                           <>
-                            <div className="w-20 flex-shrink-0" />
-                            <div className="w-32 flex-shrink-0" />
+                            <div className="w-20 min-w-[3.25rem] shrink" />
+                            <div className="ml-4 w-48 min-w-[4.5rem] shrink-[3]" />
                           </>
                         )}
                       </div>
@@ -1476,7 +1481,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                     return (
                       <div
                         key={file.id}
-                        className={`flex items-center px-3 py-[3px] cursor-default ${
+                        className={`${FILE_ROW_CLASS} ${
                           isSelected
                             ? 'bg-[var(--color-accent)] text-white'
                             : 'hover:bg-[var(--color-accent-muted)]'
@@ -1493,7 +1498,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                         onTouchEnd={endLongPress}
                         onTouchCancel={endLongPress}
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className={FILE_ROW_NAME_CELL_CLASS}>
                           <Icon
                             className={`w-4 h-4 flex-shrink-0 ${
                               isSelected
@@ -1503,19 +1508,19 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                                   : 'text-[var(--color-text-muted)]'
                             }`}
                           />
-                          <span className="truncate text-xs">{file.name}</span>
+                          <span className={FILE_ROW_TEXT_CLASS}>{file.name}</span>
                         </div>
                         {!isMobile && (
                           <>
                             <div
-                              className={`w-20 text-right text-[11px] flex-shrink-0 ${
+                              className={`${FILE_ROW_META_CLASS} ${
                                 isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
                               }`}
                             >
                               {file.size > 0 ? driveFiles.formatSize(file.size) : '--'}
                             </div>
                             <div
-                              className={`w-32 text-right text-[11px] flex-shrink-0 ${
+                              className={`${FILE_ROW_DATE_CLASS} ${
                                 isSelected ? 'text-white/70' : 'text-[var(--color-text-muted)]'
                               }`}
                             >

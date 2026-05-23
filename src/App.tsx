@@ -14,6 +14,7 @@ import { preloadAllSounds, installGlobalClickSound, unlockAudio } from '@/lib/so
 import { preloadAllAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
+import { useAppStore } from '@/stores/appStore';
 import { installGlobalErrorHandlers } from '@/stores/errorStore';
 import { DebugPanel } from '@/components/desktop/DebugPanel';
 import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tabSingleton';
@@ -175,6 +176,7 @@ function WebAppShell() {
   const { user, isAuthenticated, isLoading: _authLoading, error: authError, logout, handleRemoteLogout, checkAuth, handleOAuthReturn } = useAuthStore();
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const fetchUsage = useBillingStore((s) => s.fetchUsage);
+  const prefetchApps = useAppStore((s) => s.fetchApps);
   const { isConnected, forceReconnect } = useWebSocket();
   const hasAccess = hasAgentAccess(user?.plan);
 
@@ -259,6 +261,11 @@ function WebAppShell() {
       preloadAllAssets();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authChecked || !user?.id) return;
+    void prefetchApps();
+  }, [isAuthenticated, authChecked, user?.id, prefetchApps]);
 
   useEffect(() => {
     if (!isAuthenticated || !authChecked || !user?.id) return;
