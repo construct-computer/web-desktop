@@ -52,6 +52,23 @@ export interface AskUserData {
   selectedValue?: string;
 }
 
+export interface CodePreviewFile {
+  path: string;
+  language?: string;
+  content: string;
+  complete?: boolean;
+  truncated?: boolean;
+}
+
+export interface CodePreviewData {
+  previewId: string;
+  title: string;
+  action?: string;
+  appId?: string;
+  status: 'streaming' | 'writing' | 'done';
+  files: CodePreviewFile[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system';
   content: string;
@@ -74,6 +91,8 @@ export interface ChatMessage {
   attachments?: string[];
   /** Structured details for browser activity rows (icons, payload disclosures, etc.). */
   browserAction?: BrowserActionMeta;
+  /** Live code/file preview emitted while the agent is generating artifacts. */
+  codePreview?: CodePreviewData;
 }
 
 export interface BrowserActionMeta {

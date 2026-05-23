@@ -104,6 +104,23 @@ export interface AskUserData {
   selectedValue?: string;
 }
 
+export interface CodePreviewFile {
+  path: string;
+  language?: string;
+  content: string;
+  complete?: boolean;
+  truncated?: boolean;
+}
+
+export interface CodePreviewData {
+  previewId: string;
+  title: string;
+  action?: string;
+  appId?: string;
+  status: 'streaming' | 'writing' | 'done';
+  files: CodePreviewFile[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system' | 'notice';
   content: string;
@@ -157,6 +174,8 @@ export interface ChatMessage {
   noticeToolName?: string;
   noticeSeverity?: 'info' | 'warn' | 'error';
   noticeRepeatCount?: number;
+  /** Live code/file preview emitted while the agent is generating artifacts. */
+  codePreview?: CodePreviewData;
 }
 
 export interface BrowserActionMeta {
@@ -3899,6 +3918,89 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
+      const upsertCodePreview = (data: Record<string, unknown>) => {
+        const previewId = typeof data.previewId === 'string' ? data.previewId : '';
+        if (!previewId) return;
+        const phase = typeof data.phase === 'string' ? data.phase : 'file';
+        const action = typeof data.action === 'string' ? data.action : undefined;
+        const appId = typeof data.appId === 'string' ? data.appId : undefined;
+        const title = action === 'update_local'
+          ? `Updating app code${appId ? `: ${appId}` : ''}`
+          : `Creating app code${appId ? `: ${appId}` : ''}`;
+        const status: CodePreviewData['status'] = phase === 'done'
+          ? 'done'
+          : data.source === 'tool'
+            ? 'writing'
+            : 'streaming';
+
+        const updateList = (list: ChatMessage[]): ChatMessage[] => {
+          const idx = list.findIndex(msg => msg.codePreview?.previewId === previewId);
+          const existing = idx >= 0 ? list[idx] : undefined;
+          const currentPreview: CodePreviewData = existing?.codePreview || {
+            previewId,
+            title,
+            action,
+            appId,
+            status,
+            files: [],
+          };
+          let files = currentPreview.files;
+          if (phase === 'file' && typeof data.filePath === 'string' && typeof data.content === 'string') {
+            const nextFile: CodePreviewFile = {
+              path: data.filePath,
+              content: data.content,
+              language: typeof data.language === 'string' ? data.language : undefined,
+              complete: typeof data.complete === 'boolean' ? data.complete : undefined,
+              truncated: typeof data.truncated === 'boolean' ? data.truncated : undefined,
+            };
+            const fileIdx = files.findIndex(file => file.path === nextFile.path);
+            files = fileIdx >= 0
+              ? files.map((file, i) => i === fileIdx ? { ...file, ...nextFile } : file)
+              : [...files, nextFile];
+          }
+          const nextMsg: ChatMessage = {
+            role: 'activity',
+            content: title,
+            timestamp: existing?.timestamp || new Date(),
+            tool: 'app',
+            activityType: 'file',
+            codePreview: {
+              ...currentPreview,
+              title,
+              action,
+              appId,
+              status,
+              files,
+            },
+          };
+          if (idx < 0) return appendMessage(list, nextMsg);
+          const next = list.slice();
+          next[idx] = nextMsg;
+          return next;
+        };
+
+        set(state => {
+          const updates: Partial<typeof state> = {};
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            updates.platformAgents = {
+              ...state.platformAgents,
+              [eventPlatform]: {
+                ...pa,
+                chatMessages: updateList(pa.chatMessages || []),
+              },
+            };
+          }
+          if (isActiveSession) {
+            updates.chatMessages = updateList(state.chatMessages);
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, updateList(cached));
+          }
+          return updates;
+        });
+      };
+
       // Any event from the agent proves it's alive — reset the safety
       // timeout so we don't falsely reset agentRunning mid-task.
       if (get().agentRunning) {
@@ -4843,6 +4945,11 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'apps_changed': {
           useAppStore.getState().fetchApps();
+          break;
+        }
+
+        case 'local_app_code_preview': {
+          upsertCodePreview(event.data || {});
           break;
         }
 

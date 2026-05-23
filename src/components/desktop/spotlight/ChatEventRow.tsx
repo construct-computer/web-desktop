@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
 import { ActivityIcon } from './ActivityIcon';
 import { activityToneClass, type ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
@@ -84,6 +84,10 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     setTimeout(() => setCopied(false), 2000);
   }, [meta.raw, meta.detail, msg.content]);
 
+  if (msg.codePreview) {
+    return <CodePreviewCard msg={msg} compact={compact} />;
+  }
+
   return (
     <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
       <div className={compact ? 'flex items-center gap-2.5 min-w-0' : 'flex items-center gap-2.5 sm:gap-3 min-w-0'}>
@@ -123,6 +127,90 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CodePreviewCard({ msg, compact = false }: { msg: ChatMessage; compact?: boolean }) {
+  const preview = msg.codePreview!;
+  const [activePath, setActivePath] = useState(preview.files[0]?.path || '');
+  const [expanded, setExpanded] = useState(preview.status !== 'done');
+  const [copied, setCopied] = useState(false);
+  const activeFile = preview.files.find(file => file.path === activePath) || preview.files[0];
+  const statusLabel = preview.status === 'done'
+    ? 'Ready'
+    : preview.status === 'writing'
+      ? 'Writing files'
+      : 'Generating code';
+
+  const handleCopy = useCallback(() => {
+    if (!activeFile) return;
+    navigator.clipboard.writeText(activeFile.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [activeFile]);
+
+  return (
+    <div className={compact ? 'flex items-start gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-2'}>
+      <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 w-full">
+        <div className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-blue-500/15 text-blue-200/80">
+          <FileCode className="w-3 h-3" />
+        </div>
+        <div className="min-w-0 flex-1 max-w-3xl rounded-lg border border-white/8 bg-black/10 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left"
+          >
+            <span className="min-w-0">
+              <span className="block text-[12px] font-medium text-[var(--color-text)]/80 truncate">
+                {preview.title}
+              </span>
+              <span className="block text-[10px] text-[var(--color-text-muted)]/55 truncate">
+                {statusLabel}{preview.appId ? ` · ${preview.appId}` : ''} · {preview.files.length} file{preview.files.length === 1 ? '' : 's'}
+              </span>
+            </span>
+            <span className="shrink-0 text-[var(--color-text-muted)]/45">
+              {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </span>
+          </button>
+          {expanded && activeFile && (
+            <div className="border-t border-white/8">
+              <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5 border-b border-white/8">
+                {preview.files.map(file => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    onClick={() => setActivePath(file.path)}
+                    className={`shrink-0 rounded px-2 py-1 text-[10px] font-mono ${
+                      file.path === activeFile.path
+                        ? 'bg-white/10 text-[var(--color-text)]'
+                        : 'text-[var(--color-text-muted)]/60 hover:bg-white/5 hover:text-[var(--color-text-muted)]'
+                    }`}
+                  >
+                    {file.path}
+                    {!file.complete && <span className="ml-1 text-blue-200/70">writing</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[10px] text-[var(--color-text-muted)]/45">
+                <span>{activeFile.language || 'text'}{activeFile.truncated ? ' · preview truncated' : ''}</span>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="inline-flex items-center gap-1 hover:text-[var(--color-text-muted)]/75"
+                >
+                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <pre className="max-h-72 overflow-auto bg-black/20 px-3 py-2 text-[11px] leading-5 text-[var(--color-text)]/78">
+                <code>{activeFile.content}</code>
+              </pre>
             </div>
           )}
         </div>

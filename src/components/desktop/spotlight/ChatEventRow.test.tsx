@@ -37,4 +37,35 @@ describe('ChatEventRow', () => {
 
     expect(html).toContain('Details');
   });
+
+  it('renders live code previews for app generation', () => {
+    const msg: ChatMessage = {
+      role: 'activity',
+      content: 'Creating app code: demo',
+      timestamp: new Date(1),
+      tool: 'app',
+      activityType: 'file',
+      codePreview: {
+        previewId: 'preview-1',
+        title: 'Creating app code: demo',
+        action: 'create_local',
+        appId: 'demo',
+        status: 'streaming',
+        files: [
+          {
+            path: 'index.html',
+            language: 'html',
+            content: '<main>Hello</main>',
+            complete: false,
+          },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
+
+    expect(html).toContain('Generating code');
+    expect(html).toContain('index.html');
+    expect(html).toContain('&lt;main&gt;Hello&lt;/main&gt;');
+  });
 });
