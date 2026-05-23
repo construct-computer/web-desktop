@@ -922,7 +922,16 @@ async function handleBridgeMethod(
       if (newState === undefined || newState === null) throw new Error('state is required');
       const setRes = await api.setLocalAppState(appId, newState);
       if (!setRes.success) throw new Error(setRes.error || 'Failed to write state');
-      return { ok: true };
+      return { ok: true, state: newState };
+    }
+
+    case 'state.patch': {
+      if (!appId) throw new Error('No app context');
+      const patch = params.patch as Record<string, unknown>;
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('patch must be a JSON object');
+      const patchRes = await api.patchLocalAppState(appId, patch);
+      if (!patchRes.success) throw new Error(patchRes.error || 'Failed to patch state');
+      return patchRes.data;
     }
 
     // ── Agent notification (isolated channel, not visible in chat) ──

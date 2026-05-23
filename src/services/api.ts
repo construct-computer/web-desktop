@@ -2815,10 +2815,18 @@ export async function getLocalAppState(appId: string): Promise<ApiResult<Record<
   return request(`/apps/local/${encodeURIComponent(appId)}/_state`);
 }
 
-export async function setLocalAppState(appId: string, state: Record<string, unknown>): Promise<ApiResult<{ ok: boolean }>> {
+export async function setLocalAppState(appId: string, state: Record<string, unknown>): Promise<ApiResult<{ ok: boolean; state?: Record<string, unknown> }>> {
   return request(`/apps/local/${encodeURIComponent(appId)}/_state`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(state),
+  });
+}
+
+export async function patchLocalAppState(appId: string, patch: Record<string, unknown>): Promise<ApiResult<{ ok: boolean; state: Record<string, unknown> }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/_state`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
   });
 }
