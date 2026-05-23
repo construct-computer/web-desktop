@@ -14,6 +14,12 @@ const browserLog = log('BrowserWS');
 const terminalLog = log('TerminalWS');
 const agentLog = log('AgentWS');
 
+export interface AgentFileAttachment {
+  type: string;
+  url: string;
+  name?: string;
+}
+
 // Get WebSocket base URL
 // Supports VITE_WS_BASE_URL override for Cloudflare Workers deployment
 // where frontend (Pages) and backend (Worker) may be on different origins.
@@ -700,12 +706,14 @@ class AgentWSClient {
     images?: string[],
     frontendContext?: AgentFrontendContext,
     clientId?: string,
+    attachments?: AgentFileAttachment[],
   ): boolean {
     const payload = JSON.stringify({
       type: 'chat',
       message,
       session_key: sessionKey,
       ...(images && images.length > 0 ? { images } : {}),
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
       ...(frontendContext ? { frontendContext } : {}),
       ...(clientId ? { clientId } : {}),
     });

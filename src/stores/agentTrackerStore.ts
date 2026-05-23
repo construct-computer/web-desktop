@@ -76,6 +76,8 @@ interface AgentTrackerStore {
    */
   failOperationsForSession: (sessionKey: string, includeLegacy: boolean) => void;
   failAllRunningOperations: () => void;
+  /** Remove all tracked operations owned by a deleted session. */
+  dropOperationsForSession: (sessionKey: string, includeLegacy: boolean) => void;
 
   // SubAgent lifecycle
   addSubAgent: (operationId: string, agent: TrackedSubAgent) => void;
@@ -247,6 +249,30 @@ export const useAgentTrackerStore = create<AgentTrackerStore>()((set, get) => ({
       }
       if (!changed) return state;
       return { operations };
+    }),
+
+  dropOperationsForSession: (sessionKey, includeLegacy) =>
+    set((state) => {
+      let changed = false;
+      const operations: Record<string, TrackedOperation> = {};
+      const dismissedGoals = new Set(state.dismissedGoals);
+      for (const [id, op] of Object.entries(state.operations)) {
+        const legacy = !op.sessionKey;
+        const shouldDrop = op.sessionKey === sessionKey || (legacy && includeLegacy);
+        if (shouldDrop) {
+          changed = true;
+          dismissedGoals.add(op.goal);
+          continue;
+        }
+        operations[id] = op;
+      }
+      if (!changed) return state;
+      saveDismissedGoals(dismissedGoals);
+      return {
+        operations,
+        subagentIndex: buildSubagentIndex(operations),
+        dismissedGoals,
+      };
     }),
 
   updateOperationStatus: (id, status, durationMs) =>

@@ -10,6 +10,7 @@ import { ActivityIcon as ToolActivityIcon } from '@/components/desktop/spotlight
 import { ChatEventRow } from '@/components/desktop/spotlight/ChatEventRow';
 import { MessageList } from '@/components/desktop/spotlight/MessageList';
 import { SpotlightInput } from '@/components/desktop/spotlight/SpotlightInput';
+import { StepLimitCard } from '@/components/desktop/spotlight/StepLimitCard';
 import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -24,6 +25,7 @@ import type { WindowConfig } from '@/types';
 /** Typing indicator (staggered bouncing dots) or scrollable thinking text. */
 function AgentThinkingIndicator() {
   const stream = useComputerStore(s => s.agentThinkingStream);
+  const progressNote = useComputerStore(s => s.agentThinking);
   const running = useComputerStore(s => s.agentRunning);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -40,11 +42,18 @@ function AgentThinkingIndicator() {
   if (!visible) return null;
 
   const hasThinkingText = stream && stream.length > 0;
+  const hasProgressNote = progressNote && progressNote.length > 0;
 
   return (
     <div className="flex gap-2 justify-start">
       <img src={constructLogo} alt="" className="w-5 h-5 shrink-0 mt-1" />
-      {!hasThinkingText ? (
+      {hasProgressNote && !hasThinkingText ? (
+        <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-xl px-3 py-2 max-w-[360px]">
+          <p className="text-xs leading-snug text-[var(--color-text-muted)] truncate">
+            {progressNote}
+          </p>
+        </div>
+      ) : !hasThinkingText ? (
         /* Typing indicator — staggered bouncing dots */
         <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-xl px-4 py-3 flex items-center gap-[3px]">
           {[0, 1, 2].map(i => (
@@ -707,6 +716,10 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
                 </span>
               </div>
             );
+          }
+
+          if (msg.iterationLimit) {
+            return <StepLimitCard key={index} msg={msg} compact />;
           }
 
           if (isError) {

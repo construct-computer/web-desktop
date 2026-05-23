@@ -87,6 +87,7 @@ interface TerminalStore {
   hydrateRuns: (runs: HydratedTerminalRun[]) => void;
   selectRun: (terminalId: string, runId: string | null) => void;
   clearTerminal: (terminalId: string) => void;
+  clearSession: (sessionKey: string) => void;
 }
 
 const MAX_CHUNKS_PER_RUN = 2_000;
@@ -343,6 +344,40 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       }
       const sessions = { ...state.sessions };
       delete sessions[terminalId];
+      return { runs, sessions };
+    });
+  },
+
+  clearSession: (sessionKey) => {
+    set((state) => {
+      const runIdsToDelete = new Set(
+        Object.values(state.runs)
+          .filter((run) => run.sessionKey === sessionKey)
+          .map((run) => run.id),
+      );
+      if (runIdsToDelete.size === 0) return state;
+
+      const runs = { ...state.runs };
+      for (const runId of runIdsToDelete) {
+        delete runs[runId];
+      }
+
+      const sessions: Record<string, TerminalSession> = {};
+      for (const [terminalId, session] of Object.entries(state.sessions)) {
+        const runIds = session.runIds.filter((runId) => !runIdsToDelete.has(runId));
+        if (runIds.length === 0) continue;
+        sessions[terminalId] = {
+          ...session,
+          runIds,
+          activeRunId: session.activeRunId && runIdsToDelete.has(session.activeRunId)
+            ? runIds[runIds.length - 1]
+            : session.activeRunId,
+          selectedRunId: session.selectedRunId && runIdsToDelete.has(session.selectedRunId)
+            ? undefined
+            : session.selectedRunId,
+        };
+      }
+
       return { runs, sessions };
     });
   },

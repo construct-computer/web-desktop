@@ -76,4 +76,28 @@ describe('terminalStore', () => {
     expect(run.chunks[0].data).toBe('live output');
     expect(useTerminalStore.getState().sessions.main.runIds).toEqual(['call-2']);
   });
+
+  it('clears runs for one deleted chat session without touching others', () => {
+    const store = useTerminalStore.getState();
+    store.ingestCommand({
+      toolCallId: 'deleted-call',
+      terminalId: 'main',
+      sessionKey: 'deleted-session',
+      command: 'pnpm dev',
+      timestamp: 1000,
+    });
+    store.ingestCommand({
+      toolCallId: 'kept-call',
+      terminalId: 'main',
+      sessionKey: 'active-session',
+      command: 'pnpm test',
+      timestamp: 1100,
+    });
+
+    useTerminalStore.getState().clearSession('deleted-session');
+
+    expect(useTerminalStore.getState().runs['deleted-call']).toBeUndefined();
+    expect(useTerminalStore.getState().runs['kept-call']).toBeDefined();
+    expect(useTerminalStore.getState().sessions.main.runIds).toEqual(['kept-call']);
+  });
 });

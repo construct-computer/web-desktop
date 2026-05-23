@@ -20,7 +20,7 @@ export function useElapsed(startedAt: number, active: boolean): string {
 export interface SlashCommand {
   name: string;
   description: string;
-  action: () => void;
+  action: () => void | Promise<void>;
 }
 
 export function useSlashCommands(): SlashCommand[] {

@@ -202,7 +202,7 @@ export function detectActivePromoCode(): RecognizedPromoCode | null {
 // ── External Services ──────────────────────────────────────────────────────
 
 /** Upload directory path inside the workspace. */
-export const UPLOAD_DIRECTORY = '/home/sandbox/workspace/uploads';
+export const UPLOAD_DIRECTORY = 'uploads';
 
 /** Native agent email domain. */
 export const AGENT_EMAIL_DOMAIN = import.meta.env.VITE_AGENT_EMAIL_DOMAIN || 'agents.construct.computer';

@@ -9,11 +9,15 @@ import { useComputerStore } from '@/stores/agentStore';
 import constructStatic from '@/assets/construct/loader-static.png';
 import { ChatEventRow } from './ChatEventRow';
 import type { ChatMessage } from '@/stores/agentStore';
-
-const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg)$/i;
+import { fileNameFromWorkspacePath, isImageWorkspacePath, workspaceDisplayPath } from '@/lib/workspacePaths';
+import { StepLimitCard } from './StepLimitCard';
 
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
+
+  if (msg.iterationLimit) {
+    return <StepLimitCard msg={msg} />;
+  }
 
   if (msg.role === 'notice' || isError) {
     return <ChatEventRow msg={msg} />;
@@ -83,8 +87,8 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
 
 function AttachmentChip({ filePath }: { filePath: string }) {
   const instanceId = useComputerStore(s => s.instanceId);
-  const fileName = filePath.split('/').pop() || filePath;
-  const isImage = IMAGE_EXT.test(fileName);
+  const fileName = fileNameFromWorkspacePath(filePath);
+  const isImage = isImageWorkspacePath(filePath);
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -113,6 +117,7 @@ function AttachmentChip({ filePath }: { filePath: string }) {
     <button
       onClick={handleDownload}
       disabled={downloading}
+      title={workspaceDisplayPath(filePath)}
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.08] transition-colors disabled:opacity-50"
     >
       {isImage ? <ImageIcon className="w-3 h-3" /> : <FileText className="w-3 h-3" />}

@@ -28,6 +28,7 @@ function TypingDots() {
 
 export function ThinkingIndicator() {
   const stream = useComputerStore(s => s.agentThinkingStream);
+  const progressNote = useComputerStore(s => s.agentThinking);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const agentStatusLabel = useComputerStore(s => s.agentStatusLabel);
   const activeKey = useComputerStore(s => s.activeSessionKey);
@@ -43,6 +44,7 @@ export function ThinkingIndicator() {
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [stream]);
   if (!isActive) return null;
   const hasText = stream && stream.length > 0;
+  const hasProgressNote = progressNote && progressNote.length > 0;
 
   return (
     <div className="flex gap-3 px-6 py-2">
@@ -51,6 +53,12 @@ export function ThinkingIndicator() {
         <div className="min-w-0 flex items-center" style={{ minHeight: '1.625rem' }}>
           <p className="text-[13px] text-[var(--color-text-muted)]/80 leading-snug">
             Compacting conversation context…
+          </p>
+        </div>
+      ) : hasProgressNote && !hasText ? (
+        <div className="min-w-0 flex items-center" style={{ minHeight: '1.625rem' }}>
+          <p className="text-[13px] text-[var(--color-text-muted)]/80 leading-snug truncate">
+            {progressNote}
           </p>
         </div>
       ) : !hasText ? (

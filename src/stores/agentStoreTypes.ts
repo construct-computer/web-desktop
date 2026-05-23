@@ -60,10 +60,12 @@ export interface ChatMessage {
   tool?: string;
   /** For activity messages: icon hint for rendering */
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
-  /** True for error/stopped/iteration-limit messages — rendered with error styling */
+  /** True for error/stopped messages — rendered with event styling */
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
   isStopped?: boolean;
+  /** Step-limit pause metadata, rendered as a continue card. */
+  iterationLimit?: { limit?: number; plan?: string; canContinue: boolean };
   /** For delegation-group/consultation-group/background-group messages: links to tracker operation */
   operationId?: string;
   /** Interactive question data (rendered as clickable option cards) */

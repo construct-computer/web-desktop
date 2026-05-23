@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import * as api from '@/services/api';
 import type { SessionInfo, BrowserRunSummary, BrowserScreenshotSummary } from '@/services/api';
-import { browserWS, agentWS, type AgentEvent, type AgentFrontendContext } from '@/services/websocket';
+import { browserWS, agentWS, type AgentEvent, type AgentFileAttachment, type AgentFrontendContext } from '@/services/websocket';
 import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
 import { useEditorStore } from './editorStore';
@@ -11,15 +11,17 @@ import { useDocumentPreviewStore } from './documentPreviewStore';
 import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
+import { resolveLoadedSessions } from './sessionList';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
-import { shouldClearViewedAgentState } from './agentStateCleanup';
+import { clearDesktopAgentRuntime, shouldClearViewedAgentState } from './agentStateCleanup';
 import { useAppStore, localAppIframeRefs } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
 import { dispatchAgentHistoryCleared } from '@/lib/agentUiEvents';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
+import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 // Utility functions extracted to reduce this file's size.
@@ -110,10 +112,12 @@ export interface ChatMessage {
   tool?: string;
   /** For activity messages: icon hint for rendering */
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
-  /** True for error/stopped/iteration-limit messages — rendered with error styling */
+  /** True for error/stopped messages — rendered with event styling */
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
   isStopped?: boolean;
+  /** Step-limit pause metadata, rendered as a continue card. */
+  iterationLimit?: { limit?: number; plan?: string; canContinue: boolean };
   /** For delegation-group/consultation-group/background-group messages: links to tracker operation */
   operationId?: string;
   /** Interactive question data (rendered as clickable option cards) */
@@ -612,11 +616,13 @@ interface ComputerStore {
    * "Send + interrupt" mode of the composer.
    */
   interruptSession: (sessionKey: string, message?: string, clientId?: string) => void;
+  /** Continue a session after an agent step-limit pause without adding a visible user bubble. */
+  continueSession: (sessionKey?: string) => Promise<void>;
   /** Clear all chat history and start fresh. */
   clearChatHistory: () => void;
 
   // Sessions
-  loadSessions: (force?: boolean) => Promise<void>;
+  loadSessions: (force?: boolean, options?: { preserveActiveKey?: string }) => Promise<void>;
   createSession: (title?: string, options?: { forceNew?: boolean }) => Promise<void>;
   switchSession: (key: string) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
@@ -791,9 +797,93 @@ function toPlainMetadata(value: unknown): Record<string, unknown> | undefined {
   }
 }
 
+function normalizeAttachmentPaths(paths?: string[]): string[] {
+  return [...new Set((paths || []).map(normalizeWorkspacePath).filter(Boolean))];
+}
+
+function stripAttachmentInstructionBlocks(content: string): string {
+  return content
+    .replace(/\n{0,2}\[Attached workspace files\]\n[\s\S]*?\n\[End attached workspace files\]\s*$/m, '')
+    .replace(/\n{0,2}\[Attached files — these files have been uploaded and are available for you to read\/process:\n[\s\S]*?\n\]\s*$/m, '')
+    .trimEnd();
+}
+
+function parseMetadata(value: unknown): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return toPlainMetadata(value);
+}
+
+function metadataFileAttachments(meta: Record<string, unknown> | undefined): string[] {
+  if (!meta || !Array.isArray(meta.files)) return [];
+  const paths = meta.files
+    .map((file) => {
+      if (!file || typeof file !== 'object') return '';
+      const record = file as Record<string, unknown>;
+      return typeof record.path === 'string'
+        ? record.path
+        : typeof record.url === 'string'
+          ? record.url
+          : '';
+    });
+  return normalizeAttachmentPaths(paths);
+}
+
+function metadataIterationLimit(meta: Record<string, unknown> | undefined): ChatMessage['iterationLimit'] | undefined {
+  if (!meta || !meta.iterationLimit || typeof meta.iterationLimit !== 'object' || Array.isArray(meta.iterationLimit)) return undefined;
+  const raw = meta.iterationLimit as Record<string, unknown>;
+  const limit = typeof raw.limit === 'number' ? raw.limit : Number(raw.limit);
+  if (!Number.isFinite(limit) || limit <= 0) return undefined;
+  return {
+    limit,
+    plan: typeof raw.plan === 'string' ? raw.plan : undefined,
+    canContinue: raw.canContinue !== false,
+  };
+}
+
+const LEGACY_ITERATION_LIMIT_PATTERNS = [
+  /\b(?:max|maximum)\s+(?:number\s+of\s+)?(?:steps?|turns?)\b.{0,120}\b(?:reached|hit|exceeded|limit|budget)\b/i,
+  /\b(?:reached|hit|exceeded)\b.{0,120}\b(?:max|maximum)\s+(?:number\s+of\s+)?(?:steps?|turns?)\b/i,
+  /\bmax\s+steps?\s+for\s+your\s+plan\s+reached\b/i,
+  /\bpaused\s+to\s+avoid\s+running\s+indefinitely\b/i,
+];
+
+function contentIterationLimit(content: string): ChatMessage['iterationLimit'] | undefined {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  return LEGACY_ITERATION_LIMIT_PATTERNS.some((pattern) => pattern.test(normalized))
+    ? { canContinue: true }
+    : undefined;
+}
+
+function attachIterationLimitFromContent(message: ChatMessage): ChatMessage {
+  if (message.iterationLimit || message.role !== 'agent') return message;
+  const iterationLimit = contentIterationLimit(message.content);
+  if (!iterationLimit) return message;
+  return { ...message, iterationLimit, isError: false };
+}
+
+function buildFileAttachmentPayload(paths: string[]): AgentFileAttachment[] {
+  return paths.map((path) => ({
+    type: 'file',
+    url: path,
+    name: fileNameFromWorkspacePath(path),
+  }));
+}
+
 function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
   const windowState = useWindowStore.getState();
   const appState = useAppStore.getState();
+  const normalizedSelectedFiles = normalizeAttachmentPaths(selectedFiles);
   const focusedWindow = windowState.getFocusedWindow();
   const focusedMetadata = toPlainMetadata(focusedWindow?.metadata);
   const appId = typeof focusedMetadata?.appId === 'string' ? focusedMetadata.appId : undefined;
@@ -825,7 +915,7 @@ function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
       metadata: focusedMetadata,
     } : null,
     selectedIntegrationSlug,
-    selectedFiles,
+    selectedFiles: normalizedSelectedFiles.length > 0 ? normalizedSelectedFiles : undefined,
     launchedFrom: typeof focusedMetadata?.launchedFrom === 'string' ? focusedMetadata.launchedFrom : undefined,
   };
 }
@@ -1128,6 +1218,7 @@ let agentRunningTimer: ReturnType<typeof setTimeout> | null = null;
 let chatHistoryLoading = false;
 let sessionsLoading: Promise<void> | null = null;
 let sessionsLoadedAt = 0;
+let sessionsRequestSeq = 0;
 const SESSION_LIST_STALE_MS = 10_000;
 /** In-memory cache of chat messages per session for instant switching. */
 const sessionMessageCache = new Map<string, ChatMessage[]>();
@@ -2188,20 +2279,28 @@ export const useComputerStore = create<ComputerStore>()(
             let sourceMeta: ExternalSourceMeta | undefined;
             let access: ExternalAccessMeta | undefined;
             let clientId: string | undefined;
-            if (msg.metadata) {
-              try {
-                const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
-                const p = meta?.platformReply?.platform;
-                if (isExternalPlatform(p)) source = p;
-                sourceMeta = coerceExternalSource(meta?.source) || coerceExternalSource(meta?.platformReply?.source);
-                access = coerceExternalAccess(meta?.access) || coerceExternalAccess(meta?.platformReply?.access);
-                if (typeof meta?.clientId === 'string') clientId = meta.clientId;
-              } catch { /* */ }
+            const meta = parseMetadata(msg.metadata);
+            const attachments = metadataFileAttachments(meta);
+            if (meta) {
+              const p = (meta.platformReply as Record<string, unknown> | undefined)?.platform;
+              if (isExternalPlatform(p)) source = p;
+              sourceMeta = coerceExternalSource(meta.source) || coerceExternalSource((meta.platformReply as Record<string, unknown> | undefined)?.source);
+              access = coerceExternalAccess(meta.access) || coerceExternalAccess((meta.platformReply as Record<string, unknown> | undefined)?.access);
+              if (typeof meta.clientId === 'string') clientId = meta.clientId;
             }
             if (!source) {
               source = sourceMeta?.platform || inferExternalPlatform(requestedSessionKey) || undefined;
             }
-            history.push({ role: 'user', content, timestamp: new Date(msg.created_at), source, sourceMeta, access, clientId });
+            history.push({
+              role: 'user',
+              content: stripAttachmentInstructionBlocks(content),
+              timestamp: new Date(msg.created_at),
+              source,
+              sourceMeta,
+              access,
+              clientId,
+              attachments: attachments.length > 0 ? attachments : undefined,
+            });
           } else if (msg.role === 'assistant' || msg.role === 'tool_call') {
             // Emit activity entries for each tool_call before the text content.
             // The DO writes tool invocations to role='tool_call' rows with the
@@ -2363,7 +2462,15 @@ export const useComputerStore = create<ComputerStore>()(
               const content = typeof msg.content === 'string'
                 ? msg.content
                 : String(msg.content);
-              history.push({ role: 'agent', content, timestamp: new Date(msg.created_at) });
+              const meta = parseMetadata(msg.metadata);
+              const iterationLimit = metadataIterationLimit(meta) || contentIterationLimit(content);
+              history.push({
+                role: 'agent',
+                content,
+                timestamp: new Date(msg.created_at),
+                ...(iterationLimit ? { isError: false } : {}),
+                ...(iterationLimit ? { iterationLimit } : {}),
+              });
             }
           }
         }
@@ -2557,6 +2664,7 @@ export const useComputerStore = create<ComputerStore>()(
       const { instanceId, chatSessions } = initialState;
       let { activeSessionKey, chatMessages } = initialState;
       if (!instanceId) return;
+      const normalizedAttachments = normalizeAttachmentPaths(attachments);
       if (inferExternalPlatform(activeSessionKey)) {
         useNotificationStore.getState().addNotification(
           {
@@ -2598,7 +2706,7 @@ export const useComputerStore = create<ComputerStore>()(
         role: 'user',
         content,
         timestamp: new Date(),
-        attachments,
+        attachments: normalizedAttachments.length > 0 ? normalizedAttachments : undefined,
         clientId,
         ...(injectWhileAgentRunning
           ? {
@@ -2645,29 +2753,31 @@ export const useComputerStore = create<ComputerStore>()(
         });
       }
 
-      // If there are attachments, prepend file paths to the message so the agent has context.
-      // When image data is being sent as base64 (via imageDataUrls), exclude image file paths
-      // from the text to prevent the model from hallucinating descriptions based on filenames.
-      const IMAGE_PATH_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/i;
+      // Non-image workspace attachments are sent as metadata and mirrored in a
+      // concise instruction block for models that only inspect message text.
       let messageForAgent = content;
-      if (attachments && attachments.length > 0) {
+      const fileAttachments: AgentFileAttachment[] | undefined = normalizedAttachments.length > 0
+        ? buildFileAttachmentPayload(normalizedAttachments)
+        : undefined;
+      if (normalizedAttachments.length > 0) {
         const hasImageData = imageDataUrls.length > 0;
         const nonImagePaths = hasImageData
-          ? attachments.filter(p => !IMAGE_PATH_RE.test(p))
-          : attachments;
+          ? normalizedAttachments.filter(p => !isImageWorkspacePath(p))
+          : normalizedAttachments;
         if (nonImagePaths.length > 0) {
           const attachList = nonImagePaths.map(p => `- ${p}`).join('\n');
-          messageForAgent = `${content}\n\n[Attached files — these files have been uploaded and are available for you to read/process:\n${attachList}\n]`;
+          messageForAgent = `${content}\n\n[Attached workspace files]\n${attachList}\nUse read_file for text/metadata. Use load_from_workspace before terminal/sandbox processing.\n[End attached workspace files]`;
         }
       }
 
-      const frontendContext = buildFrontendContext(attachments);
+      const frontendContext = buildFrontendContext(normalizedAttachments);
       const sent = agentWS.sendChat(
         messageForAgent,
         activeSessionKey,
         imageDataUrls.length > 0 ? imageDataUrls : undefined,
         frontendContext,
         clientId,
+        fileAttachments,
       );
       if (!sent) {
         set(state => ({
@@ -2706,6 +2816,7 @@ export const useComputerStore = create<ComputerStore>()(
         agentWS.send({
           type: 'ask_user_response',
           toolCallId: questionId,
+          sessionKey: get().activeSessionKey,
           approved: valueOrAnswers === 'allow',
         });
         set(state => ({
@@ -2732,6 +2843,7 @@ export const useComputerStore = create<ComputerStore>()(
         agentWS.send({
           type: 'ask_user_response',
           questionId,
+          sessionKey: get().activeSessionKey,
           value,
         });
         return;
@@ -2748,6 +2860,7 @@ export const useComputerStore = create<ComputerStore>()(
       agentWS.send({
         type: 'ask_user_response',
         questionId,
+        sessionKey: get().activeSessionKey,
         value,
       });
     },
@@ -3015,6 +3128,71 @@ export const useComputerStore = create<ComputerStore>()(
       }
     },
 
+    continueSession: async (sessionKey?: string) => {
+      const targetSessionKey = sessionKey || get().activeSessionKey;
+      if (!targetSessionKey) return;
+      if (get().runningSessions.has(targetSessionKey)) return;
+
+      const result = await api.continueAgentSession(targetSessionKey);
+      if (!result.success) {
+        const alreadyRunning = result.status === 409;
+        useNotificationStore.getState().addNotification(
+          {
+            title: alreadyRunning ? 'Session already running' : 'Could not continue task',
+            body: alreadyRunning ? 'Construct is already working in this chat.' : (result.error || 'Try again in a moment.'),
+            source: 'Construct',
+            variant: alreadyRunning ? 'info' : 'error',
+          },
+          6000,
+        );
+        return;
+      }
+      if (result.data?.ok === false) {
+        const alreadyRunning = result.data.reason === 'already_running';
+        useNotificationStore.getState().addNotification(
+          {
+            title: alreadyRunning ? 'Session already running' : 'Could not continue task',
+            body: alreadyRunning ? 'Construct is already working in this chat.' : 'Try again in a moment.',
+            source: 'Construct',
+            variant: alreadyRunning ? 'info' : 'error',
+          },
+          6000,
+        );
+        return;
+      }
+
+      const now = Date.now();
+      set(state => {
+        const nextRunning = new Set(state.runningSessions);
+        nextRunning.add(targetSessionKey);
+        const nextActive = {
+          ...state.activeSessions,
+          [targetSessionKey]: {
+            ...(state.activeSessions[targetSessionKey] || { sessionKey: targetSessionKey }),
+            sessionKey: targetSessionKey,
+            status: 'thinking' as const,
+            rawStatus: 'thinking',
+            startedAt: now,
+            lastHeartbeatAt: now,
+            lastProgressAt: now,
+            progressReason: 'iteration_limit:continue',
+          },
+        };
+        return {
+          runningSessions: nextRunning,
+          activeSessions: nextActive,
+          ...(targetSessionKey === state.activeSessionKey
+            ? {
+                agentRunning: true,
+                agentThinking: '',
+                agentThinkingStream: null,
+              }
+            : {}),
+        };
+      });
+      resetAgentRunningTimer(get, set);
+    },
+
     setReplyingTo: (msg: ChatMessage | null) => { set({ replyingTo: msg }); },
 
     clearChatHistory: () => {
@@ -3042,17 +3220,19 @@ export const useComputerStore = create<ComputerStore>()(
         chatMessages: [],
         agentThinking: null,
         agentThinkingStream: null,
+        agentStatusLabel: null,
         agentRunning: false,
         agentActivity: {},
         queuedMessageCount: 0,
         taskProgress: null,
+        toolStatuses: {},
         sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
       });
       // Clear platform agent chat feeds
       set(state => {
         const updated: typeof state.platformAgents = {};
         for (const [k, pa] of Object.entries(state.platformAgents)) {
-          updated[k] = { ...pa, chatMessages: [], responseText: '', toolHistory: [], running: false, currentTool: undefined, thinking: null, stepProgress: null };
+          updated[k] = { ...clearDesktopAgentRuntime(pa)!, chatMessages: [] };
         }
         return { platformAgents: updated };
       });
@@ -3070,25 +3250,27 @@ export const useComputerStore = create<ComputerStore>()(
 
     // ── Session management ──────────────────────────────────
 
-    loadSessions: async (force = false) => {
+    loadSessions: async (force = false, options?: { preserveActiveKey?: string }) => {
       const { instanceId } = get();
       if (!instanceId) return;
-      if (sessionsLoading) return sessionsLoading;
+      if (sessionsLoading && !force) return sessionsLoading;
       if (!force && Date.now() - sessionsLoadedAt < SESSION_LIST_STALE_MS && get().chatSessions.length > 0) {
         return;
       }
 
-      const RESERVED = 'overseer';
+      const requestSeq = ++sessionsRequestSeq;
+      const preserveActiveKey = options?.preserveActiveKey;
       sessionsLoading = (async () => {
         const result = await api.getAgentSessions(instanceId);
+        if (requestSeq !== sessionsRequestSeq) return;
         if (result.success) {
-          const raw = result.data.sessions.filter(s => s.key !== RESERVED);
-          let activeKey = result.data.active_key;
-          if (activeKey === RESERVED) {
-            activeKey = raw[0]?.key || 'default';
-          }
+          const { sessions, activeKey } = resolveLoadedSessions(
+            result.data.sessions,
+            result.data.active_key,
+            preserveActiveKey,
+          );
           set({
-            chatSessions: raw,
+            chatSessions: sessions,
             activeSessionKey: activeKey,
           });
           sessionsLoadedAt = Date.now();
@@ -3098,7 +3280,9 @@ export const useComputerStore = create<ComputerStore>()(
           logger.warn('Error loading sessions:', err);
         })
         .finally(() => {
-          sessionsLoading = null;
+          if (requestSeq === sessionsRequestSeq) {
+            sessionsLoading = null;
+          }
         });
       return sessionsLoading;
     },
@@ -3121,16 +3305,35 @@ export const useComputerStore = create<ComputerStore>()(
         if (result.success) {
           const session = result.data;
           const existing = get().chatSessions;
-          // Backend may reuse an empty session — don't duplicate it in the list
-          const alreadyInList = existing.some(s => s.key === session.key);
-          set({
-            chatSessions: alreadyInList ? existing : [session, ...existing],
-            activeSessionKey: session.key,
-            chatMessages: [],
-            replyingTo: null,
-            agentThinking: null,
-            agentRunning: false,
+          clearAgentRunningTimer();
+          set(state => {
+            const nextPlatformAgents = { ...state.platformAgents };
+            const desktop = clearDesktopAgentRuntime(nextPlatformAgents.desktop);
+            if (desktop) {
+              nextPlatformAgents.desktop = desktop;
+            }
+            const nextPendingImages = { ...state.pendingImageDataBySession };
+            delete nextPendingImages[activeSessionKey || 'default'];
+            const nextSessions = [session, ...existing.filter(s => s.key !== session.key)];
+            return {
+              chatSessions: nextSessions,
+              activeSessionKey: session.key,
+              chatMessages: [],
+              replyingTo: null,
+              agentThinking: null,
+              agentThinkingStream: null,
+              agentStatusLabel: null,
+              agentRunning: false,
+              agentActivity: {},
+              queuedMessageCount: 0,
+              taskProgress: null,
+              pendingImageDataBySession: nextPendingImages,
+              sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
+              toolStatuses: {},
+              platformAgents: nextPlatformAgents,
+            };
           });
+          await get().loadSessions(true, { preserveActiveKey: session.key });
         }
       } catch (err) {
         logger.warn('Error creating session:', err);
@@ -3175,23 +3378,69 @@ export const useComputerStore = create<ComputerStore>()(
     },
 
     deleteSession: async (key: string) => {
-      const { instanceId } = get();
+      const { instanceId, activeSessionKey } = get();
       if (!instanceId) return;
+      const wasActive = key === activeSessionKey;
 
       try {
         const result = await api.deleteAgentSession(instanceId, key);
         if (result.success) {
-          set({
-            activeSessionKey: result.data.active_key,
-            chatMessages: [],
-            replyingTo: null,
-            agentThinking: null,
+          const nextActiveKey = result.data.active_key;
+          sessionMessageCache.delete(key);
+          clearAuthRequestsForSession(key);
+          useAgentTrackerStore.getState().dropOperationsForSession(key, false);
+          useTerminalStore.getState().clearSession(key);
+
+          set(state => {
+            const nextRunning = new Set(state.runningSessions);
+            nextRunning.delete(key);
+            const nextActiveSessions = { ...state.activeSessions };
+            delete nextActiveSessions[key];
+            const nextAlerts = { ...state.overseerAlertsBySession };
+            delete nextAlerts[key];
+            const nextPendingImages = { ...state.pendingImageDataBySession };
+            delete nextPendingImages[key];
+            const nextToolStatuses = Object.fromEntries(
+              Object.entries(state.toolStatuses).filter(([, status]) => status.sessionKey !== key),
+            );
+            const nextState: Partial<ComputerStore> = {
+              chatSessions: state.chatSessions.filter(s => s.key !== key),
+              runningSessions: nextRunning,
+              activeSessions: nextActiveSessions,
+              overseerAlertsBySession: nextAlerts,
+              pendingImageDataBySession: nextPendingImages,
+              toolStatuses: nextToolStatuses,
+            };
+
+            if (wasActive || state.activeSessionKey === key) {
+              const nextPlatformAgents = { ...state.platformAgents };
+              const desktop = clearDesktopAgentRuntime(nextPlatformAgents.desktop);
+              if (desktop) nextPlatformAgents.desktop = desktop;
+              Object.assign(nextState, {
+                activeSessionKey: nextActiveKey,
+                chatMessages: [],
+                replyingTo: null,
+                agentThinking: null,
+                agentThinkingStream: null,
+                agentStatusLabel: null,
+                agentRunning: nextRunning.has(nextActiveKey),
+                agentActivity: {},
+                queuedMessageCount: 0,
+                taskProgress: null,
+                sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
+                platformAgents: nextPlatformAgents,
+              });
+            }
+
+            return nextState;
           });
           // Reload full session list (a fresh session may have been created
           // if we just deleted the last one)
-          await get().loadSessions();
-          // Load the now-active session's history
-          await get().loadChatHistory();
+          await get().loadSessions(true, { preserveActiveKey: nextActiveKey });
+          if (wasActive) {
+            // Load the now-active session's history
+            await get().loadChatHistory();
+          }
         }
       } catch (err) {
         logger.warn('Error deleting session:', err);
@@ -3588,6 +3837,7 @@ export const useComputerStore = create<ComputerStore>()(
       // background session's agent loop leak into whichever session the user
       // is currently viewing.
       const isActiveSession = eventSessionKey === get().activeSessionKey;
+      const shouldUpdateVisibleDesktopAgent = !isDesktop || isActiveSession;
 
       /**
        * Get or create the platformAgent entry for this event's platform.
@@ -3607,6 +3857,7 @@ export const useComputerStore = create<ComputerStore>()(
       /** Update the platform agent state for this event's platform. */
       const updateAgent = (updater: (pa: PlatformAgentState) => Partial<PlatformAgentState>) => {
         set(state => {
+          if (!shouldUpdateVisibleDesktopAgent) return state;
           const pa = getOrCreateAgent(state);
           return {
             platformAgents: {
@@ -3624,17 +3875,18 @@ export const useComputerStore = create<ComputerStore>()(
        *  immediately — without having to wait for a server history fetch. */
       const appendToAgentChat = (msg: ChatMessage) => {
         set(state => {
-          const pa = getOrCreateAgent(state);
-          const existing = pa.chatMessages || [];
-          const updates: Partial<typeof state> = {
-            platformAgents: {
+          const updates: Partial<typeof state> = {};
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            const existing = pa.chatMessages || [];
+            updates.platformAgents = {
               ...state.platformAgents,
               [eventPlatform]: {
                 ...pa,
                 chatMessages: [...existing, msg],
               },
-            },
-          };
+            };
+          }
           if (isActiveSession) {
             updates.chatMessages = appendMessage(state.chatMessages, msg);
           } else if (eventSessionKey && eventSessionKey !== 'default') {
@@ -3670,20 +3922,23 @@ export const useComputerStore = create<ComputerStore>()(
           }
           if (msgRole === 'user' && msgContent && isActiveSession) {
             const current = get().chatMessages;
+            const displayContent = stripAttachmentInstructionBlocks(msgContent);
             const lastUser = [...current].reverse().find(m => m.role === 'user');
             const incomingClientId = event.data?.clientId as string | undefined;
             const hasSameClientId = incomingClientId
               ? current.some(m => m.role === 'user' && m.clientId === incomingClientId)
               : false;
             // Skip if the last user message already matches (optimistic add from desktop input)
-            if (!hasSameClientId && (!lastUser || lastUser.content !== msgContent)) {
+            if (!hasSameClientId && (!lastUser || lastUser.content !== displayContent)) {
               const msgSource = event.data?.source as ChatMessage['source'];
               const sourceMeta = coerceExternalSource(event.data?.sourceMeta);
               const access = coerceExternalAccess(event.data?.access);
+              const attachments = normalizeAttachmentPaths(event.data?.attachments as string[] | undefined);
               appendToAgentChat({
                 role: 'user',
-                content: msgContent,
+                content: displayContent,
                 timestamp: new Date(),
+                ...(attachments.length > 0 ? { attachments } : {}),
                 ...(incomingClientId && { clientId: incomingClientId }),
                 ...(msgSource && { source: msgSource }),
                 ...(sourceMeta && { sourceMeta }),
@@ -3747,6 +4002,7 @@ export const useComputerStore = create<ComputerStore>()(
           // Single atomic update: accumulate responseText + chatMessages for
           // this agent, and update desktop singletons if desktop.
           set(state => {
+            if (!shouldUpdateVisibleDesktopAgent) return state;
             const pa = getOrCreateAgent(state);
             const responseText = (pa.responseText || '') + text;
 
@@ -3756,14 +4012,17 @@ export const useComputerStore = create<ComputerStore>()(
             let updatedAgentChat: ChatMessage[];
             if (lastAgentMsg && lastAgentMsg.role === 'agent' && !lastAgentMsg.isError) {
               updatedAgentChat = [...agentChat];
-              updatedAgentChat[updatedAgentChat.length - 1] = {
+              const nextMessage = attachIterationLimitFromContent({
                 ...lastAgentMsg,
                 content: lastAgentMsg.content + text,
+              });
+              updatedAgentChat[updatedAgentChat.length - 1] = {
+                ...nextMessage,
               };
             } else if (!text.trim()) {
               updatedAgentChat = agentChat;
             } else {
-              updatedAgentChat = [...agentChat, { role: 'agent' as const, content: text, timestamp: new Date() }];
+              updatedAgentChat = [...agentChat, attachIterationLimitFromContent({ role: 'agent' as const, content: text, timestamp: new Date() })];
             }
 
             const updates: Partial<typeof state> = {
@@ -3785,16 +4044,19 @@ export const useComputerStore = create<ComputerStore>()(
               const lastMsg = state.chatMessages[state.chatMessages.length - 1];
               if (lastMsg && lastMsg.role === 'agent' && !lastMsg.isError) {
                 const updatedMessages = [...state.chatMessages];
-                updatedMessages[updatedMessages.length - 1] = {
+                const nextMessage = attachIterationLimitFromContent({
                   ...lastMsg,
                   content: lastMsg.content + text,
+                });
+                updatedMessages[updatedMessages.length - 1] = {
+                  ...nextMessage,
                 };
                 updates.chatMessages = updatedMessages;
                 updates.agentThinking = null;
               } else if (!text.trim()) {
                 updates.agentThinking = null;
               } else {
-                updates.chatMessages = appendMessage(state.chatMessages, { role: 'agent', content: text, timestamp: new Date() });
+                updates.chatMessages = appendMessage(state.chatMessages, attachIterationLimitFromContent({ role: 'agent', content: text, timestamp: new Date() }));
                 updates.agentThinking = null;
               }
             }
@@ -3825,7 +4087,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'agent_attachments': {
-          const paths = event.data?.attachments as string[] || [];
+          const paths = normalizeAttachmentPaths(event.data?.attachments as string[] | undefined);
           if (paths.length === 0) break;
 
           set(state => {
@@ -3900,6 +4162,46 @@ export const useComputerStore = create<ComputerStore>()(
           if (thinkEndSub && thinkEndSub !== 'orchestrator') break;
           // Signal end — the component handles the 500ms fade delay
           set({ agentThinkingStream: null });
+          break;
+        }
+
+        case 'agent_progress': {
+          const text = typeof event.data?.text === 'string'
+            ? event.data.text.trim().slice(0, 180)
+            : '';
+          const phase = typeof event.data?.phase === 'string' ? event.data.phase : undefined;
+          if (!text) break;
+
+          const now = Date.now();
+          set(state => {
+            const existing = state.activeSessions[eventSessionKey];
+            const activeSessions = {
+              ...state.activeSessions,
+              [eventSessionKey]: {
+                ...(existing || { sessionKey: eventSessionKey, status: 'thinking' as const }),
+                sessionKey: eventSessionKey,
+                status: 'thinking' as const,
+                rawStatus: phase || existing?.rawStatus || 'thinking',
+                progressReason: text,
+                lastProgressAt: now,
+                lastHeartbeatAt: now,
+                startedAt: existing?.startedAt ?? now,
+              },
+            };
+            const updates: Partial<typeof state> = { activeSessions };
+            if (isActiveSession) {
+              updates.agentThinking = text;
+              updates.agentStatusLabel = phase || state.agentStatusLabel || 'thinking';
+            }
+            if (shouldUpdateVisibleDesktopAgent) {
+              const pa = getOrCreateAgent(state);
+              updates.platformAgents = {
+                ...state.platformAgents,
+                [eventPlatform]: { ...pa, running: true, thinking: text },
+              };
+            }
+            return updates;
+          });
           break;
         }
 
@@ -4046,15 +4348,17 @@ export const useComputerStore = create<ComputerStore>()(
           }
 
           // Desktop-only: update singletons for backward compat
-          set(state => {
-            const newActivity = { ...state.agentActivity };
-            if (windowType) newActivity[windowType] = true;
-            if (desktopWindowType) newActivity[desktopWindowType] = true;
-            return {
-              agentThinking: activityText + '...',
-              agentActivity: newActivity,
-            };
-          });
+          if (isActiveSession) {
+            set(state => {
+              const newActivity = { ...state.agentActivity };
+              if (windowType) newActivity[windowType] = true;
+              if (desktopWindowType) newActivity[desktopWindowType] = true;
+              return {
+                agentThinking: activityText + '...',
+                agentActivity: newActivity,
+              };
+            });
+          }
           break;
         }
 
@@ -4074,7 +4378,7 @@ export const useComputerStore = create<ComputerStore>()(
           }
 
           // Skip main agent state updates for subagent tool results
-          if (!resultSubagentId) {
+          if (!resultSubagentId && isActiveSession) {
             const windowType = toolToWindowType(tool);
             if (windowType) {
               const { [windowType]: _, ...rest } = get().agentActivity;
@@ -5101,7 +5405,7 @@ export const useComputerStore = create<ComputerStore>()(
           // Store step progress for the correct agent (always, never drops)
           updateAgent(() => ({ stepProgress: { step, maxSteps } }));
           // Desktop singleton: backward compat
-          if (isDesktop) {
+          if (isDesktop && isActiveSession) {
             set({
               taskProgress: {
                 taskId: event.data?.taskId as string || '',
@@ -5561,7 +5865,13 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'iteration_limit': {
-          const message = event.data?.message as string || 'Reached maximum step limit.';
+          const message = event.data?.message as string || 'Max steps for your plan reached. I paused to avoid running indefinitely. You can continue from here.';
+          const limit = typeof event.data?.limit === 'number' ? event.data.limit : Number(event.data?.limit);
+          const iterationLimit: ChatMessage['iterationLimit'] = {
+            ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+            plan: typeof event.data?.plan === 'string' ? event.data.plan : undefined,
+            canContinue: event.data?.canContinue !== false,
+          };
           if (isActiveSession) clearAgentRunningTimer();
           set(state => {
             const pa = { ...state.platformAgents };
@@ -5569,7 +5879,14 @@ export const useComputerStore = create<ComputerStore>()(
             const nextRunning = new Set(state.runningSessions);
             nextRunning.delete(eventSessionKey);
             return {
-              ...(isActiveSession ? { chatMessages: appendMessage(state.chatMessages, { role: 'agent', content: message, timestamp: new Date(), isError: true }) } : {}),
+              ...(isActiveSession ? {
+                chatMessages: appendMessage(state.chatMessages, {
+                  role: 'agent',
+                  content: message,
+                  timestamp: new Date(),
+                  iterationLimit,
+                }),
+              } : {}),
               agentThinking: null,
               agentThinkingStream: null,
               ...(isActiveSession ? { agentRunning: false } : {}),

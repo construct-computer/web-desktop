@@ -9,6 +9,15 @@ import { isAttentionSession, mergeAttentionSessions } from '@/lib/autopilotAtten
 import * as api from '@/services/api';
 import { formatRelativeTime } from './utils';
 
+function removeSessionAttention(status: api.AutopilotStatus | null, sessionKey: string): api.AutopilotStatus | null {
+  if (!status) return status;
+  return {
+    ...status,
+    blockers: status.blockers.filter((blocker) => blocker.sessionKey !== sessionKey),
+    actions: status.actions.filter((action) => action.sessionKey !== sessionKey),
+  };
+}
+
 function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
   const platform = inferExternalPlatform(key);
   if (platform === 'telegram') return { platform: 'Telegram', icon: Send, color: EXTERNAL_PLATFORM_META.telegram.color };
@@ -52,6 +61,7 @@ function SessionItem({
   sessionStatus,
   hasAttention,
   canManage = true,
+  canRename = true,
   onSwitch,
   onRename,
   onDelete,
@@ -62,6 +72,7 @@ function SessionItem({
   sessionStatus?: ActiveSessionStatus;
   hasAttention?: boolean;
   canManage?: boolean;
+  canRename?: boolean;
   onSwitch: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -171,17 +182,19 @@ function SessionItem({
           ref={menuRef}
           className="absolute right-2 top-full mt-1 z-50 min-w-[140px] rounded-lg overflow-hidden glass-popover border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
         >
-          <button
-            onClick={() => {
-              setMenuOpen(false);
-              setEditValue(session.title);
-              setEditing(true);
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-white/70 hover:bg-white/10 transition-colors"
-          >
-            <Pencil className="w-3 h-3" />
-            Rename
-          </button>
+          {canRename && (
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setEditValue(session.title);
+                setEditing(true);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-white/70 hover:bg-white/10 transition-colors"
+            >
+              <Pencil className="w-3 h-3" />
+              Rename
+            </button>
+          )}
           <button
             onClick={() => { setMenuOpen(false); onDelete(); }}
             className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-red-400/80 hover:bg-red-500/10 transition-colors"
@@ -222,16 +235,20 @@ export function SpotlightSidebar() {
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
+  const refreshAttention = useCallback(async (shouldApply: () => boolean = () => true) => {
+    const [statusResult, pendingResult] = await Promise.all([
+      api.getAutopilotStatus(),
+      api.getPendingUserActions('pending', 25),
+    ]);
+    if (!shouldApply()) return;
+    if (statusResult.success) setAttentionStatus(statusResult.data);
+    if (pendingResult.success) setAttentionActions(pendingResult.data.actions);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
-      const [statusResult, pendingResult] = await Promise.all([
-        api.getAutopilotStatus(),
-        api.getPendingUserActions('pending', 25),
-      ]);
-      if (cancelled) return;
-      if (statusResult.success) setAttentionStatus(statusResult.data);
-      if (pendingResult.success) setAttentionActions(pendingResult.data.actions);
+      await refreshAttention(() => !cancelled);
     };
     void poll();
     const interval = setInterval(poll, 15_000);
@@ -239,7 +256,14 @@ export function SpotlightSidebar() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [refreshAttention]);
+
+  const handleDeleteSession = useCallback(async (sessionKey: string) => {
+    setAttentionActions((prev) => prev.filter((action) => action.sessionKey !== sessionKey));
+    setAttentionStatus((prev) => removeSessionAttention(prev, sessionKey));
+    await deleteSession(sessionKey);
+    await refreshAttention().catch(() => {});
+  }, [deleteSession, refreshAttention]);
 
   // On first load, mark all existing sessions as read so they don't show unread dots
   useEffect(() => {
@@ -327,13 +351,13 @@ export function SpotlightSidebar() {
                 hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
                 sessionStatus={activeSessions[session.key]}
                 hasAttention={hasAttention}
-                canManage={!hasAttention}
+                canManage
+                canRename={!hasAttention}
                 onSwitch={async () => {
-                  await loadSessions(true);
                   await switchSession(session.key);
                 }}
                 onRename={(title) => renameSession(session.key, title)}
-                onDelete={() => deleteSession(session.key)}
+                onDelete={() => { void handleDeleteSession(session.key); }}
               />
               );
             })}

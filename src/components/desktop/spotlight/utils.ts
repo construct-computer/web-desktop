@@ -43,6 +43,7 @@ export type ChatRenderKind =
 export function getChatRenderKind(msg: ChatMessage): ChatRenderKind {
   if (msg.role === 'user') return 'user';
   if (msg.isStopped) return 'divider';
+  if (msg.role === 'agent' && msg.iterationLimit) return 'assistant';
   if (msg.askUser) return 'attention';
   if (msg.role === 'agent' && parseAuthMarker(msg.content)) return 'attention';
   if (msg.role === 'notice') return 'inline-event';
@@ -71,8 +72,8 @@ export function groupMessages(messages: ChatMessage[], isAgentRunning: boolean):
     if (isOp) { flush(); groups.push({ type: 'operation', msg, index: i }); }
     else if (msg.role === 'activity') { if (msg.content) actBuf.push(msg); }
     else if (msg.role === 'system' && !msg.askUser) { /* skip */ }
-    else if (msg.role === 'agent' && !msg.isError && !msg.content.trim()) { /* skip empty */ }
-    else if (msg.role === 'agent' && !msg.isError && !msg.isStopped && i !== lastAgentIdx && isLikelyThinkingText(msg.content)) { /* filter thinking */ }
+    else if (msg.role === 'agent' && !msg.iterationLimit && !msg.isError && !msg.content.trim()) { /* skip empty */ }
+    else if (msg.role === 'agent' && !msg.iterationLimit && !msg.isError && !msg.isStopped && i !== lastAgentIdx && isLikelyThinkingText(msg.content)) { /* filter thinking */ }
     else if (msg.role === 'user' && msg.content.startsWith('[App | ')) { /* skip internal app messages */ }
     else { flush(); groups.push({ type: 'message', msg, index: i }); }
   }

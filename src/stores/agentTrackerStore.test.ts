@@ -37,4 +37,25 @@ describe('agentTrackerStore session idle cleanup', () => {
     expect(op.subAgents.find((s) => s.id === 'child_running')?.status).toBe('cancelled');
     expect(op.subAgents.find((s) => s.id === 'child_failed')?.status).toBe('failed');
   });
+
+  it('drops operations for a deleted chat session only', () => {
+    const store = useAgentTrackerStore.getState();
+    store.startOperation('delete_me', 'orchestration', 'deleted session work', 1, 'desktop', 'deleted-session');
+    store.startOperation('keep_me', 'orchestration', 'active session work', 1, 'desktop', 'active-session');
+    store.addSubAgent('delete_me', {
+      id: 'child_deleted',
+      type: 'subagent',
+      label: 'Deleted child',
+      goal: 'deleted work',
+      status: 'running',
+      startedAt: Date.now(),
+      activities: [],
+    });
+
+    useAgentTrackerStore.getState().dropOperationsForSession('deleted-session', false);
+
+    expect(useAgentTrackerStore.getState().operations.delete_me).toBeUndefined();
+    expect(useAgentTrackerStore.getState().operations.keep_me).toBeDefined();
+    expect(useAgentTrackerStore.getState().subagentIndex.child_deleted).toBeUndefined();
+  });
 });

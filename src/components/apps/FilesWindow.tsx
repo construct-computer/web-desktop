@@ -873,7 +873,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     async (file: DriveFileEntry) => {
       if (!instanceId) return;
       setContextMenu(null);
-      const destPath = `/home/sandbox/workspace/${file.name}`;
+      const destPath = file.name;
       await runTransfer(file.name, 'download', () => api.copyToLocal(instanceId, file.id, destPath));
     },
     [instanceId, runTransfer],

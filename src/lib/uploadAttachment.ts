@@ -1,14 +1,15 @@
 /**
  * Upload attachment with SHA-256 dedup.
  *
- * Files are stored at /home/sandbox/workspace/uploads/<hash12>_<filename>.
+ * Files are stored in the durable R2 workspace at uploads/<hash12>_<filename>.
  * Before uploading, we hash the file client-side and check if it already
- * exists in the container to avoid duplicate uploads.
+ * exists in the workspace to avoid duplicate uploads.
  */
 
 import { checkFileExists, uploadContainerFile, createDirectory } from '@/services/api';
+import { normalizeWorkspacePath } from '@/lib/workspacePaths';
 
-const UPLOADS_DIR = '/home/sandbox/workspace/uploads';
+const UPLOADS_DIR = 'uploads';
 
 /** Ensure the uploads directory exists (idempotent). */
 let ensuredDir = false;
@@ -38,7 +39,7 @@ function sanitizeName(name: string): string {
 }
 
 export interface UploadResult {
-  /** Full path inside the container */
+  /** Workspace-relative path in durable R2 storage. */
   path: string;
   /** Original filename */
   name: string;
@@ -47,7 +48,7 @@ export interface UploadResult {
 }
 
 /**
- * Upload a file to the container's workspace/uploads/ directory.
+ * Upload a file to the durable workspace uploads/ directory.
  * Deduplicates by SHA-256 hash prefix + filename.
  */
 export async function uploadAttachment(
@@ -64,7 +65,7 @@ export async function uploadAttachment(
   // Check if file already exists (dedup)
   const existsResult = await checkFileExists(instanceId, targetPath);
   if (existsResult.success && existsResult.data?.exists) {
-    return { path: targetPath, name: file.name, deduplicated: true };
+    return { path: normalizeWorkspacePath(targetPath), name: file.name, deduplicated: true };
   }
 
   // Upload the file
@@ -73,5 +74,5 @@ export async function uploadAttachment(
     throw new Error(uploadResult.error || 'Upload failed');
   }
 
-  return { path: targetPath, name: file.name, deduplicated: false };
+  return { path: normalizeWorkspacePath(uploadResult.data?.path || targetPath), name: file.name, deduplicated: false };
 }

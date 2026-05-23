@@ -1186,6 +1186,15 @@ export async function interruptAgentSession(
   });
 }
 
+export async function continueAgentSession(sessionKey: string): Promise<ApiResult<{
+  ok: boolean;
+  sessionKey: string;
+  queued?: boolean;
+  reason?: string;
+}>> {
+  return request(`/agent/sessions/${encodeURIComponent(sessionKey)}/continue`, { method: 'POST' });
+}
+
 /**
  * Create a new chat session.
  */
@@ -1320,7 +1329,7 @@ export interface FileListResponse {
   entries: FileEntry[];
 }
 
-export async function listFiles(_instanceId: string, path = '/home/sandbox/workspace'): Promise<ApiResult<FileListResponse>> {
+export async function listFiles(_instanceId: string, path = '/'): Promise<ApiResult<FileListResponse>> {
   return request(`/files?path=${encodeURIComponent(path)}`);
 }
 
@@ -1359,7 +1368,9 @@ export async function getFileMeta(_instanceId: string, path: string): Promise<Ap
 }
 
 /**
- * Download a binary file from the container. Returns the raw Response
+ * Download a binary file from the durable R2 workspace. The legacy function
+ * name is kept because file-browser callers still use it.
+ * Returns the raw Response
  * so the caller can create a blob URL for preview.
  * Handles 401 with a single token refresh retry (M19).
  */
@@ -1433,7 +1444,8 @@ export async function convertContainerFilePreview(
 }
 
 /**
- * Upload a binary file (e.g. from drag-and-drop) into the container.
+ * Upload a binary file (e.g. from drag-and-drop) into the durable R2 workspace.
+ * The legacy function name is kept because file-browser callers still use it.
  * Sends the raw bytes as the request body, file path in the query string.
  * Handles 401 with a single token refresh retry (M19).
  */
@@ -1600,10 +1612,10 @@ export async function copyToDrive(_instanceId: string, filePath: string, driveFo
   });
 }
 
-export async function copyToLocal(instanceId: string, driveFileId: string, containerPath: string): Promise<ApiResult<{ status: string }>> {
+export async function copyToLocal(instanceId: string, driveFileId: string, workspacePath: string): Promise<ApiResult<{ status: string; path?: string }>> {
   return request('/drive/copy-to-local', {
     method: 'POST',
-    body: JSON.stringify({ driveFileId, instanceId, destPath: containerPath }),
+    body: JSON.stringify({ driveFileId, instanceId, destPath: workspacePath }),
   });
 }
 
