@@ -232,7 +232,7 @@ function IframeAppView({
   const directUiUrl = isCustomUrlApp ? withTrailingSlash(baseUrl) : `${baseUrl}/ui/`;
   const proxyUiUrl = `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/ui-proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   const uiUrl = isLocal
-    ? `${baseUrl}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}` : ''}`
+    ? `${withTrailingSlash(baseUrl)}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}` : ''}`
     : useProxy
       ? proxyUiUrl
       : directUiUrl;
