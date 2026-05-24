@@ -5,7 +5,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import {
-  ExternalLink,
   Loader2,
   Check,
   Minus,
@@ -31,7 +30,6 @@ type BillingNotice = {
   tone: 'warning' | 'danger' | 'info';
   title: string;
   body: string;
-  action?: string;
 };
 
 function formatBillingDate(timestamp: number | null): string | null {
@@ -53,7 +51,6 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       tone: 'danger',
       title: 'Payment overdue',
       body: 'Your subscription payment failed. Paid features and usage limits have been downgraded until billing is fixed.',
-      action: 'Update payment method',
     };
   }
 
@@ -62,7 +59,6 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       tone: 'danger',
       title: 'Subscription payment failed',
       body: 'Your paid subscription is inactive. Update billing to restore paid features and limits.',
-      action: 'Manage billing',
     };
   }
 
@@ -71,7 +67,6 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       tone: 'danger',
       title: 'Subscription inactive',
       body: 'Your paid subscription is no longer active, so this workspace is using the Free plan.',
-      action: subscription.dodoCustomerId ? 'Manage subscription' : undefined,
     };
   }
 
@@ -83,7 +78,6 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       body: endDate
         ? `Your paid access remains active until ${endDate}. After that, your workspace will move to the Free plan.`
         : 'Your paid access remains active until the current billing period ends.',
-      action: subscription.dodoCustomerId ? 'Manage subscription' : undefined,
     };
   }
 
@@ -92,14 +86,8 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
 
 function BillingStatusBanner({
   notice,
-  canManage,
-  portalLoading,
-  onManage,
 }: {
   notice: BillingNotice;
-  canManage: boolean;
-  portalLoading: boolean;
-  onManage: () => void;
 }) {
   const toneClass = notice.tone === 'danger'
     ? 'bg-red-500/10 text-red-400 border-red-500/20'
@@ -114,17 +102,6 @@ function BillingStatusBanner({
         <div className="font-semibold">{notice.title}</div>
         <p className="mt-0.5 leading-relaxed">{notice.body}</p>
       </div>
-      {notice.action && canManage && (
-        <button
-          type="button"
-          onClick={onManage}
-          disabled={portalLoading}
-          className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/15 disabled:opacity-50"
-        >
-          {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-          {notice.action}
-        </button>
-      )}
     </div>
   );
 }
@@ -136,11 +113,9 @@ export function BillingSection() {
     fetchSubscription,
     startCheckout,
     switchPlan,
-    openPortal,
   } = useBillingStore();
 
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [portalLoading, setPortalLoading] = useState(false);
   const [plans, setPlans] = useState<BillingPlanInfo[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
 
@@ -196,16 +171,6 @@ export function BillingSection() {
     }
   }, [switchPlan, handleCheckout]);
 
-  const handleManage = useCallback(async () => {
-    setPortalLoading(true);
-    try {
-      const result = await openPortal();
-      if ('url' in result) window.location.href = result.url;
-    } finally {
-      setPortalLoading(false);
-    }
-  }, [openPortal]);
-
   const currentPlan = subscription?.plan || 'free';
   const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
@@ -242,9 +207,6 @@ export function BillingSection() {
             {billingNotice && (
               <BillingStatusBanner
                 notice={billingNotice}
-                canManage={canManageBilling && billingNotice.action !== 'Manage billing'}
-                portalLoading={portalLoading}
-                onManage={handleManage}
               />
             )}
 
@@ -253,12 +215,9 @@ export function BillingSection() {
               plans={plans}
               plansLoading={plansLoading}
               isDevMode={isDevMode}
-              canManageBilling={canManageBilling}
-              portalLoading={portalLoading}
               checkoutLoading={checkoutLoading}
               onSwitchPlan={handleSwitchPlan}
               onCheckout={handleCheckout}
-              onManage={handleManage}
             />
           </div>
         )}
@@ -276,23 +235,17 @@ function PlanSelector({
   plans,
   plansLoading,
   isDevMode,
-  canManageBilling,
-  portalLoading,
   checkoutLoading,
   onSwitchPlan,
   onCheckout,
-  onManage,
 }: {
   currentPlan: string;
   plans: BillingPlanInfo[];
   plansLoading: boolean;
   isDevMode: boolean;
-  canManageBilling: boolean;
-  portalLoading: boolean;
   checkoutLoading: boolean;
   onSwitchPlan: (plan: 'free' | 'starter' | 'pro') => void;
   onCheckout: (plan: 'starter' | 'pro') => void;
-  onManage: () => void;
 }) {
   const effective = BILLING_PLAN_ORDER.includes(currentPlan as PlanId) ? currentPlan as PlanId : 'free';
   const currentIndex = BILLING_PLAN_ORDER.indexOf(effective);
@@ -304,27 +257,13 @@ function PlanSelector({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="text-[12px] font-semibold text-text">Upgrade options</div>
-          <p className="mt-0.5 text-[11px] text-text-muted">
-            {upgradePlans.length > 0
-              ? 'Only higher plans are shown here.'
-              : 'You are on the highest available plan.'}
-          </p>
-        </div>
-        {canManageBilling && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={onManage}
-            disabled={portalLoading}
-            className="shrink-0"
-          >
-            {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-            Manage subscription
-          </Button>
-        )}
+      <div className="min-w-0">
+        <div className="text-[12px] font-semibold text-text">Upgrade options</div>
+        <p className="mt-0.5 text-[11px] text-text-muted">
+          {upgradePlans.length > 0
+            ? 'Only higher plans are shown here.'
+            : 'You are on the highest available plan.'}
+        </p>
       </div>
 
       <div className={`settings-plan-grid grid gap-2 ${upgradePlans.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>

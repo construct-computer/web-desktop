@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSettingsNav, type SettingsSection } from '@/lib/settingsNav';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
+import { stagingAgentEmailUsername } from '@/lib/agentEmail';
 
 import { openAuthRedirect } from '@/lib/utils';
 import {
@@ -570,6 +571,8 @@ function UserSection() {
   const setPendingSection = useSettingsNav((s) => s.setPendingSection);
   useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
   const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
+  const isStagingEnv = subscription?.environment === 'staging';
+  const stagingEmailUsername = stagingAgentEmailUsername(user?.email);
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [agentName, setAgentName] = useState('');
@@ -631,9 +634,18 @@ function UserSection() {
       setEmailChecking(false);
       return;
     }
-    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(username) || username.length < 3) {
+    if (isStagingEnv && username !== stagingEmailUsername) {
       setEmailAvailable(false);
-      setEmailError('Use 3+ characters: letters, numbers, hyphens, dots.');
+      setEmailError(stagingEmailUsername
+        ? `Use ${stagingEmailUsername}@${AGENT_EMAIL_DOMAIN} from your login email.`
+        : 'Your account needs a login email before claiming a staging inbox.');
+      setEmailSuggestion('');
+      setEmailChecking(false);
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9._+-]*[a-z0-9]$/.test(username) || username.length < 3) {
+      setEmailAvailable(false);
+      setEmailError('Use 3+ characters: letters, numbers, dots, hyphens, plus signs.');
       setEmailSuggestion('');
       setEmailChecking(false);
       return;
@@ -656,7 +668,24 @@ function UserSection() {
         setEmailSuggestion('');
       }
     }, 400);
-  }, [computer?.id]);
+  }, [computer?.id, isStagingEnv, stagingEmailUsername]);
+
+  useEffect(() => {
+    if (!isPaid || emailLocked || !isStagingEnv) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setEmailUsername(stagingEmailUsername);
+      if (stagingEmailUsername) {
+        checkEmail(stagingEmailUsername);
+      } else {
+        setEmailAvailable(false);
+        setEmailError('Your account needs a login email before claiming a staging inbox.');
+        setEmailSuggestion('');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isPaid, emailLocked, isStagingEnv, stagingEmailUsername, checkEmail]);
 
   useEffect(() => {
     return () => {
@@ -677,7 +706,8 @@ function UserSection() {
       setError('Name is required');
       return;
     }
-    const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
+    const selectedEmailUsername = isStagingEnv ? stagingEmailUsername : emailUsername.trim();
+    const emailChanged = !emailLocked && isPaid && !!selectedEmailUsername;
     if (emailChanged && emailAvailable !== true) {
       setEmailError(emailChecking ? 'Wait for the availability check to finish.' : 'Check availability before saving.');
       return;
@@ -695,7 +725,7 @@ function UserSection() {
       // Include email username only if not already set and user is on a paid plan.
       // (Backend also enforces this — belt-and-suspenders to avoid a 403 round-trip.)
       if (emailChanged) {
-        updateData.agentmailInboxUsername = emailUsername.trim();
+        updateData.agentmailInboxUsername = selectedEmailUsername;
       }
 
       // Save timezone to agent config
@@ -720,7 +750,8 @@ function UserSection() {
     setSaving(false);
   };
 
-  const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
+  const selectedEmailUsername = isStagingEnv ? stagingEmailUsername : emailUsername.trim();
+  const emailChanged = !emailLocked && isPaid && !!selectedEmailUsername;
   const canSave = !!displayName.trim() && (!emailChanged || (emailAvailable === true && !emailChecking));
 
   return (
@@ -804,12 +835,14 @@ function UserSection() {
                   type="text"
                   value={emailUsername}
                   onChange={(e) => {
-                    const next = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+                    if (isStagingEnv) return;
+                    const next = e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, '');
                     setEmailUsername(next);
                     checkEmail(next);
                   }}
                   placeholder="yourname"
                   className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
+                  disabled={isStagingEnv}
                 />
                 <span className="settings-email-domain text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
                   @{AGENT_EMAIL_DOMAIN}
@@ -831,7 +864,7 @@ function UserSection() {
                     <span className="flex items-center gap-1.5">
                       <AlertCircle className="w-3.5 h-3.5" /> {emailError}
                     </span>
-                    {emailSuggestion && (
+                    {!isStagingEnv && emailSuggestion && (
                       <button
                         type="button"
                         onClick={() => {
@@ -847,7 +880,9 @@ function UserSection() {
                   </div>
                 )}
                 {!emailChecking && emailAvailable === null && emailUsername && (
-                  <span className="text-[var(--color-text-muted)]">Choose carefully - this cannot be changed later.</span>
+                  <span className="text-[var(--color-text-muted)]">
+                    {isStagingEnv ? 'Staging uses your login email username.' : 'Choose carefully - this cannot be changed later.'}
+                  </span>
                 )}
               </div>
             </div>
@@ -2054,12 +2089,12 @@ function SubscriptionSection() {
     <SectionPanel
       title="Subscription"
       subtitle="Manage your plan and earn bonus credits."
-      action={(hasDodoCustomer || isNonProd) ? (
+      action={canManageSubscription ? (
         <Button
           size="md"
           variant="default"
           onClick={handleManageBilling}
-          disabled={portalLoading || !canManageSubscription}
+          disabled={portalLoading}
           className="shrink-0 gap-1.5"
         >
           {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}

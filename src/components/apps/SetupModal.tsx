@@ -18,6 +18,7 @@ import { getEmailStatus } from '@/services/agentmail';
 import analytics from '@/lib/analytics';
 import { log } from '@/lib/logger';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
+import { stagingAgentEmailUsername } from '@/lib/agentEmail';
 
 const logger = log('SetupModal');
 
@@ -58,6 +59,8 @@ export function SetupModal() {
   useEffect(() => { if (!subscription) fetchSubscription(); }, [subscription, fetchSubscription]);
   const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
   const isNonProdEnv = subscription?.environment === 'staging' || subscription?.environment === 'local';
+  const isStagingEnv = subscription?.environment === 'staging';
+  const stagingEmailUsername = stagingAgentEmailUsername(user?.email);
 
   // Upgrade-in-place state.
   const [upgrading, setUpgrading] = useState<'starter' | 'pro' | null>(null);
@@ -84,13 +87,20 @@ export function SetupModal() {
   // Auto-generate email username from name
   useEffect(() => {
     if (emailInitialized.current || emailLocked) return;
+    if (isStagingEnv) {
+      if (stagingEmailUsername) {
+        setEmailUsername(stagingEmailUsername);
+        emailInitialized.current = true;
+      }
+      return;
+    }
     const name = ownerName || user?.displayName || user?.username || '';
     if (name) {
       const generated = generateEmailUsername(name);
       setEmailUsername(generated);
       emailInitialized.current = true;
     }
-  }, [ownerName, user, emailLocked]);
+  }, [ownerName, user, emailLocked, isStagingEnv, stagingEmailUsername]);
 
   // Check if inbox already exists (lock email if so)
   useEffect(() => {
@@ -111,9 +121,17 @@ export function SetupModal() {
       setEmailAvailable(null); setEmailError(''); setEmailSuggestion('');
       return;
     }
-    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(username) || username.length < 3) {
+    if (isStagingEnv && username !== stagingEmailUsername) {
       setEmailAvailable(false);
-      setEmailError('Use 3+ characters: letters, numbers, hyphens, dots.');
+      setEmailError(stagingEmailUsername
+        ? `Use ${stagingEmailUsername}@${AGENT_EMAIL_DOMAIN} from your login email.`
+        : 'Your account needs a login email before claiming a staging inbox.');
+      setEmailSuggestion('');
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9._+-]*[a-z0-9]$/.test(username) || username.length < 3) {
+      setEmailAvailable(false);
+      setEmailError('Use 3+ characters: letters, numbers, dots, hyphens, plus signs.');
       setEmailSuggestion('');
       return;
     }
@@ -133,7 +151,7 @@ export function SetupModal() {
         setEmailSuggestion('');
       }
     }, 400);
-  }, [instanceId]);
+  }, [instanceId, isStagingEnv, stagingEmailUsername]);
 
   // Initial availability check when username is auto-generated
   useEffect(() => {
@@ -174,13 +192,19 @@ export function SetupModal() {
     const trimmedName = ownerName.trim();
     if (!trimmedName) { setNameError('Please enter your name'); return; }
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
+    const selectedEmailUsername = isStagingEnv ? stagingEmailUsername : emailUsername.trim().toLowerCase();
     if (!emailLocked && isPaid) {
-      if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
+      if (!selectedEmailUsername) {
+        setEmailError(isStagingEnv
+          ? 'Your account needs a login email before claiming a staging inbox.'
+          : 'Please enter an email username');
+        return;
+      }
       if (emailAvailable !== true) { setEmailError('Check availability before saving.'); return; }
     }
 
     const trimmedAgentName = agentName.trim() || 'Construct';
-    const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
+    const emailChanged = !emailLocked && isPaid && !!selectedEmailUsername;
 
     setIsSaving(true);
     try {
@@ -188,7 +212,7 @@ export function SetupModal() {
       const updateResult = await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
-        ...(emailChanged && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
+        ...(emailChanged && { agentmailInboxUsername: selectedEmailUsername }),
       });
       if (!updateResult.success) {
         if (emailChanged) {
@@ -217,8 +241,9 @@ export function SetupModal() {
     }
   };
 
+  const selectedEmailUsername = isStagingEnv ? stagingEmailUsername : emailUsername.trim();
   const canSave = ownerName.trim().length > 0
-    && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable === true && !emailChecking));
+    && (emailLocked || !isPaid || (selectedEmailUsername.length > 0 && emailAvailable === true && !emailChecking));
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-scrim">
@@ -325,14 +350,15 @@ export function SetupModal() {
                 type="text"
                 value={emailUsername}
                 onChange={(e) => {
-                  const v = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+                  if (isStagingEnv) return;
+                  const v = e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, '');
                   setEmailUsername(v);
                   checkEmail(v);
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
                 placeholder="yourname"
                 className="flex-1 rounded-none border-0 focus-visible:ring-0 shadow-none"
-                disabled={emailLocked}
+                disabled={emailLocked || isStagingEnv}
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-[var(--color-border)] text-[var(--color-text-muted)] text-[13px] font-medium select-none shrink-0">
                 @{AGENT_EMAIL_DOMAIN}
@@ -347,7 +373,7 @@ export function SetupModal() {
               )}
               {!emailLocked && !emailChecking && !emailError && emailAvailable === null && (
                 <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Choose carefully — this cannot be changed later.
+                  {isStagingEnv ? 'Staging uses your login email username.' : 'Choose carefully — this cannot be changed later.'}
                 </span>
               )}
               {!emailLocked && emailChecking && (
@@ -365,7 +391,7 @@ export function SetupModal() {
                   <span className="flex items-center gap-1.5 text-[11px] text-red-500">
                     <AlertCircle className="w-3.5 h-3.5" /> {emailError}
                   </span>
-                  {emailSuggestion && (
+                  {!isStagingEnv && emailSuggestion && (
                     <button
                       onClick={() => { const base = extractBaseUsername(emailSuggestion); setEmailUsername(base); checkEmail(base); }}
                       className="text-[11px] text-blue-500 hover:underline text-left ml-5"

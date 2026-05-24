@@ -24,6 +24,7 @@ import { useComputerStore } from '@/stores/agentStore';
 import { checkAgentEmailAvailability } from '@/services/api';
 import analytics from '@/lib/analytics';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
+import { stagingAgentEmailUsername } from '@/lib/agentEmail';
 import { log } from '@/lib/logger';
 
 const logger = log('EmailSetupPane');
@@ -62,6 +63,8 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
 
   const isPaid = subscription?.plan === 'pro' || subscription?.plan === 'starter';
   const isNonProdEnv = subscription?.environment === 'staging' || subscription?.environment === 'local';
+  const isStagingEnv = subscription?.environment === 'staging';
+  const stagingUsername = stagingAgentEmailUsername(user?.email);
 
   const [upgrading, setUpgrading] = useState<'starter' | 'pro' | null>(null);
 
@@ -92,13 +95,20 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
   // Auto-generate a username once we have a name to derive from.
   useEffect(() => {
     if (!isPaid || initialized.current) return;
+    if (isStagingEnv) {
+      if (stagingUsername) {
+        setUsername(stagingUsername);
+        initialized.current = true;
+      }
+      return;
+    }
     const source = user?.displayName || user?.username || '';
     if (source) {
       const generated = generateEmailUsername(source);
       setUsername(generated);
       initialized.current = true;
     }
-  }, [isPaid, user]);
+  }, [isPaid, user, isStagingEnv, stagingUsername]);
 
   const runAvailabilityCheck = useCallback((next: string) => {
     if (checkTimer.current) clearTimeout(checkTimer.current);
@@ -106,9 +116,17 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
       setAvailable(null); setError(''); setSuggestion('');
       return;
     }
-    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(next) || next.length < 3) {
+    if (isStagingEnv && next !== stagingUsername) {
       setAvailable(false);
-      setError('Use 3+ characters: letters, numbers, hyphens, dots.');
+      setError(stagingUsername
+        ? `Use ${stagingUsername}@${AGENT_EMAIL_DOMAIN} from your login email.`
+        : 'Your account needs a login email before claiming a staging inbox.');
+      setSuggestion('');
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9._+-]*[a-z0-9]$/.test(next) || next.length < 3) {
+      setAvailable(false);
+      setError('Use 3+ characters: letters, numbers, dots, hyphens, plus signs.');
       setSuggestion('');
       return;
     }
@@ -128,7 +146,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
         setSuggestion('');
       }
     }, 400);
-  }, [instanceId]);
+  }, [instanceId, isStagingEnv, stagingUsername]);
 
   // Kick off a check for auto-generated or restored usernames.
   useEffect(() => {
@@ -161,8 +179,13 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
 
   // ── Create inbox handler (paid → configured) ──
   const handleCreateInbox = async () => {
-    const trimmed = username.trim().toLowerCase();
-    if (!trimmed) { setError('Please enter a username'); return; }
+    const trimmed = isStagingEnv ? stagingUsername : username.trim().toLowerCase();
+    if (!trimmed) {
+      setError(isStagingEnv
+        ? 'Your account needs a login email before claiming a staging inbox.'
+        : 'Please enter a username');
+      return;
+    }
     if (available !== true) { setError('Check availability before creating an inbox.'); return; }
 
     setCreating(true);
@@ -184,7 +207,8 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
     }
   };
 
-  const canCreate = !!username.trim() && available === true && !checking && !creating;
+  const selectedUsername = isStagingEnv ? stagingUsername : username.trim();
+  const canCreate = !!selectedUsername && available === true && !checking && !creating;
 
   // ── Loading subscription state ──
   if (!subscription) {
@@ -222,14 +246,16 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
                 type="text"
                 value={username}
                 onChange={(e) => {
-                  const v = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+                  if (isStagingEnv) return;
+                  const v = e.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, '');
                   setUsername(v);
                   runAvailabilityCheck(v);
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && canCreate) handleCreateInbox(); }}
                 placeholder="yourname"
                 className="flex-1 bg-transparent px-4 py-3 text-[14px] font-medium text-black dark:text-white outline-none"
-                autoFocus
+                disabled={isStagingEnv}
+                autoFocus={!isStagingEnv}
               />
               <div className="flex items-center px-3 bg-black/5 dark:bg-white/5 border-l border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 text-[12px] font-medium select-none shrink-0">
                 @{AGENT_EMAIL_DOMAIN}
@@ -254,7 +280,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
                   <span className="flex items-center gap-1.5 text-[11px] font-medium text-red-500">
                     <AlertCircle className="w-3.5 h-3.5" /> {error}
                   </span>
-                  {suggestion && (
+                  {!isStagingEnv && suggestion && (
                     <button
                       onClick={() => {
                         const base = extractBaseUsername(suggestion);
@@ -270,7 +296,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
               )}
               {!checking && available === null && username && (
                 <span className="text-[11px] text-black/40 dark:text-white/40">
-                  Choose carefully — this address is permanent.
+                  {isStagingEnv ? 'Staging uses your login email username.' : 'Choose carefully — this address is permanent.'}
                 </span>
               )}
             </div>
