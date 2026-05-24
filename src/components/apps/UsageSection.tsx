@@ -150,7 +150,7 @@ export function UsageSection() {
         <div className="px-4 pt-3.5 pb-4 space-y-4">
           {usage && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="settings-metric-row flex items-center justify-between">
                 <span className="text-[13px] font-medium">AI Usage</span>
                 <div className="flex items-center gap-2">
                   {usage.byokActive && (
@@ -187,7 +187,7 @@ export function UsageSection() {
               )}
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[12px]">
+                <div className="settings-metric-row flex items-center justify-between text-[12px]">
                   <span className="text-[var(--color-text-muted)]">Monthly</span>
                   <span className="font-mono text-[12px] flex items-center gap-2">
                     {usage.monthlyUsedUsd !== undefined && usage.monthlyCapUsd !== undefined && usage.monthlyCapUsd > 0 ? (
@@ -211,7 +211,7 @@ export function UsageSection() {
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[12px]">
+                <div className="settings-metric-row flex items-center justify-between text-[12px]">
                   <span className="text-[var(--color-text-muted)]">Weekly</span>
                   <span className="font-mono text-[12px] flex items-center gap-2">
                     {usage.weeklyUsedUsd !== undefined && usage.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0 ? (
@@ -240,7 +240,7 @@ export function UsageSection() {
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[12px]">
+                <div className="settings-metric-row flex items-center justify-between text-[12px]">
                   <span className="text-[var(--color-text-muted)]">Session usage</span>
                   <span className="font-mono text-[12px] flex items-center gap-2">
                     {usage.sessionUsedUsd !== undefined && usage.sessionCapUsd !== undefined && usage.sessionCapUsd > 0 ? (
@@ -296,7 +296,7 @@ export function UsageSection() {
           <div className="px-4 pt-3.5 pb-4 space-y-3">
             <span className="text-[13px] font-medium">Storage</span>
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[12px]">
+              <div className="settings-metric-row flex items-center justify-between text-[12px]">
                 <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
                   <HardDrive className="w-3 h-3" />
                   Used
@@ -316,7 +316,7 @@ export function UsageSection() {
       {tweetStatus && (
         <InfoCard>
           <div className="px-4 pt-3.5 pb-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="settings-metric-row flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Gift className="w-4 h-4 text-[var(--color-text-muted)]" />
                 <span className="text-[13px] font-medium">Earn Bonus Usage</span>
@@ -370,14 +370,14 @@ export function UsageSection() {
                   <Twitter className="w-3.5 h-3.5" />
                   Tweet about Construct
                 </button>
-                <div className="flex gap-2">
+                <div className="settings-form-pair">
                   <input
                     type="text"
                     value={tweetUrl}
                     onChange={(e) => setTweetUrl(e.target.value)}
                     placeholder={onCooldown ? 'On cooldown...' : 'Paste your tweet link...'}
                     disabled={onCooldown}
-                    className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] outline-none focus:ring-1 focus:ring-[var(--color-accent)] placeholder:text-[var(--color-text-muted)]/50 disabled:opacity-50"
+                    className="settings-form-field flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] outline-none focus:ring-1 focus:ring-[var(--color-accent)] placeholder:text-[var(--color-text-muted)]/50 disabled:opacity-50"
                   />
                   <Button
                     size="sm"

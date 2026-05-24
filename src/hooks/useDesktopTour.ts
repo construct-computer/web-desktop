@@ -83,7 +83,7 @@ const steps: DriveStep[] = [
       description: 'Fill in your name and Construct details, then hit <strong>Save</strong> to get started.',
       side: 'left',
       align: 'center',
-      showButtons: ['next', 'previous'],
+      showButtons: ['next'],
       // Next is blocked until the user saves — the construct:setup-saved
       // event listener (below) calls driverObj.moveNext() automatically.
       onNextClick: () => {},
@@ -291,13 +291,14 @@ export function useDesktopTour() {
         const carousel = popover.wrapper.querySelector<HTMLElement>('.tour-gif-carousel');
         if (carousel) setupGifCarousel(carousel, DOCK_TOUR_VIDEOS);
 
-        // Replace the Next button text on the setup step (user must save first)
+        // Replace the blocked Next button with a passive hint on the setup
+        // step, so the tour doesn't look like it has a broken button.
         if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {
           const nextBtn = popover.nextButton;
           if (nextBtn) {
-            nextBtn.textContent = 'Save to continue \u2192';
-            nextBtn.style.opacity = '0.5';
-            nextBtn.style.cursor = 'default';
+            nextBtn.textContent = 'Save on the right to continue';
+            nextBtn.setAttribute('aria-disabled', 'true');
+            nextBtn.classList.add('tour-passive-next-label');
           }
         }
       },

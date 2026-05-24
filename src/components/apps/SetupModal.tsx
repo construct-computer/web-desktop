@@ -111,9 +111,9 @@ export function SetupModal() {
       setEmailAvailable(null); setEmailError(''); setEmailSuggestion('');
       return;
     }
-    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(username) || username.length < 2) {
+    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(username) || username.length < 3) {
       setEmailAvailable(false);
-      setEmailError('Use 2+ characters: letters, numbers, hyphens, dots.');
+      setEmailError('Use 3+ characters: letters, numbers, hyphens, dots.');
       setEmailSuggestion('');
       return;
     }
@@ -128,7 +128,9 @@ export function SetupModal() {
           setEmailSuggestion(result.data.suggestion || '');
         }
       } else {
-        setEmailAvailable(true); // optimistic
+        setEmailAvailable(false);
+        setEmailError(result.error || 'Could not check availability. Try again.');
+        setEmailSuggestion('');
       }
     }, 400);
   }, [instanceId]);
@@ -174,7 +176,7 @@ export function SetupModal() {
     if (trimmedName.length > 100) { setNameError('Name must be under 100 characters'); return; }
     if (!emailLocked && isPaid) {
       if (!emailUsername.trim()) { setEmailError('Please enter an email username'); return; }
-      if (emailAvailable === false) return;
+      if (emailAvailable !== true) { setEmailError('Check availability before saving.'); return; }
     }
 
     const trimmedAgentName = agentName.trim() || 'Construct';
@@ -183,11 +185,20 @@ export function SetupModal() {
     setIsSaving(true);
     try {
       await updateProfile({ displayName: trimmedName });
-      await updateComputer({
+      const updateResult = await updateComputer({
         ownerName: trimmedName,
         agentName: trimmedAgentName,
         ...(emailChanged && { agentmailInboxUsername: emailUsername.trim().toLowerCase() }),
       });
+      if (!updateResult.success) {
+        if (emailChanged) {
+          setEmailAvailable(false);
+          setEmailError(updateResult.error || 'Failed to create inbox. Please try again.');
+        } else {
+          setNameError(updateResult.error || 'Failed to save setup. Please try again.');
+        }
+        return;
+      }
       analytics.setupStepCompleted('profile_email', { emailChanged });
 
       if (emailChanged) {
@@ -207,7 +218,7 @@ export function SetupModal() {
   };
 
   const canSave = ownerName.trim().length > 0
-    && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable !== false && !emailChecking));
+    && (emailLocked || !isPaid || (emailUsername.trim().length > 0 && emailAvailable === true && !emailChecking));
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-scrim">

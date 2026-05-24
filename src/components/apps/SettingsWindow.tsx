@@ -32,6 +32,7 @@ import { openAuthRedirect } from '@/lib/utils';
 import {
   getSlackConfigured, getSlackInstallUrl, getSlackStatus, disconnectSlack,
   getTelegramStatus, getTelegramLinkUrl, getTelegramBotInfo, telegramLoginWidget, disconnectTelegram,
+  checkAgentEmailAvailability,
   getAgentConfig, updateAgentConfig,
   getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
   getComposioToolkitDetail,
@@ -133,7 +134,7 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
   };
 
   return (
-    <div className={`flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
+    <div className={`settings-window flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
       {/* Sidebar / Topnav — on mobile, fade right edge to hint at scrollable overflow */}
       <div
         className={`${isMobile ? 'w-full flex-shrink-0 border-b overflow-x-auto py-2 px-2 whitespace-nowrap' : 'w-[180px] flex-shrink-0 border-r overflow-y-auto py-2 px-2'} border-black/[0.06] dark:border-white/[0.06] surface-sidebar`}
@@ -168,7 +169,7 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="settings-content flex-1 min-w-0 overflow-y-auto">
         {section === 'user' && <UserSection />}
         {section === 'devices' && <DevicesSection />}
         {section === 'agent' && <AgentSection />}
@@ -191,13 +192,13 @@ function SectionPanel({ title, subtitle, action, children }: {
   children: ReactNode;
 }) {
   return (
-    <div className="px-7 py-6">
-      <div className={`mb-4 grid gap-3 ${action ? "grid-cols-[minmax(0,1fr)_auto] items-start" : ""}`}>
+    <div className="settings-section">
+      <div className={`settings-section-header ${action ? 'has-action' : ''}`}>
         <div className="min-w-0">
           <h2 className="text-[22px] font-bold mb-1 tracking-tight">{title}</h2>
           {subtitle && <p className="text-[13px] text-[var(--color-text-muted)]">{subtitle}</p>}
         </div>
-        {action && <div className="justify-self-end">{action}</div>}
+        {action && <div className="settings-section-action">{action}</div>}
       </div>
       {!subtitle && !action && <div className="mb-1" />}
       {children}
@@ -209,7 +210,7 @@ function SectionPanel({ title, subtitle, action, children }: {
 
 function SettingsCard({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg surface-card border border-black/[0.06] dark:border-white/[0.06] overflow-visible ${className}`}>
+    <div className={`settings-card surface-card border border-black/[0.06] dark:border-white/[0.06] ${className}`}>
       {children}
     </div>
   );
@@ -223,17 +224,17 @@ function SettingsRow({ label, description, info, children, noBorder }: {
   noBorder?: boolean;
 }) {
   return (
-    <div className={`flex items-center justify-between gap-4 px-4 py-3 min-h-[44px] ${
+    <div className={`settings-row ${
       !noBorder ? 'border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0' : ''
     }`}>
-      <div className="flex-1 min-w-0">
+      <div className="settings-row-main">
         <span className="inline-flex items-center gap-1.5 text-[13px]">
           {label}
           {info && <InfoHint side="top">{info}</InfoHint>}
         </span>
         {description && <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug">{description}</p>}
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div className="settings-row-control">{children}</div>
     </div>
   );
 }
@@ -487,7 +488,7 @@ function DevicesSection() {
             return (
               <div
                 key={session.id}
-                className="group/device-row flex items-start gap-3 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0"
+                className="settings-device-row group/device-row flex items-start gap-3 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06] last:border-b-0"
               >
                 <div className={`relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center text-[var(--color-text-muted)] ${revoked ? 'opacity-55' : ''}`}>
                   <DeviceSessionIcon session={session} className="h-[21px] w-[21px]" />
@@ -495,7 +496,7 @@ function DevicesSection() {
                     revoked ? 'bg-zinc-500' : session.online ? 'bg-emerald-500' : 'bg-zinc-400'
                   }`} />
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="settings-device-main">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[13px] font-medium truncate">{title}</p>
                     {session.current && (
@@ -529,17 +530,19 @@ function DevicesSection() {
                     {session.timezone ? ` · ${session.timezone}` : ''}
                   </p>
                 </div>
-                {!revoked && session.activeSessionIds.length > 0 && (
-                  <Button size="sm" variant="ghost" onClick={() => void revokeOne(session)} disabled={revokeBusy}>
-                    {revokeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : session.current ? 'Log out others' : 'Log out'}
-                  </Button>
-                )}
-                {revoked && session.revokedSessionIds.length > 0 && (
-                  <Button size="sm" variant="ghost" onClick={() => void removeLoggedOut(session)} disabled={removeBusy}>
-                    {removeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                    Remove
-                  </Button>
-                )}
+                <div className="settings-device-action flex justify-end">
+                  {!revoked && session.activeSessionIds.length > 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => void revokeOne(session)} disabled={revokeBusy}>
+                      {revokeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : session.current ? 'Log out others' : 'Log out'}
+                    </Button>
+                  )}
+                  {revoked && session.revokedSessionIds.length > 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => void removeLoggedOut(session)} disabled={removeBusy}>
+                      {removeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      Remove
+                    </Button>
+                  )}
+                </div>
               </div>
             );
           })
@@ -550,6 +553,14 @@ function DevicesSection() {
 }
 
 // ── User Section ──
+
+function extractEmailBaseUsername(value: string): string {
+  return value.replace(/@.*$/, '');
+}
+
+function formatEmailSuggestion(value: string): string {
+  return `${extractEmailBaseUsername(value)}@${AGENT_EMAIL_DOMAIN}`;
+}
 
 function UserSection() {
   const { user, updateProfile } = useAuthStore();
@@ -563,10 +574,15 @@ function UserSection() {
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [agentName, setAgentName] = useState('');
   const [emailUsername, setEmailUsername] = useState('');
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
+  const [emailError, setEmailError] = useState('');
+  const [emailSuggestion, setEmailSuggestion] = useState('');
   const [timezone, setTimezone] = useState(getDetectedTimezone());
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const emailCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const existingEmail = computer?.config?.agentmailEmail;
   const emailLocked = !!existingEmail;
@@ -605,6 +621,49 @@ function UserSection() {
     return () => { cancelled = true; };
   }, [existingEmail]);
 
+  const checkEmail = useCallback((username: string) => {
+    if (emailCheckTimer.current) clearTimeout(emailCheckTimer.current);
+    const instanceId = computer?.id || '';
+    if (!username || !instanceId) {
+      setEmailAvailable(null);
+      setEmailError('');
+      setEmailSuggestion('');
+      setEmailChecking(false);
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(username) || username.length < 3) {
+      setEmailAvailable(false);
+      setEmailError('Use 3+ characters: letters, numbers, hyphens, dots.');
+      setEmailSuggestion('');
+      setEmailChecking(false);
+      return;
+    }
+    setEmailChecking(true);
+    setEmailError('');
+    setEmailSuggestion('');
+    emailCheckTimer.current = setTimeout(async () => {
+      const result = await checkAgentEmailAvailability(instanceId, username);
+      setEmailChecking(false);
+      if (result.success) {
+        setEmailAvailable(result.data.available);
+        if (!result.data.available) {
+          setEmailError(result.data.reason || 'Username already taken');
+          setEmailSuggestion(result.data.suggestion || '');
+        }
+      } else {
+        setEmailAvailable(false);
+        setEmailError(result.error || 'Could not check availability. Try again.');
+        setEmailSuggestion('');
+      }
+    }, 400);
+  }, [computer?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (emailCheckTimer.current) clearTimeout(emailCheckTimer.current);
+    };
+  }, []);
+
   // Reset saved indicator after a delay
   useEffect(() => {
     if (saved) {
@@ -616,6 +675,11 @@ function UserSection() {
   const handleSave = async () => {
     if (!displayName.trim()) {
       setError('Name is required');
+      return;
+    }
+    const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
+    if (emailChanged && emailAvailable !== true) {
+      setEmailError(emailChecking ? 'Wait for the availability check to finish.' : 'Check availability before saving.');
       return;
     }
     setSaving(true);
@@ -630,7 +694,7 @@ function UserSection() {
 
       // Include email username only if not already set and user is on a paid plan.
       // (Backend also enforces this — belt-and-suspenders to avoid a 403 round-trip.)
-      if (!emailLocked && isPaid && emailUsername.trim()) {
+      if (emailChanged) {
         updateData.agentmailInboxUsername = emailUsername.trim();
       }
 
@@ -640,17 +704,24 @@ function UserSection() {
         await updateAgentConfig(instanceId, { timezone });
       }
 
-      const computerOk = await updateComputer(updateData);
-      if (profileOk && computerOk) {
+      const computerResult = await updateComputer(updateData);
+      if (profileOk && computerResult.success) {
         setSaved(true);
       } else {
-        setError('Failed to save some settings');
+        if (emailChanged && computerResult.error) {
+          setEmailAvailable(false);
+          setEmailError(computerResult.error);
+        }
+        setError(computerResult.error || 'Failed to save some settings');
       }
     } catch {
       setError('Failed to save');
     }
     setSaving(false);
   };
+
+  const emailChanged = !emailLocked && isPaid && !!emailUsername.trim();
+  const canSave = !!displayName.trim() && (!emailChanged || (emailAvailable === true && !emailChecking));
 
   return (
     <SectionPanel title="Profile" subtitle="Manage your profile, Construct name, and email.">
@@ -707,14 +778,14 @@ function UserSection() {
 
         <SettingsRow label="Construct Email" info="A dedicated inbox Construct can use for business email when your plan includes it." noBorder>
           {emailLocked ? (
-            <div className="flex items-center gap-1.5">
+            <div className="settings-control-inline">
               <Mail className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-              <span className="text-[13px] text-[var(--color-text)]">{existingEmail}</span>
+              <span className="min-w-0 truncate text-[13px] text-[var(--color-text)]">{existingEmail}</span>
               <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />
             </div>
           ) : !isPaid ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[var(--color-text-muted)]">Available on paid plans</span>
+            <div className="settings-control-inline flex-wrap justify-end">
+              <span className="min-w-0 text-[12px] text-[var(--color-text-muted)]">Available on paid plans</span>
               <button
                 type="button"
                 onClick={() => setPendingSection('subscription')}
@@ -727,17 +798,58 @@ function UserSection() {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-0 rounded-lg overflow-hidden border border-[var(--color-border)]">
-              <Input
-                type="text"
-                value={emailUsername}
-                onChange={(e) => setEmailUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
-                placeholder="yourname"
-                className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
-              />
-              <span className="text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
-                @{AGENT_EMAIL_DOMAIN}
-              </span>
+            <div className="w-full max-w-[320px] space-y-1">
+              <div className="settings-email-control flex items-stretch gap-0 rounded-lg overflow-hidden border border-[var(--color-border)]">
+                <Input
+                  type="text"
+                  value={emailUsername}
+                  onChange={(e) => {
+                    const next = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+                    setEmailUsername(next);
+                    checkEmail(next);
+                  }}
+                  placeholder="yourname"
+                  className="!border-0 !shadow-none !ring-0 text-[13px] !rounded-none !py-1.5 !px-2 bg-transparent min-w-[100px]"
+                />
+                <span className="settings-email-domain text-[12px] text-[var(--color-text-muted)] px-2 bg-[var(--color-surface-raised)] border-l border-[var(--color-border)] py-1.5 whitespace-nowrap select-none">
+                  @{AGENT_EMAIL_DOMAIN}
+                </span>
+              </div>
+              <div className="min-h-[18px] text-[11px]">
+                {emailChecking && (
+                  <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Checking availability...
+                  </span>
+                )}
+                {!emailChecking && emailAvailable === true && emailUsername && (
+                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <Check className="w-3.5 h-3.5" /> {emailUsername}@{AGENT_EMAIL_DOMAIN} is available
+                  </span>
+                )}
+                {!emailChecking && emailAvailable === false && (
+                  <div className="flex flex-col gap-1 text-red-500">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" /> {emailError}
+                    </span>
+                    {emailSuggestion && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = extractEmailBaseUsername(emailSuggestion);
+                          setEmailUsername(next);
+                          checkEmail(next);
+                        }}
+                        className="text-left text-blue-500 hover:underline"
+                      >
+                        Try {formatEmailSuggestion(emailSuggestion)}?
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!emailChecking && emailAvailable === null && emailUsername && (
+                  <span className="text-[var(--color-text-muted)]">Choose carefully - this cannot be changed later.</span>
+                )}
+              </div>
             </div>
           )}
         </SettingsRow>
@@ -747,7 +859,7 @@ function UserSection() {
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mt-5 mb-1.5">Timezone</h3>
       <SettingsCard>
         <SettingsRow label="Timezone" noBorder>
-          <div className="flex items-center gap-1.5 max-w-[240px]">
+          <div className="settings-control-inline max-w-[240px]">
             <Globe className="w-3.5 h-3.5 text-[var(--color-text-muted)] flex-shrink-0" />
             <Select
               value={timezone}
@@ -762,11 +874,11 @@ function UserSection() {
       </SettingsCard>
 
       {/* Save */}
-      <div className="mt-4 flex items-center gap-3">
+      <div className="settings-action-row mt-4">
         <button
           onClick={handleSave}
-          disabled={saving}
-          className={`inline-flex items-center gap-1.5 text-[13px] font-medium px-4 py-[7px] rounded-[7px] transition-all ${
+          disabled={saving || !canSave}
+          className={`settings-primary-action inline-flex items-center gap-1.5 text-[13px] font-medium px-4 py-[7px] rounded-[7px] transition-all ${
             saved
               ? 'bg-emerald-500 text-white'
               : 'bg-[var(--color-accent)] text-white hover:opacity-90 active:opacity-80 disabled:opacity-50'
@@ -1444,11 +1556,11 @@ function ConnectionsSection() {
                       isExpanded={isItemExpanded}
                       expanded={
                         isConnecting ? (
-                          <div className="pt-3 pl-[40px]">
+                          <div className="settings-expanded-indent pt-3 pl-[40px]">
                             <ComposioAuthPanel slug={r.slug} onConnected={() => handleComposioConnected(r.slug)} />
                           </div>
                         ) : isItemExpanded ? (
-                          <div className="pt-3 pl-[40px]">
+                          <div className="settings-expanded-indent pt-3 pl-[40px]">
                             {composioDetails[r.slug]?.loading ? (
                               <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -1539,11 +1651,11 @@ function ConnectionsSection() {
                       isExpanded={isItemExpanded}
                       expanded={
                         isConnecting ? (
-                          <div className="pt-3 pl-[40px]">
+                          <div className="settings-expanded-indent pt-3 pl-[40px]">
                             <ComposioAuthPanel slug={def.slug} onConnected={() => handleComposioConnected(def.slug)} />
                           </div>
                         ) : isItemExpanded ? (
-                          <div className="pt-3 pl-[40px]">
+                          <div className="settings-expanded-indent pt-3 pl-[40px]">
                             {composioDetails[def.slug]?.loading ? (
                               <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -1617,13 +1729,13 @@ function ConnectionRow({
   const tooltipRef = useRef<HTMLDivElement>(null);
   return (
     <div className={!isLast ? 'border-b border-black/[0.06] dark:border-white/[0.06]' : ''}>
-      <div className="flex items-center gap-3 px-4 py-3 min-h-[52px]">
+      <div className="settings-connection-row flex items-center gap-3 px-4 py-3 min-h-[52px]">
         <div className="w-[28px] h-[28px] rounded-[6px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
           {icon}
         </div>
         <button
           onClick={expandable ? onToggleExpand : undefined}
-          className={`flex-1 min-w-0 text-left ${expandable ? 'cursor-pointer' : ''}`}
+          className={`settings-connection-meta text-left ${expandable ? 'cursor-pointer' : ''}`}
         >
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[13px] font-medium truncate">{name}</span>
@@ -1641,7 +1753,7 @@ function ConnectionRow({
           </div>
           <p className={`text-[11px] text-[var(--color-text-muted)] mt-0.5 ${isExpanded ? 'whitespace-normal' : 'truncate'}`}>{description}</p>
         </button>
-        <div className="flex-shrink-0">
+        <div className="settings-connection-action flex justify-end">
           {isLoading ? (
             <Loader2 className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
           ) : isConnected ? (
@@ -1698,7 +1810,7 @@ function TelegramExpanded({
 }) {
   if (widgetReady) {
     return (
-      <div className="space-y-2 pl-[40px]">
+      <div className="settings-expanded-indent space-y-2 pl-[40px]">
         <div ref={widgetRef} />
         <p className="text-[10px] text-[var(--color-text-muted)]">
           Click the button above to sign in with your Telegram account.
@@ -1717,7 +1829,7 @@ function TelegramExpanded({
   if (linkUrl) {
     const match = linkUrl.match(/t\.me\/([^?]+)\?start=(.+)/);
     return (
-      <div className="space-y-2 pl-[40px]">
+      <div className="settings-expanded-indent space-y-2 pl-[40px]">
         <a
           href={linkUrl}
           target="_blank"
@@ -1778,7 +1890,7 @@ function CustomisationSection() {
           <Image className="w-4 h-4 text-[var(--color-text-muted)]" />
           <span className="text-[13px] font-medium">Wallpaper</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        <div className="settings-wallpaper-grid grid gap-2.5">
           {WALLPAPERS.map((wp) => {
             const isActive = wallpaperId === wp.id;
             return (
@@ -2163,7 +2275,7 @@ function DeveloperSection() {
                       ))}
                     </div>
                   )}
-                  <div className="flex gap-2 pt-1">
+                  <div className="settings-action-row flex flex-wrap gap-2 pt-1">
                     <button
                       onClick={handleOpenApp}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-md bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors"
@@ -2189,14 +2301,14 @@ function DeveloperSection() {
               ) : (
                 /* Disconnected / validating / error state */
                 <div className="space-y-3">
-                  <form onSubmit={handleConnect} className="flex gap-2">
+                  <form onSubmit={handleConnect} className="settings-form-pair">
                     <input
                       type="url"
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                       placeholder="http://localhost:8787"
                       disabled={status === 'validating'}
-                      className="flex-1 px-3 py-1.5 text-[12px] font-mono rounded-md
+                      className="settings-form-field flex-1 px-3 py-1.5 text-[12px] font-mono rounded-md
                                  bg-black/[0.04] dark:bg-white/[0.06]
                                  border border-black/[0.08] dark:border-white/[0.08]
                                  text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30

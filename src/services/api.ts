@@ -426,7 +426,7 @@ export async function unregisterNativePushToken(token: string): Promise<ApiResul
   });
 }
 
-export async function checkAgentEmailAvailability(_instanceId: string, username: string): Promise<ApiResult<{ available: boolean; reason?: string; suggestion?: string }>> {
+export async function checkAgentEmailAvailability(_instanceId: string, username: string): Promise<ApiResult<{ available: boolean; username?: string; reason?: string; suggestion?: string }>> {
   return request(`/agent/email/check?username=${encodeURIComponent(username)}`);
 }
 

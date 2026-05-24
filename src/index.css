@@ -365,6 +365,236 @@ html.dark {
   background-color: var(--surface-sidebar-bg);
 }
 
+/* Settings window responsive primitives. These use the app pane width, not the
+   viewport width, so they also behave correctly inside resized desktop windows. */
+.settings-window,
+.settings-content {
+  container-type: inline-size;
+}
+
+.settings-section {
+  padding: 24px 28px;
+}
+
+.settings-section-header {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-section-header.has-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.settings-section-action {
+  justify-self: end;
+  max-width: 100%;
+}
+
+.settings-card {
+  border-radius: 8px;
+  overflow: visible;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 12px 16px;
+}
+
+.settings-row-main,
+.settings-connection-meta,
+.settings-device-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.settings-row-control,
+.settings-connection-action,
+.settings-device-action {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+}
+
+.settings-control-inline,
+.settings-form-pair,
+.settings-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-form-pair > input,
+.settings-form-pair > .settings-form-field,
+.settings-control-inline > input,
+.settings-control-inline > button {
+  min-width: 0;
+}
+
+.settings-metric-row > * {
+  min-width: 0;
+}
+
+.settings-primary-action {
+  min-height: 32px;
+  max-width: 100%;
+}
+
+.settings-email-control {
+  min-width: min(260px, 100%);
+  max-width: 100%;
+}
+
+.settings-device-row,
+.settings-connection-row {
+  min-width: 0;
+}
+
+.settings-wallpaper-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (min-width: 560px) {
+  .settings-wallpaper-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 520px) {
+  .settings-section {
+    padding: 20px 16px;
+  }
+
+  .settings-section-header.has-action {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-section-action {
+    justify-self: start;
+    width: 100%;
+  }
+
+  .settings-section-action > * {
+    flex-wrap: wrap;
+  }
+
+  .settings-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .settings-row-control {
+    width: 100%;
+  }
+
+  .settings-row-control > * {
+    max-width: 100%;
+  }
+
+  .settings-control-inline,
+  .settings-form-pair,
+  .settings-action-row {
+    width: 100%;
+  }
+
+  .settings-control-inline {
+    max-width: 100% !important;
+  }
+
+  .settings-control-inline > *,
+  .settings-form-pair > input,
+  .settings-form-pair > button,
+  .settings-form-pair > .settings-form-field {
+    flex: 1 1 auto;
+  }
+
+  .settings-form-pair {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-form-pair > button,
+  .settings-action-row > button,
+  .settings-primary-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-action-row .ml-auto {
+    margin-left: 0;
+  }
+
+  .settings-email-control {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .settings-email-control > input {
+    min-width: 0;
+  }
+
+  .settings-email-domain {
+    max-width: 48%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .settings-connection-row,
+  .settings-device-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .settings-connection-meta,
+  .settings-device-main {
+    flex-basis: calc(100% - 44px);
+  }
+
+  .settings-connection-action,
+  .settings-device-action {
+    width: 100%;
+    padding-left: 40px;
+  }
+
+  .settings-device-action:empty {
+    display: none;
+  }
+
+  .settings-expanded-indent {
+    padding-left: 0 !important;
+  }
+
+  .settings-metric-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .settings-mode-grid,
+  .settings-plan-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@container (max-width: 360px) {
+  .settings-section {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .settings-wallpaper-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .glass-window,
 .glass-toolbar,
 .glass-drawer,
@@ -957,6 +1187,18 @@ html.dark .construct-tour-popover.driver-popover {
 
 .construct-tour-popover .driver-popover-next-btn:hover {
   background: var(--color-accent-hover);
+}
+
+.construct-tour-popover .tour-passive-next-label,
+.construct-tour-popover .tour-passive-next-label:hover {
+  background: transparent;
+  color: var(--color-text-subtle);
+  border: none;
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .construct-tour-popover .driver-popover-prev-btn {

@@ -106,9 +106,9 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
       setAvailable(null); setError(''); setSuggestion('');
       return;
     }
-    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(next) || next.length < 2) {
+    if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(next) || next.length < 3) {
       setAvailable(false);
-      setError('Use 2+ characters: letters, numbers, hyphens, dots.');
+      setError('Use 3+ characters: letters, numbers, hyphens, dots.');
       setSuggestion('');
       return;
     }
@@ -123,7 +123,9 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
           setSuggestion(result.data.suggestion || '');
         }
       } else {
-        setAvailable(true); // optimistic
+        setAvailable(false);
+        setError(result.error || 'Could not check availability. Try again.');
+        setSuggestion('');
       }
     }, 400);
   }, [instanceId]);
@@ -161,17 +163,18 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
   const handleCreateInbox = async () => {
     const trimmed = username.trim().toLowerCase();
     if (!trimmed) { setError('Please enter a username'); return; }
-    if (available === false) return;
+    if (available !== true) { setError('Check availability before creating an inbox.'); return; }
 
     setCreating(true);
     try {
-      const ok = await updateComputer({ agentmailInboxUsername: trimmed });
-      if (ok) {
+      const result = await updateComputer({ agentmailInboxUsername: trimmed });
+      if (result.success) {
         analytics.setupStepCompleted('email_inbox_created', { from: 'email_app' });
         window.dispatchEvent(new CustomEvent('agent-email-configured'));
         onConfigured?.();
       } else {
-        setError('Failed to create inbox. Please try again.');
+        setAvailable(false);
+        setError(result.error || 'Failed to create inbox. Please try again.');
       }
     } catch (err) {
       logger.error('Create inbox failed:', err);
@@ -181,7 +184,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
     }
   };
 
-  const canCreate = !!username.trim() && available !== false && !checking && !creating;
+  const canCreate = !!username.trim() && available === true && !checking && !creating;
 
   // ── Loading subscription state ──
   if (!subscription) {
@@ -334,7 +337,6 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
               <span className="text-[18px] font-bold text-black dark:text-white tracking-tight">$59</span>
               <span className="text-[10.5px] text-black/40 dark:text-white/40">/mo</span>
             </div>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400/80 font-medium">1-day free trial</span>
           </button>
 
           <button
@@ -359,7 +361,6 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
               <span className="text-[18px] font-bold text-black dark:text-white tracking-tight">$299</span>
               <span className="text-[10.5px] text-black/40 dark:text-white/40">/mo</span>
             </div>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400/80 font-medium">3-day free trial</span>
           </button>
         </div>
 

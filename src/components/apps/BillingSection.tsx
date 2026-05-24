@@ -327,7 +327,7 @@ function PlanSelector({
         )}
       </div>
 
-      <div className={`grid gap-2 ${upgradePlans.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      <div className={`settings-plan-grid grid gap-2 ${upgradePlans.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {upgradePlans.map((p) => {
           const targetIndex = BILLING_PLAN_ORDER.indexOf(p.id);
           const isUpgrade = targetIndex > currentIndex;

@@ -252,7 +252,7 @@ export function ByokSection() {
 
           {/* Key input / status */}
           {hasKey ? (
-            <div className="flex items-center justify-between gap-3 text-[13px] rounded-md border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 bg-black/[0.02] dark:bg-white/[0.02]">
+            <div className="settings-row gap-3 text-[13px] rounded-md border border-black/[0.06] dark:border-white/[0.06] px-3 py-2 bg-black/[0.02] dark:bg-white/[0.02]">
               <div className="flex items-center gap-2 min-w-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                 <span className="font-mono text-[12px] truncate">{byok?.keyPreview || 'Key saved'}</span>
@@ -262,19 +262,21 @@ export function ByokSection() {
                   </span>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onDeleteKey}
-                disabled={keyBusy}
-                className="text-red-500 hover:text-red-600 flex-shrink-0"
-              >
-                {keyBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              </Button>
+              <div className="settings-row-control flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onDeleteKey}
+                  disabled={keyBusy}
+                  className="text-red-500 hover:text-red-600 flex-shrink-0"
+                >
+                  {keyBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="flex gap-2">
+              <div className="settings-form-pair">
                 <Input
                   type="password"
                   autoComplete="off"
@@ -314,7 +316,7 @@ export function ByokSection() {
               <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{modeHint}</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="settings-mode-grid grid grid-cols-2 gap-1.5">
               {MODES.map((m) => {
                 const isActive = mode === m.id;
                 return (
@@ -347,7 +349,7 @@ export function ByokSection() {
       {/* Model selector */}
       <Card>
         <div className="px-4 pt-3.5 pb-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="settings-metric-row flex items-center justify-between">
             <div>
               <Label className="text-[13px] font-semibold">Model</Label>
               <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
@@ -364,7 +366,7 @@ export function ByokSection() {
           </div>
 
           {showCustomInput ? (
-            <div className="flex gap-2">
+            <div className="settings-form-pair">
               <Input
                 placeholder="google/gemini-2.5-pro"
                 value={customModel}
@@ -416,7 +418,7 @@ export function ByokSection() {
               You've hit this cap this week — raise it or wait until Monday.
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="settings-form-pair">
             <Input
               type="number"
               min="0"

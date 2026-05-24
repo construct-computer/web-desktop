@@ -589,7 +589,7 @@ interface ComputerStore {
   // Actions
   fetchComputer: () => Promise<void>;
   checkConfigStatus: () => Promise<void>;
-  updateComputer: (data: { openrouterApiKey?: string; browserUseApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<boolean>;
+  updateComputer: (data: { openrouterApiKey?: string; browserUseApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<{ success: boolean; error?: string }>;
 
   // Subscriptions
   subscribeToComputer: () => void;
@@ -1548,7 +1548,7 @@ export const useComputerStore = create<ComputerStore>()(
 
     updateComputer: async (data) => {
       const { instanceId } = get();
-      if (!instanceId) return false;
+      if (!instanceId) return { success: false, error: 'Agent instance is not ready' };
 
       // owner_email is intentionally NOT sent — backend resolves it from the
       // auth-verified DB record to prevent spoofing.
@@ -1575,10 +1575,12 @@ export const useComputerStore = create<ComputerStore>()(
         await get().checkConfigStatus();
         // Refetch to get updated state
         await get().fetchComputer();
-        return true;
+        return { success: true };
       }
 
-      return false;
+      const errorData = result.data as { detail?: unknown } | undefined;
+      const detail = typeof errorData?.detail === 'string' ? errorData.detail : undefined;
+      return { success: false, error: detail || result.error };
     },
 
     // startComputer/stopComputer removed — no containers in serverless mode.
