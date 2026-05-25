@@ -49,6 +49,39 @@ import {
 // Auth card persistence moved to agentStoreUtils.ts
 
 const logger = log('Store');
+const USER_STOP_SUPPRESSION_MS = 10_000;
+const recentUserStopBySession = new Map<string, number>();
+
+function markRecentUserStop(sessionKey: string, now = Date.now()) {
+  if (!sessionKey) return;
+  recentUserStopBySession.set(sessionKey, now);
+}
+
+function markRecentUserStops(sessionKeys: Iterable<string>, now = Date.now()) {
+  for (const sessionKey of sessionKeys) markRecentUserStop(sessionKey, now);
+}
+
+function isRecentlyUserStopped(sessionKey: string, now = Date.now()): boolean {
+  const stoppedAt = recentUserStopBySession.get(sessionKey);
+  if (!stoppedAt) return false;
+  if (now - stoppedAt <= USER_STOP_SUPPRESSION_MS) return true;
+  recentUserStopBySession.delete(sessionKey);
+  return false;
+}
+
+function isLateStopRelatedFailure(sessionKey: string, data: Record<string, unknown> | undefined): boolean {
+  if (!isRecentlyUserStopped(sessionKey)) return false;
+  const message = String(data?.message || '');
+  const technicalDetail = String(data?.technicalDetail || data?.technical_detail || '');
+  const actionTaken = String(data?.actionTaken || data?.action_taken || '');
+  const kind = String(data?.kind || '');
+  const scope = String(data?.scope || '');
+  const combined = [message, technicalDetail, actionTaken].filter(Boolean).join(' ');
+  if (isAgentUserCancelErrorMessage(combined)) return true;
+  if (/model call failed after all retry attempts/i.test(combined)) return true;
+  if (/agent loop stopped because of an unexpected error/i.test(combined)) return true;
+  return kind === 'llm_failed' && (scope === 'llm' || scope === 'agent');
+}
 
 function createClientId(prefix = 'msg'): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -2939,6 +2972,13 @@ export const useComputerStore = create<ComputerStore>()(
       useAgentTrackerStore.getState().failAllRunningOperations();
 
       // Send the abort command — aborts ALL running lanes (intentional; no sessionKey in payload)
+      const stoppedSessionKeys = new Set<string>([
+        ...stopSnapshot.runningSessions,
+        ...Object.keys(stopSnapshot.activeSessions),
+        stopSnapshot.activeSessionKey,
+        'default',
+      ].filter(Boolean));
+      markRecentUserStops(stoppedSessionKeys);
       const sent = agentWS.sendAbort();
       const browserStopKeys = new Set<string>([
         ...stopSnapshot.runningSessions,
@@ -2965,6 +3005,10 @@ export const useComputerStore = create<ComputerStore>()(
     stopPlatformAgent: (platform: string) => {
       // Targeted abort: stop all lanes for a specific platform.
       // Used by the Agent Tracker to stop Slack/Telegram/Email tasks.
+      const stopSnapshot = get();
+      const stoppedSessionKeys = Object.keys(stopSnapshot.activeSessions)
+        .filter((sessionKey) => sessionKey.startsWith(`${platform}_`) || sessionKey === platform);
+      markRecentUserStops(stoppedSessionKeys.length > 0 ? stoppedSessionKeys : ['default']);
       const sent = agentWS.sendAbort({ platform });
       if (!sent) {
         useNotificationStore.getState().addNotification(
@@ -3040,6 +3084,7 @@ export const useComputerStore = create<ComputerStore>()(
 
       useAgentTrackerStore.getState().failOperationsForSession(targetSessionKey, true);
 
+      markRecentUserStop(targetSessionKey);
       const sent = agentWS.sendAbort({ sessionKey: targetSessionKey });
       if (!sent) {
         useNotificationStore.getState().addNotification(
@@ -4869,6 +4914,9 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'agent_incident': {
+          if (isLateStopRelatedFailure(eventSessionKey, event.data)) {
+            break;
+          }
           const notice = incidentNoticeFromPayload(event.data || {}, Date.now());
           if (notice) {
             appendToAgentChat(notice);
@@ -5917,7 +5965,7 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'error': {
           const message = event.data?.message as string || 'Unknown error';
-          if (isAgentUserCancelErrorMessage(message)) {
+          if (isAgentUserCancelErrorMessage(message) || isLateStopRelatedFailure(eventSessionKey, event.data)) {
             set({ agentThinking: null, agentThinkingStream: null, agentRunning: false });
             break;
           }

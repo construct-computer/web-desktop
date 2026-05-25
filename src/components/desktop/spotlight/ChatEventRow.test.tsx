@@ -69,7 +69,7 @@ describe('ChatEventRow', () => {
     expect(html).toContain('&lt;main&gt;Hello&lt;/main&gt;');
   });
 
-  it('shows expandable details for automatic memory activity', () => {
+  it('renders automatic memory activity as a subtle collapsed summary', () => {
     const msg: ChatMessage = {
       role: 'activity',
       content: 'Memory created',
@@ -87,11 +87,12 @@ describe('ChatEventRow', () => {
     const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
 
     expect(html).toContain('Memory created');
-    expect(html).toContain('Details');
+    expect(html).toContain('User prefers compact status updates.');
+    expect(html).not.toContain('Stored in');
     expect(html).not.toContain('mem_1');
   });
 
-  it('shows expandable details for recalled memory activity', () => {
+  it('renders recalled memory activity with score in the collapsed summary', () => {
     const msg: ChatMessage = {
       role: 'activity',
       content: 'Memory recalled',
@@ -110,7 +111,35 @@ describe('ChatEventRow', () => {
     const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
 
     expect(html).toContain('Memory recalled');
-    expect(html).toContain('Details');
+    expect(html).toContain('User prefers compact status updates.');
+    expect(html).toContain('91%');
+    expect(html).not.toContain('Retrieved from');
     expect(html).not.toContain('mem_2');
+  });
+
+  it('summarizes multiple memory updates without rendering every item collapsed', () => {
+    const msg: ChatMessage = {
+      role: 'activity',
+      content: 'Memory updated',
+      timestamp: new Date(1),
+      tool: 'memory',
+      activityType: 'tool',
+      memoryActivity: {
+        provider: 'Construct Memory',
+        action: 'stored',
+        environment: 'staging',
+        scope: 'user',
+        items: [
+          { id: 'mem_1', event: 'UPDATE', memory: 'User likes Silent Hill 2.' },
+          { id: 'mem_2', event: 'ADD', memory: 'User studies at Chandigarh University.' },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
+
+    expect(html).toContain('Memory updated · 2 items');
+    expect(html).not.toContain('User likes Silent Hill 2.');
+    expect(html).not.toContain('Construct Memory');
   });
 });

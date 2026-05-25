@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
+import { Brain, Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
 import { ActivityIcon } from './ActivityIcon';
 import { activityToneClass, type ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
@@ -82,14 +82,45 @@ function memoryEventLabel(event: 'ADD' | 'UPDATE' | 'RECALL'): string {
   return event === 'ADD' ? 'created' : 'updated';
 }
 
+type MemoryActivity = NonNullable<ChatMessage['memoryActivity']>;
+type MemoryActivityItem = MemoryActivity['items'][number];
+
+function memoryActivityTitle(activity: MemoryActivity): string {
+  if (activity.action === 'recalled') {
+    return activity.items.length > 1 ? `Memory recalled · ${activity.items.length} items` : 'Memory recalled';
+  }
+
+  const hasUpdate = activity.items.some((item) => item.event === 'UPDATE');
+  const action = hasUpdate ? 'updated' : 'created';
+  return activity.items.length > 1 ? `Memory ${action} · ${activity.items.length} items` : `Memory ${action}`;
+}
+
+function memoryActivitySummary(activity: MemoryActivity): string | null {
+  if (activity.items.length !== 1) return null;
+  return activity.items[0]?.memory || null;
+}
+
+function memoryScoreLabel(item: MemoryActivityItem): string | null {
+  if (typeof item.score !== 'number') return null;
+  return `${Math.round(item.score * 100)}%`;
+}
+
+function memoryDetailsHeading(activity: MemoryActivity): string {
+  const environment = memoryEnvironmentLabel(activity.environment);
+  return [
+    activity.provider,
+    environment,
+    activity.scope?.toUpperCase(),
+  ].filter(Boolean).join(' · ');
+}
+
 export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = useMemo(() => eventMeta(msg), [msg]);
   const isTerminal = msg.activityType === 'terminal';
   const memoryActivity = msg.memoryActivity;
-  const hasMemoryDetails = Boolean(memoryActivity?.items.length);
-  const hasDetails = Boolean(hasMemoryDetails || meta.detail || meta.raw);
+  const hasDetails = Boolean(meta.detail || meta.raw);
   const colors = activityToneClass(msg.activityType, meta.tone);
 
   const handleCopy = useCallback(() => {
@@ -103,6 +134,91 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
 
   if (msg.codePreview) {
     return <CodePreviewCard msg={msg} compact={compact} />;
+  }
+
+  if (memoryActivity) {
+    const title = memoryActivityTitle(memoryActivity);
+    const summary = memoryActivitySummary(memoryActivity);
+    const firstScore = memoryActivity.items.length === 1 ? memoryScoreLabel(memoryActivity.items[0]) : null;
+    const detailsHeading = memoryDetailsHeading(memoryActivity);
+    const canExpand = memoryActivity.items.length > 0;
+
+    return (
+      <div className={compact ? 'flex items-start gap-2.5 py-[1px]' : 'px-3 sm:px-6 py-[2px]'}>
+        <div className={compact ? 'flex items-start gap-2.5 min-w-0 w-full' : 'flex items-start gap-2.5 sm:gap-3 min-w-0 w-full'}>
+          <div className="mt-[3px] h-4 w-4 shrink-0 rounded-full border border-blue-300/20 bg-blue-300/5 text-blue-200/55 flex items-center justify-center">
+            <Brain className="w-2.5 h-2.5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              disabled={!canExpand}
+              onClick={() => canExpand && setExpanded(!expanded)}
+              className="group flex max-w-full items-center gap-1.5 text-left text-[11px] leading-5 text-[var(--color-text-muted)]/45 disabled:cursor-default"
+            >
+              <span className="shrink-0 font-medium text-[var(--color-text-muted)]/55 group-hover:text-[var(--color-text-muted)]/70">
+                {title}
+              </span>
+              {summary && (
+                <>
+                  <span className="shrink-0 text-[var(--color-text-muted)]/25">·</span>
+                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/42 group-hover:text-[var(--color-text-muted)]/58">
+                    {summary}
+                  </span>
+                </>
+              )}
+              {firstScore && (
+                <>
+                  <span className="shrink-0 text-[var(--color-text-muted)]/25">·</span>
+                  <span className="shrink-0 tabular-nums text-[var(--color-text-muted)]/35">
+                    {firstScore}
+                  </span>
+                </>
+              )}
+              {canExpand && (
+                <span className="shrink-0 text-[var(--color-text-muted)]/30 group-hover:text-[var(--color-text-muted)]/55">
+                  {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </span>
+              )}
+            </button>
+
+            {expanded && canExpand && (
+              <div className="mt-1.5 max-w-2xl border-l border-white/8 pl-3 text-[10px] leading-4 text-[var(--color-text-muted)]/48">
+                {detailsHeading && (
+                  <div className="mb-1.5 font-medium text-[var(--color-text-muted)]/45">
+                    {detailsHeading}
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {memoryActivity.items.map((item) => {
+                    const score = memoryScoreLabel(item);
+                    return (
+                      <div key={item.id} className="border-t border-white/5 pt-1 first:border-t-0 first:pt-0">
+                        <div className="mb-0.5 flex items-center gap-1.5 text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/35">
+                          <span>{memoryEventLabel(item.event)}</span>
+                          {score && <span className="normal-case tracking-normal text-[var(--color-text-muted)]/30">{score}</span>}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">
+                          {item.memory}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/38 hover:text-[var(--color-text-muted)]/65"
+                >
+                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -134,44 +250,8 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
           </div>
           {expanded && hasDetails && (
             <div className="mt-1.5 rounded-lg bg-black/10 px-2 py-1.5 text-[10px] leading-4 text-[var(--color-text-muted)]/50">
-              {memoryActivity ? (
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[var(--color-text-muted)]/45">
-                    <span>{memoryActivity.action === 'recalled' ? 'Retrieved from' : 'Stored in'}</span>
-                    <span className="font-medium text-[var(--color-text-muted)]/65">{memoryActivity.provider}</span>
-                    {memoryEnvironmentLabel(memoryActivity.environment) && (
-                      <span>({memoryEnvironmentLabel(memoryActivity.environment)})</span>
-                    )}
-                    {memoryActivity.scope && (
-                      <span className="rounded bg-white/5 px-1 py-px text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/45">
-                        {memoryActivity.scope}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    {memoryActivity.items.map((item) => (
-                      <div key={item.id} className="rounded-md border border-white/5 bg-white/[0.025] px-2 py-1">
-                        <div className="mb-0.5 text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/35">
-                          {memoryEventLabel(item.event)}
-                          {typeof item.score === 'number' && (
-                            <span className="ml-1 normal-case tracking-normal text-[var(--color-text-muted)]/30">
-                              {Math.round(item.score * 100)}%
-                            </span>
-                          )}
-                        </div>
-                        <div className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/65">
-                          {item.memory}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {meta.detail && <div className="whitespace-pre-wrap">{meta.detail}</div>}
-                  {meta.raw && <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{meta.raw}</pre>}
-                </>
-              )}
+              {meta.detail && <div className="whitespace-pre-wrap">{meta.detail}</div>}
+              {meta.raw && <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{meta.raw}</pre>}
               <button
                 type="button"
                 onClick={handleCopy}
