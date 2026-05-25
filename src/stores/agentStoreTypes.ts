@@ -69,6 +69,21 @@ export interface CodePreviewData {
   files: CodePreviewFile[];
 }
 
+export interface MemoryActivityItem {
+  id: string;
+  event: 'ADD' | 'UPDATE' | 'RECALL';
+  memory: string;
+  score?: number;
+}
+
+export interface MemoryActivityData {
+  provider: string;
+  action?: 'stored' | 'recalled';
+  environment?: string;
+  scope?: string;
+  items: MemoryActivityItem[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system';
   content: string;
@@ -91,6 +106,8 @@ export interface ChatMessage {
   attachments?: string[];
   /** Structured details for browser activity rows (icons, payload disclosures, etc.). */
   browserAction?: BrowserActionMeta;
+  /** Automatic memory reads/writes shown as subtle expandable activity rows. */
+  memoryActivity?: MemoryActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
 }

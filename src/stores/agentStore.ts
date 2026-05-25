@@ -121,6 +121,21 @@ export interface CodePreviewData {
   files: CodePreviewFile[];
 }
 
+export interface MemoryActivityItem {
+  id: string;
+  event: 'ADD' | 'UPDATE' | 'RECALL';
+  memory: string;
+  score?: number;
+}
+
+export interface MemoryActivityData {
+  provider: string;
+  action?: 'stored' | 'recalled';
+  environment?: string;
+  scope?: string;
+  items: MemoryActivityItem[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system' | 'notice';
   content: string;
@@ -174,6 +189,8 @@ export interface ChatMessage {
   noticeToolName?: string;
   noticeSeverity?: 'info' | 'warn' | 'error';
   noticeRepeatCount?: number;
+  /** Automatic memory reads/writes shown as subtle expandable activity rows. */
+  memoryActivity?: MemoryActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
 }
@@ -4307,6 +4324,48 @@ export const useComputerStore = create<ComputerStore>()(
               };
             }
             return updates;
+          });
+          break;
+        }
+
+        case 'memory_ingest':
+        case 'memory_recall': {
+          const isRecall = event.type === 'memory_recall';
+          const rawEvents = Array.isArray(event.data?.events) ? event.data.events : [];
+          const items = rawEvents
+            .map((item): MemoryActivityItem | null => {
+              if (!item || typeof item !== 'object') return null;
+              const data = item as Record<string, unknown>;
+              const memory = typeof data.memory === 'string' ? data.memory.trim() : '';
+              const id = typeof data.id === 'string' ? data.id : '';
+              const eventName = isRecall ? 'RECALL' : data.event === 'UPDATE' ? 'UPDATE' : data.event === 'ADD' ? 'ADD' : null;
+              if (!id || !memory || !eventName) return null;
+              const score = typeof data.score === 'number' ? data.score : undefined;
+              return { id, event: eventName, memory, score };
+            })
+            .filter((item): item is MemoryActivityItem => Boolean(item));
+          if (items.length === 0) break;
+
+          const single = items.length === 1;
+          const allCreated = !isRecall && items.every((item) => item.event === 'ADD');
+          const title = isRecall
+            ? single ? 'Memory recalled' : `Memory recalled: ${items.length} items`
+            : single
+              ? items[0].event === 'ADD' ? 'Memory created' : 'Memory updated'
+              : allCreated ? `Memory created: ${items.length} items` : `Memory updated: ${items.length} items`;
+          appendToAgentChat({
+            role: 'activity',
+            content: title,
+            timestamp: new Date(),
+            tool: 'memory',
+            activityType: 'tool',
+            memoryActivity: {
+              provider: typeof event.data?.provider === 'string' ? event.data.provider : 'Construct Memory',
+              action: isRecall ? 'recalled' : 'stored',
+              environment: typeof event.data?.environment === 'string' ? event.data.environment : undefined,
+              scope: typeof event.data?.scope === 'string' ? event.data.scope : undefined,
+              items,
+            },
           });
           break;
         }

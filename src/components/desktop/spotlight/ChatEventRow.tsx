@@ -70,19 +70,36 @@ function eventMeta(msg: ChatMessage): {
   };
 }
 
+function memoryEnvironmentLabel(value?: string): string | null {
+  if (!value) return null;
+  if (value === 'prod') return 'production';
+  if (value === 'staging' || value === 'local') return value;
+  return value;
+}
+
+function memoryEventLabel(event: 'ADD' | 'UPDATE' | 'RECALL'): string {
+  if (event === 'RECALL') return 'recalled';
+  return event === 'ADD' ? 'created' : 'updated';
+}
+
 export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = useMemo(() => eventMeta(msg), [msg]);
   const isTerminal = msg.activityType === 'terminal';
-  const hasDetails = Boolean(meta.detail || meta.raw);
+  const memoryActivity = msg.memoryActivity;
+  const hasMemoryDetails = Boolean(memoryActivity?.items.length);
+  const hasDetails = Boolean(hasMemoryDetails || meta.detail || meta.raw);
   const colors = activityToneClass(msg.activityType, meta.tone);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(meta.raw || meta.detail || msg.content);
+    const memoryText = memoryActivity?.items
+      .map((item) => `${memoryEventLabel(item.event)}: ${item.memory}`)
+      .join('\n');
+    navigator.clipboard.writeText(memoryText || meta.raw || meta.detail || msg.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [meta.raw, meta.detail, msg.content]);
+  }, [memoryActivity, meta.raw, meta.detail, msg.content]);
 
   if (msg.codePreview) {
     return <CodePreviewCard msg={msg} compact={compact} />;
@@ -117,8 +134,44 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
           </div>
           {expanded && hasDetails && (
             <div className="mt-1.5 rounded-lg bg-black/10 px-2 py-1.5 text-[10px] leading-4 text-[var(--color-text-muted)]/50">
-              {meta.detail && <div className="whitespace-pre-wrap">{meta.detail}</div>}
-              {meta.raw && <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{meta.raw}</pre>}
+              {memoryActivity ? (
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[var(--color-text-muted)]/45">
+                    <span>{memoryActivity.action === 'recalled' ? 'Retrieved from' : 'Stored in'}</span>
+                    <span className="font-medium text-[var(--color-text-muted)]/65">{memoryActivity.provider}</span>
+                    {memoryEnvironmentLabel(memoryActivity.environment) && (
+                      <span>({memoryEnvironmentLabel(memoryActivity.environment)})</span>
+                    )}
+                    {memoryActivity.scope && (
+                      <span className="rounded bg-white/5 px-1 py-px text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/45">
+                        {memoryActivity.scope}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {memoryActivity.items.map((item) => (
+                      <div key={item.id} className="rounded-md border border-white/5 bg-white/[0.025] px-2 py-1">
+                        <div className="mb-0.5 text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/35">
+                          {memoryEventLabel(item.event)}
+                          {typeof item.score === 'number' && (
+                            <span className="ml-1 normal-case tracking-normal text-[var(--color-text-muted)]/30">
+                              {Math.round(item.score * 100)}%
+                            </span>
+                          )}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/65">
+                          {item.memory}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {meta.detail && <div className="whitespace-pre-wrap">{meta.detail}</div>}
+                  {meta.raw && <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{meta.raw}</pre>}
+                </>
+              )}
               <button
                 type="button"
                 onClick={handleCopy}
