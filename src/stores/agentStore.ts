@@ -19,7 +19,7 @@ import { clearDesktopAgentRuntime, shouldClearViewedAgentState } from './agentSt
 import { useAppStore, localAppIframeRefs } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
-import { dispatchAgentHistoryCleared } from '@/lib/agentUiEvents';
+import { dispatchAgentHistoryCleared, dispatchMemoryChanged } from '@/lib/agentUiEvents';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
 
@@ -164,6 +164,8 @@ export interface MemoryActivityItem {
 export interface MemoryActivityData {
   provider: string;
   action?: 'stored' | 'recalled';
+  status?: 'pending' | 'stored' | 'noop' | 'failed';
+  operationId?: string;
   environment?: string;
   scope?: string;
   items: MemoryActivityItem[];
@@ -3984,6 +3986,45 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
+      const resolveMemoryActivityMessage = (operationId: string, replacement: ChatMessage | null): boolean => {
+        if (!operationId) return false;
+        let matched = false;
+        const apply = (messages: ChatMessage[]): ChatMessage[] => {
+          const next: ChatMessage[] = [];
+          for (const message of messages) {
+            if (message.memoryActivity?.operationId === operationId) {
+              matched = true;
+              if (replacement) next.push(replacement);
+            } else {
+              next.push(message);
+            }
+          }
+          return next;
+        };
+
+        set(state => {
+          const updates: Partial<typeof state> = {};
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            updates.platformAgents = {
+              ...state.platformAgents,
+              [eventPlatform]: {
+                ...pa,
+                chatMessages: apply(pa.chatMessages || []),
+              },
+            };
+          }
+          if (isActiveSession) {
+            updates.chatMessages = apply(state.chatMessages);
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, apply(cached));
+          }
+          return updates;
+        });
+        return matched;
+      };
+
       const upsertCodePreview = (data: Record<string, unknown>) => {
         const previewId = typeof data.previewId === 'string' ? data.previewId : '';
         if (!previewId) return;
@@ -4376,6 +4417,8 @@ export const useComputerStore = create<ComputerStore>()(
         case 'memory_ingest':
         case 'memory_recall': {
           const isRecall = event.type === 'memory_recall';
+          const status = typeof event.data?.status === 'string' ? event.data.status : undefined;
+          const operationId = typeof event.data?.operationId === 'string' ? event.data.operationId : undefined;
           const rawEvents = Array.isArray(event.data?.events) ? event.data.events : [];
           const items = rawEvents
             .map((item): MemoryActivityItem | null => {
@@ -4389,6 +4432,30 @@ export const useComputerStore = create<ComputerStore>()(
               return { id, event: eventName, memory, score };
             })
             .filter((item): item is MemoryActivityItem => Boolean(item));
+          if (!isRecall && status === 'pending') {
+            appendToAgentChat({
+              role: 'activity',
+              content: 'Memory saving',
+              timestamp: new Date(),
+              tool: 'memory',
+              activityType: 'tool',
+              memoryActivity: {
+                provider: typeof event.data?.provider === 'string' ? event.data.provider : 'Construct Memory',
+                action: 'stored',
+                status: 'pending',
+                operationId,
+                environment: typeof event.data?.environment === 'string' ? event.data.environment : undefined,
+                scope: typeof event.data?.scope === 'string' ? event.data.scope : undefined,
+                items: [],
+              },
+            });
+            break;
+          }
+
+          if (!isRecall && items.length === 0) {
+            if (operationId) resolveMemoryActivityMessage(operationId, null);
+            break;
+          }
           if (items.length === 0) break;
 
           const single = items.length === 1;
@@ -4398,7 +4465,7 @@ export const useComputerStore = create<ComputerStore>()(
             : single
               ? items[0].event === 'ADD' ? 'Memory created' : 'Memory updated'
               : allCreated ? `Memory created: ${items.length} items` : `Memory updated: ${items.length} items`;
-          appendToAgentChat({
+          const memoryMessage: ChatMessage = {
             role: 'activity',
             content: title,
             timestamp: new Date(),
@@ -4407,11 +4474,18 @@ export const useComputerStore = create<ComputerStore>()(
             memoryActivity: {
               provider: typeof event.data?.provider === 'string' ? event.data.provider : 'Construct Memory',
               action: isRecall ? 'recalled' : 'stored',
+              status: isRecall ? undefined : 'stored',
+              operationId,
               environment: typeof event.data?.environment === 'string' ? event.data.environment : undefined,
               scope: typeof event.data?.scope === 'string' ? event.data.scope : undefined,
               items,
             },
-          });
+          };
+          if (!isRecall) {
+            dispatchMemoryChanged({ items: items.filter((item) => item.event === 'ADD' || item.event === 'UPDATE') as Array<{ id: string; event: 'ADD' | 'UPDATE'; memory: string }> });
+          }
+          if (!isRecall && operationId && resolveMemoryActivityMessage(operationId, memoryMessage)) break;
+          appendToAgentChat(memoryMessage);
           break;
         }
 

@@ -79,6 +79,8 @@ export interface MemoryActivityItem {
 export interface MemoryActivityData {
   provider: string;
   action?: 'stored' | 'recalled';
+  status?: 'pending' | 'stored' | 'noop' | 'failed';
+  operationId?: string;
   environment?: string;
   scope?: string;
   items: MemoryActivityItem[];

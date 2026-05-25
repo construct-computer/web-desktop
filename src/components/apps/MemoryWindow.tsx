@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { MEMORY_CHANGED_EVENT, type MemoryChangedDetail } from '@/lib/agentUiEvents';
 import { getMemories, deleteMemory, type MemoryRecord, type MemoryRelation } from '@/services/api';
 import type { WindowConfig } from '@/types';
 
@@ -452,21 +453,50 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const onMemoryChanged = (event: Event) => {
+      const detail = (event as CustomEvent<MemoryChangedDetail>).detail;
+      const items = Array.isArray(detail?.items) ? detail.items : [];
+      if (items.length === 0) return;
+      const now = new Date().toISOString();
+      setMemories(prev => {
+        const next = new Map(prev.map(memory => [memory.id, memory]));
+        for (const item of items) {
+          next.set(item.id, {
+            ...(next.get(item.id) || { id: item.id, created_at: now }),
+            id: item.id,
+            memory: item.memory,
+            updated_at: now,
+          });
+        }
+        return [...next.values()].sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+      });
+      void freshness.refreshNow();
+    };
+    window.addEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
+    return () => window.removeEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
+  }, [freshness]);
+
   const handleRefresh = async () => {
     setLoading(true);
     await freshness.refreshNow();
     setLoading(false);
   };
 
+  const switchView = (nextView: ViewMode) => {
+    setSelectedNode(null);
+    setView(nextView);
+  };
+
   // Filter memories by search
-  const filtered = searchQuery
+  const searchedMemories = searchQuery
     ? memories.filter(m => m.memory.toLowerCase().includes(searchQuery.toLowerCase()))
     : memories;
 
-  // When a graph node is selected, filter the memory list to show related memories
-  const displayMemories = selectedNode
-    ? filtered.filter(m => m.memory.toLowerCase().includes(selectedNode.toLowerCase()))
-    : filtered;
+  // Graph node selection is local to the Connections sidebar and never affects List view.
+  const nodeMemories = selectedNode
+    ? searchedMemories.filter(m => m.memory.toLowerCase().includes(selectedNode.toLowerCase()))
+    : [];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-h-0 h-full bg-[var(--color-surface)]">
@@ -479,7 +509,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
               'px-2 py-0.5 text-[11px] rounded transition-colors flex items-center gap-1',
               view === 'graph' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]',
             )}
-            onClick={() => setView('graph')}
+            onClick={() => switchView('graph')}
           >
             <Network className="w-3 h-3" /> Connections
           </button>
@@ -488,7 +518,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
               'px-2 py-0.5 text-[11px] rounded transition-colors flex items-center gap-1',
               view === 'list' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]',
             )}
-            onClick={() => setView('list')}
+            onClick={() => switchView('list')}
           >
             <List className="w-3 h-3" /> List
           </button>
@@ -602,10 +632,10 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                   })}
 
                 {/* Related memories */}
-                {displayMemories.length > 0 && (
+                {nodeMemories.length > 0 && (
                   <>
                     <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide mt-3 mb-1">Knowledge</p>
-                    {displayMemories.slice(0, 10).map(m => (
+                    {nodeMemories.slice(0, 10).map(m => (
                       <div key={m.id} className="group px-2 py-1.5 rounded bg-black/[0.03] dark:bg-white/[0.03] text-[11px] leading-relaxed flex items-start gap-1">
                         <span className="flex-1 min-w-0">{m.memory}</span>
                         <button
@@ -629,7 +659,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
       ) : (
         /* List view */
         <div className="flex-1 overflow-y-auto min-h-0">
-          {displayMemories.length === 0 ? (
+          {searchedMemories.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)] h-full min-h-[200px]">
               <Brain className="w-10 h-10 opacity-40" />
               <p className="text-sm">No saved knowledge yet</p>
@@ -639,7 +669,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
             </div>
           ) : (
             <div className="divide-y divide-[var(--color-border)]/50">
-              {displayMemories.map(memory => {
+              {searchedMemories.map(memory => {
                 const isExpanded = expandedId === memory.id;
                 return (
                   <div key={memory.id}>

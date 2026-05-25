@@ -333,7 +333,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   if (tool === 'memory') {
     const action = p.action as string | undefined;
     switch (action) {
-      case 'recall': return { text: 'Checking knowledge', activityType: 'tool' };
+      case 'recall': return { text: 'Checking memory', activityType: 'tool' };
       case 'list': return { text: 'Listing knowledge', activityType: 'tool' };
       case 'forget': return { text: 'Removing saved knowledge', activityType: 'tool' };
       default: return { text: `Knowledge: ${action || 'operation'}`, activityType: 'tool' };

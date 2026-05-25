@@ -70,22 +70,10 @@ function eventMeta(msg: ChatMessage): {
   };
 }
 
-function memoryEnvironmentLabel(value?: string): string | null {
-  if (!value) return null;
-  if (value === 'prod') return 'production';
-  if (value === 'staging' || value === 'local') return value;
-  return value;
-}
-
-function memoryEventLabel(event: 'ADD' | 'UPDATE' | 'RECALL'): string {
-  if (event === 'RECALL') return 'recalled';
-  return event === 'ADD' ? 'created' : 'updated';
-}
-
 type MemoryActivity = NonNullable<ChatMessage['memoryActivity']>;
-type MemoryActivityItem = MemoryActivity['items'][number];
 
 function memoryActivityTitle(activity: MemoryActivity): string {
+  if (activity.status === 'pending') return 'Memory saving';
   if (activity.action === 'recalled') {
     return activity.items.length > 1 ? `Memory recalled · ${activity.items.length} items` : 'Memory recalled';
   }
@@ -100,20 +88,6 @@ function memoryActivitySummary(activity: MemoryActivity): string | null {
   return activity.items[0]?.memory || null;
 }
 
-function memoryScoreLabel(item: MemoryActivityItem): string | null {
-  if (typeof item.score !== 'number') return null;
-  return `${Math.round(item.score * 100)}%`;
-}
-
-function memoryDetailsHeading(activity: MemoryActivity): string {
-  const environment = memoryEnvironmentLabel(activity.environment);
-  return [
-    activity.provider,
-    environment,
-    activity.scope?.toUpperCase(),
-  ].filter(Boolean).join(' · ');
-}
-
 export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -125,7 +99,7 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
 
   const handleCopy = useCallback(() => {
     const memoryText = memoryActivity?.items
-      .map((item) => `${memoryEventLabel(item.event)}: ${item.memory}`)
+      .map((item) => item.memory)
       .join('\n');
     navigator.clipboard.writeText(memoryText || meta.raw || meta.detail || msg.content);
     setCopied(true);
@@ -139,76 +113,52 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
   if (memoryActivity) {
     const title = memoryActivityTitle(memoryActivity);
     const summary = memoryActivitySummary(memoryActivity);
-    const firstScore = memoryActivity.items.length === 1 ? memoryScoreLabel(memoryActivity.items[0]) : null;
-    const detailsHeading = memoryDetailsHeading(memoryActivity);
     const canExpand = memoryActivity.items.length > 0;
 
     return (
-      <div className={compact ? 'flex items-start gap-2.5 py-[1px]' : 'px-3 sm:px-6 py-[2px]'}>
-        <div className={compact ? 'flex items-start gap-2.5 min-w-0 w-full' : 'flex items-start gap-2.5 sm:gap-3 min-w-0 w-full'}>
-          <div className="mt-[3px] h-4 w-4 shrink-0 rounded-full border border-blue-300/20 bg-blue-300/5 text-blue-200/55 flex items-center justify-center">
-            <Brain className="w-2.5 h-2.5" />
+      <div className={compact ? 'flex items-start gap-2 py-0' : 'px-3 sm:px-6 py-0.5'}>
+        <div className={compact ? 'flex items-start gap-2 min-w-0 w-full' : 'flex items-start gap-2 sm:gap-2.5 min-w-0 w-full'}>
+          <div className="mt-[4px] h-3.5 w-3.5 shrink-0 rounded-full border border-blue-300/15 bg-blue-300/[0.04] text-blue-200/45 flex items-center justify-center">
+            <Brain className="w-2 h-2" />
           </div>
           <div className="min-w-0 flex-1">
             <button
               type="button"
               disabled={!canExpand}
               onClick={() => canExpand && setExpanded(!expanded)}
-              className="group flex max-w-full items-center gap-1.5 text-left text-[11px] leading-5 text-[var(--color-text-muted)]/45 disabled:cursor-default"
+              className="group flex max-w-full items-center gap-1.5 text-left text-[11px] leading-4 text-[var(--color-text-muted)]/42 disabled:cursor-default"
             >
-              <span className="shrink-0 font-medium text-[var(--color-text-muted)]/55 group-hover:text-[var(--color-text-muted)]/70">
+              <span className="shrink-0 font-medium text-[var(--color-text-muted)]/50 group-hover:text-[var(--color-text-muted)]/68">
                 {title}
               </span>
               {summary && (
                 <>
-                  <span className="shrink-0 text-[var(--color-text-muted)]/25">·</span>
-                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/42 group-hover:text-[var(--color-text-muted)]/58">
+                  <span className="shrink-0 text-[var(--color-text-muted)]/22">·</span>
+                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/58">
                     {summary}
                   </span>
                 </>
               )}
-              {firstScore && (
-                <>
-                  <span className="shrink-0 text-[var(--color-text-muted)]/25">·</span>
-                  <span className="shrink-0 tabular-nums text-[var(--color-text-muted)]/35">
-                    {firstScore}
-                  </span>
-                </>
-              )}
               {canExpand && (
-                <span className="shrink-0 text-[var(--color-text-muted)]/30 group-hover:text-[var(--color-text-muted)]/55">
+                <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/52">
                   {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 </span>
               )}
             </button>
 
             {expanded && canExpand && (
-              <div className="mt-1.5 max-w-2xl border-l border-white/8 pl-3 text-[10px] leading-4 text-[var(--color-text-muted)]/48">
-                {detailsHeading && (
-                  <div className="mb-1.5 font-medium text-[var(--color-text-muted)]/45">
-                    {detailsHeading}
-                  </div>
-                )}
+              <div className="mt-1 max-w-2xl border-l border-white/8 pl-2.5 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
                 <div className="space-y-1">
-                  {memoryActivity.items.map((item) => {
-                    const score = memoryScoreLabel(item);
-                    return (
-                      <div key={item.id} className="border-t border-white/5 pt-1 first:border-t-0 first:pt-0">
-                        <div className="mb-0.5 flex items-center gap-1.5 text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]/35">
-                          <span>{memoryEventLabel(item.event)}</span>
-                          {score && <span className="normal-case tracking-normal text-[var(--color-text-muted)]/30">{score}</span>}
-                        </div>
-                        <div className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">
-                          {item.memory}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {memoryActivity.items.map((item) => (
+                    <div key={item.id} className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">
+                      {item.memory}
+                    </div>
+                  ))}
                 </div>
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/38 hover:text-[var(--color-text-muted)]/65"
+                  className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/35 hover:text-[var(--color-text-muted)]/62"
                 >
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                   {copied ? 'Copied' : 'Copy'}

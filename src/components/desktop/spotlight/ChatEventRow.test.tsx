@@ -89,10 +89,38 @@ describe('ChatEventRow', () => {
     expect(html).toContain('Memory created');
     expect(html).toContain('User prefers compact status updates.');
     expect(html).not.toContain('Stored in');
+    expect(html).not.toContain('prod');
+    expect(html).not.toContain('USER');
+    expect(html).not.toContain('CREATED');
     expect(html).not.toContain('mem_1');
   });
 
-  it('renders recalled memory activity with score in the collapsed summary', () => {
+  it('renders pending memory saves without expandable details', () => {
+    const msg: ChatMessage = {
+      role: 'activity',
+      content: 'Memory saving',
+      timestamp: new Date(1),
+      tool: 'memory',
+      activityType: 'tool',
+      memoryActivity: {
+        provider: 'Construct Memory',
+        action: 'stored',
+        status: 'pending',
+        operationId: 'memory_1',
+        environment: 'staging',
+        scope: 'user',
+        items: [],
+      },
+    };
+
+    const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
+
+    expect(html).toContain('Memory saving');
+    expect(html).not.toContain('Details');
+    expect(html).not.toContain('Construct Memory');
+  });
+
+  it('renders recalled memory activity without scores or environment metadata', () => {
     const msg: ChatMessage = {
       role: 'activity',
       content: 'Memory recalled',
@@ -112,7 +140,10 @@ describe('ChatEventRow', () => {
 
     expect(html).toContain('Memory recalled');
     expect(html).toContain('User prefers compact status updates.');
-    expect(html).toContain('91%');
+    expect(html).not.toContain('91%');
+    expect(html).not.toContain('staging');
+    expect(html).not.toContain('USER');
+    expect(html).not.toContain('RECALLED');
     expect(html).not.toContain('Retrieved from');
     expect(html).not.toContain('mem_2');
   });
@@ -141,5 +172,8 @@ describe('ChatEventRow', () => {
     expect(html).toContain('Memory updated · 2 items');
     expect(html).not.toContain('User likes Silent Hill 2.');
     expect(html).not.toContain('Construct Memory');
+    expect(html).not.toContain('staging');
+    expect(html).not.toContain('USER');
+    expect(html).not.toContain('UPDATED');
   });
 });
