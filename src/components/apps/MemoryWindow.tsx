@@ -10,7 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
-import { getMemories, deleteMemory, type Mem0Memory, type Mem0Relation } from '@/services/api';
+import { getMemories, deleteMemory, type MemoryRecord, type MemoryRelation } from '@/services/api';
 import type { WindowConfig } from '@/types';
 
 // ── Force-directed graph types ──
@@ -53,7 +53,7 @@ function getTypeColor(type: string): string {
 
 // ── Force simulation ──
 
-function buildGraph(relations: Mem0Relation[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+function buildGraph(relations: MemoryRelation[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodeMap = new Map<string, GraphNode>();
   const edges: GraphEdge[] = [];
 
@@ -158,7 +158,7 @@ function GraphCanvas({
   selectedNode,
   onSelectNode,
 }: {
-  relations: Mem0Relation[];
+  relations: MemoryRelation[];
   selectedNode: string | null;
   onSelectNode: (id: string | null) => void;
 }) {
@@ -387,8 +387,8 @@ function formatMemoryDate(ts?: string): string {
 type ViewMode = 'graph' | 'list';
 
 export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
-  const [memories, setMemories] = useState<Mem0Memory[]>([]);
-  const [relations, setRelations] = useState<Mem0Relation[]>([]);
+  const [memories, setMemories] = useState<MemoryRecord[]>([]);
+  const [relations, setRelations] = useState<MemoryRelation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>('graph');

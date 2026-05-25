@@ -2107,10 +2107,10 @@ export async function listAuditLogs(options?: {
 }
 
 // ============================================================================
-// Mem0 Memory API
+// Memory API
 // ============================================================================
 
-export interface Mem0Memory {
+export interface MemoryRecord {
   id: string;
   memory: string;
   hash?: string;
@@ -2119,7 +2119,7 @@ export interface Mem0Memory {
   categories?: string[];
 }
 
-export interface Mem0Relation {
+export interface MemoryRelation {
   source: string;
   source_type: string;
   relationship: string;
@@ -2128,12 +2128,12 @@ export interface Mem0Relation {
   score?: number;
 }
 
-export async function getMemories(): Promise<ApiResult<{ memories: Mem0Memory[]; relations: Mem0Relation[] }>> {
-  return request('/mem0/memories');
+export async function getMemories(): Promise<ApiResult<{ memories: MemoryRecord[]; relations: MemoryRelation[] }>> {
+  return request('/memory/memories');
 }
 
 export async function deleteMemory(memoryId: string): Promise<ApiResult<{ success: boolean; message: string }>> {
-  return request(`/mem0/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' });
+  return request(`/memory/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' });
 }
 
 // ============================================================================
