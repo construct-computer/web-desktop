@@ -1,8 +1,9 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square, Brain, Check, Copy } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { ActivityIcon } from './ActivityIcon';
 import { ACTIVITY_ICON_CLASS } from './activityStyles';
+import { memoryActivityTitle, memoryActivitySummary } from './ChatEventRow';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
 import { mergeBrowserRepeats } from './browserActivityUtils';
@@ -170,6 +171,18 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
             ) : (
               /* ── Flat activity list (no sub-agents) ── */
               itemsWithDuration.map(({ act, dur, repeat, key }, index) => {
+                if (act.memoryActivity) {
+                  return (
+                    <MemoryTimelineRow
+                      key={key}
+                      message={act}
+                      duration={dur}
+                      repeatCount={repeat}
+                      isFirst={index === 0}
+                      isLast={index === itemsWithDuration.length - 1}
+                    />
+                  );
+                }
                 if (act.activityType === 'web' && act.browserAction) {
                   return (
                     <BrowserActivityRow
@@ -292,6 +305,104 @@ function FlatActivityLine({ activity, isFirst = false, isLast = false }: { activ
       <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
         {activity.content}
       </span>
+    </div>
+  );
+}
+
+/* ── Memory timeline row (expandable inside tool banner) ── */
+
+function MemoryTimelineRow({
+  message,
+  duration,
+  repeatCount,
+  isFirst = false,
+  isLast = false,
+}: {
+  message: ChatMessage;
+  duration?: string;
+  repeatCount?: number;
+  isFirst?: boolean;
+  isLast?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const activity = message.memoryActivity!;
+  const title = memoryActivityTitle(activity);
+  const summary = memoryActivitySummary(activity);
+  const canExpand = activity.items.length > 0;
+
+  const handleCopy = useCallback(() => {
+    const memoryText = activity.items.map((item) => item.memory).join('\n');
+    navigator.clipboard.writeText(memoryText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [activity]);
+
+  return (
+    <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
+      <div className="flex items-start gap-2.5">
+        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
+          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
+          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
+          <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
+        </div>
+        <div className={`mt-[1px] w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+          <Brain className="w-3 h-3" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            disabled={!canExpand}
+            onClick={() => canExpand && setExpanded(!expanded)}
+            className="group flex max-w-full items-center gap-1.5 text-left text-[12px] leading-4 text-[var(--color-text-muted)]/55 disabled:cursor-default"
+          >
+            <span className="shrink-0 font-medium">{title}</span>
+            {summary && (
+              <>
+                <span className="shrink-0 text-[var(--color-text-muted)]/22">·</span>
+                <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
+                  {summary}
+                </span>
+              </>
+            )}
+            {repeatCount && repeatCount > 1 && (
+              <span className="text-[10px] px-1.5 py-px rounded-full bg-white/[0.06] text-[var(--color-text-muted)]/50 shrink-0">
+                ×{repeatCount}
+              </span>
+            )}
+            {canExpand && (
+              <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/45">
+                {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </span>
+            )}
+          </button>
+
+          {expanded && canExpand && (
+            <div className="mt-0.5 max-w-2xl border-l border-white/5 pl-2 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
+              <div className="space-y-0.5">
+                {activity.items.map((item) => (
+                  <div key={item.id} className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">
+                    {item.memory}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/35 hover:text-[var(--color-text-muted)]/62"
+              >
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          )}
+        </div>
+        {duration && (
+          <span className="text-[10px] text-[var(--color-text-muted)]/25 shrink-0 tabular-nums mt-[2px]">
+            {duration}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

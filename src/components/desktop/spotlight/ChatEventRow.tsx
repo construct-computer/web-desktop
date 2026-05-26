@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Brain, Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
 import { ActivityIcon } from './ActivityIcon';
-import { activityToneClass, type ActivityTone } from './activityStyles';
+import { activityToneClass, ACTIVITY_ICON_CLASS, type ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
 
 function cleanErrorTitle(content: string): { title: string; detail?: string; raw?: string; badges?: string[] } {
@@ -72,7 +72,7 @@ function eventMeta(msg: ChatMessage): {
 
 type MemoryActivity = NonNullable<ChatMessage['memoryActivity']>;
 
-function memoryActivityTitle(activity: MemoryActivity): string {
+export function memoryActivityTitle(activity: MemoryActivity): string {
   if (activity.status === 'pending') return 'Memory saving';
   if (activity.action === 'recalled') {
     return activity.items.length > 1 ? `Memory recalled · ${activity.items.length} items` : 'Memory recalled';
@@ -83,7 +83,7 @@ function memoryActivityTitle(activity: MemoryActivity): string {
   return activity.items.length > 1 ? `Memory ${action} · ${activity.items.length} items` : `Memory ${action}`;
 }
 
-function memoryActivitySummary(activity: MemoryActivity): string | null {
+export function memoryActivitySummary(activity: MemoryActivity): string | null {
   if (activity.items.length !== 1) return null;
   return activity.items[0]?.memory || null;
 }
@@ -116,39 +116,37 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     const canExpand = memoryActivity.items.length > 0;
 
     return (
-      <div className={compact ? 'flex items-start gap-2 py-0' : 'px-3 sm:px-6 py-0.5'}>
-        <div className={compact ? 'flex items-start gap-2 min-w-0 w-full' : 'flex items-start gap-2 sm:gap-2.5 min-w-0 w-full'}>
-          <div className="mt-[4px] h-3.5 w-3.5 shrink-0 rounded-full border border-blue-300/15 bg-blue-300/[0.04] text-blue-200/45 flex items-center justify-center">
-            <Brain className="w-2 h-2" />
+      <div className={compact ? 'flex items-start gap-2 py-[2px]' : 'px-3 sm:px-6 py-[2px]'}>
+        <div className={compact ? 'flex items-start gap-2 min-w-0 w-full' : 'flex items-start gap-2 sm:gap-3 min-w-0 w-full'}>
+          <div className={`${compact ? 'h-5 w-5' : 'h-6 w-6'} shrink-0 rounded-full flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+            <Brain className="w-3 h-3" />
           </div>
           <div className="min-w-0 flex-1">
             <button
               type="button"
               disabled={!canExpand}
               onClick={() => canExpand && setExpanded(!expanded)}
-              className="group flex max-w-full items-center gap-1.5 text-left text-[11px] leading-4 text-[var(--color-text-muted)]/42 disabled:cursor-default"
+              className="group flex max-w-full items-center gap-1.5 text-left text-[12px] leading-4 text-[var(--color-text-muted)]/55 disabled:cursor-default"
             >
-              <span className="shrink-0 font-medium text-[var(--color-text-muted)]/50 group-hover:text-[var(--color-text-muted)]/68">
-                {title}
-              </span>
+              <span className="shrink-0 font-medium">{title}</span>
               {summary && (
                 <>
                   <span className="shrink-0 text-[var(--color-text-muted)]/22">·</span>
-                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/58">
+                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
                     {summary}
                   </span>
                 </>
               )}
               {canExpand && (
-                <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/52">
+                <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/45">
                   {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 </span>
               )}
             </button>
 
             {expanded && canExpand && (
-              <div className="mt-1 max-w-2xl border-l border-white/8 pl-2.5 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
-                <div className="space-y-1">
+              <div className="mt-0.5 max-w-2xl border-l border-white/5 pl-2 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
+                <div className="space-y-0.5">
                   {memoryActivity.items.map((item) => (
                     <div key={item.id} className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">
                       {item.memory}
@@ -158,7 +156,7 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/35 hover:text-[var(--color-text-muted)]/62"
+                  className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/35 hover:text-[var(--color-text-muted)]/62"
                 >
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                   {copied ? 'Copied' : 'Copy'}
