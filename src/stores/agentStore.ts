@@ -22,6 +22,12 @@ import analytics from '@/lib/analytics';
 import { dispatchAgentHistoryCleared, dispatchMemoryChanged } from '@/lib/agentUiEvents';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
+import {
+  clearComponentMentionsForSession,
+  componentMentionsForSession,
+  removeComponentMentionForSession,
+  upsertComponentMentionForSession,
+} from '@/lib/componentMentions';
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 // Utility functions extracted to reduce this file's size.
@@ -590,7 +596,9 @@ interface ComputerStore {
   agentThinkingStream: string | null;
   /** Session-scoped image attachment previews. */
   pendingImageDataBySession: Record<string, string[]>;
-  /** Component chips queued for the next Spotlight message. */
+  /** Session-scoped component chips queued for the next Spotlight message. */
+  pendingComponentMentionsBySession: Record<string, ComponentMention[]>;
+  /** Component chips queued for the active Spotlight message. */
   pendingComponentMentions: ComponentMention[];
   /** Session-level token usage tracking */
   sessionTokens: { prompt: number; completion: number; total: number; cost: number };
@@ -1516,6 +1524,7 @@ export const useComputerStore = create<ComputerStore>()(
     agentThinking: null,
     agentThinkingStream: null,
     pendingImageDataBySession: {},
+    pendingComponentMentionsBySession: {},
     pendingComponentMentions: [],
     sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
     agentRunning: false,
@@ -2789,29 +2798,44 @@ export const useComputerStore = create<ComputerStore>()(
 
     addComponentMention: (mention) => {
       set(state => {
-        const exists = state.pendingComponentMentions.some(
-          m => m.appId === mention.appId && m.componentId === mention.componentId,
+        const pendingComponentMentionsBySession = upsertComponentMentionForSession(
+          state.pendingComponentMentionsBySession,
+          state.activeSessionKey,
+          mention,
         );
         return {
-          pendingComponentMentions: exists
-            ? state.pendingComponentMentions.map(m =>
-                m.appId === mention.appId && m.componentId === mention.componentId ? mention : m,
-              )
-            : [...state.pendingComponentMentions, mention],
+          pendingComponentMentionsBySession,
+          pendingComponentMentions: componentMentionsForSession(pendingComponentMentionsBySession, state.activeSessionKey),
         };
       });
     },
 
     removeComponentMention: (appId, componentId) => {
-      set(state => ({
-        pendingComponentMentions: state.pendingComponentMentions.filter(
-          m => !(m.appId === appId && m.componentId === componentId),
-        ),
-      }));
+      set(state => {
+        const pendingComponentMentionsBySession = removeComponentMentionForSession(
+          state.pendingComponentMentionsBySession,
+          state.activeSessionKey,
+          appId,
+          componentId,
+        );
+        return {
+          pendingComponentMentionsBySession,
+          pendingComponentMentions: componentMentionsForSession(pendingComponentMentionsBySession, state.activeSessionKey),
+        };
+      });
     },
 
     clearComponentMentions: () => {
-      set({ pendingComponentMentions: [] });
+      set(state => {
+        const pendingComponentMentionsBySession = clearComponentMentionsForSession(
+          state.pendingComponentMentionsBySession,
+          state.activeSessionKey,
+        );
+        return {
+          pendingComponentMentionsBySession,
+          pendingComponentMentions: [],
+        };
+      });
     },
 
     sendChatMessage: async (content, attachments, opts) => {
@@ -2820,7 +2844,9 @@ export const useComputerStore = create<ComputerStore>()(
       let { activeSessionKey, chatMessages } = initialState;
       if (!instanceId) return;
       const normalizedAttachments = normalizeAttachmentPaths(attachments);
-      const componentMentions = opts?.componentMentions || initialState.pendingComponentMentions;
+      const initialSessionKey = activeSessionKey;
+      const componentMentions = opts?.componentMentions
+        || componentMentionsForSession(initialState.pendingComponentMentionsBySession, activeSessionKey);
       if (inferExternalPlatform(activeSessionKey)) {
         useNotificationStore.getState().addNotification(
           {
@@ -2961,7 +2987,16 @@ export const useComputerStore = create<ComputerStore>()(
         );
         agentWS.forceReconnect();
       } else {
-        set({ pendingComponentMentions: [] });
+        set(state => {
+          const bySession = clearComponentMentionsForSession(
+            clearComponentMentionsForSession(state.pendingComponentMentionsBySession, activeSessionKey),
+            initialSessionKey,
+          );
+          return {
+            pendingComponentMentionsBySession: bySession,
+            pendingComponentMentions: componentMentionsForSession(bySession, state.activeSessionKey),
+          };
+        });
         // Start a safety timeout — if no agent events arrive within the
         // timeout window, reset agentRunning so the UI doesn't get stuck.
         resetAgentRunningTimer(get, set);
@@ -3442,10 +3477,14 @@ export const useComputerStore = create<ComputerStore>()(
             result.data.active_key,
             preserveActiveKey,
           );
-          set({
+          set(state => ({
             chatSessions: sessions,
             activeSessionKey: activeKey,
-          });
+            pendingComponentMentions: componentMentionsForSession(
+              state.pendingComponentMentionsBySession,
+              activeKey,
+            ),
+          }));
           sessionsLoadedAt = Date.now();
         }
       })()
@@ -3501,6 +3540,7 @@ export const useComputerStore = create<ComputerStore>()(
               queuedMessageCount: 0,
               taskProgress: null,
               pendingImageDataBySession: nextPendingImages,
+              pendingComponentMentions: componentMentionsForSession(state.pendingComponentMentionsBySession, session.key),
               sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
               toolStatuses: {},
               platformAgents: nextPlatformAgents,
@@ -3529,14 +3569,15 @@ export const useComputerStore = create<ComputerStore>()(
           const isTargetRunning = get().runningSessions.has(key);
           const cached = sessionMessageCache.get(key);
 
-          set({
+          set(state => ({
             activeSessionKey: key,
             chatMessages: cached || [],
             replyingTo: null,
             agentThinking: null,
             agentRunning: isTargetRunning,
             sessionSwitching: !cached, // only show loading if no cache
-          });
+            pendingComponentMentions: componentMentionsForSession(state.pendingComponentMentionsBySession, key),
+          }));
 
           // Silently refresh from API (updates cache with latest)
           await get().loadChatHistory();
@@ -3573,6 +3614,10 @@ export const useComputerStore = create<ComputerStore>()(
             delete nextAlerts[key];
             const nextPendingImages = { ...state.pendingImageDataBySession };
             delete nextPendingImages[key];
+            const nextPendingComponentMentions = clearComponentMentionsForSession(
+              state.pendingComponentMentionsBySession,
+              key,
+            );
             const nextToolStatuses = Object.fromEntries(
               Object.entries(state.toolStatuses).filter(([, status]) => status.sessionKey !== key),
             );
@@ -3582,6 +3627,7 @@ export const useComputerStore = create<ComputerStore>()(
               activeSessions: nextActiveSessions,
               overseerAlertsBySession: nextAlerts,
               pendingImageDataBySession: nextPendingImages,
+              pendingComponentMentionsBySession: nextPendingComponentMentions,
               toolStatuses: nextToolStatuses,
             };
 
@@ -3600,6 +3646,7 @@ export const useComputerStore = create<ComputerStore>()(
                 agentActivity: {},
                 queuedMessageCount: 0,
                 taskProgress: null,
+                pendingComponentMentions: componentMentionsForSession(nextPendingComponentMentions, nextActiveKey),
                 sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
                 platformAgents: nextPlatformAgents,
               });
