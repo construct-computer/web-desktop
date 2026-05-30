@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
+import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock, Blocks } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -77,6 +77,8 @@ export function SpotlightInput() {
   const instanceId = useComputerStore(s => s.instanceId);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const pendingImages = useComputerStore(s => s.pendingImageDataBySession[s.activeSessionKey || 'default'] ?? EMPTY_PENDING_IMAGES);
+  const pendingComponentMentions = useComputerStore(s => s.pendingComponentMentions);
+  const removeComponentMention = useComputerStore(s => s.removeComponentMention);
   const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
   const queuedCount = useComputerStore(s => {
     let n = 0;
@@ -424,7 +426,7 @@ export function SpotlightInput() {
     if (isExternal) return;
     const allPaths = [...new Set(attachments.map(a => normalizeWorkspacePath(a.path)).filter(Boolean))];
     const text = stripAttachedWorkspaceReferences(message, allPaths).trim();
-    if (!text && allPaths.length === 0) return;
+    if (!text && allPaths.length === 0 && pendingComponentMentions.length === 0) return;
     if (filteredCommands.length > 0 && showSlash) {
       void executeSlashCommand(filteredCommands[slashSelected] || filteredCommands[0]);
       return;
@@ -432,7 +434,7 @@ export function SpotlightInput() {
     if (!isConnected) return;
 
     // Prepend reply context if replying to a message
-    let fullText = text || 'See attached files';
+    let fullText = text || (pendingComponentMentions.length > 0 ? 'Update the selected app components.' : 'See attached files');
     if (replyingTo) {
       const quote = replyingTo.content.split('\n').slice(0, 3).join('\n');
       const truncated = quote.length > 200 ? quote.slice(0, 200) + '...' : quote;
@@ -445,13 +447,18 @@ export function SpotlightInput() {
     if (isMobile) hapticLight();
     if (text) appendToInputHistory(activeSessionKey, text);
     else if (allPaths.length > 0) appendToInputHistory(activeSessionKey, `📎 ${allPaths.length} attachment(s)`);
-    sendChatMessage(fullText, allPaths.length > 0 ? allPaths : undefined);
+    else if (pendingComponentMentions.length > 0) appendToInputHistory(activeSessionKey, `${pendingComponentMentions.length} component mention(s)`);
+    sendChatMessage(
+      fullText,
+      allPaths.length > 0 ? allPaths : undefined,
+      { componentMentions: pendingComponentMentions },
+    );
     clearDraft();
     setAttachments([]);
     atMentionedFilesRef.current.clear();
     setUploadError(null);
     setFsOpen(false);
-  }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, setAttachments, replyingTo, setReplyingTo, activeSessionKey]);
+  }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, setAttachments, replyingTo, setReplyingTo, activeSessionKey, pendingComponentMentions]);
 
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
@@ -660,6 +667,26 @@ export function SpotlightInput() {
 
         <div className="flex items-end gap-2">
           <div className="flex-1 min-w-0 relative">
+            <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+              {pendingComponentMentions.map((mention) => (
+                <span
+                  key={`${mention.appId}:${mention.componentId}`}
+                  title={`${mention.appId} / ${mention.path || mention.componentId}`}
+                  className="inline-flex h-7 max-w-[220px] shrink-0 items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/10 px-2 text-[12px] text-sky-100/90"
+                >
+                  <Blocks className="h-3.5 w-3.5 text-sky-200/80" />
+                  <span className="min-w-0 truncate">{mention.label || mention.componentId}</span>
+                  <span className="text-[10px] text-sky-100/45">{mention.componentType}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeComponentMention(mention.appId, mention.componentId)}
+                    className="ml-0.5 rounded-sm p-0.5 hover:bg-white/10 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${mention.label || mention.componentId} mention`}
+                  >
+                    <XCircle className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
             <textarea
               ref={inputRef}
               value={message}
@@ -781,12 +808,13 @@ export function SpotlightInput() {
               }
               disabled={!isConnected || isExternal}
               rows={1}
-              className="w-full bg-transparent outline-none border-none resize-none focus:outline-none focus:ring-0 focus:border-none text-[15px]"
+              className="min-w-[180px] flex-1 bg-transparent outline-none border-none resize-none focus:outline-none focus:ring-0 focus:border-none text-[15px]"
               style={{
                 fontWeight: 400, lineHeight: '1.5', color: 'var(--color-text)',
                 overflow: 'auto', maxHeight: 120, padding: '8px 0', minHeight: 36, outline: 'none',
               }}
             />
+            </div>
           </div>
           {isExternal && (
             <button
@@ -841,7 +869,7 @@ export function SpotlightInput() {
                     <Square className="w-4.5 h-4.5" />
                   </button>
                 </Tooltip>
-                {(message.trim() || attachments.length > 0) && !isExternal && (
+                {(message.trim() || attachments.length > 0 || pendingComponentMentions.length > 0) && !isExternal && (
                   <Tooltip content="Queue this message. Construct will read it next. Use Send now on a queued message to interrupt." side="top">
                     <button
                       type="button"
@@ -856,7 +884,7 @@ export function SpotlightInput() {
                   </Tooltip>
                 )}
               </>
-            ) : (message.trim() || attachments.length > 0) && !isExternal ? (
+            ) : (message.trim() || attachments.length > 0 || pendingComponentMentions.length > 0) && !isExternal ? (
               <Tooltip content={providerCopyData.inputDisabled ? (providerCopyData.badge ?? 'Limit reached') : 'Send'} side="top">
                 <button
                   type="button"

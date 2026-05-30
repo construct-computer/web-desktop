@@ -8,7 +8,7 @@ import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Upload, Wrench, Shield,
   Globe, Download, BadgeCheck, Sparkles,
-  Lock, Package, Link2, Server, Eye,
+  Lock, Package, Link2, Server, Eye, Trash2,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -293,6 +293,22 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     setPendingActions(prev => { const n = { ...prev }; delete n[appId]; return n; });
   };
 
+  const handleDeleteLocal = async (appId: string) => {
+    setPendingActions(prev => ({ ...prev, [appId]: true }));
+    try {
+      const res = await api.deleteLocalApp(appId);
+      if (res.success) {
+        useAppStore.getState().fetchApps();
+        setDetail(null);
+      } else {
+        setError('Delete failed: ' + (res.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setError(`Delete failed: ${err instanceof Error ? err.message : err}`);
+    }
+    setPendingActions(prev => { const n = { ...prev }; delete n[appId]; return n; });
+  };
+
   const handleToggleEnabled = async (appId: string, next: boolean) => {
     setPendingActions(prev => ({ ...prev, [`toggle-${appId}`]: true }));
     try {
@@ -467,6 +483,20 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                         className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-red-500 hover:bg-red-500/10 transition-colors shadow-sm"
                       >
                         Remove
+                      </button>
+                    )}
+                    {detail.source === 'local' && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete "${detail.name}"? This will permanently remove all files and cannot be undone.`)) {
+                            handleDeleteLocal(detail.id);
+                          }
+                        }}
+                        disabled={pendingActions[detail.id]}
+                        className="px-4 py-1.5 rounded-[8px] text-[12px] font-semibold text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 inline mr-1" />
+                        {pendingActions[detail.id] ? 'Deleting…' : 'Delete'}
                       </button>
                     )}
                   </>

@@ -16,7 +16,7 @@ import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import { clearDesktopAgentRuntime, shouldClearViewedAgentState } from './agentStateCleanup';
-import { useAppStore, localAppIframeRefs } from './appStore';
+import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
 import { dispatchAgentHistoryCleared, dispatchMemoryChanged } from '@/lib/agentUiEvents';
@@ -191,6 +191,8 @@ export interface ChatMessage {
   askUser?: AskUserData;
   /** File paths attached to this message (uploaded to workspace/uploads/) */
   attachments?: string[];
+  /** Structured local-app component mentions selected from App Builder or edit mode. */
+  componentMentions?: ComponentMention[];
   /** Source platform for external messages (used to render platform-specific UI). */
   source?: 'telegram' | 'slack' | 'email';
   /** Structured source details for external-platform messages. */
@@ -228,6 +230,17 @@ export interface ChatMessage {
   memoryActivity?: MemoryActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
+}
+
+export interface ComponentMention {
+  appId: string;
+  componentId: string;
+  componentType: string;
+  label?: string;
+  path?: string;
+  props?: Record<string, unknown>;
+  bindings?: Record<string, string>;
+  actions?: Record<string, unknown>;
 }
 
 export interface BrowserActionMeta {
@@ -577,6 +590,8 @@ interface ComputerStore {
   agentThinkingStream: string | null;
   /** Session-scoped image attachment previews. */
   pendingImageDataBySession: Record<string, string[]>;
+  /** Component chips queued for the next Spotlight message. */
+  pendingComponentMentions: ComponentMention[];
   /** Session-level token usage tracking */
   sessionTokens: { prompt: number; completion: number; total: number; cost: number };
   /** True while the agent loop is actively running (may span many tool iterations) */
@@ -649,7 +664,10 @@ interface ComputerStore {
 
   // Chat
   loadChatHistory: () => Promise<void>;
-  sendChatMessage: (content: string, attachments?: string[]) => void;
+  sendChatMessage: (content: string, attachments?: string[], opts?: { componentMentions?: ComponentMention[] }) => void;
+  addComponentMention: (mention: ComponentMention) => void;
+  removeComponentMention: (appId: string, componentId: string) => void;
+  clearComponentMentions: () => void;
   /**
    * Respond to an ask_user interactive question.
    *
@@ -907,6 +925,38 @@ function metadataFileAttachments(meta: Record<string, unknown> | undefined): str
           : '';
     });
   return normalizeAttachmentPaths(paths);
+}
+
+function coerceComponentMentions(meta: Record<string, unknown> | undefined): ComponentMention[] {
+  const frontendContext = meta?.frontendContext;
+  const raw = frontendContext && typeof frontendContext === 'object' && !Array.isArray(frontendContext)
+    ? (frontendContext as Record<string, unknown>).componentMentions
+    : undefined;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item): ComponentMention[] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const appId = typeof record.appId === 'string' ? record.appId : '';
+    const componentId = typeof record.componentId === 'string' ? record.componentId : '';
+    const componentType = typeof record.componentType === 'string' ? record.componentType : '';
+    if (!appId || !componentId || !componentType) return [];
+    return [{
+      appId,
+      componentId,
+      componentType,
+      label: typeof record.label === 'string' ? record.label : undefined,
+      path: typeof record.path === 'string' ? record.path : undefined,
+      props: record.props && typeof record.props === 'object' && !Array.isArray(record.props)
+        ? record.props as Record<string, unknown>
+        : undefined,
+      bindings: record.bindings && typeof record.bindings === 'object' && !Array.isArray(record.bindings)
+        ? record.bindings as Record<string, string>
+        : undefined,
+      actions: record.actions && typeof record.actions === 'object' && !Array.isArray(record.actions)
+        ? record.actions as Record<string, unknown>
+        : undefined,
+    }];
+  });
 }
 
 function metadataIterationLimit(meta: Record<string, unknown> | undefined): ChatMessage['iterationLimit'] | undefined {
@@ -1466,6 +1516,7 @@ export const useComputerStore = create<ComputerStore>()(
     agentThinking: null,
     agentThinkingStream: null,
     pendingImageDataBySession: {},
+    pendingComponentMentions: [],
     sessionTokens: { prompt: 0, completion: 0, total: 0, cost: 0 },
     agentRunning: false,
     agentStatusLabel: null,
@@ -2356,6 +2407,7 @@ export const useComputerStore = create<ComputerStore>()(
             let clientId: string | undefined;
             const meta = parseMetadata(msg.metadata);
             const attachments = metadataFileAttachments(meta);
+            const componentMentions = coerceComponentMentions(meta);
             if (meta) {
               const p = (meta.platformReply as Record<string, unknown> | undefined)?.platform;
               if (isExternalPlatform(p)) source = p;
@@ -2375,6 +2427,7 @@ export const useComputerStore = create<ComputerStore>()(
               access,
               clientId,
               attachments: attachments.length > 0 ? attachments : undefined,
+              componentMentions: componentMentions.length > 0 ? componentMentions : undefined,
             });
           } else if (msg.role === 'assistant' || msg.role === 'tool_call') {
             // Emit activity entries for each tool_call before the text content.
@@ -2734,12 +2787,40 @@ export const useComputerStore = create<ComputerStore>()(
       }
     },
 
-    sendChatMessage: async (content, attachments) => {
+    addComponentMention: (mention) => {
+      set(state => {
+        const exists = state.pendingComponentMentions.some(
+          m => m.appId === mention.appId && m.componentId === mention.componentId,
+        );
+        return {
+          pendingComponentMentions: exists
+            ? state.pendingComponentMentions.map(m =>
+                m.appId === mention.appId && m.componentId === mention.componentId ? mention : m,
+              )
+            : [...state.pendingComponentMentions, mention],
+        };
+      });
+    },
+
+    removeComponentMention: (appId, componentId) => {
+      set(state => ({
+        pendingComponentMentions: state.pendingComponentMentions.filter(
+          m => !(m.appId === appId && m.componentId === componentId),
+        ),
+      }));
+    },
+
+    clearComponentMentions: () => {
+      set({ pendingComponentMentions: [] });
+    },
+
+    sendChatMessage: async (content, attachments, opts) => {
       const initialState = get();
       const { instanceId, chatSessions } = initialState;
       let { activeSessionKey, chatMessages } = initialState;
       if (!instanceId) return;
       const normalizedAttachments = normalizeAttachmentPaths(attachments);
+      const componentMentions = opts?.componentMentions || initialState.pendingComponentMentions;
       if (inferExternalPlatform(activeSessionKey)) {
         useNotificationStore.getState().addNotification(
           {
@@ -2782,6 +2863,7 @@ export const useComputerStore = create<ComputerStore>()(
         content,
         timestamp: new Date(),
         attachments: normalizedAttachments.length > 0 ? normalizedAttachments : undefined,
+        componentMentions: componentMentions.length > 0 ? componentMentions : undefined,
         clientId,
         ...(injectWhileAgentRunning
           ? {
@@ -2845,7 +2927,10 @@ export const useComputerStore = create<ComputerStore>()(
         }
       }
 
-      const frontendContext = buildFrontendContext(normalizedAttachments);
+      const frontendContext = {
+        ...buildFrontendContext(normalizedAttachments),
+        ...(componentMentions.length > 0 ? { componentMentions } : {}),
+      };
       const sent = agentWS.sendChat(
         messageForAgent,
         activeSessionKey,
@@ -2876,6 +2961,7 @@ export const useComputerStore = create<ComputerStore>()(
         );
         agentWS.forceReconnect();
       } else {
+        set({ pendingComponentMentions: [] });
         // Start a safety timeout — if no agent events arrive within the
         // timeout window, reset agentRunning so the UI doesn't get stuck.
         resetAgentRunningTimer(get, set);
@@ -5149,13 +5235,28 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'local_app_preview_updated': {
+          const previewAppId = event.data?.appId as string;
+          if (previewAppId) {
+            reloadLocalAppIframes(previewAppId);
+            window.dispatchEvent(
+              new CustomEvent('construct:app_preview_complete', {
+                detail: { appId: previewAppId },
+              }),
+            );
+          }
+          break;
+        }
+
         case 'local_app_updated': {
           const updatedAppId = event.data?.appId as string;
           if (updatedAppId) {
-            const localRef = localAppIframeRefs.get(updatedAppId);
-            if (localRef?.current) {
-              localRef.current.src = localRef.current.src; // force iframe reload
-            }
+            reloadLocalAppIframes(updatedAppId);
+            window.dispatchEvent(
+              new CustomEvent('construct:app_update_complete', {
+                detail: { appId: updatedAppId },
+              }),
+            );
           }
           useAppStore.getState().fetchApps();
           break;
@@ -5165,13 +5266,7 @@ export const useComputerStore = create<ComputerStore>()(
           const stateAppId = event.data?.appId as string;
           const newState = event.data?.state;
           if (stateAppId && newState !== undefined) {
-            const localRef = localAppIframeRefs.get(stateAppId);
-            if (localRef?.current?.contentWindow) {
-              localRef.current.contentWindow.postMessage(
-                { type: 'construct:state_updated', state: newState },
-                '*',
-              );
-            }
+            postToLocalAppIframes(stateAppId, { type: 'construct:state_updated', state: newState });
           }
           break;
         }

@@ -13,6 +13,7 @@ export type WindowType =
   | 'email'
   | 'access-control'
   | 'app-registry'
+  | 'app-builder'
   | 'app';
 
 /** Panel types that live in the MenuBar dropdown, not as standalone windows. */

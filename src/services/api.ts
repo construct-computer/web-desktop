@@ -2784,8 +2784,9 @@ export interface LocalAppManifest {
   name: string;
   description: string;
   icon?: string;
+  iconBackground?: 'white' | 'green' | 'blue' | 'black';
   window: { width: number; height: number; minWidth?: number; minHeight?: number };
-  ui: { entry: string };
+  ui: { renderer: 'construct-hosted'; spec: string; kit: 'construct-v2'; entry?: never } | { entry: string; kit?: string };
   permissions?: {
     network?: string[];
     uses?: {
@@ -2795,6 +2796,33 @@ export interface LocalAppManifest {
     };
   };
   tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+}
+
+export interface ConstructComponentAction {
+  type: 'state.patch' | 'tool.call';
+  patch?: Record<string, unknown>;
+  tool?: string;
+  args?: Record<string, unknown>;
+}
+
+export interface ConstructComponentNode {
+  componentId: string;
+  type: string;
+  label?: string;
+  props?: Record<string, unknown>;
+  bindings?: Record<string, string>;
+  actions?: Record<string, ConstructComponentAction>;
+  children?: ConstructComponentNode[];
+}
+
+export interface ConstructAppSpec {
+  schemaVersion: 1;
+  appId: string;
+  name: string;
+  description?: string;
+  theme?: { density?: 'compact' | 'comfortable' };
+  layout: ConstructComponentNode[];
+  data?: Record<string, unknown>;
 }
 
 export interface LocalApp {
@@ -2809,6 +2837,45 @@ export async function listLocalApps(): Promise<ApiResult<{ apps: LocalApp[] }>> 
 
 export async function mintLocalAppToken(appId: string): Promise<ApiResult<{ token: string; appId: string; expiresIn: number }>> {
   return request(`/apps/local-token/${encodeURIComponent(appId)}`, { method: 'POST' });
+}
+
+export async function deleteLocalApp(appId: string): Promise<ApiResult<{ ok: boolean; appId: string; name?: string }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}`, { method: 'DELETE' });
+}
+
+export async function acceptLocalAppPreview(appId: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/accept-preview`, { method: 'POST' });
+}
+
+export async function discardLocalAppPreview(appId: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/discard-preview`, { method: 'POST' });
+}
+
+export async function getLocalAppPreviewStatus(appId: string): Promise<ApiResult<{ hasPreview: boolean; fileCount?: number; updatedAt?: string }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/preview-status`);
+}
+
+export async function getLocalAppSpec(appId: string, opts: { preview?: boolean } = {}): Promise<ApiResult<{ spec: ConstructAppSpec }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/spec${opts.preview ? '?preview=1' : ''}`);
+}
+
+export async function putLocalAppSpec(appId: string, spec: ConstructAppSpec, opts: { preview?: boolean } = {}): Promise<ApiResult<{ ok: boolean; spec: ConstructAppSpec }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/spec${opts.preview ? '?preview=1' : ''}`, {
+    method: 'PUT',
+    body: JSON.stringify({ spec }),
+  });
+}
+
+export async function patchLocalAppComponent(
+  appId: string,
+  componentId: string,
+  patch: Record<string, unknown>,
+  opts: { preview?: boolean } = {},
+): Promise<ApiResult<{ ok: boolean; spec: ConstructAppSpec }>> {
+  return request(`/apps/local/${encodeURIComponent(appId)}/components/${encodeURIComponent(componentId)}${opts.preview ? '?preview=1' : ''}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
 }
 
 export async function getLocalAppState(appId: string): Promise<ApiResult<Record<string, unknown>>> {

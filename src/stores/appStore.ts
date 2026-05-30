@@ -13,6 +13,29 @@ import iconGeneric from '@/icons/generic.png';
 /** Global registry of iframe refs for local apps — used for live reload. */
 export const localAppIframeRefs = new Map<string, React.RefObject<HTMLIFrameElement | null>>();
 
+export function localAppIframeRefKey(windowId: string, appId: string): string {
+  return `${windowId}::${appId}`;
+}
+
+export function getLocalAppIframeRefs(appId: string): React.RefObject<HTMLIFrameElement | null>[] {
+  const suffix = `::${appId}`;
+  return [...localAppIframeRefs.entries()]
+    .filter(([key]) => key.endsWith(suffix))
+    .map(([, ref]) => ref);
+}
+
+export function reloadLocalAppIframes(appId: string): void {
+  for (const ref of getLocalAppIframeRefs(appId)) {
+    if (ref.current) ref.current.src = ref.current.src;
+  }
+}
+
+export function postToLocalAppIframes(appId: string, message: unknown): void {
+  for (const ref of getLocalAppIframeRefs(appId)) {
+    ref.current?.contentWindow?.postMessage(message, '*');
+  }
+}
+
 const logger = log('AppStore');
 const TOOLKIT_DETAIL_TTL_MS = 10 * 60_000;
 const toolkitDetailCache = new Map<string, { fetchedAt: number; detail: { name?: string; description?: string; logo?: string } }>();

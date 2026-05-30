@@ -13,19 +13,21 @@ import {
   Loader2, Package, Wrench,
   ExternalLink, RefreshCw, Check,
   Search, Copy, User as UserIcon, Shield, Globe, Unplug, Hash, Calendar, Plug,
-  Info,
+  Info, Pencil, Trash2,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import type { WindowConfig } from '@/types';
 import type { InstalledApp, LocalApp, RegistryAppDetail, ComposioAccountDetail } from '@/services/api';
 import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
 import { useWindowStore } from '@/stores/windowStore';
-import { useAppStore, localAppIframeRefs } from '@/stores/appStore';
+import { useAppStore, localAppIframeRefKey, localAppIframeRefs, reloadLocalAppIframes } from '@/stores/appStore';
 import type { ConnectedToolkit } from '@/stores/appStore';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/config';
 import { agentWS } from '@/services/websocket';
 import * as api from '@/services/api';
 import { log } from '@/lib/logger';
+import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
@@ -129,13 +131,14 @@ function withTrailingSlash(url: string): string {
 }
 
 function IframeAppView({
-  config, appId, baseUrl, isLocal, appData,
+  config, appId, baseUrl, isLocal, appData, preview,
 }: {
   config: WindowConfig;
   appId: string;
   baseUrl: string;
   isLocal?: boolean;
   appData?: InstalledApp;
+  preview?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,13 +148,40 @@ function IframeAppView({
   const [localAppToken, setLocalAppToken] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Register iframe ref for local apps so agentStore can trigger live reloads
+  // Register iframe ref for local apps so agentStore can trigger live reloads.
+  // Use a composite key (windowId::appId) to avoid collisions when the same app
+  // is open in multiple windows.
+  const iframeRefKey = localAppIframeRefKey(config.id, appId);
   useEffect(() => {
     if (isLocal) {
-      localAppIframeRefs.set(appId, iframeRef);
-      return () => { localAppIframeRefs.delete(appId); };
+      localAppIframeRefs.set(iframeRefKey, iframeRef);
+      return () => { localAppIframeRefs.delete(iframeRefKey); };
     }
-  }, [isLocal, appId]);
+  }, [isLocal, appId, iframeRefKey]);
+
+  const postThemeToIframe = useCallback(() => {
+    if (!isLocal || !iframeRef.current?.contentWindow) return;
+    const root = document.documentElement;
+    const cs = getComputedStyle(root);
+    const tokens = {
+      bg: cs.getPropertyValue('--color-bg').trim(),
+      surface: cs.getPropertyValue('--color-surface').trim(),
+      surfaceRaised: cs.getPropertyValue('--color-surface-raised').trim(),
+      text: cs.getPropertyValue('--color-text').trim(),
+      textMuted: cs.getPropertyValue('--color-text-muted').trim(),
+      textSubtle: cs.getPropertyValue('--color-text-subtle').trim(),
+      border: cs.getPropertyValue('--color-border').trim(),
+      borderStrong: cs.getPropertyValue('--color-border-strong').trim(),
+      accent: cs.getPropertyValue('--color-accent').trim(),
+      success: cs.getPropertyValue('--color-success').trim(),
+      error: cs.getPropertyValue('--color-error').trim(),
+      warning: cs.getPropertyValue('--color-warning').trim(),
+    };
+    iframeRef.current.contentWindow.postMessage(
+      { type: 'construct:set_theme', tokens },
+      '*',
+    );
+  }, [isLocal]);
 
   const handleMessage = useCallback(
     async (event: MessageEvent) => {
@@ -232,7 +262,7 @@ function IframeAppView({
   const directUiUrl = isCustomUrlApp ? withTrailingSlash(baseUrl) : `${baseUrl}/ui/`;
   const proxyUiUrl = `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/ui-proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   const uiUrl = isLocal
-    ? `${withTrailingSlash(baseUrl)}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}` : ''}`
+    ? `${withTrailingSlash(baseUrl)}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}${preview ? '&preview=1' : ''}` : preview ? '?preview=1' : ''}`
     : useProxy
       ? proxyUiUrl
       : directUiUrl;
@@ -281,7 +311,7 @@ function IframeAppView({
           src={uiUrl}
           className="absolute inset-0 w-full h-full border-none"
           sandbox={sandboxAttr}
-          onLoad={() => setLoading(false)}
+          onLoad={() => { setLoading(false); postThemeToIframe(); }}
           onError={() => { setLoading(false); setError('Failed to load app UI'); }}
           title={config.title}
         />
@@ -432,39 +462,327 @@ function LocalAppView({
   app: LocalApp;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
+  const [previewFileCount, setPreviewFileCount] = useState<number | null>(null);
+  const instanceId = useComputerStore((s) => s.instanceId);
+  const addComponentMention = useComputerStore((s) => s.addComponentMention);
+
+  // Check for pending preview on mount
+  useEffect(() => {
+    let cancelled = false;
+    api.getLocalAppPreviewStatus(appId).then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data?.hasPreview) {
+        setIsPreview(true);
+        setPreviewFileCount(res.data.fileCount ?? null);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [appId]);
+
+  const iframeKey = localAppIframeRefKey(config.id, appId);
+
+  const toggleEdit = useCallback(() => {
+    const next = !isEditing;
+    setIsEditing(next);
+    const iframe = localAppIframeRefs.get(iframeKey)?.current;
+    iframe?.contentWindow?.postMessage(
+      { type: 'construct:set_inspector', enabled: next },
+      '*',
+    );
+  }, [isEditing, appId, iframeKey]);
+
+  // Keyboard shortcuts: Ctrl/Cmd+E toggles edit, Escape exits edit.
+  // Ignore when focus is in an input/textarea/contenteditable.
+  function isEditableTarget(el: EventTarget | null): boolean {
+    if (!el || !(el instanceof HTMLElement)) return false;
+    const tag = el.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+  }
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        toggleEdit();
+      }
+      if (e.key === 'Escape' && isEditing) {
+        e.preventDefault();
+        toggleEdit();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEditing, toggleEdit]);
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const iframe = localAppIframeRefs.get(iframeKey)?.current;
+      if (!iframe || event.source !== iframe.contentWindow) return;
+      if (event.data?.type === 'construct:component_selected') {
+        const component = event.data.component;
+        if (component && typeof component === 'object') {
+          const record = component as Record<string, unknown>;
+          const componentId = typeof record.id === 'string'
+            ? record.id
+            : typeof record.componentId === 'string'
+              ? record.componentId
+              : '';
+          const componentType = typeof record.type === 'string'
+            ? record.type
+            : typeof record.componentType === 'string'
+              ? record.componentType
+              : '';
+          if (componentId && componentType) {
+            addComponentMention({
+              appId,
+              componentId,
+              componentType,
+              label: typeof record.label === 'string' ? record.label : undefined,
+              path: typeof record.path === 'string' ? record.path : undefined,
+              props: record.props && typeof record.props === 'object' && !Array.isArray(record.props)
+                ? record.props as Record<string, unknown>
+                : undefined,
+              bindings: record.bindings && typeof record.bindings === 'object' && !Array.isArray(record.bindings)
+                ? record.bindings as Record<string, string>
+                : undefined,
+              actions: record.actions && typeof record.actions === 'object' && !Array.isArray(record.actions)
+                ? record.actions as ComponentMention['actions']
+                : undefined,
+            });
+          }
+        }
+        return;
+      }
+      if (event.data?.type !== 'construct:edit_request_sent') return;
+      const { element, prompt: instruction } = event.data;
+      if (!element) return;
+      setIsProcessing(true);
+      (async () => {
+        try {
+          const sessionKey = `edit-${appId}-stable`;
+          await api.createAgentSession(instanceId!, `Editing ${app.manifest.name}`, sessionKey);
+          agentWS.send({
+            type: 'app_notification',
+            appId,
+            message: instruction || 'Update this component.',
+            __isEditRequest: true,
+            sessionKey,
+            editRequest: { element, prompt: instruction },
+          });
+        } catch {
+          agentWS.send({
+            type: 'app_notification',
+            appId,
+            message: instruction || 'Update this component.',
+            __isEditRequest: true,
+            editRequest: { element, prompt: instruction },
+          });
+        }
+      })();
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [addComponentMention, appId, app.manifest.name, iframeKey, instanceId]);
+
+  useEffect(() => {
+    function handleComplete(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.appId !== appId) return;
+      setIsProcessing(false);
+      setIsEditing(false);
+      setIsPreview(false);
+      setPreviewFileCount(null);
+      const iframe = localAppIframeRefs.get(iframeKey)?.current;
+      iframe?.contentWindow?.postMessage(
+        { type: 'construct:set_inspector', enabled: false },
+        '*',
+      );
+      useNotificationStore.getState().addNotification(
+        {
+          title: 'App Updated',
+          body: `${app.manifest.name} has been updated.`,
+          variant: 'success',
+        },
+        6000,
+      );
+    }
+    function handlePreviewComplete(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.appId !== appId) return;
+      setIsProcessing(false);
+      setIsPreview(true);
+      api.getLocalAppPreviewStatus(appId).then((res) => {
+        if (res.success && res.data?.hasPreview) setPreviewFileCount(res.data.fileCount ?? null);
+      }).catch(() => {});
+      reloadLocalAppIframes(appId);
+      useNotificationStore.getState().addNotification(
+        {
+          title: 'Preview Ready',
+          body: `Changes to ${app.manifest.name} are ready to review. Accept or discard.`,
+          variant: 'success',
+        },
+        0,
+      );
+    }
+    window.addEventListener('construct:app_update_complete', handleComplete);
+    window.addEventListener('construct:app_preview_complete', handlePreviewComplete);
+    return () => {
+      window.removeEventListener('construct:app_update_complete', handleComplete);
+      window.removeEventListener('construct:app_preview_complete', handlePreviewComplete);
+    };
+  }, [appId, app.manifest.name, iframeKey]);
+
+  const handleAccept = useCallback(async () => {
+    try {
+      const res = await api.acceptLocalAppPreview(appId);
+      if (!res.success) throw new Error(res.error || 'Accept failed');
+      setIsPreview(false);
+      setPreviewFileCount(null);
+      useNotificationStore.getState().addNotification(
+        { title: 'Changes Accepted', body: `${app.manifest.name} updated.`, variant: 'success' },
+        5000,
+      );
+    } catch (err) {
+      logger.warn('Failed to accept preview:', err);
+      useNotificationStore.getState().addNotification(
+        { title: 'Accept Failed', body: err instanceof Error ? err.message : String(err), variant: 'error' },
+        6000,
+      );
+    }
+  }, [appId, app.manifest.name]);
+
+  const handleDiscard = useCallback(async () => {
+    try {
+      const res = await api.discardLocalAppPreview(appId);
+      if (!res.success) throw new Error(res.error || 'Discard failed');
+      setIsPreview(false);
+      setPreviewFileCount(null);
+      const iframe = localAppIframeRefs.get(iframeKey)?.current;
+      if (iframe) iframe.src = iframe.src;
+    } catch (err) {
+      logger.warn('Failed to discard preview:', err);
+      useNotificationStore.getState().addNotification(
+        { title: 'Discard Failed', body: err instanceof Error ? err.message : String(err), variant: 'error' },
+        6000,
+      );
+    }
+  }, [appId, iframeKey]);
 
   useWindowTitleBarAccessory(
     config.id,
-    <button
-      onClick={() => setShowDetails((v) => !v)}
-      className={`p-1 rounded-[5px] transition-colors ${
-        showDetails
-          ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
-          : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
-      }`}
-      title={showDetails ? 'Show app UI' : 'Show app details'}
-      aria-label={showDetails ? 'Show app UI' : 'Show app details'}
-    >
-      <Info className="w-3.5 h-3.5" />
-    </button>,
+    <>
+      <button
+        onClick={() => useWindowStore.getState().openWindow('app-builder', {
+          title: `Builder - ${app.manifest.name}`,
+          metadata: { appId },
+        })}
+        className="p-1 rounded-[5px] text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)] transition-colors"
+        title="Open in Builder"
+        aria-label="Open in Builder"
+      >
+        <Wrench className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={toggleEdit}
+        className={`p-1 rounded-[5px] transition-colors ${
+          isEditing
+            ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+            : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+        }`}
+        title={isEditing ? 'Exit edit mode' : 'Edit app'}
+        aria-label={isEditing ? 'Exit edit mode' : 'Edit app'}
+      >
+        <Pencil className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={() => setShowDetails((v) => !v)}
+        className={`p-1 rounded-[5px] transition-colors ${
+          showDetails
+            ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+            : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+        }`}
+        title={showDetails ? 'Show app UI' : 'Show app details'}
+        aria-label={showDetails ? 'Show app UI' : 'Show app details'}
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+    </>,
   );
 
   if (showDetails) {
-    return <LocalAppPanel appId={appId} app={app} onShowUi={() => setShowDetails(false)} />;
+    return (
+      <LocalAppPanel
+        appId={appId}
+        app={app}
+        config={config}
+        onShowUi={() => setShowDetails(false)}
+      />
+    );
   }
 
-  return <IframeAppView config={config} appId={appId} baseUrl={`/api/apps/local/${appId}`} isLocal />;
+  return (
+    <div className="w-full h-full relative">
+      {isPreview && (
+        <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-amber-500/15 border-b border-amber-500/30">
+          <span className="text-xs text-amber-400 font-medium">
+            Preview mode - changes not yet saved{previewFileCount ? ` (${previewFileCount} files)` : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAccept}
+              className="px-3 py-1 rounded-[6px] text-[11px] font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+            >
+              Accept
+            </button>
+            <button
+              onClick={handleDiscard}
+              className="px-3 py-1 rounded-[6px] text-[11px] text-[var(--color-text-muted)] hover:bg-white/5 transition-colors"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+      <div className={isPreview ? 'absolute left-0 right-0 bottom-0 top-[37px]' : 'absolute inset-0'}>
+        <IframeAppView
+          config={config}
+          appId={appId}
+          baseUrl={`/api/apps/local/${appId}`}
+          isLocal
+          preview={isPreview}
+        />
+      </div>
+      {isProcessing && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+          <Loader2 className="w-8 h-8 mb-3 animate-spin text-[var(--color-accent)]" />
+          <p className="text-sm text-white/80 font-medium">
+            Construct is updating {app.manifest.name}...
+          </p>
+          <p className="text-xs text-white/40 mt-1">
+            The app will refresh when changes are ready.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LocalAppPanel({
   appId,
   app,
+  config,
   onShowUi,
 }: {
   appId: string;
   app: LocalApp;
+  config: WindowConfig;
   onShowUi: () => void;
 }) {
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const manifest = app.manifest;
   const tools = manifest.tools.map((tool) => ({
     slug: tool.name,
@@ -481,6 +799,24 @@ function LocalAppPanel({
       ? `min ${manifest.window.minWidth} x ${manifest.window.minHeight}`
       : null,
   ].filter(Boolean).join(' · ');
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await api.deleteLocalApp(appId);
+      if (res.success) {
+        useAppStore.getState().fetchApps();
+        useWindowStore.getState().closeWindow(config.id);
+      } else {
+        logger.warn('Failed to delete local app:', res.error);
+        setConfirmDelete(false);
+      }
+    } catch (err) {
+      logger.warn('Failed to delete local app:', err);
+      setConfirmDelete(false);
+    }
+    setDeleting(false);
+  };
 
   return (
     <AppShell>
@@ -506,11 +842,41 @@ function LocalAppPanel({
             Open Interface
           </button>
         }
+        actions={
+          !confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={deleting}
+              className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold text-red-400 hover:bg-red-500/10 transition-colors"
+              title="Delete this app"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-red-400">Delete this app?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-3 py-1 rounded-[6px] text-[11px] font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="px-3 py-1 rounded-[6px] text-[11px] text-[var(--color-text-muted)] hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )
+        }
       />
 
       <InfoCard title="Details">
         <InfoRow icon={<Hash className="w-3 h-3" />} label="App ID" value={appId} mono copyable />
-        <InfoRow icon={<Package className="w-3 h-3" />} label="UI entry" value={manifest.ui.entry} mono />
+        <InfoRow icon={<Package className="w-3 h-3" />} label="UI" value={'renderer' in manifest.ui ? manifest.ui.renderer : manifest.ui.entry} mono />
         <InfoRow icon={<Wrench className="w-3 h-3" />} label="Window" value={windowSize} />
       </InfoCard>
 

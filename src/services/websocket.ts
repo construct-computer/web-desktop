@@ -469,6 +469,16 @@ export interface AgentFrontendContext {
   } | null;
   selectedIntegrationSlug?: string;
   selectedFiles?: string[];
+  componentMentions?: Array<{
+    appId: string;
+    componentId: string;
+    componentType: string;
+    label?: string;
+    path?: string;
+    props?: Record<string, unknown>;
+    bindings?: Record<string, string>;
+    actions?: Record<string, unknown>;
+  }>;
   launchedFrom?: string;
 }
 

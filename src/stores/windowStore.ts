@@ -10,7 +10,7 @@ import { hasAgentAccess } from '@/lib/plans';
 
 /** Window types unsubscribed users can open in preview mode. */
 const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
-  'settings', 'about', 'app-registry',
+  'settings', 'about', 'app-registry', 'app-builder',
 ]);
 import {
   DEFAULT_WINDOW_WIDTH,
@@ -299,6 +299,15 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
     maxWidth: 1100,
     maxHeight: 900,
   },
+  'app-builder': {
+    title: 'Builder',
+    width: 1180,
+    height: 760,
+    minWidth: 760,
+    minHeight: 520,
+    maxWidth: 1800,
+    maxHeight: 1200,
+  },
   'document-viewer': {
     title: 'Document Viewer',
     width: 800,
@@ -582,7 +591,7 @@ const WINDOW_PLATFORM_MAP: Partial<Record<WindowType, WorkspacePlatform>> = {
 /** Window types that only allow a single instance (opening again focuses the existing one). */
 const SINGLETON_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'calendar', 'auditlogs', 'memory',
-  'email', 'files', 'access-control', 'app-registry',
+  'email', 'files', 'access-control', 'app-registry', 'app-builder',
   // NOTE: 'terminal' was removed — multiple terminal windows are supported,
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);

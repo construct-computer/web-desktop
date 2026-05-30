@@ -24,6 +24,7 @@ const AccessControlWindow = lazy(() => import('../apps/AccessControlWindow').the
 const DocumentViewerWindow = lazy(() => import('../apps/DocumentViewerWindow').then((m) => ({ default: m.DocumentViewerWindow })));
 const DocumentWorkbenchWindow = lazy(() => import('../apps/DocumentWorkbenchWindow').then((m) => ({ default: m.DocumentWorkbenchWindow })));
 const AppRegistryWindow = lazy(() => import('../apps/AppRegistryWindow').then((m) => ({ default: m.AppRegistryWindow })));
+const AppBuilderWindow = lazy(() => import('../apps/AppBuilderWindow').then((m) => ({ default: m.AppBuilderWindow })));
 const AppWindow = lazy(() => import('../apps/AppWindow').then((m) => ({ default: m.AppWindow })));
 
 // Map window types to their content components.
@@ -43,6 +44,7 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   email: EmailWindow,
   'access-control': AccessControlWindow,
   'app-registry': AppRegistryWindow,
+  'app-builder': AppBuilderWindow,
   app: AppWindow,
 };
 

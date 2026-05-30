@@ -67,6 +67,14 @@ export const SYSTEM_APPS: AppDefinition[] = [
     category: 'system',
     keywords: ['apps', 'store', 'install', 'marketplace', 'registry', 'mcp', 'plugins', 'extensions'],
   },
+  {
+    id: 'app-builder',
+    label: 'Builder',
+    windowType: 'app-builder',
+    icon: iconText,
+    category: 'system',
+    keywords: ['builder', 'apps', 'design', 'ui', 'components', 'editor'],
+  },
 
   // ── System utilities ──
   {
@@ -171,6 +179,7 @@ export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string;
   editor: { label: 'Editor', icon: iconText },
   'document-viewer': { label: 'Editor', icon: iconText },
   'app-registry': { label: 'Apps', icon: iconAppStore },
+  'app-builder': { label: 'Builder', icon: iconText },
   about: { label: 'About', icon: iconGeneric },
 };
 

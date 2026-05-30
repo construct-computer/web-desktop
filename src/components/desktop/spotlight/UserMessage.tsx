@@ -196,6 +196,21 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
               : [injectionLanded ? 'user-msg-injection-landed' : ''].filter(Boolean).join(' '),
           ].filter(Boolean).join(' ')}
         >
+          {msg.componentMentions && msg.componentMentions.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap justify-end gap-1">
+              {msg.componentMentions.map((mention) => (
+                <span
+                  key={`${mention.appId}:${mention.componentId}`}
+                  title={`${mention.appId} / ${mention.path || mention.componentId}`}
+                  className="inline-flex max-w-[220px] items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] text-white/85"
+                >
+                  <Blocks className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">{mention.label || mention.componentId}</span>
+                  <span className="text-white/45">{mention.componentType}</span>
+                </span>
+              ))}
+            </div>
+          )}
           {(() => {
             if (reply) {
               return (
