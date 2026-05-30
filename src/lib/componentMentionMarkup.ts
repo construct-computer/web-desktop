@@ -9,7 +9,7 @@ export type ComponentMentionTextPart<T extends ComponentMentionLike> =
 
 const COMPONENT_MARKER_RE = /@\{component:([^:\s{}]+):([^}\s]+)\}/g;
 
-function markerKey(appId: string, componentId: string): string {
+export function componentMentionKey(appId: string, componentId: string): string {
   return `${appId}:${componentId}`;
 }
 
@@ -24,16 +24,46 @@ export function prependComponentMentionMarkers<T extends ComponentMentionLike>(
   if (mentions.length === 0) return text;
   const existing = new Set([...text.matchAll(COMPONENT_MARKER_RE)].map((match) => {
     try {
-      return markerKey(decodeURIComponent(match[1] || ''), decodeURIComponent(match[2] || ''));
+      return componentMentionKey(decodeURIComponent(match[1] || ''), decodeURIComponent(match[2] || ''));
     } catch {
       return '';
     }
   }));
   const markers = mentions
-    .filter((mention) => !existing.has(markerKey(mention.appId, mention.componentId)))
+    .filter((mention) => !existing.has(componentMentionKey(mention.appId, mention.componentId)))
     .map(componentMentionMarker);
   if (markers.length === 0) return text;
   return [markers.join(' '), text.trim()].filter(Boolean).join(' ');
+}
+
+export function componentMentionKeysInText(text: string): Set<string> {
+  const keys = new Set<string>();
+  for (const match of text.matchAll(COMPONENT_MARKER_RE)) {
+    try {
+      keys.add(componentMentionKey(decodeURIComponent(match[1] || ''), decodeURIComponent(match[2] || '')));
+    } catch {
+      // Ignore malformed marker-like text; rendering keeps it as plain text.
+    }
+  }
+  return keys;
+}
+
+export function removeComponentMentionMarker<T extends ComponentMentionLike>(
+  text: string,
+  mention: T,
+): string {
+  return text
+    .split(componentMentionMarker(mention))
+    .join('')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]+|[ \t]+$/g, '');
+}
+
+export function stripComponentMentionMarkers(text: string): string {
+  return text
+    .replace(COMPONENT_MARKER_RE, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]+|[ \t]+$/g, '');
 }
 
 export function splitComponentMentionMarkers<T extends ComponentMentionLike>(
@@ -41,7 +71,7 @@ export function splitComponentMentionMarkers<T extends ComponentMentionLike>(
   mentions: T[] = [],
 ): ComponentMentionTextPart<T>[] {
   if (!text) return [];
-  const mentionsByKey = new Map(mentions.map((mention) => [markerKey(mention.appId, mention.componentId), mention]));
+  const mentionsByKey = new Map(mentions.map((mention) => [componentMentionKey(mention.appId, mention.componentId), mention]));
   const parts: ComponentMentionTextPart<T>[] = [];
   const pushText = (value: string) => {
     if (!value) return;
@@ -57,7 +87,7 @@ export function splitComponentMentionMarkers<T extends ComponentMentionLike>(
     try {
       const appId = decodeURIComponent(match[1] || '');
       const componentId = decodeURIComponent(match[2] || '');
-      const mention = mentionsByKey.get(markerKey(appId, componentId));
+      const mention = mentionsByKey.get(componentMentionKey(appId, componentId));
       if (mention) {
         parts.push({ kind: 'mention', mention, key: `${appId}:${componentId}:${index}` });
       } else {

@@ -40,20 +40,20 @@ export function ComponentMentionToken({
       } : undefined}
       className={[
         'inline-flex max-w-[280px] shrink-0 items-center gap-1.5 align-baseline',
-        'rounded-md border px-1.5 text-[11px] leading-5',
-        clickable && 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300/35',
+        'rounded-md border px-1.5 text-[11px] leading-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+        clickable && 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20',
         isMessage
           ? 'mb-1 mr-1 border-white/10 bg-white/15 py-0 text-white/90'
-          : 'h-7 border-sky-400/20 bg-sky-400/10 py-0.5 text-sky-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+          : 'h-7 border-white/10 bg-white/[0.08] py-0.5 text-[var(--color-text)]',
       ].filter(Boolean).join(' ')}
       data-component-mention={`${mention.appId}:${mention.componentId}`}
     >
-      <Blocks className={isMessage ? 'h-2.5 w-2.5 shrink-0' : 'h-3.5 w-3.5 shrink-0 text-sky-200/80'} />
+      <Blocks className={isMessage ? 'h-2.5 w-2.5 shrink-0' : 'h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]'} />
       <span className="min-w-0 truncate">
-        <span className={isMessage ? 'text-white/55' : 'text-sky-100/55'}>{mentionApp(mention)} / </span>
+        <span className={isMessage ? 'text-white/55' : 'text-[var(--color-text-muted)]'}>{mentionApp(mention)} / </span>
         {mentionLabel(mention)}
       </span>
-      <span className={isMessage ? 'text-white/45' : 'text-[10px] text-sky-100/45'}>
+      <span className={isMessage ? 'text-white/45' : 'rounded-sm bg-black/20 px-1 font-mono text-[10px] text-[var(--color-text-muted)]/75'}>
         {mention.componentType}
       </span>
       {onRemove && (

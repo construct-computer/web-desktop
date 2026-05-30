@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Blocks, Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
@@ -20,8 +20,15 @@ import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
 import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
-import { ComponentMentionToken } from './ComponentMentionToken';
-import { prependComponentMentionMarkers } from '@/lib/componentMentionMarkup';
+import {
+  componentMentionKeysInText,
+  componentMentionKey,
+  componentMentionMarker,
+  prependComponentMentionMarkers,
+  removeComponentMentionMarker,
+  splitComponentMentionMarkers,
+  stripComponentMentionMarkers,
+} from '@/lib/componentMentionMarkup';
 
 const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -124,6 +131,157 @@ function componentSuggestionText(item: ComponentSuggestion): string {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
+function mentionLabel(mention: ComponentMention): string {
+  return mention.label || mention.componentId;
+}
+
+function mentionApp(mention: ComponentMention): string {
+  return mention.appName || mention.appId;
+}
+
+function serializeComposerNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+  if (!(node instanceof HTMLElement || node instanceof DocumentFragment)) return '';
+  if (node instanceof HTMLElement) {
+    const marker = node.dataset.componentMarker;
+    if (marker) return marker;
+    if (node.tagName === 'BR') return '\n';
+  }
+  let value = '';
+  node.childNodes.forEach((child) => { value += serializeComposerNode(child); });
+  return value;
+}
+
+function serializeComposer(root: HTMLElement | null): string {
+  return root ? serializeComposerNode(root) : '';
+}
+
+function composerSelectionOffset(root: HTMLElement | null, boundary: 'start' | 'end' = 'end'): number {
+  if (!root) return 0;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return serializeComposer(root).length;
+  const activeRange = selection.getRangeAt(0);
+  const node = boundary === 'start' ? activeRange.startContainer : activeRange.endContainer;
+  if (!root.contains(node)) return serializeComposer(root).length;
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  if (boundary === 'start') range.setEnd(activeRange.startContainer, activeRange.startOffset);
+  else range.setEnd(activeRange.endContainer, activeRange.endOffset);
+  return serializeComposerNode(range.cloneContents()).length;
+}
+
+function composerSelectionRange(root: HTMLElement | null): { start: number; end: number } {
+  const start = composerSelectionOffset(root, 'start');
+  const end = composerSelectionOffset(root, 'end');
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
+function nodeSerializedLength(node: Node): number {
+  return serializeComposerNode(node).length;
+}
+
+function findComposerPosition(
+  node: Node,
+  offset: number,
+): { node: Node; offset: number; before?: Element; after?: Element } | null {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return { node, offset: Math.max(0, Math.min(offset, node.textContent?.length || 0)) };
+  }
+  if (!(node instanceof HTMLElement || node instanceof DocumentFragment)) return null;
+
+  let cursor = 0;
+  for (const child of Array.from(node.childNodes)) {
+    const length = nodeSerializedLength(child);
+    if (offset <= cursor + length) {
+      if (child instanceof HTMLElement && child.dataset.componentMarker) {
+        return offset - cursor <= 0 ? { node, offset: 0, before: child } : { node, offset: 0, after: child };
+      }
+      return findComposerPosition(child, offset - cursor) || { node, offset: node.childNodes.length };
+    }
+    cursor += length;
+  }
+  return { node, offset: node.childNodes.length };
+}
+
+function setComposerCaret(root: HTMLElement | null, offset: number): void {
+  if (!root) return;
+  root.focus();
+  const range = document.createRange();
+  const position = findComposerPosition(root, Math.max(0, offset));
+  if (!position) {
+    range.selectNodeContents(root);
+    range.collapse(false);
+  } else if (position.before) {
+    range.setStartBefore(position.before);
+  } else if (position.after) {
+    range.setStartAfter(position.after);
+  } else {
+    range.setStart(position.node, position.offset);
+  }
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function insertComposerText(root: HTMLElement | null, message: string, text: string): { value: string; cursor: number } {
+  const { start, end } = composerSelectionRange(root);
+  const value = `${message.slice(0, start)}${text}${message.slice(end)}`;
+  return { value, cursor: start + text.length };
+}
+
+function createComposerMentionChip(mention: ComponentMention): HTMLElement {
+  const chip = document.createElement('span');
+  chip.contentEditable = 'false';
+  chip.dataset.componentMentionToken = 'true';
+  chip.dataset.componentMarker = componentMentionMarker(mention);
+  chip.dataset.appId = mention.appId;
+  chip.dataset.componentId = mention.componentId;
+  chip.title = `${mentionApp(mention)} / ${mention.path || mention.componentId}`;
+  chip.className = [
+    'mx-0.5 inline-flex max-w-[280px] shrink-0 select-none items-center gap-1 align-baseline',
+    'rounded-md border border-white/10 bg-white/[0.08] px-1.5 py-0.5',
+    'text-[12px] leading-[18px] text-[var(--color-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+  ].join(' ');
+
+  const app = document.createElement('span');
+  app.className = 'min-w-0 truncate text-[var(--color-text-muted)]';
+  app.textContent = mentionApp(mention);
+
+  const slash = document.createElement('span');
+  slash.className = 'text-[var(--color-text-muted)]/50';
+  slash.textContent = '/';
+
+  const label = document.createElement('span');
+  label.dataset.componentMentionAction = 'open';
+  label.className = 'min-w-0 truncate font-medium text-[var(--color-text)]';
+  label.textContent = mentionLabel(mention);
+
+  const type = document.createElement('span');
+  type.className = 'rounded-sm bg-black/20 px-1 font-mono text-[10px] text-[var(--color-text-muted)]/75';
+  type.textContent = mention.componentType || 'component';
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.dataset.componentMentionAction = 'remove';
+  remove.className = 'ml-0.5 rounded-sm px-1 text-[11px] text-[var(--color-text-muted)] hover:bg-white/10 hover:text-red-200';
+  remove.ariaLabel = `Remove ${mentionLabel(mention)} mention`;
+  remove.textContent = 'x';
+
+  chip.append(app, slash, label, type, remove);
+  return chip;
+}
+
+function renderComposerValue(root: HTMLElement, value: string, mentions: ComponentMention[]): void {
+  const fragment = document.createDocumentFragment();
+  const parts = splitComponentMentionMarkers(value, mentions);
+  for (const part of parts) {
+    if (part.kind === 'mention') fragment.append(createComposerMentionChip(part.mention));
+    else if (part.text) fragment.append(document.createTextNode(part.text));
+  }
+  root.replaceChildren(fragment);
+}
+
 /** Stable empty slice for Zustand selector — never use `|| []` in selectors (new ref each run → infinite re-renders). */
 const EMPTY_PENDING_IMAGES: string[] = [];
 
@@ -173,8 +331,9 @@ export function SpotlightInput() {
   const { play } = useSound();
   const isMobile = useIsMobile();
   const visualViewportBottomInset = useVisualViewportBottomInset();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingCaretOffsetRef = useRef<number | null>(null);
   const [slashSelected, setSlashSelected] = useState(0);
   const sessionInputKey = activeSessionKey || 'default';
   const [attachmentsBySession, setAttachmentsBySession] = useState<Record<string, Attachment[]>>({});
@@ -220,6 +379,12 @@ export function SpotlightInput() {
   const [historyNavIndex, setHistoryNavIndex] = useState(-1);
   const historyStashRef = useRef('');
 
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden';
+  }, []);
+
   const [message, setMessageRaw] = useState(() => {
     try { return localStorage.getItem(draftKey(activeSessionKey)) || ''; } catch { return ''; }
   });
@@ -227,6 +392,14 @@ export function SpotlightInput() {
     setMessageRaw(val);
     try { localStorage.setItem(draftKey(activeSessionKey), val); } catch { /* */ }
   }, [activeSessionKey]);
+  const setMessageWithCaret = useCallback((val: string, caret = val.length) => {
+    pendingCaretOffsetRef.current = caret;
+    setMessage(val);
+    requestAnimationFrame(() => {
+      setComposerCaret(inputRef.current, caret);
+      autoResize();
+    });
+  }, [autoResize, setMessage]);
 
   const isConnected = computer?.status === 'running' && (agentConnected || agentConnecting);
   const showSlash = message.startsWith('/') && !message.includes(' ');
@@ -239,13 +412,6 @@ export function SpotlightInput() {
     if (!appsFetched) void fetchApps();
   }, [appsFetched, fetchApps]);
 
-  const autoResize = useCallback(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, []);
-
   useEffect(() => {
     setHistoryNavIndex(-1);
     historyStashRef.current = '';
@@ -253,6 +419,28 @@ export function SpotlightInput() {
     try { setMessageRaw(localStorage.getItem(draftKey(activeSessionKey)) || ''); } catch { setMessageRaw(''); }
     requestAnimationFrame(autoResize);
   }, [activeSessionKey, autoResize]);
+
+  useEffect(() => {
+    if (pendingComponentMentions.length === 0) return;
+    const next = prependComponentMentionMarkers(message, pendingComponentMentions);
+    if (next !== message) setMessageWithCaret(next, next.length);
+  }, [message, pendingComponentMentions, setMessageWithCaret]);
+
+  useLayoutEffect(() => {
+    const root = inputRef.current;
+    if (!root) return;
+    const active = document.activeElement === root;
+    const serialized = serializeComposer(root);
+    const shouldRender = serialized !== message || !active;
+    if (shouldRender) {
+      const pendingCaret = pendingCaretOffsetRef.current;
+      const caret = pendingCaret ?? (active ? composerSelectionOffset(root) : message.length);
+      renderComposerValue(root, message, pendingComponentMentions);
+      if (active || pendingCaret !== null) setComposerCaret(root, Math.min(caret, message.length));
+      pendingCaretOffsetRef.current = null;
+    }
+    autoResize();
+  }, [autoResize, message, pendingComponentMentions]);
 
   // Focus input on mount and when typing — but never on mobile, where
   // auto-focus pops the keyboard immediately and obscures the rest of the UI.
@@ -282,17 +470,11 @@ export function SpotlightInput() {
         ? `${message.trimEnd()} ${text.trimStart()}`
         : text;
       setHistoryNavIndex(-1);
-      setMessage(next);
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        const end = inputRef.current?.value.length ?? next.length;
-        inputRef.current?.setSelectionRange(end, end);
-        autoResize();
-      });
+      setMessageWithCaret(next, next.length);
     };
     window.addEventListener('spotlight-set-draft', setDraftFromEvent);
     return () => window.removeEventListener('spotlight-set-draft', setDraftFromEvent);
-  }, [autoResize, message, setMessage]);
+  }, [message, setMessageWithCaret]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -420,22 +602,19 @@ export function SpotlightInput() {
     if (!el || fsAtPosRef.current < 0) return;
     el.focus();
     const start = fsAtPosRef.current;
-    const end = el.selectionStart ?? el.value.length;
+    const end = composerSelectionOffset(el);
 
     if (item.kind === 'component') {
       const before = message.slice(0, start);
       const after = message.slice(end);
-      const separator = before && after && !/\s$/.test(before) && !/^\s/.test(after) ? ' ' : '';
-      const nextValue = `${before}${separator}${after}`.replace(/[ \t]{2,}/g, ' ');
-      const nextCursor = before.length + separator.length;
-      setMessage(nextValue);
+      const marker = componentMentionMarker(item.mention);
+      const trailing = /^\s/.test(after) ? '' : ' ';
+      const nextValue = `${before}${marker}${trailing}${after}`.replace(/[ \t]{2,}/g, ' ');
+      const nextCursor = before.length + marker.length + trailing.length;
       addComponentMention(item.mention);
+      setMessageWithCaret(nextValue, nextCursor);
       setFsOpen(false);
       setComponentItems([]);
-      requestAnimationFrame(() => {
-        el.setSelectionRange(nextCursor, nextCursor);
-        autoResize();
-      });
       return;
     }
 
@@ -443,12 +622,8 @@ export function SpotlightInput() {
       const insert = `@${item.display}`;
       const nextValue = `${message.slice(0, start)}${insert}${message.slice(end)}`;
       const nextCursor = start + insert.length;
-      setMessage(nextValue);
-      requestAnimationFrame(() => {
-        el.setSelectionRange(nextCursor, nextCursor);
-        autoResize();
-        detectFileTrigger(nextValue, nextCursor);
-      });
+      setMessageWithCaret(nextValue, nextCursor);
+      requestAnimationFrame(() => detectFileTrigger(nextValue, nextCursor));
       return;
     }
 
@@ -457,11 +632,7 @@ export function SpotlightInput() {
     const separator = before && after && !/\s$/.test(before) && !/^\s/.test(after) ? ' ' : '';
     const nextValue = `${before}${separator}${after}`.replace(/[ \t]{2,}/g, ' ');
     const nextCursor = before.length + separator.length;
-    setMessage(nextValue);
-    requestAnimationFrame(() => {
-      el.setSelectionRange(nextCursor, nextCursor);
-      autoResize();
-    });
+    setMessageWithCaret(nextValue, nextCursor);
 
     const normalizedPath = normalizeWorkspacePath(item.id);
     setAttachments(prev => {
@@ -483,7 +654,7 @@ export function SpotlightInput() {
         reader.readAsDataURL(blob);
       }).catch(() => {});
     }
-  }, [addComponentMention, instanceId, message, setMessage, autoResize, detectFileTrigger, setAttachments, setSessionPendingImages]);
+  }, [addComponentMention, instanceId, message, setMessageWithCaret, detectFileTrigger, setAttachments, setSessionPendingImages]);
 
   useEffect(() => {
     if (!fsOpen) return;
@@ -545,14 +716,23 @@ export function SpotlightInput() {
     const el = inputRef.current;
     if (!el) return;
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.files;
-      if (!items || items.length === 0) return;
+      const items = Array.from(e.clipboardData?.files || []);
+      if (items.length > 0) {
+        e.preventDefault();
+        processFiles(items);
+        return;
+      }
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (!text) return;
       e.preventDefault();
-      processFiles(Array.from(items));
+      const next = insertComposerText(el, message, text);
+      setHistoryNavIndex(-1);
+      setMessageWithCaret(next.value, next.cursor);
+      requestAnimationFrame(() => detectFileTrigger(next.value, next.cursor));
     };
     el.addEventListener('paste', onPaste);
     return () => el.removeEventListener('paste', onPaste);
-  }, [processFiles]);
+  }, [detectFileTrigger, message, processFiles, setMessageWithCaret]);
 
   // Listen for files dropped on the Spotlight shell panel
   useEffect(() => {
@@ -570,8 +750,12 @@ export function SpotlightInput() {
     setHistoryNavIndex(-1);
     historyStashRef.current = '';
     try { localStorage.removeItem(draftKey(activeSessionKey)); } catch { /* */ }
-    requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
-  }, [activeSessionKey]);
+    pendingCaretOffsetRef.current = 0;
+    requestAnimationFrame(() => {
+      if (inputRef.current) renderComposerValue(inputRef.current, '', []);
+      autoResize();
+    });
+  }, [activeSessionKey, autoResize]);
 
   const executeSlashCommand = useCallback(async (cmd: { action: () => void | Promise<void> }) => {
     play('click');
@@ -605,7 +789,8 @@ export function SpotlightInput() {
 
     play('click');
     if (isMobile) hapticLight();
-    if (text) appendToInputHistory(activeSessionKey, text);
+    const historyText = stripComponentMentionMarkers(text).trim();
+    if (historyText) appendToInputHistory(activeSessionKey, historyText);
     else if (allPaths.length > 0) appendToInputHistory(activeSessionKey, `📎 ${allPaths.length} attachment(s)`);
     else if (pendingComponentMentions.length > 0) appendToInputHistory(activeSessionKey, `${pendingComponentMentions.length} component mention(s)`);
     sendChatMessage(
@@ -621,9 +806,14 @@ export function SpotlightInput() {
   }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, setAttachments, replyingTo, setReplyingTo, activeSessionKey, pendingComponentMentions]);
 
   const removeMentionAndFocus = useCallback((appId: string, componentId: string) => {
+    const mention = pendingComponentMentions.find((item) => item.appId === appId && item.componentId === componentId);
+    if (mention) {
+      const next = removeComponentMentionMarker(message, mention);
+      setMessageWithCaret(next, Math.min(composerSelectionOffset(inputRef.current), next.length));
+    }
     removeComponentMention(appId, componentId);
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [removeComponentMention]);
+  }, [message, pendingComponentMentions, removeComponentMention, setMessageWithCaret]);
 
   const openComponentMention = useCallback((mention: ComponentMention) => {
     const title = mention.label ? `Builder - ${mention.label}` : `Builder - ${mention.appId}`;
@@ -859,18 +1049,28 @@ export function SpotlightInput() {
 
         <div className="flex items-end gap-2">
           <div className="flex-1 min-w-0 relative">
-            <div className="flex min-h-9 flex-wrap items-center gap-1.5">
-              {pendingComponentMentions.map((mention) => (
-                <ComponentMentionToken
-                  key={`${mention.appId}:${mention.componentId}`}
-                  mention={mention}
-                  onOpen={() => openComponentMention(mention)}
-                  onRemove={() => removeMentionAndFocus(mention.appId, mention.componentId)}
-                />
-              ))}
-            <textarea
+            {!message && (
+              <span className="pointer-events-none absolute left-0 top-2 text-[15px] text-[var(--color-text-muted)]/45">
+                {isVoiceActive
+                  ? 'Listening...'
+                  : isExternal
+                    ? `Reply from ${externalLabel}. This Spotlight view is read-only.`
+                    : isConnected
+                      ? agentConnecting && !agentConnected
+                        ? 'Queue a message while Construct reconnects...'
+                        : 'Ask anything... (@ for files or components)'
+                      : agentConnected
+                        ? 'Starting Construct...'
+                        : 'Reconnecting to Construct...'}
+              </span>
+            )}
+            <div
               ref={inputRef}
-              value={message}
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Message Construct"
+              contentEditable={isConnected && !isExternal}
+              suppressContentEditableWarning
               enterKeyHint={isMobile ? 'send' : undefined}
               onFocus={() => {
                 if (!isMobile) return;
@@ -878,12 +1078,36 @@ export function SpotlightInput() {
                   inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
                 });
               }}
-              onChange={(e) => {
+              onMouseDown={(event) => {
+                const target = event.target as HTMLElement | null;
+                const actionEl = target?.closest<HTMLElement>('[data-component-mention-action]');
+                if (!actionEl) return;
+                const tokenEl = actionEl.closest<HTMLElement>('[data-component-mention-token]');
+                const appId = tokenEl?.dataset.appId || '';
+                const componentId = tokenEl?.dataset.componentId || '';
+                const mention = pendingComponentMentions.find((item) => (
+                  item.appId === appId && item.componentId === componentId
+                ));
+                if (!mention) return;
+                event.preventDefault();
+                if (actionEl.dataset.componentMentionAction === 'remove') removeMentionAndFocus(appId, componentId);
+                else openComponentMention(mention);
+              }}
+              onInput={(e) => {
                 setHistoryNavIndex(-1);
-                const val = e.target.value;
+                const val = serializeComposer(e.currentTarget);
+                const cursor = composerSelectionOffset(e.currentTarget);
                 setMessage(val);
                 requestAnimationFrame(autoResize);
-                detectFileTrigger(val, e.target.selectionStart ?? 0);
+                detectFileTrigger(val, cursor);
+                if (pendingComponentMentions.length > 0) {
+                  const markerKeys = componentMentionKeysInText(val);
+                  for (const mention of pendingComponentMentions) {
+                    if (!markerKeys.has(componentMentionKey(mention.appId, mention.componentId))) {
+                      removeComponentMention(mention.appId, mention.componentId);
+                    }
+                  }
+                }
                 if (atMentionedFilesRef.current.size > 0) {
                   const gone = [...atMentionedFilesRef.current].filter(name => !val.includes(`@${name}`));
                   if (gone.length > 0) {
@@ -904,12 +1128,13 @@ export function SpotlightInput() {
                 }
               }}
               onKeyDown={(e) => {
-                const caretAtStart = e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0;
+                const selectionRange = composerSelectionRange(e.currentTarget);
+                const caretAtStart = selectionRange.start === 0 && selectionRange.end === 0;
                 if (
                   e.key === 'Backspace'
                   && caretAtStart
                   && pendingComponentMentions.length > 0
-                  && message.length === 0
+                  && stripComponentMentionMarkers(message).length === 0
                 ) {
                   e.preventDefault();
                   const lastMention = pendingComponentMentions[pendingComponentMentions.length - 1];
@@ -926,6 +1151,12 @@ export function SpotlightInput() {
                   }
                   if (e.key === 'Escape') { e.preventDefault(); setFsOpen(false); return; }
                 }
+                if (e.key === 'Enter' && e.shiftKey) {
+                  e.preventDefault();
+                  const next = insertComposerText(inputRef.current, message, '\n');
+                  setMessageWithCaret(next.value, next.cursor);
+                  return;
+                }
                 if (
                   !message.includes('\n') &&
                   (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
@@ -939,46 +1170,34 @@ export function SpotlightInput() {
                     e.preventDefault();
                     if (historyNavIndex < 0) {
                       historyStashRef.current = message;
-                      setMessage(h[h.length - 1]!);
+                      setMessageWithCaret(h[h.length - 1]!, h[h.length - 1]!.length);
                       setHistoryNavIndex(h.length - 1);
                     } else if (historyNavIndex > 0) {
                       const nextI = historyNavIndex - 1;
-                      setMessage(h[nextI]!);
+                      setMessageWithCaret(h[nextI]!, h[nextI]!.length);
                       setHistoryNavIndex(nextI);
                     }
-                    requestAnimationFrame(() => {
-                      const el = inputRef.current;
-                      if (el) {
-                        const end = el.value.length;
-                        el.setSelectionRange(end, end);
-                        autoResize();
-                      }
-                    });
                   } else if (e.key === 'ArrowDown' && historyNavIndex >= 0) {
                     e.preventDefault();
                     if (historyNavIndex < h.length - 1) {
                       const nextI = historyNavIndex + 1;
-                      setMessage(h[nextI]!);
+                      setMessageWithCaret(h[nextI]!, h[nextI]!.length);
                       setHistoryNavIndex(nextI);
                     } else {
-                      setMessage(historyStashRef.current);
+                      setMessageWithCaret(historyStashRef.current, historyStashRef.current.length);
                       setHistoryNavIndex(-1);
                     }
-                    requestAnimationFrame(() => {
-                      const el = inputRef.current;
-                      if (el) {
-                        const end = el.value.length;
-                        el.setSelectionRange(end, end);
-                        autoResize();
-                      }
-                    });
                   }
                 }
                 if (e.key === 'Enter' && !e.shiftKey && !isExternal) { e.preventDefault(); handleSend(); }
                 if (showSlash && filteredCommands.length > 0) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setSlashSelected(i => Math.min(i + 1, filteredCommands.length - 1)); }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setSlashSelected(i => Math.max(i - 1, 0)); }
-                  if (e.key === 'Tab') { e.preventDefault(); setMessage(filteredCommands[slashSelected].name); }
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const next = filteredCommands[slashSelected].name;
+                    setMessageWithCaret(next, next.length);
+                  }
                 }
               }}
               onBlur={() => {
@@ -986,28 +1205,15 @@ export function SpotlightInput() {
                   if (document.activeElement !== inputRef.current) setFsOpen(false);
                 }, 150);
               }}
-              placeholder={
-                isVoiceActive
-                  ? 'Listening...'
-                  : isExternal
-                    ? `Reply from ${externalLabel}. This Spotlight view is read-only.`
-                    : isConnected
-                      ? agentConnecting && !agentConnected
-                        ? 'Queue a message while Construct reconnects...'
-                        : 'Ask anything... (@ for files or components)'
-                      : agentConnected
-                        ? 'Starting Construct...'
-                        : 'Reconnecting to Construct...'
-              }
-              disabled={!isConnected || isExternal}
-              rows={1}
-              className="min-w-[180px] flex-1 bg-transparent outline-none border-none resize-none focus:outline-none focus:ring-0 focus:border-none text-[15px]"
+              className="min-h-9 max-h-[120px] min-w-[180px] overflow-hidden bg-transparent py-2 pr-1 text-[15px] leading-[1.5] text-[var(--color-text)] outline-none empty:before:content-none focus:outline-none"
               style={{
-                fontWeight: 400, lineHeight: '1.5', color: 'var(--color-text)',
-                overflow: 'auto', maxHeight: 120, padding: '8px 0', minHeight: 36, outline: 'none',
+                fontWeight: 400,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                caretColor: 'var(--color-text)',
+                WebkitUserSelect: 'text',
               }}
             />
-            </div>
           </div>
           {isExternal && (
             <button

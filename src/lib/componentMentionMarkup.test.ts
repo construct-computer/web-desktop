@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  componentMentionKeysInText,
   componentMentionMarker,
   prependComponentMentionMarkers,
+  removeComponentMentionMarker,
   splitComponentMentionMarkers,
+  stripComponentMentionMarkers,
 } from './componentMentionMarkup';
 
 const mention = {
@@ -37,5 +40,13 @@ describe('component mention markup', () => {
       { kind: 'text', text },
     ]);
   });
-});
 
+  it('can inspect and remove draft markers', () => {
+    const marker = componentMentionMarker(mention);
+    const text = `Update ${marker} now`;
+
+    expect(componentMentionKeysInText(text)).toEqual(new Set(['ops-console:status-card']));
+    expect(removeComponentMentionMarker(text, mention)).toBe('Update now');
+    expect(stripComponentMentionMarkers(text)).toBe('Update now');
+  });
+});
