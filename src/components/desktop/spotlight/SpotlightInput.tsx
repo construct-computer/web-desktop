@@ -261,6 +261,17 @@ export function SpotlightInput() {
   }, [autoResize, isMobile]);
 
   useEffect(() => {
+    const focusInput = () => {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        autoResize();
+      });
+    };
+    window.addEventListener('spotlight-focus-input', focusInput);
+    return () => window.removeEventListener('spotlight-focus-input', focusInput);
+  }, [autoResize]);
+
+  useEffect(() => {
     if (isMobile) return;
     const h = (e: KeyboardEvent) => {
       const active = document.activeElement;

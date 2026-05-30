@@ -249,6 +249,14 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
+function openSpotlightPrompt() {
+  const windowStore = useWindowStore.getState();
+  if (!windowStore.spotlightOpen) windowStore.toggleSpotlight();
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('spotlight-focus-input'));
+  }, 0);
+}
+
 function flatten(nodes: ConstructComponentNode[], depth = 0, parentId?: string, base = 'layout'): FlatComponent[] {
   return nodes.flatMap((node, index) => {
     const path = `${base}.${index}`;
@@ -1196,8 +1204,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     const mention = selectedMention();
     if (!mention) return null;
     addComponentMention(mention);
+    openSpotlightPrompt();
     useNotificationStore.getState().addNotification(
-      { title: 'Component mentioned', body: `${mention.label || mention.componentId} is ready in Spotlight.`, variant: 'success' },
+      { title: 'Component attached', body: `${mention.label || mention.componentId} is ready in the Spotlight prompt.`, variant: 'success' },
       3500,
     );
     return mention;
@@ -1220,6 +1229,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       if (!saved) return;
     }
     sendChatMessage(prompt, undefined, { componentMentions: [mention] });
+    openSpotlightPrompt();
     setAgentPrompt('');
     useNotificationStore.getState().addNotification(
       { title: 'Sent to Construct', body: `${mention.label || mention.componentId} attached to the prompt.`, variant: 'success' },
