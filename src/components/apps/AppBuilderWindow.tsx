@@ -28,6 +28,8 @@ import {
   Table2,
   Trash2,
   Type,
+  Redo2,
+  Undo2,
   type LucideIcon,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
@@ -730,6 +732,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveGenerationRef = useRef(0);
+  const lastSpecJsonRef = useRef('');
+  const suppressHistoryRef = useRef(false);
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
 
   useEffect(() => {
     if (!fetched) void fetchApps();
@@ -804,6 +810,25 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       });
   }, [paletteGroup, paletteQuery]);
 
+  useEffect(() => {
+    if (!spec) return;
+    const json = JSON.stringify(spec);
+    if (!lastSpecJsonRef.current) {
+      lastSpecJsonRef.current = json;
+      return;
+    }
+    if (json === lastSpecJsonRef.current) return;
+    if (suppressHistoryRef.current) {
+      suppressHistoryRef.current = false;
+      lastSpecJsonRef.current = json;
+      return;
+    }
+    const previous = lastSpecJsonRef.current;
+    lastSpecJsonRef.current = json;
+    setUndoStack((stack) => [...stack.slice(-49), previous]);
+    setRedoStack([]);
+  }, [spec]);
+
   const loadSpec = useCallback(async () => {
     if (!selectedAppId) return;
     setLoading(true);
@@ -816,6 +841,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       ]);
       if (!specRes.success) throw new Error(specRes.error || 'App has no editable Construct spec.');
       if (!specRes.data?.spec) throw new Error('App has no editable Construct spec.');
+      lastSpecJsonRef.current = JSON.stringify(specRes.data.spec);
+      setUndoStack([]);
+      setRedoStack([]);
       setSpec(specRes.data.spec);
       setSavedSpecJson(JSON.stringify(specRes.data.spec));
       const nextState = stateRes.success && stateRes.data && typeof stateRes.data === 'object'
@@ -927,6 +955,28 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     }
     return true;
   }, [appState, persistSpec, persistState, spec, specDirty, stateDirty]);
+
+  const undoSpecEdit = useCallback(() => {
+    if (!spec || undoStack.length === 0) return;
+    const current = JSON.stringify(spec);
+    const previous = undoStack[undoStack.length - 1];
+    suppressHistoryRef.current = true;
+    lastSpecJsonRef.current = previous;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [...stack.slice(-49), current]);
+    setSpec(JSON.parse(previous) as ConstructAppSpec);
+  }, [spec, undoStack]);
+
+  const redoSpecEdit = useCallback(() => {
+    if (!spec || redoStack.length === 0) return;
+    const current = JSON.stringify(spec);
+    const next = redoStack[redoStack.length - 1];
+    suppressHistoryRef.current = true;
+    lastSpecJsonRef.current = next;
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [...stack.slice(-49), current]);
+    setSpec(JSON.parse(next) as ConstructAppSpec);
+  }, [redoStack, spec]);
 
   useEffect(() => {
     return () => {
@@ -1144,6 +1194,17 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       return;
     }
     if (isTextEntryTarget(event.target)) return;
+    if (command && key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) redoSpecEdit();
+      else undoSpecEdit();
+      return;
+    }
+    if (command && key === 'y') {
+      event.preventDefault();
+      redoSpecEdit();
+      return;
+    }
     if (command && key === 'd') {
       event.preventDefault();
       duplicateSelected();
@@ -1163,7 +1224,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       event.preventDefault();
       removeSelected();
     }
-  }, [duplicateSelected, moveSelected, persistAll, removeSelected, selected?.type]);
+  }, [duplicateSelected, moveSelected, persistAll, redoSpecEdit, removeSelected, selected?.type, undoSpecEdit]);
 
   const openApp = useCallback(() => {
     if (!selectedApp) return;
@@ -1233,6 +1294,28 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
             <option key={app.id} value={app.id}>{app.manifest.name}</option>
           ))}
         </select>
+        <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] p-0.5">
+          <button
+            type="button"
+            onClick={undoSpecEdit}
+            disabled={undoStack.length === 0}
+            className="rounded p-1 text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Undo"
+            aria-label="Undo"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={redoSpecEdit}
+            disabled={redoStack.length === 0}
+            className="rounded p-1 text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Redo"
+            aria-label="Redo"
+          >
+            <Redo2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <button onClick={() => void loadSpec()} className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-[var(--color-text)]" title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </button>
