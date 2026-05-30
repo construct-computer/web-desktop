@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
+import { Blocks, Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
+import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -12,7 +13,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportBottomInset';
 import { hapticLight } from '@/lib/haptics';
 import { uploadAttachment } from '@/lib/uploadAttachment';
-import { listFiles, downloadContainerFile } from '@/services/api';
+import { listFiles, downloadContainerFile, getLocalAppSpec, type ConstructAppSpec, type ConstructComponentNode, type LocalApp } from '@/services/api';
 import { VoiceButton } from '@/components/ui/VoiceButton';
 import { useSlashCommands } from './hooks';
 import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
@@ -59,11 +60,67 @@ function appendToInputHistory(sessionKey: string | undefined, line: string) {
   saveInputHistory(sessionKey, [...prev, t]);
 }
 
-type FileSuggestion = { id: string; display: string; isDir: boolean };
+type FileSuggestion = { kind: 'file'; id: string; display: string; isDir: boolean };
+type ComponentSuggestion = {
+  kind: 'component';
+  id: string;
+  display: string;
+  subtitle: string;
+  mention: ComponentMention;
+};
+type MentionSuggestion = FileSuggestion | ComponentSuggestion;
 const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 const IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/i;
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 type Attachment = { name: string; path: string };
+
+function componentTitle(node: ConstructComponentNode): string {
+  const props = node.props || {};
+  return node.label
+    || (typeof props.title === 'string' ? props.title : undefined)
+    || (typeof props.label === 'string' ? props.label : undefined)
+    || (typeof props.text === 'string' ? props.text : undefined)
+    || node.componentId;
+}
+
+function collectComponentSuggestions(app: LocalApp, spec: ConstructAppSpec): ComponentSuggestion[] {
+  const appName = app.manifest.name || spec.name || app.id;
+  const walk = (nodes: ConstructComponentNode[], base = 'layout'): ComponentSuggestion[] => (
+    nodes.flatMap((node, index) => {
+      const path = `${base}.${index}`;
+      const label = componentTitle(node);
+      const item: ComponentSuggestion = {
+        kind: 'component',
+        id: `${app.id}:${node.componentId}`,
+        display: label,
+        subtitle: `${appName} / ${node.type}`,
+        mention: {
+          appId: app.id,
+          componentId: node.componentId,
+          componentType: node.type,
+          label,
+          path,
+          props: node.props,
+          bindings: node.bindings,
+          actions: node.actions,
+        },
+      };
+      return [item, ...walk(node.children || [], `${path}.children`)];
+    })
+  );
+  return walk(spec.layout);
+}
+
+function componentSuggestionText(item: ComponentSuggestion): string {
+  return [
+    item.display,
+    item.subtitle,
+    item.mention.appId,
+    item.mention.componentId,
+    item.mention.componentType,
+    item.mention.path,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
 
 /** Stable empty slice for Zustand selector — never use `|| []` in selectors (new ref each run → infinite re-renders). */
 const EMPTY_PENDING_IMAGES: string[] = [];
@@ -71,6 +128,7 @@ const EMPTY_PENDING_IMAGES: string[] = [];
 export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
   const stopChatSession = useComputerStore(s => s.stopChatSession);
+  const addComponentMention = useComputerStore(s => s.addComponentMention);
   const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
   const agentConnected = useComputerStore(s => s.agentConnected);
@@ -80,6 +138,9 @@ export function SpotlightInput() {
   const pendingImages = useComputerStore(s => s.pendingImageDataBySession[s.activeSessionKey || 'default'] ?? EMPTY_PENDING_IMAGES);
   const pendingComponentMentions = useComputerStore(s => s.pendingComponentMentions);
   const removeComponentMention = useComputerStore(s => s.removeComponentMention);
+  const localApps = useAppStore(s => s.localApps);
+  const appsFetched = useAppStore(s => s.fetched);
+  const fetchApps = useAppStore(s => s.fetchApps);
   const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
   const queuedCount = useComputerStore(s => {
     let n = 0;
@@ -172,6 +233,9 @@ export function SpotlightInput() {
     [showSlash, slashCommands, message],
   );
   useEffect(() => { setSlashSelected(0); }, [message]);
+  useEffect(() => {
+    if (!appsFetched) void fetchApps();
+  }, [appsFetched, fetchApps]);
 
   const autoResize = useCallback(() => {
     const el = inputRef.current;
@@ -210,13 +274,20 @@ export function SpotlightInput() {
     return () => window.removeEventListener('keydown', h);
   }, [isMobile]);
 
-  // ── @ file/folder selector ────────────────────────────────────────────
+  // ── @ resource selector ───────────────────────────────────────────────
   const [fsOpen, setFsOpen] = useState(false);
   const [fsItems, setFsItems] = useState<FileSuggestion[]>([]);
+  const [componentItems, setComponentItems] = useState<ComponentSuggestion[]>([]);
   const [fsIndex, setFsIndex] = useState(0);
   const fsAtPosRef = useRef(-1);
   const fsCacheRef = useRef<Map<string, { entries: FileSuggestion[]; ts: number }>>(new Map());
+  const componentCacheRef = useRef<Map<string, { entries: ComponentSuggestion[]; ts: number }>>(new Map());
   const fsGenRef = useRef(0);
+  const componentGenRef = useRef(0);
+  const mentionItems = useMemo<MentionSuggestion[]>(
+    () => [...componentItems, ...fsItems],
+    [componentItems, fsItems],
+  );
 
   const fetchFsSuggestions = useCallback(async (query: string) => {
     if (!instanceId) { setFsItems([]); return; }
@@ -244,7 +315,7 @@ export function SpotlightInput() {
         .map(e => {
           const isDir = e.type === 'directory';
           const baseName = dirSuffix ? `${dirSuffix.slice(1)}/${e.name}` : e.name;
-          return { id: normalizeWorkspacePath(baseName), display: isDir ? `${baseName}/` : baseName, isDir };
+          return { kind: 'file' as const, id: normalizeWorkspacePath(baseName), display: isDir ? `${baseName}/` : baseName, isDir };
         })
         .sort((a, b) => {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
@@ -260,6 +331,36 @@ export function SpotlightInput() {
     }
   }, [instanceId]);
 
+  const fetchComponentSuggestions = useCallback(async (query: string) => {
+    const gen = ++componentGenRef.current;
+    if (localApps.length === 0) {
+      setComponentItems([]);
+      return;
+    }
+
+    const cacheKey = localApps.map((app) => app.id).sort().join('|');
+    const cached = componentCacheRef.current.get(cacheKey);
+    let entries = cached && Date.now() - cached.ts < 30_000 ? cached.entries : null;
+
+    if (!entries) {
+      const grouped = await Promise.all(localApps.map(async (app) => {
+        const res = await getLocalAppSpec(app.id);
+        if (!res.success || !res.data?.spec) return [];
+        return collectComponentSuggestions(app, res.data.spec);
+      }));
+      if (gen !== componentGenRef.current) return;
+      entries = grouped.flat();
+      componentCacheRef.current.set(cacheKey, { entries, ts: Date.now() });
+    }
+
+    if (gen !== componentGenRef.current) return;
+    const q = query.trim().toLowerCase();
+    const filtered = entries
+      .filter((item) => !q || componentSuggestionText(item).includes(q))
+      .slice(0, 10);
+    setComponentItems(filtered);
+  }, [localApps]);
+
   const detectFileTrigger = useCallback((text: string, cursor: number) => {
     let atPos = -1;
     for (let i = cursor - 1; i >= 0; i--) {
@@ -272,17 +373,37 @@ export function SpotlightInput() {
       setFsOpen(true);
       setFsIndex(0);
       fetchFsSuggestions(query);
+      void fetchComponentSuggestions(query);
     } else {
       setFsOpen(false);
+      setComponentItems([]);
     }
-  }, [fetchFsSuggestions]);
+  }, [fetchComponentSuggestions, fetchFsSuggestions]);
 
-  const selectFsItem = useCallback((item: FileSuggestion) => {
+  const selectMentionItem = useCallback((item: MentionSuggestion | undefined) => {
+    if (!item) return;
     const el = inputRef.current;
     if (!el || fsAtPosRef.current < 0) return;
     el.focus();
     const start = fsAtPosRef.current;
     const end = el.selectionStart ?? el.value.length;
+
+    if (item.kind === 'component') {
+      const before = message.slice(0, start);
+      const after = message.slice(end);
+      const separator = before && after && !/\s$/.test(before) && !/^\s/.test(after) ? ' ' : '';
+      const nextValue = `${before}${separator}${after}`.replace(/[ \t]{2,}/g, ' ');
+      const nextCursor = before.length + separator.length;
+      setMessage(nextValue);
+      addComponentMention(item.mention);
+      setFsOpen(false);
+      setComponentItems([]);
+      requestAnimationFrame(() => {
+        el.setSelectionRange(nextCursor, nextCursor);
+        autoResize();
+      });
+      return;
+    }
 
     if (item.isDir) {
       const insert = `@${item.display}`;
@@ -314,6 +435,7 @@ export function SpotlightInput() {
       return [...prev, { name: fileNameFromWorkspacePath(normalizedPath), path: normalizedPath }];
     });
     setFsOpen(false);
+    setComponentItems([]);
 
     if (IMAGE_EXTS.test(item.display) && instanceId) {
       downloadContainerFile(instanceId, item.id).then(async (res) => {
@@ -327,13 +449,14 @@ export function SpotlightInput() {
         reader.readAsDataURL(blob);
       }).catch(() => {});
     }
-  }, [instanceId, message, setMessage, autoResize, detectFileTrigger, setAttachments, setSessionPendingImages]);
+  }, [addComponentMention, instanceId, message, setMessage, autoResize, detectFileTrigger, setAttachments, setSessionPendingImages]);
 
   useEffect(() => {
     if (!fsOpen) return;
-    const el = document.querySelector('[data-fs-focused="true"]');
+    if (mentionItems.length > 0 && fsIndex >= mentionItems.length) setFsIndex(mentionItems.length - 1);
+    const el = document.querySelector('[data-mention-focused="true"]');
     el?.scrollIntoView({ block: 'nearest' });
-  }, [fsIndex, fsOpen]);
+  }, [fsIndex, fsOpen, mentionItems.length]);
 
   // ── File upload ──────────────────────────────────────────────────────
   const processFiles = useCallback(async (files: File[]) => {
@@ -587,8 +710,8 @@ export function SpotlightInput() {
 
       {/* Input area */}
       <div className="relative px-5 py-3">
-        {/* @ file/folder dropdown — opens upward */}
-        {fsOpen && fsItems.length > 0 && (
+        {/* @ resource dropdown — opens upward */}
+        {fsOpen && mentionItems.length > 0 && (
           <div
             className="absolute left-4 right-4 z-[9999]"
             style={{
@@ -602,27 +725,46 @@ export function SpotlightInput() {
               padding: 4,
             }}
           >
-            {fsItems.map((item, i) => (
-              <div
-                key={item.id}
-                data-fs-focused={i === fsIndex ? 'true' : undefined}
-                onMouseDown={(e) => { e.preventDefault(); selectFsItem(item); }}
-                onMouseEnter={() => setFsIndex(i)}
-                className={`flex items-center gap-2 px-3 py-[7px] rounded-md cursor-pointer text-[13px] whitespace-nowrap ${
-                  i === fsIndex ? 'text-white/95' : 'text-white/75 hover:bg-white/5'
-                }`}
-                style={{
-                  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                  ...(i === fsIndex ? { backgroundColor: 'rgba(255,255,255,0.08)' } : {}),
-                }}
-              >
-                {item.isDir
-                  ? <Folder className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                  : <FileText className="w-3.5 h-3.5 shrink-0 opacity-40" />}
-                <span className="truncate">{item.display}</span>
-                {item.isDir && <span className="ml-auto text-[10px] opacity-30 shrink-0">Tab &#8614;</span>}
-              </div>
-            ))}
+            {mentionItems.map((item, i) => {
+              const showHeader = i === 0 || mentionItems[i - 1]?.kind !== item.kind;
+              return (
+                <div key={item.id}>
+                  {showHeader && (
+                    <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30">
+                      {item.kind === 'component' ? 'Components' : 'Workspace'}
+                    </div>
+                  )}
+                  <div
+                    data-mention-focused={i === fsIndex ? 'true' : undefined}
+                    onMouseDown={(e) => { e.preventDefault(); selectMentionItem(item); }}
+                    onMouseEnter={() => setFsIndex(i)}
+                    className={`flex items-center gap-2 px-3 py-[7px] rounded-md cursor-pointer text-[13px] whitespace-nowrap ${
+                      i === fsIndex ? 'text-white/95' : 'text-white/75 hover:bg-white/5'
+                    }`}
+                    style={{
+                      fontFamily: item.kind === 'file' ? 'ui-monospace, SFMono-Regular, monospace' : undefined,
+                      ...(i === fsIndex ? { backgroundColor: 'rgba(255,255,255,0.08)' } : {}),
+                    }}
+                  >
+                    {item.kind === 'component' ? (
+                      <>
+                        <Blocks className="w-3.5 h-3.5 shrink-0 text-sky-200/70" />
+                        <span className="min-w-0 flex-1 truncate">{item.display}</span>
+                        <span className="shrink-0 truncate text-[11px] text-white/35">{item.subtitle}</span>
+                      </>
+                    ) : (
+                      <>
+                        {item.isDir
+                          ? <Folder className="w-3.5 h-3.5 shrink-0 text-white/40" />
+                          : <FileText className="w-3.5 h-3.5 shrink-0 opacity-40" />}
+                        <span className="truncate">{item.display}</span>
+                        {item.isDir && <span className="ml-auto text-[10px] opacity-30 shrink-0">Tab &#8614;</span>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -738,12 +880,12 @@ export function SpotlightInput() {
                   if (lastMention) removeMentionAndFocus(lastMention.appId, lastMention.componentId);
                   return;
                 }
-                if (fsOpen && fsItems.length > 0) {
-                  if (e.key === 'ArrowDown') { e.preventDefault(); setFsIndex(i => Math.min(i + 1, fsItems.length - 1)); return; }
+                if (fsOpen && mentionItems.length > 0) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setFsIndex(i => Math.min(i + 1, mentionItems.length - 1)); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setFsIndex(i => Math.max(i - 1, 0)); return; }
                   if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
                     e.preventDefault();
-                    selectFsItem(fsItems[fsIndex]);
+                    selectMentionItem(mentionItems[fsIndex]);
                     return;
                   }
                   if (e.key === 'Escape') { e.preventDefault(); setFsOpen(false); return; }
@@ -816,7 +958,7 @@ export function SpotlightInput() {
                     : isConnected
                       ? agentConnecting && !agentConnected
                         ? 'Queue a message while Construct reconnects...'
-                        : 'Ask anything... (@ to reference files)'
+                        : 'Ask anything... (@ for files or components)'
                       : agentConnected
                         ? 'Starting Construct...'
                         : 'Reconnecting to Construct...'
