@@ -132,6 +132,21 @@ type QuickPropControl = {
   options?: Array<{ label: string; value: string }>;
 };
 
+type CollectionFieldControl = {
+  key: string;
+  label: string;
+  kind?: 'input' | 'number' | 'select';
+  options?: Array<{ label: string; value: string }>;
+};
+
+type CollectionPropControl = {
+  key: string;
+  label: string;
+  addLabel: string;
+  defaultItem: Record<string, unknown>;
+  fields: CollectionFieldControl[];
+};
+
 const TEXTUAL_PROP_KEYS = ['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'];
 
 const BINDING_PROP_SUGGESTIONS: Partial<Record<ComponentTypeName, string[]>> = {
@@ -207,6 +222,67 @@ const QUICK_PROP_CONTROLS: Partial<Record<ComponentTypeName, QuickPropControl[]>
     { key: 'label', label: 'Label' },
     { key: 'value', label: 'Value' },
   ],
+};
+
+const COLLECTION_PROP_CONTROLS: Partial<Record<ComponentTypeName, CollectionPropControl[]>> = {
+  MetricStrip: [{
+    key: 'items',
+    label: 'Metrics',
+    addLabel: 'Add metric',
+    defaultItem: { label: 'Metric', value: '0', meta: 'Updated now' },
+    fields: [
+      { key: 'label', label: 'Label' },
+      { key: 'value', label: 'Value' },
+      { key: 'meta', label: 'Meta' },
+    ],
+  }],
+  Chart: [{
+    key: 'points',
+    label: 'Chart points',
+    addLabel: 'Add point',
+    defaultItem: { label: 'New', value: 10 },
+    fields: [
+      { key: 'label', label: 'Label' },
+      { key: 'value', label: 'Value', kind: 'number' },
+    ],
+  }],
+  Timeline: [{
+    key: 'items',
+    label: 'Timeline items',
+    addLabel: 'Add event',
+    defaultItem: { title: 'New event', time: 'Now', status: 'ready' },
+    fields: [
+      { key: 'title', label: 'Title' },
+      { key: 'time', label: 'Time' },
+      { key: 'status', label: 'Status', kind: 'select', options: [
+        { label: 'Ready', value: 'ready' },
+        { label: 'Success', value: 'success' },
+        { label: 'Pending', value: 'pending' },
+        { label: 'Warning', value: 'warning' },
+        { label: 'Error', value: 'error' },
+      ] },
+    ],
+  }],
+  RunLog: [{
+    key: 'lines',
+    label: 'Log lines',
+    addLabel: 'Add line',
+    defaultItem: { time: 'Now', message: 'New log line' },
+    fields: [
+      { key: 'time', label: 'Time' },
+      { key: 'message', label: 'Message' },
+    ],
+  }],
+  DetailList: [{
+    key: 'items',
+    label: 'Details',
+    addLabel: 'Add detail',
+    defaultItem: { label: 'Field', value: 'Value' },
+    fields: [
+      { key: 'label', label: 'Label' },
+      { key: 'value', label: 'Value' },
+    ],
+  }],
 };
 
 function quickPropKeysFor(type: string): Set<string> {
@@ -542,6 +618,30 @@ function parseJsonRecord(text: string, label: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? '')).filter((item) => item.trim())
+    : [];
+}
+
+function fieldValue(item: Record<string, unknown>, key: string): string {
+  const value = item[key];
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function nextFieldValue(raw: string, kind: CollectionFieldControl['kind']): unknown {
+  if (kind !== 'number') return raw;
+  if (!raw.trim()) return '';
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : raw;
+}
+
 function JsonObjectEditor({
   label,
   value,
@@ -582,6 +682,289 @@ function JsonObjectEditor({
         className={`${minHeight} w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 font-mono text-[11px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50`}
       />
     </label>
+  );
+}
+
+function CollectionPropControls({
+  node,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  onChange: (props: Record<string, unknown>) => void;
+}) {
+  const controls = COLLECTION_PROP_CONTROLS[node.type as ComponentTypeName] || [];
+  if (controls.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {controls.map((control) => {
+        const items = recordArray(node.props?.[control.key]);
+        const updateItems = (nextItems: Record<string, unknown>[]) => onChange({ [control.key]: nextItems });
+        return (
+          <div key={control.key} className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">{control.label}</span>
+              <button
+                type="button"
+                onClick={() => updateItems([...items, { ...control.defaultItem }])}
+                className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+              >
+                <Plus className="h-3 w-3" />
+                {control.addLabel}
+              </button>
+            </div>
+            <div className="grid gap-2">
+              {items.length === 0 ? (
+                <div className="rounded-md border border-dashed border-white/[0.08] bg-black/10 px-2 py-3 text-center text-[11px] text-[var(--color-text-muted)]">
+                  No items.
+                </div>
+              ) : items.map((item, index) => (
+                <div key={index} className="rounded-md border border-white/[0.07] bg-black/15 p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[10px] text-[var(--color-text-muted)]/70">
+                      {control.key}[{index}]
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-red-400/10 hover:text-red-100"
+                      title="Remove item"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="grid gap-1.5">
+                    {control.fields.map((field) => {
+                      const value = fieldValue(item, field.key);
+                      if (field.kind === 'select') {
+                        return (
+                          <label key={field.key} className="grid grid-cols-[74px_minmax(0,1fr)] items-center gap-2">
+                            <span className="truncate text-[11px] text-[var(--color-text-muted)]">{field.label}</span>
+                            <select
+                              value={value}
+                              onChange={(event) => updateItems(items.map((entry, itemIndex) => (
+                                itemIndex === index ? { ...entry, [field.key]: event.target.value } : entry
+                              )))}
+                              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                            >
+                              {(field.options || []).map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        );
+                      }
+                      return (
+                        <label key={field.key} className="grid grid-cols-[74px_minmax(0,1fr)] items-center gap-2">
+                          <span className="truncate text-[11px] text-[var(--color-text-muted)]">{field.label}</span>
+                          <input
+                            value={value}
+                            type={field.kind === 'number' ? 'number' : 'text'}
+                            onChange={(event) => updateItems(items.map((entry, itemIndex) => (
+                              itemIndex === index
+                                ? { ...entry, [field.key]: nextFieldValue(event.target.value, field.kind) }
+                                : entry
+                            )))}
+                            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SegmentedControlEditor({
+  node,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  onChange: (props: Record<string, unknown>) => void;
+}) {
+  if (node.type !== 'SegmentedControl') return null;
+  const items = stringArray(node.props?.items);
+  const active = typeof node.props?.value === 'string' ? node.props.value : items[0] || '';
+  const update = (nextItems: string[], value = active) => onChange({ items: nextItems, value: value || nextItems[0] || '' });
+
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Options</span>
+        <button
+          type="button"
+          onClick={() => update([...items, `option-${items.length + 1}`])}
+          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+        >
+          <Plus className="h-3 w-3" />
+          Add option
+        </button>
+      </div>
+      <div className="grid gap-1.5">
+        {items.map((item, index) => (
+          <div key={`${item}:${index}`} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
+            <input
+              type="radio"
+              checked={active === item}
+              onChange={() => update(items, item)}
+              className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+              title="Set active option"
+            />
+            <input
+              value={item}
+              onChange={(event) => {
+                const nextItems = items.map((entry, itemIndex) => itemIndex === index ? event.target.value : entry);
+                update(nextItems, active === item ? event.target.value : active);
+              }}
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const nextItems = items.filter((_, itemIndex) => itemIndex !== index);
+                update(nextItems, active === item ? nextItems[0] || '' : active);
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-red-400/10 hover:text-red-100"
+              title="Remove option"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div className="rounded-md border border-dashed border-white/[0.08] bg-black/10 px-2 py-3 text-center text-[11px] text-[var(--color-text-muted)]">
+            No options.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TableDataEditor({
+  node,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  onChange: (props: Record<string, unknown>) => void;
+}) {
+  if (node.type !== 'Table') return null;
+  const columns = recordArray(node.props?.columns);
+  const rows = recordArray(node.props?.rows);
+  const columnKeys = columns
+    .map((column) => typeof column.key === 'string' ? column.key : '')
+    .filter(Boolean);
+  const updateColumns = (nextColumns: Record<string, unknown>[]) => onChange({ columns: nextColumns });
+  const updateRows = (nextRows: Record<string, unknown>[]) => onChange({ rows: nextRows });
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Columns</span>
+          <button
+            type="button"
+            onClick={() => updateColumns([...columns, { key: `column${columns.length + 1}`, label: `Column ${columns.length + 1}` }])}
+            className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+          >
+            <Plus className="h-3 w-3" />
+            Add column
+          </button>
+        </div>
+        <div className="grid gap-1.5">
+          {columns.map((column, index) => (
+            <div key={index} className="grid grid-cols-[minmax(0,.8fr)_minmax(0,1fr)_auto] gap-1.5">
+              <input
+                value={fieldValue(column, 'key')}
+                onChange={(event) => updateColumns(columns.map((entry, columnIndex) => (
+                  columnIndex === index ? { ...entry, key: event.target.value } : entry
+                )))}
+                placeholder="key"
+                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+              />
+              <input
+                value={fieldValue(column, 'label')}
+                onChange={(event) => updateColumns(columns.map((entry, columnIndex) => (
+                  columnIndex === index ? { ...entry, label: event.target.value } : entry
+                )))}
+                placeholder="Label"
+                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+              />
+              <button
+                type="button"
+                onClick={() => updateColumns(columns.filter((_, columnIndex) => columnIndex !== index))}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-red-400/10 hover:text-red-100"
+                title="Remove column"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {columns.length === 0 && (
+            <div className="rounded-md border border-dashed border-white/[0.08] bg-black/10 px-2 py-3 text-center text-[11px] text-[var(--color-text-muted)]">
+              No columns.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Rows</span>
+          <button
+            type="button"
+            onClick={() => updateRows([...rows, Object.fromEntries(columnKeys.map((key) => [key, '']))])}
+            disabled={columnKeys.length === 0}
+            className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Plus className="h-3 w-3" />
+            Add row
+          </button>
+        </div>
+        <div className="grid gap-2">
+          {rows.map((row, rowIndex) => (
+            <div key={rowIndex} className="rounded-md border border-white/[0.07] bg-black/15 p-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] text-[var(--color-text-muted)]/70">rows[{rowIndex}]</span>
+                <button
+                  type="button"
+                  onClick={() => updateRows(rows.filter((_, itemIndex) => itemIndex !== rowIndex))}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-red-400/10 hover:text-red-100"
+                  title="Remove row"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="grid gap-1.5">
+                {columnKeys.map((key) => (
+                  <label key={key} className="grid grid-cols-[74px_minmax(0,1fr)] items-center gap-2">
+                    <span className="truncate text-[11px] text-[var(--color-text-muted)]">{key}</span>
+                    <input
+                      value={fieldValue(row, key)}
+                      onChange={(event) => updateRows(rows.map((entry, itemIndex) => (
+                        itemIndex === rowIndex ? { ...entry, [key]: event.target.value } : entry
+                      )))}
+                      className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <div className="rounded-md border border-dashed border-white/[0.08] bg-black/10 px-2 py-3 text-center text-[11px] text-[var(--color-text-muted)]">
+              {columnKeys.length === 0 ? 'Add columns before adding rows.' : 'No rows.'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1992,6 +2375,18 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       </label>
                     </div>
                     <QuickPropControls
+                      node={selected}
+                      onChange={(props) => patchSelected({ props })}
+                    />
+                    <CollectionPropControls
+                      node={selected}
+                      onChange={(props) => patchSelected({ props })}
+                    />
+                    <TableDataEditor
+                      node={selected}
+                      onChange={(props) => patchSelected({ props })}
+                    />
+                    <SegmentedControlEditor
                       node={selected}
                       onChange={(props) => patchSelected({ props })}
                     />
