@@ -232,6 +232,20 @@ function flattenVisible(
   });
 }
 
+function componentSearchText(node: ConstructComponentNode): string {
+  const props = node.props || {};
+  return [
+    node.componentId,
+    node.type,
+    node.label,
+    componentTitle(node),
+    typeof props.title === 'string' ? props.title : '',
+    typeof props.label === 'string' ? props.label : '',
+    typeof props.text === 'string' ? props.text : '',
+    typeof props.value === 'string' || typeof props.value === 'number' ? String(props.value) : '',
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
 function ancestorIds(nodes: ConstructComponentNode[], componentId: string, parents: string[] = []): string[] {
   for (const node of nodes) {
     if (node.componentId === componentId) return parents;
@@ -478,6 +492,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('app');
   const [paletteGroup, setPaletteGroup] = useState<PaletteGroup>('all');
   const [paletteQuery, setPaletteQuery] = useState('');
+  const [componentQuery, setComponentQuery] = useState('');
   const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>('idle');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -498,6 +513,21 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
   const flat = useMemo(() => spec ? flatten(spec.layout) : [], [spec]);
   const visibleFlat = useMemo(() => spec ? flattenVisible(spec.layout, expanded) : [], [expanded, spec]);
+  const componentTreeItems = useMemo(() => {
+    const query = componentQuery.trim().toLowerCase();
+    if (!query || !spec) return visibleFlat;
+    const matches = flat.filter((item) => componentSearchText(item.node).includes(query));
+    const included = new Set<string>();
+    for (const item of matches) {
+      included.add(item.node.componentId);
+      for (const ancestorId of ancestorIds(spec.layout, item.node.componentId)) included.add(ancestorId);
+    }
+    return flat.filter((item) => included.has(item.node.componentId));
+  }, [componentQuery, flat, spec, visibleFlat]);
+  const componentMatchCount = useMemo(() => {
+    const query = componentQuery.trim().toLowerCase();
+    return query ? flat.filter((item) => componentSearchText(item.node).includes(query)).length : flat.length;
+  }, [componentQuery, flat]);
   const specDirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
   const stateDirty = useMemo(() => JSON.stringify(appState) !== savedStateJson, [appState, savedStateJson]);
   const dirty = specDirty || stateDirty;
@@ -941,22 +971,41 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(320px,1fr)_320px] max-[900px]:grid-cols-[220px_minmax(260px,1fr)]">
-        <aside className="min-h-0 border-r border-white/[0.08] bg-black/[0.08]">
+        <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-black/[0.08]">
           <div className="flex h-10 items-center gap-2 border-b border-white/[0.06] px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
             <PanelLeft className="h-3.5 w-3.5" />
             Components
+            <span className="ml-auto rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium tracking-normal">
+              {componentMatchCount}
+            </span>
           </div>
-          <div className="h-[calc(100%-40px)] overflow-auto p-2">
+          <div className="border-b border-white/[0.06] p-2">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-muted)]/65" />
+              <input
+                value={componentQuery}
+                onChange={(event) => setComponentQuery(event.target.value)}
+                placeholder="Find by label, id, type"
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+              />
+            </label>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-2">
             {loading ? (
               <div className="flex h-full items-center justify-center text-[12px] text-[var(--color-text-muted)]">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Loading spec...
               </div>
-            ) : visibleFlat.length === 0 ? (
-              <div className="p-3 text-[12px] text-[var(--color-text-muted)]">No editable components.</div>
-            ) : visibleFlat.map((item) => {
+            ) : componentTreeItems.length === 0 ? (
+              <div className="p-3 text-[12px] text-[var(--color-text-muted)]">
+                {componentQuery.trim() ? 'No components match.' : 'No editable components.'}
+              </div>
+            ) : componentTreeItems.map((item) => {
               const hasChildren = (item.node.children || []).length > 0;
-              const isOpen = expanded.has(item.node.componentId);
+              const query = componentQuery.trim().toLowerCase();
+              const isSearching = Boolean(query);
+              const isOpen = isSearching || expanded.has(item.node.componentId);
+              const directMatch = query ? componentSearchText(item.node).includes(query) : true;
               return (
                 <div key={item.node.componentId}>
                   <button
@@ -966,7 +1015,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       'flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] transition-colors',
                       selected?.componentId === item.node.componentId
                         ? 'bg-[var(--color-accent)]/16 text-[var(--color-text)]'
-                        : 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]',
+                        : directMatch
+                          ? 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]'
+                          : 'text-[var(--color-text-muted)]/55 hover:bg-white/[0.04] hover:text-[var(--color-text-muted)]',
                     ].join(' ')}
                     style={{ paddingLeft: 8 + item.depth * 14 }}
                   >
