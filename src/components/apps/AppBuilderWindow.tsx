@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
-import type { ConstructAppSpec, ConstructComponentNode, LocalApp } from '@/services/api';
+import type { ConstructAppSpec, ConstructComponentAction, ConstructComponentNode, LocalApp } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -468,6 +468,89 @@ function QuickPropControls({
   );
 }
 
+function QuickActionControls({
+  componentId,
+  action,
+  toolNames,
+  onChange,
+  onError,
+}: {
+  componentId: string;
+  action: ConstructComponentAction | undefined;
+  toolNames: string[];
+  onChange: (action: ConstructComponentAction | null) => void;
+  onError: (message: string | null) => void;
+}) {
+  const mode = action?.type || 'none';
+  const toolListId = `builder-tools-${componentId}`;
+
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Click action</span>
+        {mode !== 'none' && (
+          <span className="rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-muted)]">
+            {mode}
+          </span>
+        )}
+      </div>
+      <div className="grid gap-2">
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Behavior</span>
+          <select
+            value={mode}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === 'none') onChange(null);
+              if (next === 'state.patch') onChange({ type: 'state.patch', patch: action?.type === 'state.patch' ? action.patch || {} : { status: 'updated' } });
+              if (next === 'tool.call') onChange({ type: 'tool.call', tool: action?.type === 'tool.call' ? action.tool || toolNames[0] || '' : toolNames[0] || '', args: action?.type === 'tool.call' ? action.args || {} : {} });
+            }}
+            className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+          >
+            <option value="none">None</option>
+            <option value="state.patch">Patch state</option>
+            <option value="tool.call">Call tool</option>
+          </select>
+        </label>
+
+        {mode === 'tool.call' && (
+          <>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Tool</span>
+              <input
+                value={action?.type === 'tool.call' ? action.tool || '' : ''}
+                list={toolListId}
+                onChange={(event) => onChange({ type: 'tool.call', tool: event.target.value, args: action?.type === 'tool.call' ? action.args || {} : {} })}
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+              />
+              <datalist id={toolListId}>
+                {toolNames.map((name) => <option key={name} value={name} />)}
+              </datalist>
+            </label>
+            <JsonObjectEditor
+              label="Args JSON"
+              value={action?.type === 'tool.call' ? action.args : undefined}
+              minHeight="h-24"
+              onValidChange={(args) => onChange({ type: 'tool.call', tool: action?.type === 'tool.call' ? action.tool || '' : '', args })}
+              onError={onError}
+            />
+          </>
+        )}
+
+        {mode === 'state.patch' && (
+          <JsonObjectEditor
+            label="State patch JSON"
+            value={action?.type === 'state.patch' ? action.patch : undefined}
+            minHeight="h-24"
+            onValidChange={(patch) => onChange({ type: 'state.patch', patch })}
+            onError={onError}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const localApps = useAppStore((s) => s.localApps);
   const fetched = useAppStore((s) => s.fetched);
@@ -548,6 +631,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const selectedSiblingIndex = selected ? selectedSiblings.findIndex((node) => node.componentId === selected.componentId) : -1;
   const canMoveUp = selectedSiblingIndex > 0;
   const canMoveDown = selectedSiblingIndex >= 0 && selectedSiblingIndex < selectedSiblings.length - 1;
+  const localToolNames = useMemo(() => selectedApp?.manifest.tools?.map((tool) => tool.name).filter(Boolean) || [], [selectedApp]);
   const filteredComponentTypes = useMemo(() => {
     const query = paletteQuery.trim().toLowerCase();
     return COMPONENT_TYPES
@@ -765,6 +849,21 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       ...node,
       actions: Object.keys(actions).length > 0 ? actions as ConstructComponentNode['actions'] : undefined,
     }));
+    setSpec(next);
+  }, [selected, spec]);
+
+  const replaceSelectedClickAction = useCallback((action: ConstructComponentAction | null) => {
+    if (!spec || !selected) return;
+    const next = cloneSpec(spec);
+    next.layout = updateNode(next.layout, selected.componentId, (node) => {
+      const actions = { ...(node.actions || {}) };
+      if (action) actions.click = action;
+      else delete actions.click;
+      return {
+        ...node,
+        actions: Object.keys(actions).length > 0 ? actions : undefined,
+      };
+    });
     setSpec(next);
   }, [selected, spec]);
 
@@ -1256,6 +1355,13 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
                 {inspectorTab === 'actions' && (
                   <div className="space-y-3">
+                    <QuickActionControls
+                      componentId={selected.componentId}
+                      action={selected.actions?.click}
+                      toolNames={localToolNames}
+                      onChange={replaceSelectedClickAction}
+                      onError={setError}
+                    />
                     <JsonObjectEditor
                       label="Actions JSON"
                       value={selected.actions}
