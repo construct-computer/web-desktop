@@ -196,21 +196,6 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
               : [injectionLanded ? 'user-msg-injection-landed' : ''].filter(Boolean).join(' '),
           ].filter(Boolean).join(' ')}
         >
-          {msg.componentMentions && msg.componentMentions.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap justify-end gap-1">
-              {msg.componentMentions.map((mention) => (
-                <span
-                  key={`${mention.appId}:${mention.componentId}`}
-                  title={`${mention.appId} / ${mention.path || mention.componentId}`}
-                  className="inline-flex max-w-[220px] items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] text-white/85"
-                >
-                  <Blocks className="h-2.5 w-2.5 shrink-0" />
-                  <span className="truncate">{mention.label || mention.componentId}</span>
-                  <span className="text-white/45">{mention.componentType}</span>
-                </span>
-              ))}
-            </div>
-          )}
           {(() => {
             if (reply) {
               return (
@@ -218,11 +203,39 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                   <div className="mb-1.5 px-2.5 py-1.5 rounded-lg bg-black/8 text-[12px] leading-snug text-white/70 line-clamp-2">
                     {reply.quote}
                   </div>
-                  <p className="whitespace-pre-wrap">{reply.body}</p>
+                  <p className="whitespace-pre-wrap break-words">
+                    {msg.componentMentions?.map((mention) => (
+                      <span
+                        key={`${mention.appId}:${mention.componentId}`}
+                        title={`${mention.appId} / ${mention.path || mention.componentId}`}
+                        className="mb-1 mr-1 inline-flex max-w-[220px] align-baseline items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] leading-4 text-white/90"
+                      >
+                        <Blocks className="h-2.5 w-2.5 shrink-0" />
+                        <span className="truncate">{mention.label || mention.componentId}</span>
+                        <span className="text-white/45">{mention.componentType}</span>
+                      </span>
+                    ))}
+                    {reply.body}
+                  </p>
                 </>
               );
             }
-            return <p className="whitespace-pre-wrap break-words">{displayContent}</p>;
+            return (
+              <p className="whitespace-pre-wrap break-words">
+                {msg.componentMentions?.map((mention) => (
+                  <span
+                    key={`${mention.appId}:${mention.componentId}`}
+                    title={`${mention.appId} / ${mention.path || mention.componentId}`}
+                    className="mb-1 mr-1 inline-flex max-w-[220px] align-baseline items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] leading-4 text-white/90"
+                  >
+                    <Blocks className="h-2.5 w-2.5 shrink-0" />
+                    <span className="truncate">{mention.label || mention.componentId}</span>
+                    <span className="text-white/45">{mention.componentType}</span>
+                  </span>
+                ))}
+                {displayContent}
+              </p>
+            );
           })()}
           {msg.attachments && msg.attachments.length > 0 && (
             <div className="flex flex-wrap justify-end gap-1 mt-1.5">
