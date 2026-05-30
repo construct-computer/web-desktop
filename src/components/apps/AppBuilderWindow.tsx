@@ -933,6 +933,16 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           || meta.description.toLowerCase().includes(query);
       });
   }, [paletteGroup, paletteQuery]);
+  const selectedMeta = selected ? COMPONENT_META[selected.type as ComponentTypeName] : undefined;
+  const SelectedIcon = selectedMeta?.icon || Blocks;
+  const selectedCanContainChildren = Boolean(selected && CONTAINER_TYPES.has(selected.type));
+  const selectedChildCount = selected?.children?.length || 0;
+  const expandAllComponents = useCallback(() => {
+    setExpanded(new Set(flat.filter((item) => (item.node.children || []).length > 0).map((item) => item.node.componentId)));
+  }, [flat]);
+  const collapseAllComponents = useCallback(() => {
+    setExpanded(new Set());
+  }, []);
 
   useEffect(() => {
     if (!spec) return;
@@ -1535,14 +1545,32 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           </div>
         </div>
       ) : (
-      <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(320px,1fr)_320px] max-[900px]:grid-cols-[220px_minmax(260px,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-black/[0.08]">
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(360px,1fr)_340px] max-[900px]:grid-cols-[230px_minmax(260px,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-black/[0.06]">
           <div className="flex h-10 items-center gap-2 border-b border-white/[0.06] px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
             <PanelLeft className="h-3.5 w-3.5" />
             Components
-            <span className="ml-auto rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium tracking-normal">
+            <span className="ml-auto rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium tracking-normal tabular-nums">
               {componentMatchCount}
             </span>
+            <button
+              type="button"
+              onClick={expandAllComponents}
+              className="rounded p-0.5 text-[var(--color-text-muted)]/70 hover:bg-white/[0.06] hover:text-[var(--color-text)]"
+              title="Expand all"
+              aria-label="Expand all components"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={collapseAllComponents}
+              className="rounded p-0.5 text-[var(--color-text-muted)]/70 hover:bg-white/[0.06] hover:text-[var(--color-text)]"
+              title="Collapse all"
+              aria-label="Collapse all components"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="border-b border-white/[0.06] p-2">
             <label className="relative block">
@@ -1614,9 +1642,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                     }}
                     onClick={() => setSelectedId(item.node.componentId)}
                     className={[
-                      'flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] transition-colors',
+                      'group relative flex h-9 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] transition-colors',
                       selected?.componentId === item.node.componentId
-                        ? 'bg-[var(--color-accent)]/16 text-[var(--color-text)]'
+                        ? 'bg-white/[0.075] text-[var(--color-text)] shadow-[inset_2px_0_0_var(--color-accent)]'
                         : directMatch
                           ? 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]'
                           : 'text-[var(--color-text-muted)]/55 hover:bg-white/[0.04] hover:text-[var(--color-text-muted)]',
@@ -1645,12 +1673,19 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                     )}
                     <GripVertical
                       className={[
-                        'h-3.5 w-3.5 shrink-0',
-                        canDrag ? 'text-[var(--color-text-muted)]/55' : 'text-[var(--color-text-muted)]/20',
+                        'h-3.5 w-3.5 shrink-0 transition-opacity',
+                        canDrag ? 'text-[var(--color-text-muted)]/40 opacity-0 group-hover:opacity-100' : 'text-[var(--color-text-muted)]/15',
                       ].join(' ')}
                     />
-                    <span className="min-w-0 flex-1 truncate">{componentTitle(item.node)}</span>
-                    <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]/55">{item.node.type}</span>
+                    {(() => {
+                      const Icon = COMPONENT_META[item.node.type as ComponentTypeName]?.icon || Blocks;
+                      return <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]/70" />;
+                    })()}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{componentTitle(item.node)}</span>
+                      <span className="block truncate font-mono text-[10px] leading-3 text-[var(--color-text-muted)]/55">{item.node.componentId}</span>
+                    </span>
+                    <span className="shrink-0 rounded border border-white/[0.07] bg-black/20 px-1 py-0.5 text-[9px] font-medium text-[var(--color-text-muted)]/65">{item.node.type}</span>
                   </button>
                   {hasChildren && !isOpen && null}
                 </div>
@@ -1659,7 +1694,33 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           </div>
         </aside>
 
-        <main className="relative min-h-0 bg-black/[0.18]">
+        <main className="relative flex min-h-0 flex-col bg-black/[0.16]">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-white/[0.06] bg-black/[0.08] px-3">
+            <MousePointer2 className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-medium">
+                {selected ? componentTitle(selected) : selectedApp?.manifest.name || 'Preview'}
+              </div>
+              <div className="truncate font-mono text-[10px] text-[var(--color-text-muted)]/70">
+                {selectedFlat?.path || 'Select a component from the tree or preview'}
+              </div>
+            </div>
+            {selected && (
+              <span className="shrink-0 rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+                {selected.type}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={mentionSelected}
+              disabled={!selected}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.07] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+              title="Mention selected component in Spotlight"
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" />
+              Mention
+            </button>
+          </div>
           {previewUrl ? (
             <iframe
               key={`${selectedAppId}:${previewKey}:${token}`}
@@ -1667,17 +1728,17 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
               src={previewUrl}
               onLoad={postSelectedToPreview}
               sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-              className="h-full w-full border-0 bg-transparent"
+              className="min-h-0 flex-1 border-0 bg-transparent"
               title={selectedApp?.manifest.name || 'App preview'}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-[12px] text-[var(--color-text-muted)]">
+            <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-[var(--color-text-muted)]">
               {previewPlaceholder}
             </div>
           )}
         </main>
 
-        <aside className="min-h-0 border-l border-white/[0.08] bg-black/[0.08] max-[900px]:col-span-2 max-[900px]:h-[280px] max-[900px]:border-l-0 max-[900px]:border-t">
+        <aside className="min-h-0 border-l border-white/[0.08] bg-black/[0.06] max-[900px]:col-span-2 max-[900px]:h-[280px] max-[900px]:border-l-0 max-[900px]:border-t">
           <div className="flex h-10 items-center justify-between border-b border-white/[0.06] px-3">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Inspector</span>
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />}
@@ -1685,17 +1746,31 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           <div className="h-[calc(100%-40px)] overflow-auto p-3">
             {selected ? (
               <div className="space-y-4">
-                <div className="rounded-md border border-white/[0.08] bg-white/[0.035] p-3">
+                <div className="rounded-md border border-white/[0.08] bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
                   <div className="flex items-start gap-2">
-                    {(() => {
-                      const Icon = COMPONENT_META[selected.type as ComponentTypeName]?.icon || Blocks;
-                      return <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />;
-                    })()}
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/[0.08] bg-white/[0.045]">
+                      <SelectedIcon className="h-4 w-4 text-[var(--color-text-muted)]" />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold">{componentTitle(selected)}</div>
                       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
                         <span className="shrink-0 rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 font-mono">{selected.type}</span>
                         <span className="truncate font-mono">{selected.componentId}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-text-muted)]/75">
+                        <span className="rounded border border-white/[0.07] bg-black/15 px-1.5 py-0.5">
+                          {selectedCanContainChildren ? `${selectedChildCount} child${selectedChildCount === 1 ? '' : 'ren'}` : 'leaf'}
+                        </span>
+                        {selected.bindings && Object.keys(selected.bindings).length > 0 && (
+                          <span className="rounded border border-white/[0.07] bg-black/15 px-1.5 py-0.5">
+                            {Object.keys(selected.bindings).length} binding{Object.keys(selected.bindings).length === 1 ? '' : 's'}
+                          </span>
+                        )}
+                        {selected.actions && Object.keys(selected.actions).length > 0 && (
+                          <span className="rounded border border-white/[0.07] bg-black/15 px-1.5 py-0.5">
+                            {Object.keys(selected.actions).length} action{Object.keys(selected.actions).length === 1 ? '' : 's'}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button
@@ -1996,8 +2071,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                 )}
                 <div className="border-t border-white/[0.08] pt-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-[var(--color-text-muted)]">Add component</span>
-                    <span className="text-[10px] text-[var(--color-text-muted)]/65">{CONTAINER_TYPES.has(selected.type) ? 'After or inside' : 'After selected'}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Component library</span>
+                    <span className="rounded border border-white/[0.07] bg-black/15 px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]/75">
+                      {selectedCanContainChildren ? 'after / inside' : 'after only'}
+                    </span>
                   </div>
                   <label className="relative mb-2 block">
                     <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-muted)]/65" />
@@ -2025,31 +2102,49 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       </button>
                     ))}
                   </div>
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-2">
                     {filteredComponentTypes.map((type) => {
                       const meta = COMPONENT_META[type];
                       const Icon = meta.icon;
                       return (
-                        <div key={type} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-md border border-white/[0.08] bg-white/[0.03]">
-                        <button
-                          onClick={() => addSibling(type)}
-                          className="flex min-h-10 min-w-0 items-center gap-2 px-2 text-left hover:bg-white/[0.08]"
-                          title={`Add ${type} after selected component`}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-                          <span className="min-w-0">
-                            <span className="block truncate text-[12px] font-medium">{meta.title}</span>
-                            <span className="block truncate text-[10px] text-[var(--color-text-muted)]/70">{meta.description}</span>
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => addChild(type)}
-                          disabled={!CONTAINER_TYPES.has(selected.type)}
-                          className="inline-flex w-9 items-center justify-center border-l border-white/[0.08] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35"
-                          title={`Add ${type} inside selected component`}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
+                        <div key={type} className="rounded-md border border-white/[0.08] bg-white/[0.025] p-2 transition-colors hover:bg-white/[0.04]">
+                          <div className="flex items-start gap-2">
+                            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/[0.07] bg-black/15">
+                              <Icon className="h-4 w-4 text-[var(--color-text-muted)]" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate text-[12px] font-semibold">{meta.title}</span>
+                                <span className="shrink-0 rounded border border-white/[0.06] bg-black/15 px-1 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]/65">
+                                  {meta.group}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-[var(--color-text-muted)]/70">
+                                {meta.description}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => addSibling(type)}
+                              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+                              title={`Add ${type} after selected component`}
+                            >
+                              <Plus className="h-3 w-3" />
+                              After
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addChild(type)}
+                              disabled={!selectedCanContainChildren}
+                              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                              title={`Add ${type} inside selected component`}
+                            >
+                              <Plus className="h-3 w-3" />
+                              Inside
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
