@@ -1348,7 +1348,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveGenerationRef = useRef(0);
-  const lastSpecJsonRef = useRef('');
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const lastHistoryRef = useRef('');
   const suppressHistoryRef = useRef(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
@@ -1439,22 +1440,24 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
   useEffect(() => {
     if (!spec) return;
-    const json = JSON.stringify(spec);
-    if (!lastSpecJsonRef.current) {
-      lastSpecJsonRef.current = json;
+    // History tracks both the spec and the app state so undo/redo restore the
+    // full editable surface, not just the layout.
+    const snapshot = JSON.stringify({ s: spec, st: appState });
+    if (!lastHistoryRef.current) {
+      lastHistoryRef.current = snapshot;
       return;
     }
-    if (json === lastSpecJsonRef.current) return;
     if (suppressHistoryRef.current) {
       suppressHistoryRef.current = false;
-      lastSpecJsonRef.current = json;
+      lastHistoryRef.current = snapshot;
       return;
     }
-    const previous = lastSpecJsonRef.current;
-    lastSpecJsonRef.current = json;
+    if (snapshot === lastHistoryRef.current) return;
+    const previous = lastHistoryRef.current;
+    lastHistoryRef.current = snapshot;
     setUndoStack((stack) => [...stack.slice(-49), previous]);
     setRedoStack([]);
-  }, [spec]);
+  }, [spec, appState]);
 
   const loadSpec = useCallback(async () => {
     if (!selectedAppId) return;
@@ -1470,7 +1473,6 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       if (tokenRes.success && tokenRes.data?.token) setToken(tokenRes.data.token);
       if (!specRes.success) throw new Error(specRes.error || 'App has no editable Construct spec.');
       if (!specRes.data?.spec) throw new Error('App has no editable Construct spec.');
-      lastSpecJsonRef.current = JSON.stringify(specRes.data.spec);
       setUndoStack([]);
       setRedoStack([]);
       setSpec(specRes.data.spec);
@@ -1480,6 +1482,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
         : {};
       setAppState(nextState);
       setSavedStateJson(JSON.stringify(nextState));
+      lastHistoryRef.current = JSON.stringify({ s: specRes.data.spec, st: nextState });
       const nextFlat = flatten(specRes.data.spec.layout);
       const targetComponentId = metadataComponentId && nextFlat.some((item) => item.node.componentId === metadataComponentId)
         ? metadataComponentId
@@ -1573,38 +1576,54 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
   const persistAll = useCallback(async (): Promise<boolean> => {
     if (!spec) return false;
-    if (specDirty) {
-      const saved = await persistSpec(spec);
-      if (!saved) return false;
+    // Collapse overlapping save requests (manual Save + autosave) into a single
+    // in-flight operation. Any edits made while a save runs stay dirty and are
+    // picked up by the next autosave pass, so we never run two saves at once.
+    if (saveInFlightRef.current) return saveInFlightRef.current;
+    const run = (async (): Promise<boolean> => {
+      if (specDirty) {
+        const saved = await persistSpec(spec);
+        if (!saved) return false;
+      }
+      if (stateDirty) {
+        const saved = await persistState(appState);
+        if (!saved) return false;
+      }
+      return true;
+    })();
+    saveInFlightRef.current = run;
+    try {
+      return await run;
+    } finally {
+      saveInFlightRef.current = null;
     }
-    if (stateDirty) {
-      const saved = await persistState(appState);
-      if (!saved) return false;
-    }
-    return true;
   }, [appState, persistSpec, persistState, spec, specDirty, stateDirty]);
+
+  const applyHistorySnapshot = useCallback((snapshot: string) => {
+    const parsed = JSON.parse(snapshot) as { s: ConstructAppSpec; st?: Record<string, unknown> };
+    suppressHistoryRef.current = true;
+    lastHistoryRef.current = snapshot;
+    setSpec(parsed.s);
+    setAppState(parsed.st && typeof parsed.st === 'object' ? parsed.st : {});
+  }, []);
 
   const undoSpecEdit = useCallback(() => {
     if (!spec || undoStack.length === 0) return;
-    const current = JSON.stringify(spec);
+    const current = JSON.stringify({ s: spec, st: appState });
     const previous = undoStack[undoStack.length - 1];
-    suppressHistoryRef.current = true;
-    lastSpecJsonRef.current = previous;
     setUndoStack((stack) => stack.slice(0, -1));
     setRedoStack((stack) => [...stack.slice(-49), current]);
-    setSpec(JSON.parse(previous) as ConstructAppSpec);
-  }, [spec, undoStack]);
+    applyHistorySnapshot(previous);
+  }, [appState, applyHistorySnapshot, spec, undoStack]);
 
   const redoSpecEdit = useCallback(() => {
     if (!spec || redoStack.length === 0) return;
-    const current = JSON.stringify(spec);
+    const current = JSON.stringify({ s: spec, st: appState });
     const next = redoStack[redoStack.length - 1];
-    suppressHistoryRef.current = true;
-    lastSpecJsonRef.current = next;
     setRedoStack((stack) => stack.slice(0, -1));
     setUndoStack((stack) => [...stack.slice(-49), current]);
-    setSpec(JSON.parse(next) as ConstructAppSpec);
-  }, [redoStack, spec]);
+    applyHistorySnapshot(next);
+  }, [appState, applyHistorySnapshot, redoStack, spec]);
 
   useEffect(() => {
     return () => {
@@ -1737,12 +1756,17 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   }, [selected, spec]);
 
   const addSibling = useCallback((type: string) => {
-    if (!spec || !selected) return;
-    const sibling = makeComponent(type);
+    if (!spec) return;
+    const node = makeComponent(type);
     const next = cloneSpec(spec);
-    next.layout = insertSibling(next.layout, selected.componentId, sibling);
+    if (selected) {
+      next.layout = insertSibling(next.layout, selected.componentId, node);
+    } else {
+      // No selection (e.g. empty tree): append at the root layout.
+      next.layout = [...next.layout, node];
+    }
     setSpec(next);
-    setSelectedId(sibling.componentId);
+    setSelectedId(node.componentId);
   }, [selected, spec]);
 
   const duplicateSelected = useCallback(() => {
@@ -1893,6 +1917,13 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     );
   }, []);
 
+  const askAgentToFixApp = useCallback(() => {
+    const name = selectedApp?.manifest.name || selectedAppId;
+    openSpotlightPrompt(
+      `Rebuild the local app "${name}" as an editable Construct v2 declarative app so I can edit it in Builder. Use manifest.ui.renderer="construct-hosted", manifest.ui.kit="construct-v2", and a valid app.construct.json layout that preserves the app's current behavior and tools.`,
+    );
+  }, [selectedApp, selectedAppId]);
+
   const postSelectedToPreview = useCallback(() => {
     if (!selectedId) return;
     iframeRef.current?.contentWindow?.postMessage(
@@ -1998,7 +2029,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
         </button>
       </div>
 
-      {error && (
+      {error && spec && (
         <div className="shrink-0 border-b border-red-500/20 bg-red-500/10 px-4 py-2 text-[12px] text-red-200">
           {error}
         </div>
@@ -2045,8 +2076,56 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
             </div>
           </div>
         </div>
+      ) : (selectedApp && !spec && !loading && error) ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-black/[0.14] p-6">
+          <div className="w-full max-w-[520px] rounded-lg border border-white/[0.08] bg-white/[0.035] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.22)]">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-amber-300/20 bg-amber-300/10 text-amber-100">
+                <Blocks className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold text-[var(--color-text)]">
+                  {selectedApp.manifest.name || selectedAppId} isn&apos;t editable here yet
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-text-muted)]">
+                  Builder edits Construct v2 declarative apps (manifest.ui.renderer=&quot;construct-hosted&quot; with an app.construct.json layout). This app couldn&apos;t be loaded as a declarative spec.
+                </p>
+                <p className="mt-2 rounded-md border border-red-400/15 bg-red-400/10 px-2 py-1.5 text-[11px] text-red-100">
+                  {error}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={askAgentToFixApp}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 text-[12px] font-semibold text-white hover:brightness-110"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                Ask agent to rebuild
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadSpec()}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={openApp}
+                disabled={!selectedApp}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:opacity-30"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open app
+              </button>
+            </div>
+          </div>
+        </div>
       ) : (
-      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(360px,1fr)_340px] max-[900px]:grid-cols-[230px_minmax(260px,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(360px,1fr)_340px] overflow-x-auto max-[1040px]:grid-cols-[240px_minmax(300px,1fr)_320px] max-[860px]:grid-cols-[200px_minmax(260px,1fr)_300px]">
         <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-black/[0.06]">
           <div className="flex h-10 items-center gap-2 border-b border-white/[0.06] px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
             <PanelLeft className="h-3.5 w-3.5" />

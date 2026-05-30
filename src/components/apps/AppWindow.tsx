@@ -153,6 +153,7 @@ function IframeAppView({
   const [useProxy, setUseProxy] = useState(false);
   const [proxyReason, setProxyReason] = useState<string | null>(null);
   const [localAppToken, setLocalAppToken] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Register iframe ref for local apps so agentStore can trigger live reloads.
@@ -250,6 +251,7 @@ function IframeAppView({
       return;
     }
     let cancelled = false;
+    setError(null);
     api.mintLocalAppToken(appId).then((res) => {
       if (cancelled) return;
       if (res.success) {
@@ -262,7 +264,14 @@ function IframeAppView({
       if (!cancelled) setError(err instanceof Error ? err.message : String(err));
     });
     return () => { cancelled = true; };
-  }, [isLocal, appId]);
+  }, [isLocal, appId, reloadNonce]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    setLocalAppToken(null);
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   // Local apps use an app-scoped token; custom proxy still uses the user session token.
   const token = useProxy ? localStorage.getItem(STORAGE_KEYS.token) : null;
@@ -308,12 +317,20 @@ function IframeAppView({
           <div className="text-center max-w-sm">
             <Package className="w-10 h-10 mx-auto mb-3 text-red-400/60" />
             <p className="text-sm opacity-60 mb-1">Failed to load app</p>
-            <p className="text-xs opacity-30">{error}</p>
+            <p className="text-xs opacity-30 mb-3">{error}</p>
+            <button
+              onClick={handleRetry}
+              className="px-3 py-1.5 rounded-[6px] text-xs font-medium bg-white/[0.06] hover:bg-white/[0.12] text-[var(--color-text)] transition-colors inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry
+            </button>
           </div>
         </div>
       )}
-      {!checkingFrame && (!isLocal || localAppToken) && (
+      {!checkingFrame && !error && (!isLocal || localAppToken) && (
         <iframe
+          key={reloadNonce}
           ref={iframeRef}
           src={uiUrl}
           className="absolute inset-0 w-full h-full border-none"
@@ -471,6 +488,7 @@ function LocalAppView({
   const [showDetails, setShowDetails] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
   const [previewFileCount, setPreviewFileCount] = useState<number | null>(null);
+  const [previewPending, setPreviewPending] = useState<null | 'accept' | 'discard'>(null);
 
   // Check for pending preview on mount
   useEffect(() => {
@@ -488,10 +506,13 @@ function LocalAppView({
   const iframeKey = localAppIframeRefKey(config.id, appId);
 
   const openBuilder = useCallback(() => {
-    useWindowStore.getState().openWindow('app-builder', {
-      title: `Builder - ${app.manifest.name}`,
-      metadata: { appId },
-    });
+    const title = `Builder - ${app.manifest.name}`;
+    const metadata = { appId };
+    // app-builder is a singleton window: openWindow only focuses an existing
+    // one without applying new metadata, so push the target app explicitly so
+    // editing a second app doesn't leave the builder pointed at the old one.
+    const windowId = useWindowStore.getState().openWindow('app-builder', { title, metadata });
+    useWindowStore.getState().updateWindow(windowId, { title, metadata });
   }, [app.manifest.name, appId]);
 
   useEffect(() => {
@@ -546,6 +567,8 @@ function LocalAppView({
   }, [appId, app.manifest.name, iframeKey]);
 
   const handleAccept = useCallback(async () => {
+    if (previewPending) return;
+    setPreviewPending('accept');
     try {
       const res = await api.acceptLocalAppPreview(appId);
       if (!res.success) throw new Error(res.error || 'Accept failed');
@@ -561,10 +584,14 @@ function LocalAppView({
         { title: 'Accept Failed', body: err instanceof Error ? err.message : String(err), variant: 'error' },
         6000,
       );
+    } finally {
+      setPreviewPending(null);
     }
-  }, [appId, app.manifest.name]);
+  }, [appId, app.manifest.name, previewPending]);
 
   const handleDiscard = useCallback(async () => {
+    if (previewPending) return;
+    setPreviewPending('discard');
     try {
       const res = await api.discardLocalAppPreview(appId);
       if (!res.success) throw new Error(res.error || 'Discard failed');
@@ -578,8 +605,10 @@ function LocalAppView({
         { title: 'Discard Failed', body: err instanceof Error ? err.message : String(err), variant: 'error' },
         6000,
       );
+    } finally {
+      setPreviewPending(null);
     }
-  }, [appId, iframeKey]);
+  }, [appId, iframeKey, previewPending]);
 
   useWindowTitleBarAccessory(
     config.id,
@@ -628,14 +657,18 @@ function LocalAppView({
           <div className="flex items-center gap-2">
             <button
               onClick={handleAccept}
-              className="px-3 py-1 rounded-[6px] text-[11px] font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+              disabled={previewPending !== null}
+              className="px-3 py-1 rounded-[6px] text-[11px] font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-default inline-flex items-center gap-1.5"
             >
+              {previewPending === 'accept' && <Loader2 className="w-3 h-3 animate-spin" />}
               Accept
             </button>
             <button
               onClick={handleDiscard}
-              className="px-3 py-1 rounded-[6px] text-[11px] text-[var(--color-text-muted)] hover:bg-white/5 transition-colors"
+              disabled={previewPending !== null}
+              className="px-3 py-1 rounded-[6px] text-[11px] text-[var(--color-text-muted)] hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-default inline-flex items-center gap-1.5"
             >
+              {previewPending === 'discard' && <Loader2 className="w-3 h-3 animate-spin" />}
               Discard
             </button>
           </div>
@@ -694,10 +727,18 @@ function LocalAppPanel({
       } else {
         logger.warn('Failed to delete local app:', res.error);
         setConfirmDelete(false);
+        useNotificationStore.getState().addNotification(
+          { title: 'Delete Failed', body: res.error || `Could not delete ${manifest.name || appId}.`, variant: 'error' },
+          6000,
+        );
       }
     } catch (err) {
       logger.warn('Failed to delete local app:', err);
       setConfirmDelete(false);
+      useNotificationStore.getState().addNotification(
+        { title: 'Delete Failed', body: err instanceof Error ? err.message : String(err), variant: 'error' },
+        6000,
+      );
     }
     setDeleting(false);
   };
@@ -1158,6 +1199,14 @@ async function handleBridgeMethod(
     }
 
     // ── State bridge methods (local apps only) ──
+
+    case 'spec.get': {
+      if (!appId) throw new Error('No app context');
+      const preview = params.preview === true;
+      const specRes = await api.getLocalAppSpec(appId, { preview });
+      if (!specRes.success) throw new Error(specRes.error || 'Failed to read spec');
+      return specRes.data;
+    }
 
     case 'state.get': {
       if (!appId) throw new Error('No app context');

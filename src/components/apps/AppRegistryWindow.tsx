@@ -8,7 +8,7 @@ import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Upload, Wrench, Shield,
   Globe, Download, BadgeCheck, Sparkles,
-  Lock, Package, Link2, Server, Eye, Trash2,
+  Lock, Package, Link2, Server, Eye, Trash2, Pencil,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -385,6 +385,17 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     } as Partial<WindowConfig>);
   };
 
+  const openInBuilder = (app: UnifiedApp) => {
+    const appId = app.localApp?.id ?? app.id;
+    if (!appId) return;
+    const title = `Builder - ${app.name}`;
+    const metadata = { appId };
+    // app-builder is a singleton window: push metadata so the builder switches
+    // to this app even if a builder window is already open.
+    const windowId = openWindow('app-builder', { title, metadata } as Partial<WindowConfig>);
+    useWindowStore.getState().updateWindow(windowId, { title, metadata });
+  };
+
   const visibleSearchResults = sourceFilter === 'integrations'
     ? searchResults.filter((app) => app.source === 'composio')
     : searchResults;
@@ -483,6 +494,15 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                         className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-red-500 hover:bg-red-500/10 transition-colors shadow-sm"
                       >
                         Remove
+                      </button>
+                    )}
+                    {detail.source === 'local' && (
+                      <button
+                        onClick={() => openInBuilder(detail)}
+                        className="px-4 py-1.5 rounded-[8px] text-[12px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text)] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors shadow-sm"
+                      >
+                        <Pencil className="w-3.5 h-3.5 inline mr-1" />
+                        Edit in Builder
                       </button>
                     )}
                     {detail.source === 'local' && (
