@@ -125,6 +125,26 @@ type QuickPropControl = {
 
 const TEXTUAL_PROP_KEYS = ['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'];
 
+const BINDING_PROP_SUGGESTIONS: Partial<Record<ComponentTypeName, string[]>> = {
+  AppShell: ['title', 'subtitle'],
+  Panel: ['title', 'subtitle'],
+  Form: ['title', 'subtitle'],
+  MetricCard: ['label', 'value', 'meta'],
+  MetricStrip: ['items'],
+  Table: ['rows'],
+  Chart: ['points', 'items', 'title', 'subtitle'],
+  Timeline: ['items'],
+  RunLog: ['lines'],
+  Field: ['label', 'value'],
+  Button: ['label'],
+  IconButton: ['label', 'icon'],
+  SegmentedControl: ['items', 'value'],
+  StatusBanner: ['text', 'tone'],
+  EmptyState: ['title', 'text'],
+  DetailList: ['items'],
+  SourceBadge: ['label', 'value'],
+};
+
 const QUICK_PROP_CONTROLS: Partial<Record<ComponentTypeName, QuickPropControl[]>> = {
   AppShell: [
     { key: 'title', label: 'Title' },
@@ -199,6 +219,25 @@ function cloneSpec(spec: ConstructAppSpec): ConstructAppSpec {
 function propDisplayValue(props: Record<string, unknown> | undefined, key: string): string {
   const value = props?.[key];
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function bindingPropOptionsFor(node: ConstructComponentNode): string[] {
+  return [...new Set([
+    ...(BINDING_PROP_SUGGESTIONS[node.type as ComponentTypeName] || []),
+    ...(QUICK_PROP_CONTROLS[node.type as ComponentTypeName] || []).map((control) => control.key),
+    ...TEXTUAL_PROP_KEYS,
+    ...Object.keys(node.bindings || {}),
+  ])].filter(Boolean);
+}
+
+function collectStatePaths(value: unknown, prefix = '', depth = 0): string[] {
+  if (!value || typeof value !== 'object' || depth > 4) return prefix ? [prefix] : [];
+  if (Array.isArray(value)) return prefix ? [prefix] : [];
+  const entries = Object.entries(value as Record<string, unknown>);
+  return [
+    ...(prefix ? [prefix] : []),
+    ...entries.flatMap(([key, nested]) => collectStatePaths(nested, prefix ? `${prefix}.${key}` : key, depth + 1)),
+  ];
 }
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -468,6 +507,115 @@ function QuickPropControls({
   );
 }
 
+function BindingControls({
+  node,
+  statePathSuggestions,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  statePathSuggestions: string[];
+  onChange: (bindings: Record<string, string>) => void;
+}) {
+  const options = bindingPropOptionsFor(node);
+  const entries = Object.entries(node.bindings || {});
+  const [newProp, setNewProp] = useState(options[0] || 'value');
+  const [newPath, setNewPath] = useState(statePathSuggestions[0] || '');
+  const pathListId = `builder-state-paths-${node.componentId}`;
+
+  useEffect(() => {
+    if (!options.includes(newProp)) setNewProp(options[0] || 'value');
+  }, [newProp, options]);
+
+  useEffect(() => {
+    if (!newPath && statePathSuggestions[0]) setNewPath(statePathSuggestions[0]);
+  }, [newPath, statePathSuggestions]);
+
+  const setBinding = (oldKey: string, key: string, path: string) => {
+    const next = { ...(node.bindings || {}) };
+    if (oldKey && oldKey !== key) delete next[oldKey];
+    if (key && path) next[key] = path;
+    onChange(next);
+  };
+
+  const removeBinding = (key: string) => {
+    const next = { ...(node.bindings || {}) };
+    delete next[key];
+    onChange(next);
+  };
+
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Bindings</span>
+        <span className="rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+          {entries.length}
+        </span>
+      </div>
+      <datalist id={pathListId}>
+        {statePathSuggestions.map((path) => <option key={path} value={path} />)}
+      </datalist>
+      <div className="grid gap-2">
+        {entries.map(([key, path]) => (
+          <div key={key} className="grid grid-cols-[minmax(0,.75fr)_minmax(0,1fr)_auto] gap-1.5">
+            <select
+              value={key}
+              onChange={(event) => setBinding(key, event.target.value, path)}
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+            >
+              {[...new Set([key, ...options])].map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <input
+              value={path}
+              list={pathListId}
+              onChange={(event) => setBinding(key, key, event.target.value)}
+              placeholder="state.path"
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+            />
+            <button
+              type="button"
+              onClick={() => removeBinding(key)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-red-400/10 hover:text-red-200"
+              title="Remove binding"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <div className="grid grid-cols-[minmax(0,.75fr)_minmax(0,1fr)_auto] gap-1.5 border-t border-white/[0.06] pt-2">
+          <select
+            value={newProp}
+            onChange={(event) => setNewProp(event.target.value)}
+            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+          >
+            {options.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <input
+            value={newPath}
+            list={pathListId}
+            onChange={(event) => setNewPath(event.target.value)}
+            placeholder="state.path"
+            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newProp || !newPath) return;
+              setBinding('', newProp, newPath);
+              const nextUnused = options.find((option) => option !== newProp && !(node.bindings || {})[option]);
+              if (nextUnused) setNewProp(nextUnused);
+            }}
+            disabled={!newProp || !newPath}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
+            title="Add binding"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuickActionControls({
   componentId,
   action,
@@ -617,6 +765,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     const query = componentQuery.trim().toLowerCase();
     return query ? flat.filter((item) => componentSearchText(item.node).includes(query)).length : flat.length;
   }, [componentQuery, flat]);
+  const statePathSuggestions = useMemo(() => [...new Set([
+    ...collectStatePaths(appState),
+    ...collectStatePaths(spec?.data),
+  ])].filter(Boolean), [appState, spec?.data]);
   const specDirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
   const stateDirty = useMemo(() => JSON.stringify(appState) !== savedStateJson, [appState, savedStateJson]);
   const dirty = specDirty || stateDirty;
@@ -1362,6 +1514,11 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
                 {inspectorTab === 'data' && (
                   <div className="space-y-3">
+                    <BindingControls
+                      node={selected}
+                      statePathSuggestions={statePathSuggestions}
+                      onChange={replaceSelectedBindings}
+                    />
                     <JsonObjectEditor
                       label="Props JSON"
                       value={selected.props}
