@@ -957,12 +957,14 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     if (!selectedAppId) return;
     setLoading(true);
     setError(null);
+    setToken('');
     try {
       const [specRes, tokenRes, stateRes] = await Promise.all([
         api.getLocalAppSpec(selectedAppId),
         api.mintLocalAppToken(selectedAppId),
         api.getLocalAppState(selectedAppId),
       ]);
+      if (tokenRes.success && tokenRes.data?.token) setToken(tokenRes.data.token);
       if (!specRes.success) throw new Error(specRes.error || 'App has no editable Construct spec.');
       if (!specRes.data?.spec) throw new Error('App has no editable Construct spec.');
       lastSpecJsonRef.current = JSON.stringify(specRes.data.spec);
@@ -983,7 +985,6 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
         ? targetComponentId || prev
         : targetComponentId || nextFlat[0]?.node.componentId || '');
       setExpanded(new Set(nextFlat.filter((item) => (item.node.children || []).length > 0).map((item) => item.node.componentId)));
-      if (tokenRes.success && tokenRes.data?.token) setToken(tokenRes.data.token);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1401,9 +1402,14 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     postSelectedToPreview();
   }, [postSelectedToPreview, previewKey, token]);
 
-  const previewUrl = selectedAppId
-    ? `/api/apps/local/${encodeURIComponent(selectedAppId)}?builder=1${token ? `&app_token=${encodeURIComponent(token)}` : ''}`
+  const previewUrl = selectedAppId && token
+    ? `/api/apps/local/${encodeURIComponent(selectedAppId)}?builder=1&app_token=${encodeURIComponent(token)}`
     : '';
+  const previewPlaceholder = selectedAppId
+    ? loading || !token
+      ? 'Preparing authenticated preview...'
+      : 'Preview unavailable.'
+    : 'Select a local app to edit.';
 
   return (
     <div
@@ -1666,7 +1672,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
             />
           ) : (
             <div className="flex h-full items-center justify-center text-[12px] text-[var(--color-text-muted)]">
-              Select a local app to edit.
+              {previewPlaceholder}
             </div>
           )}
         </main>
