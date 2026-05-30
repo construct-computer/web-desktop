@@ -93,6 +93,12 @@ const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: LucideIcon 
   { id: 'agent', label: 'Agent', icon: MessageSquarePlus },
 ];
 
+const DENSITY_OPTIONS: Array<{ value: '' | 'compact' | 'comfortable'; label: string }> = [
+  { value: '', label: 'Default' },
+  { value: 'compact', label: 'Compact' },
+  { value: 'comfortable', label: 'Comfortable' },
+];
+
 const COMPONENT_META: Record<ComponentTypeName, {
   group: Exclude<PaletteGroup, 'all'>;
   title: string;
@@ -1062,6 +1068,14 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     setSpec({ ...spec, ...patch });
   }, [spec]);
 
+  const setAppDensity = useCallback((density: '' | 'compact' | 'comfortable') => {
+    if (!spec) return;
+    const nextTheme = { ...(spec.theme || {}) };
+    if (density) nextTheme.density = density;
+    else delete nextTheme.density;
+    patchSpecRoot({ theme: Object.keys(nextTheme).length > 0 ? nextTheme : undefined });
+  }, [patchSpecRoot, spec]);
+
   const replaceSpecData = useCallback((data: Record<string, unknown>) => {
     if (!spec) return;
     setSpec({ ...spec, data: Object.keys(data).length > 0 ? data : undefined });
@@ -1657,22 +1671,29 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50"
                       />
                     </label>
-                    <label className="block">
+                    <div>
                       <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Density</span>
-                      <select
-                        value={spec.theme?.density || 'compact'}
-                        onChange={(event) => patchSpecRoot({
-                          theme: {
-                            ...(spec.theme || {}),
-                            density: event.target.value as 'compact' | 'comfortable',
-                          },
+                      <div className="grid grid-cols-3 gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] p-1">
+                        {DENSITY_OPTIONS.map((option) => {
+                          const active = (spec.theme?.density || '') === option.value;
+                          return (
+                            <button
+                              key={option.value || 'default'}
+                              type="button"
+                              onClick={() => setAppDensity(option.value)}
+                              className={[
+                                'h-7 rounded px-1.5 text-[11px] font-medium transition-colors',
+                                active
+                                  ? 'bg-[var(--color-accent)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                                  : 'text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-[var(--color-text)]',
+                              ].join(' ')}
+                            >
+                              {option.label}
+                            </button>
+                          );
                         })}
-                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
-                      >
-                        <option value="compact">Compact</option>
-                        <option value="comfortable">Comfortable</option>
-                      </select>
-                    </label>
+                      </div>
+                    </div>
                     <JsonObjectEditor
                       label="Spec data JSON"
                       value={spec.data}
