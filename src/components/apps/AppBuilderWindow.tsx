@@ -407,26 +407,101 @@ function reorderSiblingNode(
 
 function makeComponent(type: string): ConstructComponentNode {
   const id = componentIdFor(type);
-  const baseProps: Record<string, unknown> = { title: type };
-  if (type === 'Button') baseProps.text = 'New action';
-  if (type === 'IconButton') { baseProps.label = 'Action'; baseProps.icon = '+'; }
-  if (type === 'Field') { baseProps.label = 'Field'; baseProps.placeholder = 'Value'; }
-  if (type === 'StatusBanner') { baseProps.text = 'Ready'; baseProps.tone = 'info'; }
-  if (type === 'MetricCard') { baseProps.label = 'Metric'; baseProps.value = '-'; baseProps.meta = 'No data'; }
-  if (type === 'MetricStrip') baseProps.items = [{ label: 'Metric', value: '-', meta: 'No data' }];
-  if (type === 'Table') baseProps.columns = [{ key: 'name', label: 'Name' }];
-  if (type === 'Chart') baseProps.points = [{ label: 'Now', value: 1 }];
-  if (type === 'Timeline') baseProps.items = [{ title: 'Created', time: 'Now', status: 'ready' }];
-  if (type === 'RunLog') baseProps.lines = [{ time: 'Now', message: 'Ready' }];
-  if (type === 'SegmentedControl') { baseProps.items = ['overview', 'details']; baseProps.value = 'overview'; }
-  if (type === 'DetailList') baseProps.items = [{ label: 'Status', value: 'Ready' }];
-  if (type === 'SourceBadge') { baseProps.label = 'Source'; baseProps.value = 'Local state'; }
+  const baseProps: Record<string, unknown> = { title: COMPONENT_META[type as ComponentTypeName]?.title || type };
+  let children: ConstructComponentNode[] | undefined = CONTAINER_TYPES.has(type) ? [] : undefined;
+  if (type === 'AppShell') {
+    baseProps.title = 'Operations Console';
+    baseProps.subtitle = 'Live workspace controls';
+  }
+  if (type === 'Panel') {
+    baseProps.title = 'Workspace overview';
+    baseProps.subtitle = 'Track the current queue and next action.';
+  }
+  if (type === 'Toolbar') {
+    children = [
+      makeComponent('SegmentedControl'),
+      { ...makeComponent('Button'), props: { label: 'Refresh', variant: 'primary' } },
+      { ...makeComponent('IconButton'), props: { label: 'More actions', icon: '•••' } },
+    ];
+  }
+  if (type === 'Form') {
+    baseProps.title = 'Update record';
+    baseProps.subtitle = 'Edit the selected state-backed fields.';
+    children = [
+      { ...makeComponent('Field'), props: { label: 'Owner', value: 'Design Ops', placeholder: 'Owner' } },
+      { ...makeComponent('Button'), props: { label: 'Apply changes', variant: 'primary' } },
+    ];
+  }
+  if (type === 'Button') { baseProps.label = 'Run action'; baseProps.variant = 'primary'; delete baseProps.title; }
+  if (type === 'IconButton') { baseProps.label = 'More actions'; baseProps.icon = '•••'; delete baseProps.title; }
+  if (type === 'Field') { baseProps.label = 'Status'; baseProps.value = 'Ready'; baseProps.placeholder = 'Value'; delete baseProps.title; }
+  if (type === 'StatusBanner') { baseProps.text = 'Ready for review'; baseProps.tone = 'success'; delete baseProps.title; }
+  if (type === 'MetricCard') { baseProps.label = 'Open items'; baseProps.value = '18'; baseProps.meta = '+4 today'; delete baseProps.title; }
+  if (type === 'MetricStrip') {
+    baseProps.items = [
+      { label: 'Open', value: '18', meta: '+4 today' },
+      { label: 'Running', value: '7', meta: '2 need review' },
+      { label: 'Blocked', value: '2', meta: 'Needs owner' },
+    ];
+    delete baseProps.title;
+  }
+  if (type === 'Table') {
+    baseProps.columns = [
+      { key: 'name', label: 'Name' },
+      { key: 'status', label: 'Status' },
+      { key: 'owner', label: 'Owner' },
+    ];
+    baseProps.rows = [
+      { name: 'Sync dashboard', status: 'Ready', owner: 'Construct' },
+      { name: 'Review queue', status: 'Running', owner: 'Agent' },
+    ];
+    delete baseProps.title;
+  }
+  if (type === 'Chart') {
+    baseProps.title = 'Weekly activity';
+    baseProps.subtitle = 'Completed work by day';
+    baseProps.points = [
+      { label: 'Mon', value: 8 },
+      { label: 'Tue', value: 14 },
+      { label: 'Wed', value: 11 },
+      { label: 'Thu', value: 18 },
+    ];
+  }
+  if (type === 'Timeline') {
+    baseProps.items = [
+      { title: 'Queued update', time: '09:12', status: 'ready' },
+      { title: 'Agent generated spec', time: '09:16', status: 'success' },
+      { title: 'Awaiting review', time: 'Now', status: 'pending' },
+    ];
+    delete baseProps.title;
+  }
+  if (type === 'RunLog') {
+    baseProps.lines = [
+      { time: '09:16', message: 'Loaded component state' },
+      { time: '09:17', message: 'Preview ready' },
+    ];
+    delete baseProps.title;
+  }
+  if (type === 'SegmentedControl') { baseProps.items = ['overview', 'activity', 'settings']; baseProps.value = 'overview'; delete baseProps.title; }
+  if (type === 'DetailList') {
+    baseProps.items = [
+      { label: 'Status', value: 'Ready' },
+      { label: 'Owner', value: 'Construct' },
+      { label: 'Source', value: 'Local state' },
+    ];
+    delete baseProps.title;
+  }
+  if (type === 'SourceBadge') { baseProps.label = 'Source'; baseProps.value = 'Local state'; delete baseProps.title; }
+  if (type === 'EmptyState') {
+    baseProps.title = 'No records yet';
+    baseProps.text = 'Run an action or connect state to populate this section.';
+  }
   return {
     componentId: id,
     type,
-    label: type,
+    label: COMPONENT_META[type as ComponentTypeName]?.title || type,
     props: baseProps,
-    children: CONTAINER_TYPES.has(type) ? [] : undefined,
+    children,
   };
 }
 
