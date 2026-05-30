@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Badge,
   BarChart3,
@@ -767,38 +767,34 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     );
   }, [agentPrompt, dirty, persistAll, selectedMention, sendChatMessage]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const key = event.key.toLowerCase();
-      const command = event.metaKey || event.ctrlKey;
-      if (command && key === 's') {
-        event.preventDefault();
-        void persistAll();
-        return;
-      }
-      if (isTextEntryTarget(event.target)) return;
-      if (command && key === 'd') {
-        event.preventDefault();
-        duplicateSelected();
-        return;
-      }
-      if (event.altKey && event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveSelected(-1);
-        return;
-      }
-      if (event.altKey && event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveSelected(1);
-        return;
-      }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selected?.type !== 'AppShell') {
-        event.preventDefault();
-        removeSelected();
-      }
+  const handleBuilderKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const command = event.metaKey || event.ctrlKey;
+    if (command && key === 's') {
+      event.preventDefault();
+      void persistAll();
+      return;
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    if (isTextEntryTarget(event.target)) return;
+    if (command && key === 'd') {
+      event.preventDefault();
+      duplicateSelected();
+      return;
+    }
+    if (event.altKey && event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveSelected(-1);
+      return;
+    }
+    if (event.altKey && event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSelected(1);
+      return;
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selected?.type !== 'AppShell') {
+      event.preventDefault();
+      removeSelected();
+    }
   }, [duplicateSelected, moveSelected, persistAll, removeSelected, selected?.type]);
 
   const openApp = useCallback(() => {
@@ -827,7 +823,11 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     : '';
 
   return (
-    <div className="flex h-full min-h-0 flex-col surface-app bg-[var(--color-bg)] text-[var(--color-text)]">
+    <div
+      className="flex h-full min-h-0 flex-col surface-app bg-[var(--color-bg)] text-[var(--color-text)]"
+      onKeyDown={handleBuilderKeyDown}
+      tabIndex={-1}
+    >
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Blocks className="h-4 w-4 text-[var(--color-accent)]" />
