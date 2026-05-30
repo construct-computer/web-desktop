@@ -112,6 +112,69 @@ const COMPONENT_META: Record<ComponentTypeName, {
   SourceBadge: { group: 'status', title: 'Source badge', description: 'Small badge for provenance or sync source.', icon: Badge },
 };
 
+type QuickPropControl = {
+  key: string;
+  label: string;
+  kind?: 'input' | 'textarea' | 'select';
+  options?: Array<{ label: string; value: string }>;
+};
+
+const TEXTUAL_PROP_KEYS = ['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'];
+
+const QUICK_PROP_CONTROLS: Partial<Record<ComponentTypeName, QuickPropControl[]>> = {
+  AppShell: [
+    { key: 'title', label: 'Title' },
+    { key: 'subtitle', label: 'Subtitle' },
+  ],
+  Panel: [
+    { key: 'title', label: 'Title' },
+    { key: 'subtitle', label: 'Subtitle' },
+  ],
+  Form: [
+    { key: 'title', label: 'Title' },
+    { key: 'subtitle', label: 'Subtitle' },
+  ],
+  Chart: [
+    { key: 'title', label: 'Title' },
+    { key: 'subtitle', label: 'Subtitle' },
+  ],
+  MetricCard: [
+    { key: 'label', label: 'Label' },
+    { key: 'value', label: 'Value' },
+    { key: 'meta', label: 'Meta' },
+  ],
+  Button: [
+    { key: 'label', label: 'Text' },
+    { key: 'variant', label: 'Variant', kind: 'select', options: [{ label: 'Secondary', value: '' }, { label: 'Primary', value: 'primary' }] },
+  ],
+  Field: [
+    { key: 'label', label: 'Label' },
+    { key: 'value', label: 'Value' },
+    { key: 'placeholder', label: 'Placeholder' },
+  ],
+  StatusBanner: [
+    { key: 'text', label: 'Message', kind: 'textarea' },
+    { key: 'tone', label: 'Tone', kind: 'select', options: [
+      { label: 'Info', value: 'info' },
+      { label: 'Success', value: 'success' },
+      { label: 'Warning', value: 'warning' },
+      { label: 'Danger', value: 'danger' },
+    ] },
+  ],
+  EmptyState: [
+    { key: 'title', label: 'Title' },
+    { key: 'text', label: 'Message', kind: 'textarea' },
+  ],
+  SourceBadge: [
+    { key: 'label', label: 'Label' },
+    { key: 'value', label: 'Value' },
+  ],
+};
+
+function quickPropKeysFor(type: string): Set<string> {
+  return new Set((QUICK_PROP_CONTROLS[type as ComponentTypeName] || []).map((control) => control.key));
+}
+
 function componentTitle(node: ConstructComponentNode): string {
   const props = node.props || {};
   return node.label
@@ -122,6 +185,11 @@ function componentTitle(node: ConstructComponentNode): string {
 
 function cloneSpec(spec: ConstructAppSpec): ConstructAppSpec {
   return JSON.parse(JSON.stringify(spec)) as ConstructAppSpec;
+}
+
+function propDisplayValue(props: Record<string, unknown> | undefined, key: string): string {
+  const value = props?.[key];
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 
 function flatten(nodes: ConstructComponentNode[], depth = 0, parentId?: string, base = 'layout'): FlatComponent[] {
@@ -307,6 +375,67 @@ function JsonObjectEditor({
         className={`${minHeight} w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 font-mono text-[11px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50`}
       />
     </label>
+  );
+}
+
+function QuickPropControls({
+  node,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  onChange: (props: Record<string, unknown>) => void;
+}) {
+  const controls = QUICK_PROP_CONTROLS[node.type as ComponentTypeName] || [];
+  if (controls.length === 0) return null;
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+        Quick props
+      </div>
+      <div className="grid gap-2">
+        {controls.map((control) => {
+          const value = propDisplayValue(node.props, control.key);
+          if (control.kind === 'select') {
+            return (
+              <label key={control.key} className="block">
+                <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">{control.label}</span>
+                <select
+                  value={value}
+                  onChange={(event) => onChange({ [control.key]: event.target.value })}
+                  className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                >
+                  {(control.options || []).map((option) => (
+                    <option key={option.value || 'default'} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+          if (control.kind === 'textarea') {
+            return (
+              <label key={control.key} className="block">
+                <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">{control.label}</span>
+                <textarea
+                  value={value}
+                  onChange={(event) => onChange({ [control.key]: event.target.value })}
+                  className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50"
+                />
+              </label>
+            );
+          }
+          return (
+            <label key={control.key} className="block">
+              <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">{control.label}</span>
+              <input
+                value={value}
+                onChange={(event) => onChange({ [control.key]: event.target.value })}
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+              />
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -920,7 +1049,11 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         />
                       </label>
                     </div>
-                    {['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'].map((key) => (
+                    <QuickPropControls
+                      node={selected}
+                      onChange={(props) => patchSelected({ props })}
+                    />
+                    {TEXTUAL_PROP_KEYS.filter((key) => !quickPropKeysFor(selected.type).has(key)).map((key) => (
                       <label key={key} className="block">
                         <span className="mb-1 block text-[11px] font-medium capitalize text-[var(--color-text-muted)]">{key}</span>
                         <input
