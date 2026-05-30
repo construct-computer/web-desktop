@@ -13,6 +13,7 @@ import {
   sourceLabel,
 } from '@/lib/externalPlatforms';
 import { fileNameFromWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
+import { ComponentMentionToken } from './ComponentMentionToken';
 
 interface PlatformMessage {
   platform: string;
@@ -205,15 +206,11 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                   </div>
                   <p className="whitespace-pre-wrap break-words">
                     {msg.componentMentions?.map((mention) => (
-                      <span
+                      <ComponentMentionToken
                         key={`${mention.appId}:${mention.componentId}`}
-                        title={`${mention.appId} / ${mention.path || mention.componentId}`}
-                        className="mb-1 mr-1 inline-flex max-w-[220px] align-baseline items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] leading-4 text-white/90"
-                      >
-                        <Blocks className="h-2.5 w-2.5 shrink-0" />
-                        <span className="truncate">{mention.label || mention.componentId}</span>
-                        <span className="text-white/45">{mention.componentType}</span>
-                      </span>
+                        mention={mention}
+                        variant="message"
+                      />
                     ))}
                     {reply.body}
                   </p>
@@ -223,15 +220,11 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             return (
               <p className="whitespace-pre-wrap break-words">
                 {msg.componentMentions?.map((mention) => (
-                  <span
+                  <ComponentMentionToken
                     key={`${mention.appId}:${mention.componentId}`}
-                    title={`${mention.appId} / ${mention.path || mention.componentId}`}
-                    className="mb-1 mr-1 inline-flex max-w-[220px] align-baseline items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] leading-4 text-white/90"
-                  >
-                    <Blocks className="h-2.5 w-2.5 shrink-0" />
-                    <span className="truncate">{mention.label || mention.componentId}</span>
-                    <span className="text-white/45">{mention.componentType}</span>
-                  </span>
+                    mention={mention}
+                    variant="message"
+                  />
                 ))}
                 {displayContent}
               </p>

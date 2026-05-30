@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock, Blocks } from 'lucide-react';
+import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -19,6 +19,7 @@ import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
 import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
+import { ComponentMentionToken } from './ComponentMentionToken';
 
 const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -460,6 +461,11 @@ export function SpotlightInput() {
     setFsOpen(false);
   }, [message, isConnected, isExternal, sendChatMessage, play, isMobile, filteredCommands, showSlash, slashSelected, executeSlashCommand, clearDraft, attachments, setAttachments, replyingTo, setReplyingTo, activeSessionKey, pendingComponentMentions]);
 
+  const removeMentionAndFocus = useCallback((appId: string, componentId: string) => {
+    removeComponentMention(appId, componentId);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [removeComponentMention]);
+
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
   const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
@@ -669,23 +675,11 @@ export function SpotlightInput() {
           <div className="flex-1 min-w-0 relative">
             <div className="flex min-h-9 flex-wrap items-center gap-1.5">
               {pendingComponentMentions.map((mention) => (
-                <span
+                <ComponentMentionToken
                   key={`${mention.appId}:${mention.componentId}`}
-                  title={`${mention.appId} / ${mention.path || mention.componentId}`}
-                  className="inline-flex h-7 max-w-[220px] shrink-0 items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/10 px-2 text-[12px] text-sky-100/90"
-                >
-                  <Blocks className="h-3.5 w-3.5 text-sky-200/80" />
-                  <span className="min-w-0 truncate">{mention.label || mention.componentId}</span>
-                  <span className="text-[10px] text-sky-100/45">{mention.componentType}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeComponentMention(mention.appId, mention.componentId)}
-                    className="ml-0.5 rounded-sm p-0.5 hover:bg-white/10 hover:text-red-300 transition-colors"
-                    aria-label={`Remove ${mention.label || mention.componentId} mention`}
-                  >
-                    <XCircle className="w-3 h-3" />
-                  </button>
-                </span>
+                  mention={mention}
+                  onRemove={() => removeMentionAndFocus(mention.appId, mention.componentId)}
+                />
               ))}
             <textarea
               ref={inputRef}
@@ -723,6 +717,18 @@ export function SpotlightInput() {
                 }
               }}
               onKeyDown={(e) => {
+                const caretAtStart = e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0;
+                if (
+                  e.key === 'Backspace'
+                  && caretAtStart
+                  && pendingComponentMentions.length > 0
+                  && message.length === 0
+                ) {
+                  e.preventDefault();
+                  const lastMention = pendingComponentMentions[pendingComponentMentions.length - 1];
+                  if (lastMention) removeMentionAndFocus(lastMention.appId, lastMention.componentId);
+                  return;
+                }
                 if (fsOpen && fsItems.length > 0) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setFsIndex(i => Math.min(i + 1, fsItems.length - 1)); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setFsIndex(i => Math.max(i - 1, 0)); return; }
