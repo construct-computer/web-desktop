@@ -16,12 +16,12 @@ describe('localAppsToDefinitions', () => {
       icon_url: 'data:image/svg+xml,%3Csvg%3Ecomposed%3C%2Fsvg%3E',
       manifest: {
         version: 2,
-        name: 'Construct UI Kit Gallery',
-        description: 'Inspect every Construct UI kit component.',
+        name: 'Construct Builder Gallery',
+        description: 'Inspect Construct Builder components.',
         icon: 'icon.svg',
         iconBackground: 'white',
         window: { width: 1120, height: 760, minWidth: 760, minHeight: 560 },
-        ui: { entry: 'index.html', kit: 'construct-v1' },
+        ui: { renderer: 'construct-hosted', spec: 'app.construct.json', kit: 'construct-v2' },
         tools: [{ name: 'refresh_gallery' }],
       },
     }];
