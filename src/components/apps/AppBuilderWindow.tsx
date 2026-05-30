@@ -192,6 +192,12 @@ function propDisplayValue(props: Record<string, unknown> | undefined, key: strin
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
 function flatten(nodes: ConstructComponentNode[], depth = 0, parentId?: string, base = 'layout'): FlatComponent[] {
   return nodes.flatMap((node, index) => {
     const path = `${base}.${index}`;
@@ -760,6 +766,40 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       3500,
     );
   }, [agentPrompt, dirty, persistAll, selectedMention, sendChatMessage]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      const command = event.metaKey || event.ctrlKey;
+      if (command && key === 's') {
+        event.preventDefault();
+        void persistAll();
+        return;
+      }
+      if (isTextEntryTarget(event.target)) return;
+      if (command && key === 'd') {
+        event.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      if (event.altKey && event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveSelected(-1);
+        return;
+      }
+      if (event.altKey && event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveSelected(1);
+        return;
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected?.type !== 'AppShell') {
+        event.preventDefault();
+        removeSelected();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [duplicateSelected, moveSelected, persistAll, removeSelected, selected?.type]);
 
   const openApp = useCallback(() => {
     if (!selectedApp) return;
