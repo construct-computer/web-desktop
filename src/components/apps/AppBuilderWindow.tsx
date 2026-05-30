@@ -198,6 +198,16 @@ function insertSibling(nodes: ConstructComponentNode[], componentId: string, sib
   ));
 }
 
+function componentIdFor(type: string, seed?: string): string {
+  const base = (seed || type)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/^[^a-z]+/, '')
+    .slice(0, 64) || type.toLowerCase();
+  return `${base}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function moveNode(nodes: ConstructComponentNode[], componentId: string, direction: -1 | 1): ConstructComponentNode[] {
   const currentIndex = nodes.findIndex((node) => node.componentId === componentId);
   if (currentIndex >= 0) {
@@ -214,8 +224,7 @@ function moveNode(nodes: ConstructComponentNode[], componentId: string, directio
 }
 
 function makeComponent(type: string): ConstructComponentNode {
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const id = `${type.toLowerCase()}-${suffix}`;
+  const id = componentIdFor(type);
   const baseProps: Record<string, unknown> = { title: type };
   if (type === 'Button') baseProps.text = 'New action';
   if (type === 'IconButton') { baseProps.text = 'Action'; baseProps.icon = '+'; }
@@ -237,6 +246,17 @@ function makeComponent(type: string): ConstructComponentNode {
     props: baseProps,
     children: CONTAINER_TYPES.has(type) ? [] : undefined,
   };
+}
+
+function duplicateComponentTree(node: ConstructComponentNode): ConstructComponentNode {
+  const copy = JSON.parse(JSON.stringify(node)) as ConstructComponentNode;
+  const withFreshIds = (current: ConstructComponentNode): ConstructComponentNode => ({
+    ...current,
+    componentId: componentIdFor(current.type, `${current.componentId}-copy`),
+    label: current.label ? `${current.label} copy` : current.label,
+    children: current.children?.map(withFreshIds),
+  });
+  return withFreshIds(copy);
 }
 
 function parseJsonRecord(text: string, label: string): Record<string, unknown> {
@@ -543,6 +563,16 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     next.layout = insertSibling(next.layout, selected.componentId, sibling);
     setSpec(next);
     setSelectedId(sibling.componentId);
+  }, [selected, spec]);
+
+  const duplicateSelected = useCallback(() => {
+    if (!spec || !selected || selected.type === 'AppShell') return;
+    const duplicate = duplicateComponentTree(selected);
+    const next = cloneSpec(spec);
+    next.layout = insertSibling(next.layout, selected.componentId, duplicate);
+    setSpec(next);
+    if (duplicate.children?.length) setExpanded((prev) => new Set(prev).add(duplicate.componentId));
+    setSelectedId(duplicate.componentId);
   }, [selected, spec]);
 
   const selectedMention = useCallback((): ComponentMention | null => {
@@ -940,8 +970,12 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         <MoveDown className="h-3.5 w-3.5" />
                         Move down
                       </button>
-                      <button onClick={() => void saveCurrentSpec()} disabled={!dirty || saving} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-45">
+                      <button onClick={duplicateSelected} disabled={selected.type === 'AppShell'} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40">
                         <CopyPlus className="h-3.5 w-3.5" />
+                        Duplicate
+                      </button>
+                      <button onClick={() => void saveCurrentSpec()} disabled={!dirty || saving} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-45">
+                        <Save className="h-3.5 w-3.5" />
                         Save all
                       </button>
                       <button onClick={removeSelected} disabled={selected.type === 'AppShell'} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-red-400/20 bg-red-400/10 px-2 text-[12px] text-red-100 hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-40">
