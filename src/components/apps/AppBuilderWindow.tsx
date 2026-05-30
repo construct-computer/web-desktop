@@ -11,6 +11,7 @@ import {
   Database,
   ExternalLink,
   FormInput,
+  CheckCircle2,
   LayoutDashboard,
   Loader2,
   MessageSquarePlus,
@@ -69,6 +70,7 @@ const COMPONENT_TYPES = [
 type ComponentTypeName = typeof COMPONENT_TYPES[number];
 type PaletteGroup = 'all' | 'layout' | 'data' | 'input' | 'status';
 type InspectorTab = 'app' | 'props' | 'data' | 'actions' | 'agent';
+type AutoSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 const CONTAINER_TYPES = new Set(['AppShell', 'Panel', 'Toolbar', 'Form']);
 
@@ -476,7 +478,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('app');
   const [paletteGroup, setPaletteGroup] = useState<PaletteGroup>('all');
   const [paletteQuery, setPaletteQuery] = useState('');
+  const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>('idle');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!fetched) void fetchApps();
@@ -496,6 +501,13 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const specDirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
   const stateDirty = useMemo(() => JSON.stringify(appState) !== savedStateJson, [appState, savedStateJson]);
   const dirty = specDirty || stateDirty;
+  const saveStatus = useMemo(() => {
+    if (saving || autoSaveState === 'saving') return { label: 'Saving', tone: 'accent' as const, icon: Loader2 };
+    if (autoSaveState === 'pending' || dirty) return { label: 'Unsaved', tone: 'warn' as const, icon: Circle };
+    if (autoSaveState === 'error') return { label: 'Save failed', tone: 'error' as const, icon: Circle };
+    if (spec) return { label: 'Saved', tone: 'muted' as const, icon: CheckCircle2 };
+    return null;
+  }, [autoSaveState, dirty, saving, spec]);
   const selected = flat.find((item) => item.node.componentId === selectedId)?.node || flat[0]?.node;
   const selectedFlat = selected ? flat.find((item) => item.node.componentId === selected.componentId) : undefined;
   const selectedSiblings = useMemo(() => {
@@ -586,8 +598,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       const res = await api.putLocalAppSpec(selectedAppId, nextSpec);
       if (!res.success) throw new Error(res.error || 'Save failed');
       if (!res.data?.spec) throw new Error('Save failed');
-      setSpec(res.data.spec);
       setSavedSpecJson(JSON.stringify(res.data.spec));
+      setSpec((current) => JSON.stringify(current) === JSON.stringify(nextSpec) ? res.data!.spec : current);
       setPreviewKey((key) => key + 1);
       return true;
     } catch (err) {
@@ -608,8 +620,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       const saved = res.data?.state && typeof res.data.state === 'object'
         ? res.data.state
         : nextState;
-      setAppState(saved);
       setSavedStateJson(JSON.stringify(saved));
+      setAppState((current) => JSON.stringify(current) === JSON.stringify(nextState) ? saved : current);
       setPreviewKey((key) => key + 1);
       return true;
     } catch (err) {
@@ -632,6 +644,48 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     }
     return true;
   }, [appState, persistSpec, persistState, spec, specDirty, stateDirty]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!spec || loading) {
+      setAutoSaveState('idle');
+      return;
+    }
+    if (!dirty) {
+      setAutoSaveState('saved');
+      return;
+    }
+    if (saving) return;
+    if (error) {
+      setAutoSaveState('error');
+      return;
+    }
+
+    setAutoSaveState('pending');
+    const generation = autoSaveGenerationRef.current + 1;
+    autoSaveGenerationRef.current = generation;
+    const timer = setTimeout(() => {
+      if (autoSaveTimerRef.current === timer) autoSaveTimerRef.current = null;
+      void (async () => {
+        if (autoSaveGenerationRef.current !== generation) return;
+        setAutoSaveState('saving');
+        const saved = await persistAll();
+        if (autoSaveGenerationRef.current === generation) {
+          setAutoSaveState(saved ? 'saved' : 'error');
+        }
+      })();
+    }, 800);
+    autoSaveTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (autoSaveTimerRef.current === timer) autoSaveTimerRef.current = null;
+    };
+  }, [dirty, error, loading, persistAll, saving, spec]);
 
   const patchSpecRoot = useCallback((patch: Partial<ConstructAppSpec>) => {
     if (!spec) return;
@@ -842,6 +896,23 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
             <div className="flex items-center gap-1.5 text-[13px] font-semibold">
               App Builder
               {dirty && <Circle className="h-2 w-2 fill-[var(--color-accent)] text-[var(--color-accent)]" />}
+              {saveStatus && (
+                <span
+                  className={[
+                    'ml-1 inline-flex h-5 items-center gap-1 rounded border px-1.5 text-[10px] font-medium',
+                    saveStatus.tone === 'accent' && 'border-sky-300/20 bg-sky-300/10 text-sky-100',
+                    saveStatus.tone === 'warn' && 'border-amber-300/20 bg-amber-300/10 text-amber-100',
+                    saveStatus.tone === 'error' && 'border-red-300/20 bg-red-300/10 text-red-100',
+                    saveStatus.tone === 'muted' && 'border-white/[0.08] bg-white/[0.035] text-[var(--color-text-muted)]',
+                  ].filter(Boolean).join(' ')}
+                >
+                  {(() => {
+                    const StatusIcon = saveStatus.icon;
+                    return <StatusIcon className={`h-3 w-3 ${saveStatus.label === 'Saving' ? 'animate-spin' : ''}`} />;
+                  })()}
+                  {saveStatus.label}
+                </span>
+              )}
             </div>
             <div className="truncate text-[11px] text-[var(--color-text-muted)]">{selectedApp?.manifest.description || 'Spec-first Construct UI editor'}</div>
           </div>
