@@ -58,6 +58,7 @@ const COMPONENT_TYPES = [
   'Form',
   'Field',
   'Button',
+  'IconButton',
   'SegmentedControl',
   'StatusBanner',
   'EmptyState',
@@ -105,6 +106,7 @@ const COMPONENT_META: Record<ComponentTypeName, {
   Form: { group: 'input', title: 'Form', description: 'Container for fields and submit actions.', icon: FormInput },
   Field: { group: 'input', title: 'Field', description: 'Read-only data field with label and value.', icon: Type },
   Button: { group: 'input', title: 'Button', description: 'Primary or secondary action trigger.', icon: MousePointer2 },
+  IconButton: { group: 'input', title: 'Icon button', description: 'Compact icon-only action with an accessible label.', icon: MousePointer2 },
   SegmentedControl: { group: 'input', title: 'Segmented control', description: 'Small option switcher for modes or filters.', icon: SlidersHorizontal },
   StatusBanner: { group: 'status', title: 'Status banner', description: 'Inline state, warning, success, or error message.', icon: Badge },
   EmptyState: { group: 'status', title: 'Empty state', description: 'Placeholder surface for missing data.', icon: Blocks },
@@ -145,6 +147,11 @@ const QUICK_PROP_CONTROLS: Partial<Record<ComponentTypeName, QuickPropControl[]>
   ],
   Button: [
     { key: 'label', label: 'Text' },
+    { key: 'variant', label: 'Variant', kind: 'select', options: [{ label: 'Secondary', value: '' }, { label: 'Primary', value: 'primary' }] },
+  ],
+  IconButton: [
+    { key: 'icon', label: 'Icon' },
+    { key: 'label', label: 'Accessible label' },
     { key: 'variant', label: 'Variant', kind: 'select', options: [{ label: 'Secondary', value: '' }, { label: 'Primary', value: 'primary' }] },
   ],
   Field: [
@@ -301,7 +308,7 @@ function makeComponent(type: string): ConstructComponentNode {
   const id = componentIdFor(type);
   const baseProps: Record<string, unknown> = { title: type };
   if (type === 'Button') baseProps.text = 'New action';
-  if (type === 'IconButton') { baseProps.text = 'Action'; baseProps.icon = '+'; }
+  if (type === 'IconButton') { baseProps.label = 'Action'; baseProps.icon = '+'; }
   if (type === 'Field') { baseProps.label = 'Field'; baseProps.placeholder = 'Value'; }
   if (type === 'StatusBanner') { baseProps.text = 'Ready'; baseProps.tone = 'info'; }
   if (type === 'MetricCard') { baseProps.label = 'Metric'; baseProps.value = '-'; baseProps.meta = 'No data'; }

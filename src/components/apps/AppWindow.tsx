@@ -26,7 +26,6 @@ import { API_BASE_URL, STORAGE_KEYS } from '@/lib/config';
 import { agentWS } from '@/services/websocket';
 import * as api from '@/services/api';
 import { log } from '@/lib/logger';
-import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useDevAppStore } from '@/stores/devAppStore';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
@@ -462,12 +461,8 @@ function LocalAppView({
   app: LocalApp;
 }) {
   const [showDetails, setShowDetails] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
   const [previewFileCount, setPreviewFileCount] = useState<number | null>(null);
-  const instanceId = useComputerStore((s) => s.instanceId);
-  const addComponentMention = useComputerStore((s) => s.addComponentMention);
 
   // Check for pending preview on mount
   useEffect(() => {
@@ -484,122 +479,30 @@ function LocalAppView({
 
   const iframeKey = localAppIframeRefKey(config.id, appId);
 
-  const toggleEdit = useCallback(() => {
-    const next = !isEditing;
-    setIsEditing(next);
-    const iframe = localAppIframeRefs.get(iframeKey)?.current;
-    iframe?.contentWindow?.postMessage(
-      { type: 'construct:set_inspector', enabled: next },
-      '*',
-    );
-  }, [isEditing, appId, iframeKey]);
-
-  // Keyboard shortcuts: Ctrl/Cmd+E toggles edit, Escape exits edit.
-  // Ignore when focus is in an input/textarea/contenteditable.
-  function isEditableTarget(el: EventTarget | null): boolean {
-    if (!el || !(el instanceof HTMLElement)) return false;
-    const tag = el.tagName.toLowerCase();
-    return tag === 'input' || tag === 'textarea' || el.isContentEditable;
-  }
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (isEditableTarget(e.target)) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
-        e.preventDefault();
-        toggleEdit();
-      }
-      if (e.key === 'Escape' && isEditing) {
-        e.preventDefault();
-        toggleEdit();
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isEditing, toggleEdit]);
+  const openBuilder = useCallback(() => {
+    useWindowStore.getState().openWindow('app-builder', {
+      title: `Builder - ${app.manifest.name}`,
+      metadata: { appId },
+    });
+  }, [app.manifest.name, appId]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       const iframe = localAppIframeRefs.get(iframeKey)?.current;
       if (!iframe || event.source !== iframe.contentWindow) return;
-      if (event.data?.type === 'construct:component_selected') {
-        const component = event.data.component;
-        if (component && typeof component === 'object') {
-          const record = component as Record<string, unknown>;
-          const componentId = typeof record.id === 'string'
-            ? record.id
-            : typeof record.componentId === 'string'
-              ? record.componentId
-              : '';
-          const componentType = typeof record.type === 'string'
-            ? record.type
-            : typeof record.componentType === 'string'
-              ? record.componentType
-              : '';
-          if (componentId && componentType) {
-            addComponentMention({
-              appId,
-              componentId,
-              componentType,
-              label: typeof record.label === 'string' ? record.label : undefined,
-              path: typeof record.path === 'string' ? record.path : undefined,
-              props: record.props && typeof record.props === 'object' && !Array.isArray(record.props)
-                ? record.props as Record<string, unknown>
-                : undefined,
-              bindings: record.bindings && typeof record.bindings === 'object' && !Array.isArray(record.bindings)
-                ? record.bindings as Record<string, string>
-                : undefined,
-              actions: record.actions && typeof record.actions === 'object' && !Array.isArray(record.actions)
-                ? record.actions as ComponentMention['actions']
-                : undefined,
-            });
-          }
-        }
-        return;
-      }
-      if (event.data?.type !== 'construct:edit_request_sent') return;
-      const { element, prompt: instruction } = event.data;
-      if (!element) return;
-      setIsProcessing(true);
-      (async () => {
-        try {
-          const sessionKey = `edit-${appId}-stable`;
-          await api.createAgentSession(instanceId!, `Editing ${app.manifest.name}`, sessionKey);
-          agentWS.send({
-            type: 'app_notification',
-            appId,
-            message: instruction || 'Update this component.',
-            __isEditRequest: true,
-            sessionKey,
-            editRequest: { element, prompt: instruction },
-          });
-        } catch {
-          agentWS.send({
-            type: 'app_notification',
-            appId,
-            message: instruction || 'Update this component.',
-            __isEditRequest: true,
-            editRequest: { element, prompt: instruction },
-          });
-        }
-      })();
+      if (event.data?.type !== 'construct:open_builder') return;
+      openBuilder();
     }
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [addComponentMention, appId, app.manifest.name, iframeKey, instanceId]);
+  }, [iframeKey, openBuilder]);
 
   useEffect(() => {
     function handleComplete(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (detail?.appId !== appId) return;
-      setIsProcessing(false);
-      setIsEditing(false);
       setIsPreview(false);
       setPreviewFileCount(null);
-      const iframe = localAppIframeRefs.get(iframeKey)?.current;
-      iframe?.contentWindow?.postMessage(
-        { type: 'construct:set_inspector', enabled: false },
-        '*',
-      );
       useNotificationStore.getState().addNotification(
         {
           title: 'App Updated',
@@ -612,7 +515,6 @@ function LocalAppView({
     function handlePreviewComplete(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (detail?.appId !== appId) return;
-      setIsProcessing(false);
       setIsPreview(true);
       api.getLocalAppPreviewStatus(appId).then((res) => {
         if (res.success && res.data?.hasPreview) setPreviewFileCount(res.data.fileCount ?? null);
@@ -675,25 +577,10 @@ function LocalAppView({
     config.id,
     <>
       <button
-        onClick={() => useWindowStore.getState().openWindow('app-builder', {
-          title: `Builder - ${app.manifest.name}`,
-          metadata: { appId },
-        })}
+        onClick={openBuilder}
         className="p-1 rounded-[5px] text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)] transition-colors"
-        title="Open in Builder"
-        aria-label="Open in Builder"
-      >
-        <Wrench className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={toggleEdit}
-        className={`p-1 rounded-[5px] transition-colors ${
-          isEditing
-            ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
-            : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
-        }`}
-        title={isEditing ? 'Exit edit mode' : 'Edit app'}
-        aria-label={isEditing ? 'Exit edit mode' : 'Edit app'}
+        title="Edit in Builder"
+        aria-label="Edit in Builder"
       >
         <Pencil className="w-3.5 h-3.5" />
       </button>
@@ -755,17 +642,6 @@ function LocalAppView({
           preview={isPreview}
         />
       </div>
-      {isProcessing && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
-          <Loader2 className="w-8 h-8 mb-3 animate-spin text-[var(--color-accent)]" />
-          <p className="text-sm text-white/80 font-medium">
-            Construct is updating {app.manifest.name}...
-          </p>
-          <p className="text-xs text-white/40 mt-1">
-            The app will refresh when changes are ready.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
