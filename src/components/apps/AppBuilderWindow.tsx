@@ -1457,6 +1457,57 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       Save
                     </button>
                   </div>
+                  <div className="mt-3 grid grid-cols-5 gap-1.5 border-t border-white/[0.06] pt-2">
+                    <button
+                      type="button"
+                      onClick={() => moveSelected(-1)}
+                      disabled={!canMoveUp}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                      title="Move up"
+                      aria-label="Move up"
+                    >
+                      <MoveUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveSelected(1)}
+                      disabled={!canMoveDown}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                      title="Move down"
+                      aria-label="Move down"
+                    >
+                      <MoveDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={duplicateSelected}
+                      disabled={selected.type === 'AppShell'}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                      title="Duplicate"
+                      aria-label="Duplicate"
+                    >
+                      <CopyPlus className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={mentionSelected}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-sky-300/20 bg-sky-300/10 text-sky-100 hover:bg-sky-300/15"
+                      title="Mention in Spotlight"
+                      aria-label="Mention in Spotlight"
+                    >
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeSelected}
+                      disabled={selected.type === 'AppShell'}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-red-300/20 bg-red-300/10 text-red-100 hover:bg-red-300/15 disabled:cursor-not-allowed disabled:opacity-35"
+                      title="Delete"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   {selectedFlat?.path && (
                     <div className="mt-2 truncate border-t border-white/[0.06] pt-2 font-mono text-[10px] text-[var(--color-text-muted)]/75">
                       {selectedFlat.path}
