@@ -129,6 +129,14 @@ function withTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
+function localAppUiUrl(baseUrl: string, token: string | null, preview = false): string {
+  const params = new URLSearchParams();
+  if (token) params.set('app_token', token);
+  if (preview) params.set('preview', '1');
+  const query = params.toString();
+  return `${baseUrl.replace(/\/+$/, '')}${query ? `?${query}` : ''}`;
+}
+
 function IframeAppView({
   config, appId, baseUrl, isLocal, appData, preview,
 }: {
@@ -261,7 +269,7 @@ function IframeAppView({
   const directUiUrl = isCustomUrlApp ? withTrailingSlash(baseUrl) : `${baseUrl}/ui/`;
   const proxyUiUrl = `${API_BASE_URL}/apps/${encodeURIComponent(appId)}/ui-proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   const uiUrl = isLocal
-    ? `${withTrailingSlash(baseUrl)}${localAppToken ? `?app_token=${encodeURIComponent(localAppToken)}${preview ? '&preview=1' : ''}` : preview ? '?preview=1' : ''}`
+    ? localAppUiUrl(baseUrl, localAppToken, preview)
     : useProxy
       ? proxyUiUrl
       : directUiUrl;
