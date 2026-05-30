@@ -67,7 +67,7 @@ const COMPONENT_TYPES = [
 
 type ComponentTypeName = typeof COMPONENT_TYPES[number];
 type PaletteGroup = 'all' | 'layout' | 'data' | 'input' | 'status';
-type InspectorTab = 'props' | 'data' | 'actions' | 'agent';
+type InspectorTab = 'app' | 'props' | 'data' | 'actions' | 'agent';
 
 const CONTAINER_TYPES = new Set(['AppShell', 'Panel', 'Toolbar', 'Form']);
 
@@ -80,6 +80,7 @@ const COMPONENT_GROUPS: Array<{ id: PaletteGroup; label: string }> = [
 ];
 
 const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: LucideIcon }> = [
+  { id: 'app', label: 'App', icon: LayoutDashboard },
   { id: 'props', label: 'Props', icon: SlidersHorizontal },
   { id: 'data', label: 'Data', icon: Database },
   { id: 'actions', label: 'Actions', icon: Bolt },
@@ -299,6 +300,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     typeof config.metadata?.appId === 'string' ? config.metadata.appId : '',
   );
   const [spec, setSpec] = useState<ConstructAppSpec | null>(null);
+  const [appState, setAppState] = useState<Record<string, unknown>>({});
   const [selectedId, setSelectedId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -307,8 +309,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const [previewKey, setPreviewKey] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [savedSpecJson, setSavedSpecJson] = useState('');
+  const [savedStateJson, setSavedStateJson] = useState('{}');
   const [agentPrompt, setAgentPrompt] = useState('');
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('props');
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('app');
   const [paletteGroup, setPaletteGroup] = useState<PaletteGroup>('all');
   const [paletteQuery, setPaletteQuery] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -328,7 +331,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
 
   const flat = useMemo(() => spec ? flatten(spec.layout) : [], [spec]);
   const visibleFlat = useMemo(() => spec ? flattenVisible(spec.layout, expanded) : [], [expanded, spec]);
-  const dirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
+  const specDirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
+  const stateDirty = useMemo(() => JSON.stringify(appState) !== savedStateJson, [appState, savedStateJson]);
+  const dirty = specDirty || stateDirty;
   const selected = flat.find((item) => item.node.componentId === selectedId)?.node || flat[0]?.node;
   const selectedFlat = selected ? flat.find((item) => item.node.componentId === selected.componentId) : undefined;
   const selectedSiblings = useMemo(() => {
@@ -358,14 +363,20 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     setLoading(true);
     setError(null);
     try {
-      const [specRes, tokenRes] = await Promise.all([
+      const [specRes, tokenRes, stateRes] = await Promise.all([
         api.getLocalAppSpec(selectedAppId),
         api.mintLocalAppToken(selectedAppId),
+        api.getLocalAppState(selectedAppId),
       ]);
       if (!specRes.success) throw new Error(specRes.error || 'App has no editable Construct spec.');
       if (!specRes.data?.spec) throw new Error('App has no editable Construct spec.');
       setSpec(specRes.data.spec);
       setSavedSpecJson(JSON.stringify(specRes.data.spec));
+      const nextState = stateRes.success && stateRes.data && typeof stateRes.data === 'object'
+        ? stateRes.data
+        : {};
+      setAppState(nextState);
+      setSavedStateJson(JSON.stringify(nextState));
       const nextFlat = flatten(specRes.data.spec.layout);
       setSelectedId((prev) => nextFlat.some((item) => item.node.componentId === prev)
         ? prev
@@ -425,6 +436,51 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     }
   }, [selectedAppId]);
 
+  const persistState = useCallback(async (nextState: Record<string, unknown>): Promise<boolean> => {
+    if (!selectedAppId) return false;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await api.setLocalAppState(selectedAppId, nextState);
+      if (!res.success) throw new Error(res.error || 'State save failed');
+      const saved = res.data?.state && typeof res.data.state === 'object'
+        ? res.data.state
+        : nextState;
+      setAppState(saved);
+      setSavedStateJson(JSON.stringify(saved));
+      setPreviewKey((key) => key + 1);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [selectedAppId]);
+
+  const persistAll = useCallback(async (): Promise<boolean> => {
+    if (!spec) return false;
+    if (specDirty) {
+      const saved = await persistSpec(spec);
+      if (!saved) return false;
+    }
+    if (stateDirty) {
+      const saved = await persistState(appState);
+      if (!saved) return false;
+    }
+    return true;
+  }, [appState, persistSpec, persistState, spec, specDirty, stateDirty]);
+
+  const patchSpecRoot = useCallback((patch: Partial<ConstructAppSpec>) => {
+    if (!spec) return;
+    setSpec({ ...spec, ...patch });
+  }, [spec]);
+
+  const replaceSpecData = useCallback((data: Record<string, unknown>) => {
+    if (!spec) return;
+    setSpec({ ...spec, data: Object.keys(data).length > 0 ? data : undefined });
+  }, [spec]);
+
   const patchSelected = useCallback((patch: Partial<ConstructComponentNode>) => {
     if (!spec || !selected) return;
     const next = cloneSpec(spec);
@@ -467,9 +523,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   }, [selected, spec]);
 
   const saveCurrentSpec = useCallback(async () => {
-    if (!spec) return;
-    await persistSpec(spec);
-  }, [persistSpec, spec]);
+    await persistAll();
+  }, [persistAll]);
 
   const addChild = useCallback((type: string) => {
     if (!spec || !selected) return;
@@ -535,8 +590,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     const prompt = agentPrompt.trim();
     const mention = selectedMention();
     if (!prompt || !mention) return;
-    if (dirty && spec) {
-      const saved = await persistSpec(spec);
+    if (dirty) {
+      const saved = await persistAll();
       if (!saved) return;
     }
     sendChatMessage(prompt, undefined, { componentMentions: [mention] });
@@ -545,7 +600,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       { title: 'Sent to Construct', body: `${mention.label || mention.componentId} attached to the prompt.`, variant: 'success' },
       3500,
     );
-  }, [agentPrompt, dirty, persistSpec, selectedMention, sendChatMessage, spec]);
+  }, [agentPrompt, dirty, persistAll, selectedMention, sendChatMessage]);
 
   const openApp = useCallback(() => {
     if (!selectedApp) return;
@@ -719,9 +774,15 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       {selectedFlat.path}
                     </div>
                   )}
+                  {dirty && (
+                    <div className="mt-2 flex gap-1.5 border-t border-white/[0.06] pt-2">
+                      {specDirty && <span className="rounded border border-amber-300/20 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-100">Spec changed</span>}
+                      {stateDirty && <span className="rounded border border-sky-300/20 bg-sky-300/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-100">State changed</span>}
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-4 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
+                <div className="grid grid-cols-5 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
                   {INSPECTOR_TABS.map(({ id, label, icon: Icon }) => (
                     <button
                       key={id}
@@ -739,6 +800,57 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                     </button>
                   ))}
                 </div>
+
+                {inspectorTab === 'app' && spec && (
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">App name</span>
+                      <input
+                        value={spec.name}
+                        onChange={(event) => patchSpecRoot({ name: event.target.value })}
+                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Description</span>
+                      <textarea
+                        value={spec.description || ''}
+                        onChange={(event) => patchSpecRoot({ description: event.target.value })}
+                        className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Density</span>
+                      <select
+                        value={spec.theme?.density || 'compact'}
+                        onChange={(event) => patchSpecRoot({
+                          theme: {
+                            ...(spec.theme || {}),
+                            density: event.target.value as 'compact' | 'comfortable',
+                          },
+                        })}
+                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                      >
+                        <option value="compact">Compact</option>
+                        <option value="comfortable">Comfortable</option>
+                      </select>
+                    </label>
+                    <JsonObjectEditor
+                      label="Spec data JSON"
+                      value={spec.data}
+                      minHeight="h-28"
+                      onValidChange={replaceSpecData}
+                      onError={setError}
+                    />
+                    <JsonObjectEditor
+                      label="Live state JSON"
+                      value={appState}
+                      minHeight="h-36"
+                      onValidChange={setAppState}
+                      onError={setError}
+                    />
+                  </div>
+                )}
 
                 {inspectorTab === 'props' && (
                   <div className="space-y-3">
