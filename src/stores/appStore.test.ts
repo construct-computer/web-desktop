@@ -12,7 +12,7 @@ import type { LocalApp } from '@/services/api';
 describe('localAppsToDefinitions', () => {
   it('uses composed local app icon urls and preserves window sizing', () => {
     const apps: LocalApp[] = [{
-      id: 'construct-ui-kit-gallery',
+      id: 'construct-builder-gallery',
       icon_url: 'data:image/svg+xml,%3Csvg%3Ecomposed%3C%2Fsvg%3E',
       manifest: {
         version: 2,
@@ -29,7 +29,7 @@ describe('localAppsToDefinitions', () => {
     const [definition] = localAppsToDefinitions(apps);
 
     expect(definition.icon).toBe(apps[0].icon_url);
-    expect(definition.appMetadata?.appId).toBe('construct-ui-kit-gallery');
+    expect(definition.appMetadata?.appId).toBe('construct-builder-gallery');
     expect(definition.appMetadata?.ui).toMatchObject({
       type: 'static',
       entry: 'index.html',
