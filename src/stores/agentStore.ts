@@ -713,7 +713,7 @@ interface ComputerStore {
    * new instruction that replaces whatever it was doing. Used by the
    * "Send + interrupt" mode of the composer.
    */
-  interruptSession: (sessionKey: string, message?: string, clientId?: string) => void;
+  interruptSession: (sessionKey: string, message?: string, clientId?: string, opts?: { componentMentions?: ComponentMention[] }) => void;
   /** Continue a session after an agent step-limit pause without adding a visible user bubble. */
   continueSession: (sessionKey?: string) => Promise<void>;
   /** Clear all chat history and start fresh. */
@@ -951,6 +951,7 @@ function coerceComponentMentions(meta: Record<string, unknown> | undefined): Com
     if (!appId || !componentId || !componentType) return [];
     return [{
       appId,
+      appName: typeof record.appName === 'string' ? record.appName : undefined,
       componentId,
       componentType,
       label: typeof record.label === 'string' ? record.label : undefined,
@@ -3275,7 +3276,7 @@ export const useComputerStore = create<ComputerStore>()(
       void api.stopAllBrowserForSession(sessionKey).catch(() => {});
     },
 
-    interruptSession: (sessionKey: string, message?: string, clientId?: string) => {
+    interruptSession: (sessionKey: string, message?: string, clientId?: string, opts?: { componentMentions?: ComponentMention[] }) => {
       if (!sessionKey) return;
       const prev = get().activeSessions;
       if (prev[sessionKey]) {
@@ -3290,7 +3291,10 @@ export const useComputerStore = create<ComputerStore>()(
           },
         });
       }
-      const sent = agentWS.sendInterrupt({ sessionKey, message, clientId });
+      const frontendContext = opts?.componentMentions?.length
+        ? { componentMentions: opts.componentMentions }
+        : undefined;
+      const sent = agentWS.sendInterrupt({ sessionKey, message, clientId, frontendContext });
       void api.stopAllBrowserForSession(sessionKey).catch(() => {});
       if (sent && message?.trim()) {
         // Clear the matching soft-queued bubble immediately on force-inject so
@@ -4277,11 +4281,15 @@ export const useComputerStore = create<ComputerStore>()(
               const sourceMeta = coerceExternalSource(event.data?.sourceMeta);
               const access = coerceExternalAccess(event.data?.access);
               const attachments = normalizeAttachmentPaths(event.data?.attachments as string[] | undefined);
+              const componentMentions = coerceComponentMentions({
+                frontendContext: { componentMentions: event.data?.componentMentions },
+              });
               appendToAgentChat({
                 role: 'user',
                 content: displayContent,
                 timestamp: new Date(),
                 ...(attachments.length > 0 ? { attachments } : {}),
+                ...(componentMentions.length > 0 ? { componentMentions } : {}),
                 ...(incomingClientId && { clientId: incomingClientId }),
                 ...(msgSource && { source: msgSource }),
                 ...(sourceMeta && { sourceMeta }),

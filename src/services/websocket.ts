@@ -793,12 +793,13 @@ class AgentWSClient {
    * the current turn is cooperatively cancelled. Used by the Spotlight
    * "Interrupt" button.
    */
-  sendInterrupt(options: { sessionKey: string; message?: string; clientId?: string }): boolean {
+  sendInterrupt(options: { sessionKey: string; message?: string; clientId?: string; frontendContext?: AgentFrontendContext }): boolean {
     const payload = JSON.stringify({
       type: 'interrupt',
       sessionKey: options.sessionKey,
       ...(options.message ? { message: options.message } : {}),
       ...(options.clientId ? { clientId: options.clientId } : {}),
+      ...(options.frontendContext ? { frontendContext: options.frontendContext } : {}),
     });
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(payload);

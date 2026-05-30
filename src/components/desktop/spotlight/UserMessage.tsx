@@ -141,13 +141,13 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
   }, []);
 
   const onForceSend = useCallback(
-    (text: string, clientId?: string) => {
+    (text: string, clientId?: string, componentMentions?: ComponentMention[]) => {
       if (!activeSessionKey || isExternalSessionKey(activeSessionKey)) return;
       const t = text.trim();
       if (!t) return;
       play('click');
       if (isMobile) hapticLight();
-      interruptSession(activeSessionKey, t, clientId);
+      interruptSession(activeSessionKey, t, clientId, { componentMentions });
     },
     [activeSessionKey, interruptSession, play, isMobile],
   );
@@ -296,7 +296,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             </span>
             <button
               type="button"
-              onClick={() => { onForceSend(displayContent, msg.clientId); }}
+              onClick={() => { onForceSend(displayContent, msg.clientId, msg.componentMentions); }}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]/75 hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 active:text-[var(--color-accent)] transition-colors"
               title="Interrupt the current turn and send this message immediately"
             >
