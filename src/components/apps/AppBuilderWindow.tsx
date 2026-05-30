@@ -948,20 +948,29 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     setSpec(next);
   }, [selected, spec]);
 
-  const mentionSelected = useCallback(() => {
+  const attachSelectedToSpotlight = useCallback((): ComponentMention | null => {
     const mention = selectedMention();
-    if (!mention) return;
+    if (!mention) return null;
     addComponentMention(mention);
     useNotificationStore.getState().addNotification(
       { title: 'Component mentioned', body: `${mention.label || mention.componentId} is ready in Spotlight.`, variant: 'success' },
       3500,
     );
+    return mention;
   }, [addComponentMention, selectedMention]);
+
+  const mentionSelected = useCallback(() => {
+    attachSelectedToSpotlight();
+  }, [attachSelectedToSpotlight]);
 
   const sendSelectedToAgent = useCallback(async () => {
     const prompt = agentPrompt.trim();
     const mention = selectedMention();
-    if (!prompt || !mention) return;
+    if (!mention) return;
+    if (!prompt) {
+      attachSelectedToSpotlight();
+      return;
+    }
     if (dirty) {
       const saved = await persistAll();
       if (!saved) return;
@@ -972,7 +981,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       { title: 'Sent to Construct', body: `${mention.label || mention.componentId} attached to the prompt.`, variant: 'success' },
       3500,
     );
-  }, [agentPrompt, dirty, persistAll, selectedMention, sendChatMessage]);
+  }, [agentPrompt, attachSelectedToSpotlight, dirty, persistAll, selectedMention, sendChatMessage]);
 
   const handleBuilderKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
@@ -1428,11 +1437,11 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                     </label>
                     <button
                       onClick={() => void sendSelectedToAgent()}
-                      disabled={!agentPrompt.trim() || saving}
+                      disabled={saving}
                       className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <Send className="h-3.5 w-3.5" />
-                      Send with component
+                      {agentPrompt.trim() ? 'Send with component' : 'Attach to Spotlight'}
                     </button>
                   </div>
                 )}
