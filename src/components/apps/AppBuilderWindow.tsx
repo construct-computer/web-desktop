@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FormInput,
   CheckCircle2,
+  GripVertical,
   LayoutDashboard,
   Loader2,
   MessageSquarePlus,
@@ -359,6 +360,32 @@ function moveNode(nodes: ConstructComponentNode[], componentId: string, directio
   return nodes.map((node) => (
     node.children ? { ...node, children: moveNode(node.children, componentId, direction) } : node
   ));
+}
+
+function reorderSiblingNode(
+  nodes: ConstructComponentNode[],
+  draggedId: string,
+  targetId: string,
+): { nodes: ConstructComponentNode[]; changed: boolean } {
+  if (draggedId === targetId) return { nodes, changed: false };
+  const from = nodes.findIndex((node) => node.componentId === draggedId);
+  const to = nodes.findIndex((node) => node.componentId === targetId);
+  if (from >= 0 && to >= 0) {
+    const next = [...nodes];
+    const [item] = next.splice(from, 1);
+    if (!item) return { nodes, changed: false };
+    next.splice(to, 0, item);
+    return { nodes: next, changed: true };
+  }
+  let changed = false;
+  const next = nodes.map((node) => {
+    if (!node.children) return node;
+    const result = reorderSiblingNode(node.children, draggedId, targetId);
+    if (!result.changed) return node;
+    changed = true;
+    return { ...node, children: result.nodes };
+  });
+  return { nodes: changed ? next : nodes, changed };
 }
 
 function makeComponent(type: string): ConstructComponentNode {
@@ -728,6 +755,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const [paletteGroup, setPaletteGroup] = useState<PaletteGroup>('all');
   const [paletteQuery, setPaletteQuery] = useState('');
   const [componentQuery, setComponentQuery] = useState('');
+  const [draggedComponentId, setDraggedComponentId] = useState('');
+  const [dragOverComponentId, setDragOverComponentId] = useState('');
   const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>('idle');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1150,6 +1179,19 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     setSpec(next);
   }, [selected, spec]);
 
+  const reorderComponent = useCallback((draggedId: string, targetId: string) => {
+    if (!spec || draggedId === targetId) return;
+    const dragged = flat.find((item) => item.node.componentId === draggedId);
+    const target = flat.find((item) => item.node.componentId === targetId);
+    if (!dragged || !target || dragged.parentId !== target.parentId) return;
+    const next = cloneSpec(spec);
+    const result = reorderSiblingNode(next.layout, draggedId, targetId);
+    if (!result.changed) return;
+    next.layout = result.nodes;
+    setSpec(next);
+    setSelectedId(draggedId);
+  }, [flat, spec]);
+
   const attachSelectedToSpotlight = useCallback((): ComponentMention | null => {
     const mention = selectedMention();
     if (!mention) return null;
@@ -1366,10 +1408,47 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
               const isSearching = Boolean(query);
               const isOpen = isSearching || expanded.has(item.node.componentId);
               const directMatch = query ? componentSearchText(item.node).includes(query) : true;
+              const canDrag = !isSearching && item.node.type !== 'AppShell';
+              const isDragging = draggedComponentId === item.node.componentId;
+              const isDropTarget = Boolean(draggedComponentId)
+                && dragOverComponentId === item.node.componentId
+                && draggedComponentId !== item.node.componentId;
               return (
                 <div key={item.node.componentId}>
                   <button
                     type="button"
+                    draggable={canDrag}
+                    onDragStart={(event) => {
+                      if (!canDrag) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setDraggedComponentId(item.node.componentId);
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', item.node.componentId);
+                    }}
+                    onDragOver={(event) => {
+                      if (!draggedComponentId || draggedComponentId === item.node.componentId || isSearching) return;
+                      const dragged = flat.find((entry) => entry.node.componentId === draggedComponentId);
+                      if (!dragged || dragged.parentId !== item.parentId) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      setDragOverComponentId(item.node.componentId);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverComponentId === item.node.componentId) setDragOverComponentId('');
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const draggedId = draggedComponentId || event.dataTransfer.getData('text/plain');
+                      setDraggedComponentId('');
+                      setDragOverComponentId('');
+                      reorderComponent(draggedId, item.node.componentId);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedComponentId('');
+                      setDragOverComponentId('');
+                    }}
                     onClick={() => setSelectedId(item.node.componentId)}
                     className={[
                       'flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] transition-colors',
@@ -1378,7 +1457,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         : directMatch
                           ? 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]'
                           : 'text-[var(--color-text-muted)]/55 hover:bg-white/[0.04] hover:text-[var(--color-text-muted)]',
-                    ].join(' ')}
+                      canDrag && 'cursor-grab active:cursor-grabbing',
+                      isDragging && 'opacity-45',
+                      isDropTarget && 'ring-1 ring-[var(--color-accent)]/45 bg-[var(--color-accent)]/10',
+                    ].filter(Boolean).join(' ')}
                     style={{ paddingLeft: 8 + item.depth * 14 }}
                   >
                     {hasChildren ? (
@@ -1398,6 +1480,12 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                     ) : (
                       <span className="h-3 w-3" />
                     )}
+                    <GripVertical
+                      className={[
+                        'h-3.5 w-3.5 shrink-0',
+                        canDrag ? 'text-[var(--color-text-muted)]/55' : 'text-[var(--color-text-muted)]/20',
+                      ].join(' ')}
+                    />
                     <span className="min-w-0 flex-1 truncate">{componentTitle(item.node)}</span>
                     <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]/55">{item.node.type}</span>
                   </button>
