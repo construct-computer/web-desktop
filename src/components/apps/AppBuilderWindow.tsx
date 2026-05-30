@@ -266,6 +266,24 @@ function openSpotlightPrompt(draft?: string) {
   }, 0);
 }
 
+function constructThemeTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    bg: cs.getPropertyValue('--color-bg').trim(),
+    surface: cs.getPropertyValue('--color-surface').trim(),
+    surfaceRaised: cs.getPropertyValue('--color-surface-raised').trim(),
+    text: cs.getPropertyValue('--color-text').trim(),
+    textMuted: cs.getPropertyValue('--color-text-muted').trim(),
+    textSubtle: cs.getPropertyValue('--color-text-subtle').trim(),
+    border: cs.getPropertyValue('--color-border').trim(),
+    borderStrong: cs.getPropertyValue('--color-border-strong').trim(),
+    accent: cs.getPropertyValue('--color-accent').trim(),
+    success: cs.getPropertyValue('--color-success').trim(),
+    error: cs.getPropertyValue('--color-error').trim(),
+    warning: cs.getPropertyValue('--color-warning').trim(),
+  };
+}
+
 function flatten(nodes: ConstructComponentNode[], depth = 0, parentId?: string, base = 'layout'): FlatComponent[] {
   return nodes.flatMap((node, index) => {
     const path = `${base}.${index}`;
@@ -1408,9 +1426,17 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     );
   }, [selectedId]);
 
+  const postThemeToPreview = useCallback(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'construct:set_theme', tokens: constructThemeTokens() },
+      '*',
+    );
+  }, []);
+
   useEffect(() => {
+    postThemeToPreview();
     postSelectedToPreview();
-  }, [postSelectedToPreview, previewKey, token]);
+  }, [postSelectedToPreview, postThemeToPreview, previewKey, token]);
 
   const previewUrl = selectedAppId && token
     ? `/api/apps/local/${encodeURIComponent(selectedAppId)}?builder=1&app_token=${encodeURIComponent(token)}`
@@ -1726,7 +1752,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
               key={`${selectedAppId}:${previewKey}:${token}`}
               ref={iframeRef}
               src={previewUrl}
-              onLoad={postSelectedToPreview}
+              onLoad={() => {
+                postThemeToPreview();
+                postSelectedToPreview();
+              }}
               sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
               className="min-h-0 flex-1 border-0 bg-transparent"
               title={selectedApp?.manifest.name || 'App preview'}
