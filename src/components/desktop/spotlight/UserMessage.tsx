@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Send, Mail, Hash, Blocks, Zap, Clock } from 'lucide-react';
 import type { ChatMessage, ComponentMention } from '@/stores/agentStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -15,6 +15,7 @@ import {
 } from '@/lib/externalPlatforms';
 import { fileNameFromWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
 import { ComponentMentionToken } from './ComponentMentionToken';
+import { splitComponentMentionMarkers } from '@/lib/componentMentionMarkup';
 
 interface PlatformMessage {
   platform: string;
@@ -87,6 +88,43 @@ function parseReply(content: string): { quote: string; who: string; body: string
   const match = content.match(/^\(Replying to (my earlier message|your earlier response): "([\s\S]*?)"\)\n\n([\s\S]*)$/);
   if (!match) return null;
   return { who: match[1] === 'my earlier message' ? 'You' : 'Construct', quote: match[2], body: match[3] };
+}
+
+function InlineComponentMentionContent({
+  text,
+  mentions,
+  onOpen,
+}: {
+  text: string;
+  mentions?: ComponentMention[];
+  onOpen: (mention: ComponentMention) => void;
+}) {
+  const parts = splitComponentMentionMarkers(text, mentions || []);
+  const hasInlineMention = parts.some((part) => part.kind === 'mention');
+  return (
+    <>
+      {!hasInlineMention && mentions?.map((mention) => (
+        <ComponentMentionToken
+          key={`${mention.appId}:${mention.componentId}`}
+          mention={mention}
+          variant="message"
+          onOpen={() => onOpen(mention)}
+        />
+      ))}
+      {parts.map((part, index) => (
+        part.kind === 'mention'
+          ? (
+              <ComponentMentionToken
+                key={part.key}
+                mention={part.mention}
+                variant="message"
+                onOpen={() => onOpen(part.mention)}
+              />
+            )
+          : <Fragment key={`text-${index}`}>{part.text}</Fragment>
+      ))}
+    </>
+  );
 }
 
 export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
@@ -213,30 +251,22 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                     {reply.quote}
                   </div>
                   <p className="whitespace-pre-wrap break-words">
-                    {msg.componentMentions?.map((mention) => (
-                      <ComponentMentionToken
-                        key={`${mention.appId}:${mention.componentId}`}
-                        mention={mention}
-                        variant="message"
-                        onOpen={() => openComponentMention(mention)}
-                      />
-                    ))}
-                    {reply.body}
+                    <InlineComponentMentionContent
+                      text={reply.body}
+                      mentions={msg.componentMentions}
+                      onOpen={openComponentMention}
+                    />
                   </p>
                 </>
               );
             }
             return (
               <p className="whitespace-pre-wrap break-words">
-                {msg.componentMentions?.map((mention) => (
-                  <ComponentMentionToken
-                    key={`${mention.appId}:${mention.componentId}`}
-                    mention={mention}
-                    variant="message"
-                    onOpen={() => openComponentMention(mention)}
-                  />
-                ))}
-                {displayContent}
+                <InlineComponentMentionContent
+                  text={displayContent}
+                  mentions={msg.componentMentions}
+                  onOpen={openComponentMention}
+                />
               </p>
             );
           })()}

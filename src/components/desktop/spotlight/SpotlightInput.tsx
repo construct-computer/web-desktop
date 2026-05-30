@@ -21,6 +21,7 @@ import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
 import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
 import { ComponentMentionToken } from './ComponentMentionToken';
+import { prependComponentMentionMarkers } from '@/lib/componentMentionMarkup';
 
 const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -570,7 +571,9 @@ export function SpotlightInput() {
     if (!isConnected) return;
 
     // Prepend reply context if replying to a message
-    let fullText = text || (pendingComponentMentions.length > 0 ? 'Update the selected app components.' : 'See attached files');
+    let fullText = pendingComponentMentions.length > 0
+      ? prependComponentMentionMarkers(text || 'Update the selected app components.', pendingComponentMentions)
+      : text || 'See attached files';
     if (replyingTo) {
       const quote = replyingTo.content.split('\n').slice(0, 3).join('\n');
       const truncated = quote.length > 200 ? quote.slice(0, 200) + '...' : quote;
