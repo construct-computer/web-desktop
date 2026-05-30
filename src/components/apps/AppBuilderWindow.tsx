@@ -99,6 +99,19 @@ const DENSITY_OPTIONS: Array<{ value: '' | 'compact' | 'comfortable'; label: str
   { value: 'comfortable', label: 'Comfortable' },
 ];
 
+const LAYOUT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'stack', label: 'Stack' },
+  { value: 'grid', label: 'Grid' },
+  { value: 'sidebar', label: 'Sidebar' },
+  { value: 'inline', label: 'Inline' },
+];
+
+const GAP_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Default' },
+  { value: 'tight', label: 'Tight' },
+  { value: 'loose', label: 'Loose' },
+];
+
 const COMPONENT_META: Record<ComponentTypeName, {
   group: Exclude<PaletteGroup, 'all'>;
   title: string;
@@ -640,6 +653,85 @@ function nextFieldValue(raw: string, kind: CollectionFieldControl['kind']): unkn
   if (!raw.trim()) return '';
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : raw;
+}
+
+function LayoutControls({
+  node,
+  onChange,
+}: {
+  node: ConstructComponentNode;
+  onChange: (props: Record<string, unknown>) => void;
+}) {
+  if (node.type !== 'AppShell' && node.type !== 'Panel') return null;
+  const props = node.props || {};
+  const layout = typeof props.layout === 'string' ? props.layout : 'stack';
+  const columns = typeof props.columns === 'number' ? props.columns : 2;
+  const gap = typeof props.gap === 'string' ? props.gap : '';
+
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+          Child layout
+        </span>
+        <span className="rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+          {node.children?.length || 0} item{(node.children?.length || 0) === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div className="grid gap-2">
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Mode</span>
+          <div className="grid grid-cols-4 gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] p-1">
+            {LAYOUT_OPTIONS.map((option) => {
+              const active = layout === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    const next: Record<string, unknown> = { layout: option.value };
+                    if (option.value === 'grid') next.columns = columns;
+                    onChange(next);
+                  }}
+                  className={[
+                    'h-7 rounded px-1 text-[11px] font-medium transition-colors',
+                    active
+                      ? 'bg-[var(--color-accent)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                      : 'text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-[var(--color-text)]',
+                  ].join(' ')}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Columns</span>
+            <select
+              value={String(columns)}
+              onChange={(event) => onChange({ layout: 'grid', columns: Number(event.target.value) })}
+              disabled={layout !== 'grid'}
+              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {[2, 3, 4].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Gap</span>
+            <select
+              value={gap}
+              onChange={(event) => onChange({ gap: event.target.value })}
+              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+            >
+              {GAP_OPTIONS.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function JsonObjectEditor({
@@ -2375,6 +2467,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       </label>
                     </div>
                     <QuickPropControls
+                      node={selected}
+                      onChange={(props) => patchSelected({ props })}
+                    />
+                    <LayoutControls
                       node={selected}
                       onChange={(props) => patchSelected({ props })}
                     />
