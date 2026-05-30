@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Send, Mail, Hash, Blocks, Zap, Clock } from 'lucide-react';
-import type { ChatMessage } from '@/stores/agentStore';
+import type { ChatMessage, ComponentMention } from '@/stores/agentStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWindowStore } from '@/stores/windowStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useSound } from '@/hooks/useSound';
 import { hapticLight } from '@/lib/haptics';
@@ -93,6 +94,13 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
   const interruptSession = useComputerStore(s => s.interruptSession);
   const { play } = useSound();
   const isMobile = useIsMobile();
+
+  const openComponentMention = useCallback((mention: ComponentMention) => {
+    const title = mention.label ? `Builder - ${mention.label}` : `Builder - ${mention.appId}`;
+    const metadata = { appId: mention.appId, componentId: mention.componentId };
+    const windowId = useWindowStore.getState().openWindow('app-builder', { title, metadata });
+    useWindowStore.getState().updateWindow(windowId, { title, metadata });
+  }, []);
 
   const onForceSend = useCallback(
     (text: string, clientId?: string) => {
@@ -210,6 +218,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                         key={`${mention.appId}:${mention.componentId}`}
                         mention={mention}
                         variant="message"
+                        onOpen={() => openComponentMention(mention)}
                       />
                     ))}
                     {reply.body}
@@ -224,6 +233,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                     key={`${mention.appId}:${mention.componentId}`}
                     mention={mention}
                     variant="message"
+                    onOpen={() => openComponentMention(mention)}
                   />
                 ))}
                 {displayContent}

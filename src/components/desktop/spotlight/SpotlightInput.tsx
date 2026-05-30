@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -466,6 +466,14 @@ export function SpotlightInput() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [removeComponentMention]);
 
+  const openComponentMention = useCallback((mention: ComponentMention) => {
+    const title = mention.label ? `Builder - ${mention.label}` : `Builder - ${mention.appId}`;
+    const metadata = { appId: mention.appId, componentId: mention.componentId };
+    const windowId = useWindowStore.getState().openWindow('app-builder', { title, metadata });
+    useWindowStore.getState().updateWindow(windowId, { title, metadata });
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const fetchUsage = useBillingStore(s => s.fetchUsage);
   const fetchByok = useBillingStore(s => s.fetchByok);
   const providerState = useBillingStore(useShallow((s) => s.getEffectiveProvider()));
@@ -678,6 +686,7 @@ export function SpotlightInput() {
                 <ComponentMentionToken
                   key={`${mention.appId}:${mention.componentId}`}
                   mention={mention}
+                  onOpen={() => openComponentMention(mention)}
                   onRemove={() => removeMentionAndFocus(mention.appId, mention.componentId)}
                 />
               ))}

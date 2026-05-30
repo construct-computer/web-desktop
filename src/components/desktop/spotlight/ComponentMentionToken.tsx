@@ -11,24 +11,36 @@ function mentionLabel(mention: ComponentMention) {
 
 export function ComponentMentionToken({
   mention,
+  onOpen,
   onRemove,
   variant = 'input',
 }: {
   mention: ComponentMention;
+  onOpen?: () => void;
   onRemove?: () => void;
   variant?: 'input' | 'message';
 }) {
   const isMessage = variant === 'message';
+  const clickable = Boolean(onOpen);
   return (
     <span
       title={mentionTitle(mention)}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onOpen}
+      onKeyDown={clickable ? (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onOpen?.();
+      } : undefined}
       className={[
         'inline-flex max-w-[220px] shrink-0 items-center gap-1.5 align-baseline',
         'rounded-md border px-1.5 text-[11px] leading-5',
+        clickable && 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300/35',
         isMessage
           ? 'mb-1 mr-1 border-white/10 bg-white/15 py-0 text-white/90'
           : 'h-7 border-sky-400/20 bg-sky-400/10 py-0.5 text-sky-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
-      ].join(' ')}
+      ].filter(Boolean).join(' ')}
       data-component-mention={`${mention.appId}:${mention.componentId}`}
     >
       <Blocks className={isMessage ? 'h-2.5 w-2.5 shrink-0' : 'h-3.5 w-3.5 shrink-0 text-sky-200/80'} />
@@ -39,7 +51,10 @@ export function ComponentMentionToken({
       {onRemove && (
         <button
           type="button"
-          onClick={onRemove}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
           className={[
             'ml-0.5 rounded-sm p-0.5 transition-colors',
             isMessage ? 'hover:bg-white/10 hover:text-red-100' : 'hover:bg-white/10 hover:text-red-300',

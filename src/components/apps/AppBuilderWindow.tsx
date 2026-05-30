@@ -557,8 +557,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const fetchApps = useAppStore((s) => s.fetchApps);
   const addComponentMention = useComputerStore((s) => s.addComponentMention);
   const sendChatMessage = useComputerStore((s) => s.sendChatMessage);
+  const metadataAppId = typeof config.metadata?.appId === 'string' ? config.metadata.appId : '';
+  const metadataComponentId = typeof config.metadata?.componentId === 'string' ? config.metadata.componentId : '';
   const [selectedAppId, setSelectedAppId] = useState(
-    typeof config.metadata?.appId === 'string' ? config.metadata.appId : '',
+    metadataAppId,
   );
   const [spec, setSpec] = useState<ConstructAppSpec | null>(null);
   const [appState, setAppState] = useState<Record<string, unknown>>({});
@@ -588,6 +590,10 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   useEffect(() => {
     if (!selectedAppId && localApps.length > 0) setSelectedAppId(localApps[0].id);
   }, [localApps, selectedAppId]);
+
+  useEffect(() => {
+    if (metadataAppId && metadataAppId !== selectedAppId) setSelectedAppId(metadataAppId);
+  }, [metadataAppId, selectedAppId]);
 
   const selectedApp = useMemo<LocalApp | undefined>(
     () => localApps.find((app) => app.id === selectedAppId),
@@ -666,9 +672,12 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       setAppState(nextState);
       setSavedStateJson(JSON.stringify(nextState));
       const nextFlat = flatten(specRes.data.spec.layout);
+      const targetComponentId = metadataComponentId && nextFlat.some((item) => item.node.componentId === metadataComponentId)
+        ? metadataComponentId
+        : '';
       setSelectedId((prev) => nextFlat.some((item) => item.node.componentId === prev)
-        ? prev
-        : nextFlat[0]?.node.componentId || '');
+        ? targetComponentId || prev
+        : targetComponentId || nextFlat[0]?.node.componentId || '');
       setExpanded(new Set(nextFlat.filter((item) => (item.node.children || []).length > 0).map((item) => item.node.componentId)));
       if (tokenRes.success && tokenRes.data?.token) setToken(tokenRes.data.token);
     } catch (err) {
@@ -676,7 +685,15 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedAppId]);
+  }, [metadataComponentId, selectedAppId]);
+
+  useEffect(() => {
+    if (!metadataComponentId || !spec) return;
+    if (!flat.some((item) => item.node.componentId === metadataComponentId)) return;
+    setSelectedId(metadataComponentId);
+    const parents = ancestorIds(spec.layout, metadataComponentId);
+    if (parents.length > 0) setExpanded((prev) => new Set([...prev, ...parents]));
+  }, [flat, metadataComponentId, spec]);
 
   useEffect(() => {
     void loadSpec();
