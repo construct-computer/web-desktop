@@ -242,7 +242,7 @@ export function localToUnified(app: LocalApp): UnifiedApp {
     tags: ['local', 'agent-created'],
     source: 'local',
     tools: manifest.tools || [],
-    hasUi: !!manifest.ui?.entry,
+    hasUi: manifest.ui?.renderer === 'construct-hosted',
     status: 'installed',
     localApp: app,
   };

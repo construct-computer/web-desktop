@@ -4169,9 +4169,9 @@ export const useComputerStore = create<ComputerStore>()(
         const phase = typeof data.phase === 'string' ? data.phase : 'file';
         const action = typeof data.action === 'string' ? data.action : undefined;
         const appId = typeof data.appId === 'string' ? data.appId : undefined;
-        const title = action === 'update_local'
-          ? `Updating app code${appId ? `: ${appId}` : ''}`
-          : `Creating app code${appId ? `: ${appId}` : ''}`;
+        const title = action === 'update_declarative'
+          ? `Updating app spec${appId ? `: ${appId}` : ''}`
+          : `Creating app spec${appId ? `: ${appId}` : ''}`;
         const status: CodePreviewData['status'] = phase === 'done'
           ? 'done'
           : data.source === 'tool'
@@ -5275,7 +5275,6 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
-        case 'local_app_code_preview':
         case 'artifact_preview': {
           upsertCodePreview(event.data || {});
           break;

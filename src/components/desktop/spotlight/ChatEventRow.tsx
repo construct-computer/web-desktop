@@ -222,11 +222,14 @@ function CodePreviewCard({ msg, compact = false }: { msg: ChatMessage; compact?:
   const [expanded, setExpanded] = useState(preview.status !== 'done');
   const [copied, setCopied] = useState(false);
   const activeFile = preview.files.find(file => file.path === activePath) || preview.files[0];
+  const isConstructSpecPreview = preview.action === 'create_declarative'
+    || preview.action === 'update_declarative'
+    || preview.action === 'patch_component';
   const statusLabel = preview.status === 'done'
     ? 'Ready'
     : preview.status === 'writing'
-      ? 'Writing files'
-      : 'Generating code';
+      ? (isConstructSpecPreview ? 'Writing spec' : 'Writing files')
+      : (isConstructSpecPreview ? 'Generating spec' : 'Generating code');
 
   const handleCopy = useCallback(() => {
     if (!activeFile) return;

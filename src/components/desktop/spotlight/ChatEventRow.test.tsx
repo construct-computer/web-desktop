@@ -38,24 +38,24 @@ describe('ChatEventRow', () => {
     expect(html).toContain('Details');
   });
 
-  it('renders live code previews for app generation', () => {
+  it('renders live spec previews for app generation', () => {
     const msg: ChatMessage = {
       role: 'activity',
-      content: 'Creating app code: demo',
+      content: 'Creating app spec: demo',
       timestamp: new Date(1),
       tool: 'app',
       activityType: 'file',
       codePreview: {
         previewId: 'preview-1',
-        title: 'Creating app code: demo',
-        action: 'create_local',
+        title: 'Creating app spec: demo',
+        action: 'create_declarative',
         appId: 'demo',
         status: 'streaming',
         files: [
           {
-            path: 'index.html',
-            language: 'html',
-            content: '<main>Hello</main>',
+            path: 'app.construct.json',
+            language: 'json',
+            content: '{"schemaVersion":1}',
             complete: false,
           },
         ],
@@ -64,9 +64,9 @@ describe('ChatEventRow', () => {
 
     const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
 
-    expect(html).toContain('Generating code');
-    expect(html).toContain('index.html');
-    expect(html).toContain('&lt;main&gt;Hello&lt;/main&gt;');
+    expect(html).toContain('Generating spec');
+    expect(html).toContain('app.construct.json');
+    expect(html).toContain('{&quot;schemaVersion&quot;:1}');
   });
 
   it('renders automatic memory activity as a subtle collapsed summary', () => {

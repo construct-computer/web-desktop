@@ -2786,7 +2786,7 @@ export interface LocalAppManifest {
   icon?: string;
   iconBackground?: 'white' | 'green' | 'blue' | 'black';
   window: { width: number; height: number; minWidth?: number; minHeight?: number };
-  ui: { renderer: 'construct-hosted'; spec: string; kit: 'construct-v2'; entry?: never } | { entry: string; kit?: string };
+  ui: { renderer: 'construct-hosted'; spec: string; kit: 'construct-v2' };
   permissions?: {
     network?: string[];
     uses?: {

@@ -752,7 +752,7 @@ function LocalAppPanel({
 
       <InfoCard title="Details">
         <InfoRow icon={<Hash className="w-3 h-3" />} label="App ID" value={appId} mono copyable />
-        <InfoRow icon={<Package className="w-3 h-3" />} label="UI" value={'renderer' in manifest.ui ? manifest.ui.renderer : manifest.ui.entry} mono />
+        <InfoRow icon={<Package className="w-3 h-3" />} label="UI" value={`${manifest.ui.renderer} · ${manifest.ui.spec}`} mono />
         <InfoRow icon={<Wrench className="w-3 h-3" />} label="Window" value={windowSize} />
       </InfoCard>
 

@@ -488,8 +488,9 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
       case 'list': return { text: 'Listing apps', activityType: 'tool' };
       case 'call': return { text: `App call${appId ? ` (${appId})` : ''}${toolName ? `: ${toolName}` : ''}`, activityType: 'tool' };
       case 'search': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
-      case 'create_local': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
-      case 'update_local': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
+      case 'create_declarative': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
+      case 'update_declarative': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
+      case 'patch_component': return { text: `Updating component${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
       case 'delete_local': return { text: `Deleting app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
       case 'get_app_state': return { text: `Reading app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
       case 'set_app_state': return { text: `Updating app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
