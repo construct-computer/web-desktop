@@ -1,21 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Badge,
+  BarChart3,
+  Bolt,
   Blocks,
   ChevronDown,
   ChevronRight,
   Circle,
   CopyPlus,
+  Database,
   ExternalLink,
+  FormInput,
+  LayoutDashboard,
   Loader2,
   MessageSquarePlus,
   MoveDown,
   MoveUp,
+  MousePointer2,
   PanelLeft,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Send,
+  SlidersHorizontal,
+  Table2,
   Trash2,
+  Type,
+  type LucideIcon,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -53,7 +65,51 @@ const COMPONENT_TYPES = [
   'SourceBadge',
 ] as const;
 
+type ComponentTypeName = typeof COMPONENT_TYPES[number];
+type PaletteGroup = 'all' | 'layout' | 'data' | 'input' | 'status';
+type InspectorTab = 'props' | 'data' | 'actions' | 'agent';
+
 const CONTAINER_TYPES = new Set(['AppShell', 'Panel', 'Toolbar', 'Form']);
+
+const COMPONENT_GROUPS: Array<{ id: PaletteGroup; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'layout', label: 'Layout' },
+  { id: 'data', label: 'Data' },
+  { id: 'input', label: 'Input' },
+  { id: 'status', label: 'Status' },
+];
+
+const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: LucideIcon }> = [
+  { id: 'props', label: 'Props', icon: SlidersHorizontal },
+  { id: 'data', label: 'Data', icon: Database },
+  { id: 'actions', label: 'Actions', icon: Bolt },
+  { id: 'agent', label: 'Agent', icon: MessageSquarePlus },
+];
+
+const COMPONENT_META: Record<ComponentTypeName, {
+  group: Exclude<PaletteGroup, 'all'>;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+}> = {
+  AppShell: { group: 'layout', title: 'App shell', description: 'Root window frame with app title and content area.', icon: LayoutDashboard },
+  Panel: { group: 'layout', title: 'Panel', description: 'Section container with header and body.', icon: PanelLeft },
+  Toolbar: { group: 'layout', title: 'Toolbar', description: 'Compact row for actions and filters.', icon: Blocks },
+  MetricCard: { group: 'data', title: 'Metric card', description: 'Single KPI with label, value, and supporting meta.', icon: BarChart3 },
+  MetricStrip: { group: 'data', title: 'Metric strip', description: 'Responsive row of KPI cards.', icon: LayoutDashboard },
+  Table: { group: 'data', title: 'Table', description: 'Structured rows and columns from state.', icon: Table2 },
+  Chart: { group: 'data', title: 'Chart', description: 'Lightweight bar chart for trends and comparisons.', icon: BarChart3 },
+  Timeline: { group: 'data', title: 'Timeline', description: 'Ordered event feed with status markers.', icon: Blocks },
+  RunLog: { group: 'data', title: 'Run log', description: 'Monospace operational activity log.', icon: Type },
+  Form: { group: 'input', title: 'Form', description: 'Container for fields and submit actions.', icon: FormInput },
+  Field: { group: 'input', title: 'Field', description: 'Read-only data field with label and value.', icon: Type },
+  Button: { group: 'input', title: 'Button', description: 'Primary or secondary action trigger.', icon: MousePointer2 },
+  SegmentedControl: { group: 'input', title: 'Segmented control', description: 'Small option switcher for modes or filters.', icon: SlidersHorizontal },
+  StatusBanner: { group: 'status', title: 'Status banner', description: 'Inline state, warning, success, or error message.', icon: Badge },
+  EmptyState: { group: 'status', title: 'Empty state', description: 'Placeholder surface for missing data.', icon: Blocks },
+  DetailList: { group: 'data', title: 'Detail list', description: 'Dense key-value facts and metadata.', icon: Table2 },
+  SourceBadge: { group: 'status', title: 'Source badge', description: 'Small badge for provenance or sync source.', icon: Badge },
+};
 
 function componentTitle(node: ConstructComponentNode): string {
   const props = node.props || {};
@@ -252,6 +308,9 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [savedSpecJson, setSavedSpecJson] = useState('');
   const [agentPrompt, setAgentPrompt] = useState('');
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('props');
+  const [paletteGroup, setPaletteGroup] = useState<PaletteGroup>('all');
+  const [paletteQuery, setPaletteQuery] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -271,6 +330,28 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const visibleFlat = useMemo(() => spec ? flattenVisible(spec.layout, expanded) : [], [expanded, spec]);
   const dirty = useMemo(() => Boolean(spec && JSON.stringify(spec) !== savedSpecJson), [savedSpecJson, spec]);
   const selected = flat.find((item) => item.node.componentId === selectedId)?.node || flat[0]?.node;
+  const selectedFlat = selected ? flat.find((item) => item.node.componentId === selected.componentId) : undefined;
+  const selectedSiblings = useMemo(() => {
+    if (!spec || !selectedFlat) return [];
+    if (!selectedFlat.parentId) return spec.layout;
+    return flat.find((item) => item.node.componentId === selectedFlat.parentId)?.node.children || [];
+  }, [flat, selectedFlat, spec]);
+  const selectedSiblingIndex = selected ? selectedSiblings.findIndex((node) => node.componentId === selected.componentId) : -1;
+  const canMoveUp = selectedSiblingIndex > 0;
+  const canMoveDown = selectedSiblingIndex >= 0 && selectedSiblingIndex < selectedSiblings.length - 1;
+  const filteredComponentTypes = useMemo(() => {
+    const query = paletteQuery.trim().toLowerCase();
+    return COMPONENT_TYPES
+      .filter((type) => type !== 'AppShell')
+      .filter((type) => paletteGroup === 'all' || COMPONENT_META[type].group === paletteGroup)
+      .filter((type) => {
+        if (!query) return true;
+        const meta = COMPONENT_META[type];
+        return type.toLowerCase().includes(query)
+          || meta.title.toLowerCase().includes(query)
+          || meta.description.toLowerCase().includes(query);
+      });
+  }, [paletteGroup, paletteQuery]);
 
   const loadSpec = useCallback(async () => {
     if (!selectedAppId) return;
@@ -475,6 +556,18 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     });
   }, [selectedApp]);
 
+  const postSelectedToPreview = useCallback(() => {
+    if (!selectedId) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'construct:select_component', componentId: selectedId },
+      '*',
+    );
+  }, [selectedId]);
+
+  useEffect(() => {
+    postSelectedToPreview();
+  }, [postSelectedToPreview, previewKey, token]);
+
   const previewUrl = selectedAppId
     ? `/api/apps/local/${encodeURIComponent(selectedAppId)}?builder=1${token ? `&app_token=${encodeURIComponent(token)}` : ''}`
     : '';
@@ -578,6 +671,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
               key={`${selectedAppId}:${previewKey}:${token}`}
               ref={iframeRef}
               src={previewUrl}
+              onLoad={postSelectedToPreview}
               sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
               className="h-full w-full border-0 bg-transparent"
               title={selectedApp?.manifest.name || 'App preview'}
@@ -597,139 +691,245 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           <div className="h-[calc(100%-40px)] overflow-auto p-3">
             {selected ? (
               <div className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Component</label>
-                  <input
-                    value={selected.componentId}
-                    readOnly
-                    className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.03] px-2 text-[12px] text-[var(--color-text-muted)] outline-none"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Type</span>
-                    <select
-                      value={selected.type}
-                      onChange={(event) => {
-                        const type = event.target.value;
-                        patchSelected({
-                          type,
-                          children: CONTAINER_TYPES.has(type) ? selected.children || [] : undefined,
-                        });
-                      }}
-                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                <div className="rounded-md border border-white/[0.08] bg-white/[0.035] p-3">
+                  <div className="flex items-start gap-2">
+                    {(() => {
+                      const Icon = COMPONENT_META[selected.type as ComponentTypeName]?.icon || Blocks;
+                      return <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />;
+                    })()}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold">{componentTitle(selected)}</div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
+                        <span className="shrink-0 rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 font-mono">{selected.type}</span>
+                        <span className="truncate font-mono">{selected.componentId}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => void saveCurrentSpec()}
+                      disabled={!dirty || saving}
+                      className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[11px] font-medium hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Save changes"
                     >
-                      {COMPONENT_TYPES.map((type) => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Label</span>
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </div>
+                  {selectedFlat?.path && (
+                    <div className="mt-2 truncate border-t border-white/[0.06] pt-2 font-mono text-[10px] text-[var(--color-text-muted)]/75">
+                      {selectedFlat.path}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-4 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
+                  {INSPECTOR_TABS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setInspectorTab(id)}
+                      className={[
+                        'inline-flex h-8 items-center justify-center gap-1 rounded px-1 text-[11px] font-medium transition-colors',
+                        inspectorTab === id
+                          ? 'bg-white/[0.09] text-[var(--color-text)]'
+                          : 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]',
+                      ].join(' ')}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {inspectorTab === 'props' && (
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Component ID</span>
+                      <input
+                        value={selected.componentId}
+                        readOnly
+                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.03] px-2 font-mono text-[12px] text-[var(--color-text-muted)] outline-none"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Type</span>
+                        <select
+                          value={selected.type}
+                          onChange={(event) => {
+                            const type = event.target.value;
+                            patchSelected({
+                              type,
+                              children: CONTAINER_TYPES.has(type) ? selected.children || [] : undefined,
+                            });
+                          }}
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                        >
+                          {COMPONENT_TYPES.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Label</span>
+                        <input
+                          value={selected.label || ''}
+                          onChange={(event) => patchSelected({ label: event.target.value })}
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                        />
+                      </label>
+                    </div>
+                    {['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'].map((key) => (
+                      <label key={key} className="block">
+                        <span className="mb-1 block text-[11px] font-medium capitalize text-[var(--color-text-muted)]">{key}</span>
+                        <input
+                          value={typeof selected.props?.[key] === 'string' ? selected.props[key] as string : ''}
+                          onChange={(event) => patchSelected({ props: { [key]: event.target.value } })}
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {inspectorTab === 'data' && (
+                  <div className="space-y-3">
+                    <JsonObjectEditor
+                      label="Props JSON"
+                      value={selected.props}
+                      minHeight="h-36"
+                      onValidChange={replaceSelectedProps}
+                      onError={setError}
+                    />
+                    <JsonObjectEditor
+                      label="Bindings JSON"
+                      value={selected.bindings}
+                      minHeight="h-28"
+                      onValidChange={replaceSelectedBindings}
+                      onError={setError}
+                    />
+                  </div>
+                )}
+
+                {inspectorTab === 'actions' && (
+                  <div className="space-y-3">
+                    <JsonObjectEditor
+                      label="Actions JSON"
+                      value={selected.actions}
+                      minHeight="h-32"
+                      onValidChange={replaceSelectedActions}
+                      onError={setError}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => moveSelected(-1)} disabled={!canMoveUp} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40">
+                        <MoveUp className="h-3.5 w-3.5" />
+                        Move up
+                      </button>
+                      <button onClick={() => moveSelected(1)} disabled={!canMoveDown} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40">
+                        <MoveDown className="h-3.5 w-3.5" />
+                        Move down
+                      </button>
+                      <button onClick={() => void saveCurrentSpec()} disabled={!dirty || saving} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-45">
+                        <CopyPlus className="h-3.5 w-3.5" />
+                        Save all
+                      </button>
+                      <button onClick={removeSelected} disabled={selected.type === 'AppShell'} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-red-400/20 bg-red-400/10 px-2 text-[12px] text-red-100 hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-40">
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {inspectorTab === 'agent' && (
+                  <div className="space-y-3">
+                    <button onClick={mentionSelected} className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08]">
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
+                      Mention in Spotlight
+                    </button>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Ask agent</span>
+                      <textarea
+                        value={agentPrompt}
+                        onChange={(event) => setAgentPrompt(event.target.value)}
+                        placeholder="Add behavior, wire this to a tool, change the data binding..."
+                        className="h-24 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                      />
+                    </label>
+                    <button
+                      onClick={() => void sendSelectedToAgent()}
+                      disabled={!agentPrompt.trim() || saving}
+                      className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Send with component
+                    </button>
+                  </div>
+                )}
+                <div className="border-t border-white/[0.08] pt-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium text-[var(--color-text-muted)]">Add component</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)]/65">{CONTAINER_TYPES.has(selected.type) ? 'After or inside' : 'After selected'}</span>
+                  </div>
+                  <label className="relative mb-2 block">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-muted)]/65" />
                     <input
-                      value={selected.label || ''}
-                      onChange={(event) => patchSelected({ label: event.target.value })}
-                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                      value={paletteQuery}
+                      onChange={(event) => setPaletteQuery(event.target.value)}
+                      placeholder="Search components"
+                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
                     />
                   </label>
-                </div>
-                {['title', 'subtitle', 'text', 'description', 'emptyText', 'loadingText', 'errorText', 'successText'].map((key) => (
-                  <label key={key} className="block">
-                    <span className="mb-1 block text-[11px] font-medium capitalize text-[var(--color-text-muted)]">{key}</span>
-                    <input
-                      value={typeof selected.props?.[key] === 'string' ? selected.props[key] as string : ''}
-                      onChange={(event) => patchSelected({ props: { [key]: event.target.value } })}
-                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
-                    />
-                  </label>
-                ))}
-                <JsonObjectEditor
-                  label="Props JSON"
-                  value={selected.props}
-                  minHeight="h-28"
-                  onValidChange={replaceSelectedProps}
-                  onError={setError}
-                />
-                <JsonObjectEditor
-                  label="Bindings JSON"
-                  value={selected.bindings}
-                  onValidChange={replaceSelectedBindings}
-                  onError={setError}
-                />
-                <JsonObjectEditor
-                  label="Actions JSON"
-                  value={selected.actions}
-                  onValidChange={replaceSelectedActions}
-                  onError={setError}
-                />
-                <div className="border-t border-white/[0.08] pt-3">
-                  <label className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Ask agent about selected component</label>
-                  <textarea
-                    value={agentPrompt}
-                    onChange={(event) => setAgentPrompt(event.target.value)}
-                    placeholder="Add behavior, wire this to a tool, change the data binding..."
-                    className="h-20 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
-                  />
-                  <button
-                    onClick={() => void sendSelectedToAgent()}
-                    disabled={!agentPrompt.trim() || saving}
-                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    Send with component
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => void saveCurrentSpec()} disabled={!dirty || saving} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45">
-                    <Save className="h-3.5 w-3.5" />
-                    Save
-                  </button>
-                  <button onClick={mentionSelected} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08]">
-                    <MessageSquarePlus className="h-3.5 w-3.5" />
-                    Mention
-                  </button>
-                  <button onClick={() => moveSelected(-1)} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08]">
-                    <MoveUp className="h-3.5 w-3.5" />
-                    Up
-                  </button>
-                  <button onClick={() => moveSelected(1)} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08]">
-                    <MoveDown className="h-3.5 w-3.5" />
-                    Down
-                  </button>
-                </div>
-                <div className="border-t border-white/[0.08] pt-3">
-                  <label className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Add component</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {COMPONENT_TYPES.filter((type) => type !== 'AppShell').map((type) => (
-                      <div key={type} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-md border border-white/[0.08] bg-white/[0.03]">
+                  <div className="mb-2 flex gap-1 overflow-x-auto">
+                    {COMPONENT_GROUPS.map((group) => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setPaletteGroup(group.id)}
+                        className={[
+                          'h-7 shrink-0 rounded-md px-2 text-[11px] font-medium',
+                          paletteGroup === group.id
+                            ? 'bg-white/[0.09] text-[var(--color-text)]'
+                            : 'text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]',
+                        ].join(' ')}
+                      >
+                        {group.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid gap-1.5">
+                    {filteredComponentTypes.map((type) => {
+                      const meta = COMPONENT_META[type];
+                      const Icon = meta.icon;
+                      return (
+                        <div key={type} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-md border border-white/[0.08] bg-white/[0.03]">
                         <button
                           onClick={() => addSibling(type)}
-                          className="h-7 truncate px-1.5 text-[11px] hover:bg-white/[0.08]"
+                          className="flex min-h-10 min-w-0 items-center gap-2 px-2 text-left hover:bg-white/[0.08]"
                           title={`Add ${type} after selected component`}
                         >
-                          {type}
+                          <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-[12px] font-medium">{meta.title}</span>
+                            <span className="block truncate text-[10px] text-[var(--color-text-muted)]/70">{meta.description}</span>
+                          </span>
                         </button>
                         <button
                           onClick={() => addChild(type)}
                           disabled={!CONTAINER_TYPES.has(selected.type)}
-                          className="inline-flex h-7 w-7 items-center justify-center border-l border-white/[0.08] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35"
+                          className="inline-flex w-9 items-center justify-center border-l border-white/[0.08] hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35"
                           title={`Add ${type} inside selected component`}
                         >
                           <Plus className="h-3 w-3" />
                         </button>
+                        </div>
+                      );
+                    })}
+                    {filteredComponentTypes.length === 0 && (
+                      <div className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-3 text-center text-[12px] text-[var(--color-text-muted)]">
+                        No components match.
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-t border-white/[0.08] pt-3">
-                  <button onClick={() => void saveCurrentSpec()} disabled={!dirty || saving} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-45">
-                    <CopyPlus className="h-3.5 w-3.5" />
-                    Save all
-                  </button>
-                  <button onClick={removeSelected} disabled={selected.type === 'AppShell'} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-red-400/20 bg-red-400/10 px-2 text-[12px] text-red-100 hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-40">
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </button>
                 </div>
               </div>
             ) : (
