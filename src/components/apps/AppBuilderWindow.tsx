@@ -255,10 +255,13 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
-function openSpotlightPrompt() {
+function openSpotlightPrompt(draft?: string) {
   const windowStore = useWindowStore.getState();
   if (!windowStore.spotlightOpen) windowStore.toggleSpotlight();
   window.setTimeout(() => {
+    if (draft) {
+      window.dispatchEvent(new CustomEvent('spotlight-set-draft', { detail: { text: draft } }));
+    }
     window.dispatchEvent(new CustomEvent('spotlight-focus-input'));
   }, 0);
 }
@@ -744,6 +747,8 @@ function QuickActionControls({
 
 export function AppBuilderWindow({ config }: { config: WindowConfig }) {
   const localApps = useAppStore((s) => s.localApps);
+  const appsLoading = useAppStore((s) => s.loading);
+  const appsError = useAppStore((s) => s.error);
   const fetched = useAppStore((s) => s.fetched);
   const fetchApps = useAppStore((s) => s.fetchApps);
   const addComponentMention = useComputerStore((s) => s.addComponentMention);
@@ -796,6 +801,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     () => localApps.find((app) => app.id === selectedAppId),
     [localApps, selectedAppId],
   );
+  const hasLocalApps = localApps.length > 0;
 
   const flat = useMemo(() => spec ? flatten(spec.layout) : [], [spec]);
   const visibleFlat = useMemo(() => spec ? flattenVisible(spec.layout, expanded) : [], [expanded, spec]);
@@ -1302,6 +1308,12 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     });
   }, [selectedApp]);
 
+  const askAgentForNewApp = useCallback(() => {
+    openSpotlightPrompt(
+      'Create a new declarative local app using the Construct v2 app builder. Use manifest.ui.renderer="construct-hosted", manifest.ui.kit="construct-v2", and app.construct.json. Start with a polished desktop-style app shell, editable components, useful sample state, and tool/state bindings I can refine in Builder.',
+    );
+  }, []);
+
   const postSelectedToPreview = useCallback(() => {
     if (!selectedId) return;
     iframeRef.current?.contentWindow?.postMessage(
@@ -1355,11 +1367,14 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
         <select
           value={selectedAppId}
           onChange={(event) => setSelectedAppId(event.target.value)}
-          className="ml-auto h-8 min-w-[220px] rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
+          disabled={!hasLocalApps}
+          className="ml-auto h-8 min-w-[220px] rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {localApps.map((app) => (
-            <option key={app.id} value={app.id}>{app.manifest.name}</option>
-          ))}
+          {hasLocalApps
+            ? localApps.map((app) => (
+                <option key={app.id} value={app.id}>{app.manifest.name}</option>
+              ))
+            : <option value="">No local apps</option>}
         </select>
         <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] p-0.5">
           <button
@@ -1397,6 +1412,48 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
         </div>
       )}
 
+      {!hasLocalApps && !appsLoading ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-black/[0.14] p-6">
+          <div className="w-full max-w-[520px] rounded-lg border border-white/[0.08] bg-white/[0.035] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.22)]">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-sky-300/20 bg-sky-300/10 text-sky-100">
+                <Blocks className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold text-[var(--color-text)]">
+                  No editable local apps yet
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-text-muted)]">
+                  Builder edits Construct v2 local apps after the agent creates the initial declarative app shell. Once an app exists, this window becomes the component tree, preview, inspector, and agent handoff surface.
+                </p>
+                {appsError && (
+                  <p className="mt-2 rounded-md border border-red-400/15 bg-red-400/10 px-2 py-1.5 text-[11px] text-red-100">
+                    {appsError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={askAgentForNewApp}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 text-[12px] font-semibold text-white hover:brightness-110"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                Draft agent request
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchApps()}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh apps
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(320px,1fr)_320px] max-[900px]:grid-cols-[220px_minmax(260px,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-black/[0.08]">
           <div className="flex h-10 items-center gap-2 border-b border-white/[0.06] px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
@@ -1929,6 +1986,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
           </div>
         </aside>
       </div>
+      )}
     </div>
   );
 }

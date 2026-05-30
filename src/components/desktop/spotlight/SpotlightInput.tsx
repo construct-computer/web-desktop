@@ -274,6 +274,27 @@ export function SpotlightInput() {
   }, [autoResize]);
 
   useEffect(() => {
+    const setDraftFromEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ text?: unknown; mode?: unknown }>).detail;
+      const text = typeof detail?.text === 'string' ? detail.text : '';
+      if (!text.trim()) return;
+      const next = detail?.mode === 'append' && message.trim()
+        ? `${message.trimEnd()} ${text.trimStart()}`
+        : text;
+      setHistoryNavIndex(-1);
+      setMessage(next);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        const end = inputRef.current?.value.length ?? next.length;
+        inputRef.current?.setSelectionRange(end, end);
+        autoResize();
+      });
+    };
+    window.addEventListener('spotlight-set-draft', setDraftFromEvent);
+    return () => window.removeEventListener('spotlight-set-draft', setDraftFromEvent);
+  }, [autoResize, message, setMessage]);
+
+  useEffect(() => {
     if (isMobile) return;
     const h = (e: KeyboardEvent) => {
       const active = document.activeElement;
