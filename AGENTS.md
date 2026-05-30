@@ -18,3 +18,4 @@
 ## Notes
 - This is a nested submodule of `construct`.
 - It is bumped by `construct` CI when building the worker.
+- **Branch policy**: This frontend submodule uses only the `main` branch. All changes go into `main` only — no other branches should exist locally or be pushed to remote.
