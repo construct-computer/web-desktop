@@ -471,6 +471,7 @@ export interface AgentFrontendContext {
   selectedFiles?: string[];
   componentMentions?: Array<{
     appId: string;
+    appName?: string;
     componentId: string;
     componentType: string;
     label?: string;

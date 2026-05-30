@@ -240,6 +240,7 @@ export interface ChatMessage {
 
 export interface ComponentMention {
   appId: string;
+  appName?: string;
   componentId: string;
   componentType: string;
   label?: string;

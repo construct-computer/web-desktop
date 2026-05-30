@@ -2,11 +2,16 @@ import { Blocks, XCircle } from 'lucide-react';
 import type { ComponentMention } from '@/stores/agentStore';
 
 function mentionTitle(mention: ComponentMention) {
-  return `${mention.appId} / ${mention.path || mention.componentId}`;
+  const app = mention.appName || mention.appId;
+  return `${app} / ${mention.path || mention.componentId}`;
 }
 
 function mentionLabel(mention: ComponentMention) {
   return mention.label || mention.componentId;
+}
+
+function mentionApp(mention: ComponentMention) {
+  return mention.appName || mention.appId;
 }
 
 export function ComponentMentionToken({
@@ -34,7 +39,7 @@ export function ComponentMentionToken({
         onOpen?.();
       } : undefined}
       className={[
-        'inline-flex max-w-[220px] shrink-0 items-center gap-1.5 align-baseline',
+        'inline-flex max-w-[280px] shrink-0 items-center gap-1.5 align-baseline',
         'rounded-md border px-1.5 text-[11px] leading-5',
         clickable && 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300/35',
         isMessage
@@ -44,7 +49,10 @@ export function ComponentMentionToken({
       data-component-mention={`${mention.appId}:${mention.componentId}`}
     >
       <Blocks className={isMessage ? 'h-2.5 w-2.5 shrink-0' : 'h-3.5 w-3.5 shrink-0 text-sky-200/80'} />
-      <span className="min-w-0 truncate">{mentionLabel(mention)}</span>
+      <span className="min-w-0 truncate">
+        <span className={isMessage ? 'text-white/55' : 'text-sky-100/55'}>{mentionApp(mention)} / </span>
+        {mentionLabel(mention)}
+      </span>
       <span className={isMessage ? 'text-white/45' : 'text-[10px] text-sky-100/45'}>
         {mention.componentType}
       </span>

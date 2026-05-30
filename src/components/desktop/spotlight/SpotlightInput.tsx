@@ -96,6 +96,7 @@ function collectComponentSuggestions(app: LocalApp, spec: ConstructAppSpec): Com
         subtitle: `${appName} / ${node.type}`,
         mention: {
           appId: app.id,
+          appName,
           componentId: node.componentId,
           componentType: node.type,
           label,

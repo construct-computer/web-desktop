@@ -1161,6 +1161,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     const item = flat.find((entry) => entry.node.componentId === selected.componentId);
     return {
       appId: selectedAppId,
+      appName: selectedApp?.manifest.name,
       componentId: selected.componentId,
       componentType: selected.type,
       label: selected.label || componentTitle(selected),
@@ -1169,7 +1170,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
       bindings: selected.bindings,
       actions: selected.actions,
     };
-  }, [flat, selected, selectedAppId]);
+  }, [flat, selected, selectedApp?.manifest.name, selectedAppId]);
 
   const removeSelected = useCallback(() => {
     if (!spec || !selected || selected.type === 'AppShell') return;
