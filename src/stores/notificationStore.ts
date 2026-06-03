@@ -32,8 +32,11 @@ interface NotificationStore {
   drawerOpen: boolean;
   /** Active tab in the drawer: 'notifications' or 'agents'. */
   drawerTab: 'notifications' | 'agents';
+  /** Work order to focus in the Work Status sidebar when opened from the widget. */
+  selectedWorkOrderId: string | null;
   /** Open the drawer with a specific tab selected. */
-  openDrawerTab: (tab: 'notifications' | 'agents') => void;
+  openDrawerTab: (tab: 'notifications' | 'agents', opts?: { workOrderId?: string }) => void;
+  setSelectedWorkOrderId: (workOrderId: string | null) => void;
 
   /** Add a notification to history and show a toast banner. */
   addNotification: (n: Omit<Notification, 'id' | 'timestamp' | 'read'>, toastDurationMs?: number) => string;
@@ -61,7 +64,13 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   activeToasts: [],
   drawerOpen: false,
   drawerTab: 'notifications',
-  openDrawerTab: (tab) => set({ drawerOpen: true, drawerTab: tab }),
+  selectedWorkOrderId: null,
+  openDrawerTab: (tab, opts) => set({
+    drawerOpen: true,
+    drawerTab: tab,
+    selectedWorkOrderId: opts?.workOrderId ?? null,
+  }),
+  setSelectedWorkOrderId: (workOrderId) => set({ selectedWorkOrderId: workOrderId }),
 
   addNotification: (n, toastDurationMs = 5000) => {
     // Dedup: skip if an identical notification was added in the last 10s.

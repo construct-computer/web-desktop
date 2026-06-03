@@ -295,7 +295,7 @@ function formatSource(event: AgentCalendarEvent): { label: string; Icon: typeof 
 
 // ── Types ──
 
-type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+type RepeatType = 'none' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 type RepeatEndType = 'never' | 'after' | 'on';
 
 interface EventFormData {
@@ -338,11 +338,45 @@ const emptyForm = (): EventFormData => {
   };
 };
 
+/** Populate repeat fields from stored recurrence rules (array or legacy string). */
+function applyRecurrenceToForm(form: EventFormData, recurrence: string[] | string | null | undefined): void {
+  const rules = Array.isArray(recurrence)
+    ? recurrence
+    : typeof recurrence === 'string' && recurrence.trim()
+      ? [recurrence.trim()]
+      : [];
+  if (rules.length === 0) return;
+
+  const rule = rules[0].replace(/^RRULE:/i, '');
+  const parts = Object.fromEntries(rule.split(';').map(p => { const [k, v] = p.split('='); return [k, v]; }));
+  const freq = parts.FREQ?.toLowerCase();
+  if (freq === 'hourly') form.repeatType = 'hourly';
+  else if (freq === 'daily') form.repeatType = 'daily';
+  else if (freq === 'monthly') form.repeatType = 'monthly';
+  else if (freq === 'yearly') form.repeatType = 'yearly';
+  else if (freq === 'weekly' && parts.BYDAY) form.repeatType = 'custom';
+  else if (freq === 'weekly') form.repeatType = 'weekly';
+  if (parts.INTERVAL) form.repeatInterval = parseInt(parts.INTERVAL, 10) || 1;
+  if (parts.BYDAY) {
+    const dayMap: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+    const days = [false, false, false, false, false, false, false];
+    parts.BYDAY.split(',').forEach(d => { if (dayMap[d] !== undefined) days[dayMap[d]] = true; });
+    form.repeatDays = days;
+  }
+  if (parts.COUNT) { form.repeatEndType = 'after'; form.repeatCount = parseInt(parts.COUNT, 10) || 10; }
+  else if (parts.UNTIL) {
+    form.repeatEndType = 'on';
+    const u = parts.UNTIL.replace(/T.*$/, '');
+    form.repeatUntilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+  }
+}
+
 /** Build an RRULE string from the visual form fields. Returns undefined if no repeat. */
 function buildRrule(form: EventFormData): string[] | undefined {
   if (form.repeatType === 'none') return undefined;
 
   const freqMap: Record<string, string> = {
+    hourly: 'HOURLY',
     daily: 'DAILY',
     weekly: 'WEEKLY',
     monthly: 'MONTHLY',
@@ -510,28 +544,12 @@ export function CalendarWindow(props: CalendarWindowProps) {
       startDate: original.allDay ? original.start : base.startDate,
       endDate: original.allDay ? original.end : base.endDate,
     };
-    // Parse existing RRULE back into visual fields
-    if (original.recurrence && original.recurrence.length > 0) {
-      const rule = original.recurrence[0].replace('RRULE:', '');
-      const parts = Object.fromEntries(rule.split(';').map(p => { const [k, v] = p.split('='); return [k, v]; }));
-      const freq = parts.FREQ?.toLowerCase();
-      if (freq === 'daily') f.repeatType = 'daily';
-      else if (freq === 'monthly') f.repeatType = 'monthly';
-      else if (freq === 'yearly') f.repeatType = 'yearly';
-      else if (freq === 'weekly' && parts.BYDAY) f.repeatType = 'custom';
-      else if (freq === 'weekly') f.repeatType = 'weekly';
-      if (parts.INTERVAL) f.repeatInterval = parseInt(parts.INTERVAL, 10) || 1;
-      if (parts.BYDAY) {
-        const dayMap: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
-        const days = [false, false, false, false, false, false, false];
-        parts.BYDAY.split(',').forEach(d => { if (dayMap[d] !== undefined) days[dayMap[d]] = true; });
-        f.repeatDays = days;
-      }
-      if (parts.COUNT) { f.repeatEndType = 'after'; f.repeatCount = parseInt(parts.COUNT, 10) || 10; }
-      else if (parts.UNTIL) {
-        f.repeatEndType = 'on';
-        const u = parts.UNTIL.replace(/T.*$/, '');
-        f.repeatUntilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+    applyRecurrenceToForm(f, original.recurrence);
+    if (f.repeatType === 'none') {
+      const meta = original.sourceMeta as { recurrenceRule?: string; recurrence_rule?: string } | null | undefined;
+      const ruleFromMeta = meta?.recurrenceRule || meta?.recurrence_rule;
+      if (ruleFromMeta) {
+        applyRecurrenceToForm(f, [ruleFromMeta.startsWith('RRULE:') ? ruleFromMeta : `RRULE:${ruleFromMeta}`]);
       }
     }
     setForm(f);
@@ -1277,6 +1295,7 @@ function EventDialog({
                 onChange={(v) => update({ repeatType: v as RepeatType })}
                 options={[
                   { value: 'none', label: 'Does not repeat' },
+                  { value: 'hourly', label: 'Hourly' },
                   { value: 'daily', label: 'Daily' },
                   { value: 'weekly', label: 'Weekly' },
                   { value: 'monthly', label: 'Monthly' },

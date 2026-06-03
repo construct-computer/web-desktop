@@ -74,12 +74,15 @@ export function StatusWidget() {
   const { className: dragClassName, ...dragProps } = containerProps;
   const userPlan = useAuthStore((s) => s.user?.plan);
 
-  // Agent status
+  // Agent status — only the session the user is viewing (not background scheduled runs).
   const connected = useComputerStore((s) => s.agentConnected);
-  const running = useComputerStore((s) => s.agentRunning);
+  const running = useComputerStore((s) => s.runningSessions.has(s.activeSessionKey));
   const thinking = useComputerStore((s) => s.agentThinking);
   const toolHistoryJson = useComputerStore((s) => {
-    const h = s.platformAgents?.desktop?.toolHistory;
+    if (!s.runningSessions.has(s.activeSessionKey)) return '';
+    const h = s.platformAgents?.desktop?.toolHistory?.filter(
+      (entry) => !entry.sessionKey || entry.sessionKey === s.activeSessionKey,
+    );
     if (!h || h.length === 0) return '';
     return JSON.stringify(h.slice(-6));
   });
@@ -87,7 +90,7 @@ export function StatusWidget() {
   const recentTools = useMemo(() => {
     if (!toolHistoryJson) return EMPTY_HISTORY;
     try {
-      const h = JSON.parse(toolHistoryJson) as Array<{ tool: string; timestamp: number }>;
+      const h = JSON.parse(toolHistoryJson) as Array<{ tool: string; timestamp: number; sessionKey?: string }>;
       return h.reverse().reduce<Array<{ tool: string; timestamp: number }>>((acc, t) => {
         if (acc.length < 3 && !acc.some((a) => a.tool === t.tool && Math.abs(a.timestamp - t.timestamp) < 2000)) {
           acc.push(t);

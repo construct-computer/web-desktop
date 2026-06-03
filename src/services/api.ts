@@ -816,6 +816,103 @@ export interface AutopilotWorkOrderSnapshot {
   createdAt: number;
   updatedAt: number;
   completedAt: number | null;
+  activityHint?: string;
+  stalled?: boolean;
+}
+
+export interface WorkOrderStepDetail {
+  id: number;
+  title: string;
+  status: string;
+  toolName: string | null;
+  toolCallId: string | null;
+  evidence: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkOrderDeliveryDetail {
+  id: number;
+  channel: string;
+  recipient: string | null;
+  status: string;
+  confirmation: string | null;
+  sentAt: number | null;
+  createdAt: number;
+}
+
+export interface WorkOrderArtifactDetail {
+  id: number;
+  path: string;
+  artifactType: string | null;
+  description: string | null;
+  createdAt: number;
+}
+
+export interface WorkOrderVerificationDetail {
+  id: number;
+  verificationType: string;
+  status: string;
+  evidence: string | null;
+  createdAt: number;
+}
+
+export interface WorkOrderLinkedRunDetail {
+  runId: string | null;
+  status: string | null;
+  progressReason: string | null;
+  lastToolName: string | null;
+  activeToolName: string | null;
+  lastIteration: number;
+  elapsedMs: number;
+  idleMs: number;
+  lastHeartbeatAt: number | null;
+}
+
+export interface WorkOrderBackgroundAgentDetail {
+  childId: string;
+  agentType: string;
+  task: string;
+  status: string;
+  lastHeartbeatAt: number | null;
+  createdAt: number;
+  completedAt: number | null;
+  error: string | null;
+}
+
+export interface WorkOrderDetail {
+  workOrder: AutopilotWorkOrderSnapshot & { activityHint: string; stalled: boolean };
+  steps: WorkOrderStepDetail[];
+  deliveries: WorkOrderDeliveryDetail[];
+  artifacts: WorkOrderArtifactDetail[];
+  verifications: WorkOrderVerificationDetail[];
+  linkedRun: WorkOrderLinkedRunDetail | null;
+  backgroundAgents: WorkOrderBackgroundAgentDetail[];
+  generatedAt: number;
+}
+
+export interface WorkOrderActivityUpdate {
+  id: string;
+  sessionKey: string;
+  objective: string;
+  status: string;
+  blockerReason: string | null;
+  activityHint: string;
+  stalled: boolean;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
+export async function listAgentTasks(
+  status: 'active' | 'all' = 'all',
+): Promise<ApiResult<{ tasks: Array<AutopilotWorkOrderSnapshot & { activityHint: string; stalled: boolean }>; generatedAt: number }>> {
+  return request(`/agent/tasks?status=${encodeURIComponent(status)}`, { captureErrors: false, retryNetwork: true });
+}
+
+export async function getAgentTaskDetail(
+  workOrderId: string,
+): Promise<ApiResult<WorkOrderDetail>> {
+  return request(`/agent/tasks/${encodeURIComponent(workOrderId)}`, { captureErrors: false, retryNetwork: true });
 }
 
 export interface AutopilotToolReliabilitySnapshot {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { clearDesktopAgentRuntime, shouldClearViewedAgentState } from './agentStateCleanup';
+import {
+  clearDesktopAgentRuntime,
+  pruneStaleBackgroundRunningSessions,
+  shouldClearViewedAgentState,
+} from './agentStateCleanup';
 
 describe('shouldClearViewedAgentState', () => {
   it('clears stale main-agent tool state when hydration says the viewed chat is inactive', () => {
@@ -16,6 +20,22 @@ describe('shouldClearViewedAgentState', () => {
       liveSessionKeys: new Set(['session_1']),
       desktopAgent: { running: true, currentTool: 'wait_for_agents' },
     })).toBe(false);
+  });
+
+  it('prunes stale background sessions from runningSessions', () => {
+    const now = Date.now();
+    const pruned = pruneStaleBackgroundRunningSessions(
+      new Set(['desktop', 'scheduled_tasks']),
+      {
+        desktop: { lastHeartbeatAt: now },
+        scheduled_tasks: { lastHeartbeatAt: now - 60_000 },
+      },
+      'desktop',
+      45_000,
+      now,
+    );
+    expect(pruned.has('desktop')).toBe(true);
+    expect(pruned.has('scheduled_tasks')).toBe(false);
   });
 
   it('clears the desktop agent runtime snapshot for a fresh chat', () => {

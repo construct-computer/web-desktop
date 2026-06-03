@@ -38,7 +38,12 @@ import {
   type AuthRequestCancelledDetail,
   type AuthRequestStateChangedDetail,
 } from '@/lib/authRequestState';
-import { AGENT_HISTORY_CLEARED_EVENT, type AgentHistoryClearedDetail } from '@/lib/agentUiEvents';
+import {
+  AGENT_HISTORY_CLEARED_EVENT,
+  WORK_ORDER_UPDATED_EVENT,
+  type AgentHistoryClearedDetail,
+  type WorkOrderUpdatedDetail,
+} from '@/lib/agentUiEvents';
 import {
   cancelAuthRequest,
   startAuthRequestWatch,
@@ -450,6 +455,51 @@ export function AutopilotPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    const onWorkOrderUpdated = (event: Event) => {
+      const wo = (event as CustomEvent<WorkOrderUpdatedDetail>).detail;
+      if (!wo?.id) return;
+      setStatus((current) => {
+        if (!current) return current;
+        const previous = (current.workOrders || []).find((item) => item.id === wo.id);
+        const merged = {
+          ...(previous || {
+            id: wo.id,
+            sessionKey: wo.sessionKey,
+            sourceType: 'user_message',
+            sourceId: null,
+            requesterRole: 'owner',
+            objective: wo.objective,
+            riskLevel: 'low',
+            stepCount: 0,
+            artifactCount: 0,
+            deliveryCount: 0,
+            verificationCount: 0,
+            latestStepTitle: null,
+            latestStepStatus: null,
+            latestArtifactPath: null,
+            latestDeliveryChannel: null,
+            latestDeliveryStatus: null,
+            latestVerificationStatus: null,
+            createdAt: wo.updatedAt,
+          }),
+          status: wo.status,
+          blockerReason: wo.blockerReason,
+          activityHint: wo.activityHint,
+          stalled: wo.stalled,
+          updatedAt: wo.updatedAt,
+          completedAt: wo.completedAt,
+        };
+        const workOrders = ['completed', 'failed', 'cancelled'].includes(wo.status)
+          ? (current.workOrders || []).map((item) => (item.id === wo.id ? { ...item, ...merged } : item))
+          : (current.workOrders || []).map((item) => (item.id === wo.id ? { ...item, ...merged } : item));
+        return { ...current, workOrders };
+      });
+    };
+    window.addEventListener(WORK_ORDER_UPDATED_EVENT, onWorkOrderUpdated);
+    return () => window.removeEventListener(WORK_ORDER_UPDATED_EVENT, onWorkOrderUpdated);
+  }, []);
+
   const visiblePendingActions = useMemo(() => (
     pendingActions.filter((action) => action.kind !== 'auth' || !cancelledAuthSourceIds.has(action.sourceId))
   ), [cancelledAuthSourceIds, pendingActions]);
@@ -709,9 +759,8 @@ export function AutopilotPanel() {
   const visibleWorkOrders = useMemo(() => (
     (displayStatus?.workOrders || [])
       .filter((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status))
-      .filter((order) => !hasActiveRun || order.sessionKey !== primaryRun?.sessionKey)
       .slice(0, 3)
-  ), [displayStatus, hasActiveRun, primaryRun?.sessionKey]);
+  ), [displayStatus]);
   const visibleLearnedPolicies = useMemo(() => (
     (displayStatus?.learnedPolicies || []).slice(0, 3)
   ), [displayStatus]);
@@ -928,6 +977,8 @@ export function AutopilotPanel() {
             ...item,
             ...updated,
             blockerReason: updated.blockerReason ?? null,
+            activityHint: (updated as { activityHint?: string }).activityHint ?? item.activityHint,
+            stalled: (updated as { stalled?: boolean }).stalled ?? item.stalled,
           }
           : item
       ));
@@ -1118,9 +1169,10 @@ export function AutopilotPanel() {
                   const canCancel = order.status === 'active' || order.status === 'waiting' || order.status === 'blocked';
                   const resolveActionId = `resolve:${order.id}`;
                   const cancelActionId = `cancel:${order.id}`;
-                  const detail = isBlocked
-                    ? order.blockerReason || order.latestStepTitle || order.objective
-                    : order.latestStepTitle || order.latestArtifactPath || order.latestDeliveryChannel || order.objective;
+                  const hint = order.activityHint
+                    || (isBlocked ? order.blockerReason : null)
+                    || order.latestStepTitle
+                    || formatLedgerStatus(order.status);
                   return (
                     <div
                       key={order.id}
@@ -1132,10 +1184,13 @@ export function AutopilotPanel() {
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void openSpotlightSession(order.sessionKey);
+                          openNotificationTab('agents', { workOrderId: order.id });
                         }}
                         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                       >
+                        {order.stalled && (
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/90" title="May be stuck" />
+                        )}
                         <ListChecks
                           size={13}
                           strokeWidth={2.1}
@@ -1147,7 +1202,7 @@ export function AutopilotPanel() {
                           </span>
                           <span className="block truncate text-[9.5px] text-white/[0.38]">
                             {formatLedgerStatus(order.status)}
-                            {detail ? ` - ${cleanWidgetText(detail, 68)}` : ''}
+                            {hint ? ` · ${cleanWidgetText(hint, 68)}` : ''}
                           </span>
                         </span>
                       </button>

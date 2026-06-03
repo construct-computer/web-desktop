@@ -22,20 +22,20 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
   const matchesViewSession = (op: TrackedOperation) =>
     !op.sessionKey || op.sessionKey === activeSessionKey;
 
-  const hasActiveOpsGlobal = Object.values(operations).some(isRunningOp);
-  const isActive =
-    agentRunning || hasActiveOpsGlobal || Object.values(platformAgents).some((p) => p.running);
+  const hasActiveOpsInView = Object.values(operations).some(
+    (op) => isRunningOp(op) && matchesViewSession(op),
+  );
+  const isActive = agentRunning || hasActiveOpsInView;
 
   return useMemo(() => {
     const runningInView = Object.values(operations).filter(
       (op) => isRunningOp(op) && matchesViewSession(op),
     );
-    const runningAny = Object.values(operations).filter(isRunningOp);
-    const runningOps = runningInView.length > 0 ? runningInView : runningAny;
+    const runningOps = runningInView;
 
     // Get current tool from taskProgress or platform agent
     const currentTool = taskProgress?.currentTool
-      || Object.values(platformAgents).find(p => p.running)?.currentTool;
+      || (agentRunning ? Object.values(platformAgents).find(p => p.running)?.currentTool : undefined);
 
     // --- State label (line 1) ---
     let stateLabel = 'Working…';
@@ -93,16 +93,13 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
         todo_list: 'Updating todos',
       };
       stateLabel = toolLabels[currentTool] || `Using ${currentTool}`;
-    } else if (hasActiveOpsGlobal) {
-      if (runningOps.length > 0) {
-        const op = runningOps[0];
-        const running = op.subAgents.filter(s => s.status === 'running').length;
-        const total = op.subAgents.length;
-        const suffix =
-          runningInView.length === 0 && runningAny.length > 0 ? ' (other chat)' : '';
-        stateLabel =
-          (total > 0 ? `Working (${running}/${total})` : 'Working…') + suffix;
-      }
+    } else if (hasActiveOpsInView && runningOps.length > 0) {
+      const op = runningOps[0];
+      const running = op.subAgents.filter(s => s.status === 'running').length;
+      const total = op.subAgents.length;
+      stateLabel = total > 0 ? `Working (${running}/${total})` : 'Working…';
+    } else if (agentRunning) {
+      stateLabel = 'Working…';
     }
 
     // --- Scroll text (line 2) ---
@@ -124,11 +121,11 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
       // Show operation goal or platform agent thinking
       if (runningOps.length > 0) {
         scrollText = runningOps[0].goal;
-      } else {
+      } else if (agentRunning) {
         const runningPlatform = Object.entries(platformAgents).find(([, p]) => p.running);
         if (runningPlatform) {
-          const [platform, state] = runningPlatform;
-          scrollText = state.thinking || `Working on ${platform}`;
+          const [, state] = runningPlatform;
+          scrollText = state.thinking || `Working on ${runningPlatform[0]}`;
         }
       }
     }
@@ -149,7 +146,8 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
     platformAgents,
     operations,
     activeSessionKey,
-    hasActiveOpsGlobal,
+    agentRunning,
+    hasActiveOpsInView,
     isActive,
   ]);
 }

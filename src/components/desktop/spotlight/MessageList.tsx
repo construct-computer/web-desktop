@@ -236,11 +236,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   }, [groups, isExternal, setReplyingTo, agentRunning, isMobile]);
 
   const runningSessions = useComputerStore(s => s.runningSessions);
-  const activeSessionMeta = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
-  const sessionRunning =
-    agentRunning ||
-    (activeKey ? runningSessions.has(activeKey) : false) ||
-    Boolean(activeSessionMeta && activeSessionMeta.status !== 'idle');
+  const sessionRunning = activeKey ? runningSessions.has(activeKey) : false;
   const hasContent = groups.length > 0 || sessionRunning;
   const sessionSwitching = useComputerStore(s => s.sessionSwitching);
 

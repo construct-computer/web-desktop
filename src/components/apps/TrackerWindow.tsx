@@ -30,6 +30,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
+import { WorkStatusTasksPanel } from '@/components/apps/WorkStatusTasksPanel';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -520,7 +521,12 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
       )}
 
       {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+      <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+        <WorkStatusTasksPanel />
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        <p className="text-[9px] text-[var(--color-text-muted)] px-0.5 -mt-1 mb-1 leading-relaxed">
+          Delegations and platform agents below are separate from durable tasks above.
+        </p>
         {/* Orchestrations + platform hosts: one “swarm” view (ops first — main visibility for parallel work) */}
         {hasSwarmInProgress && (
           <section>
@@ -599,6 +605,7 @@ export function TrackerWindow({ config: _config }: { config: WindowConfig }) {
             <p className="text-xs opacity-50">No active work</p>
           </div>
         )}
+        </div>
       </div>
 
       {/* Session token footer (dev only — prod users see % in billing) */}

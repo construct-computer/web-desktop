@@ -132,8 +132,7 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
   return useMemo(() => {
     const allOps = Object.values(operations);
     const runningOpsInView = allOps.filter(op => isRunningOperation(op) && matchesSession(op, activeSessionKey));
-    const runningOpsAny = allOps.filter(isRunningOperation);
-    const focusedOps = runningOpsInView.length > 0 ? runningOpsInView : runningOpsAny;
+    const focusedOps = runningOpsInView;
 
     const focusedSubagents = focusedOps
       .flatMap(op => op.subAgents)

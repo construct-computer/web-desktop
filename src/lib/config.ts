@@ -58,6 +58,12 @@ export const MAX_CHAT_MESSAGES = 2_000;
 export const AGENT_RUNNING_TIMEOUT_MS = 180_000;
 
 /**
+ * Drop background sessions from `runningSessions` when no heartbeat arrives
+ * within this window (e.g. missed `status_change: idle` after a scheduled run).
+ */
+export const BACKGROUND_SESSION_IDLE_CLEAR_MS = 45_000;
+
+/**
  * Threshold (in ms of idle since last heartbeat) at which a session is
  * considered "stuck" by the backend overseer watchdog. Mirrors
  * `STUCK_THRESHOLD_MS` in worker/src/config/limits.ts — kept in sync because

@@ -15,11 +15,16 @@ import { resolveLoadedSessions } from './sessionList';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { useAgentTrackerStore } from './agentTrackerStore';
-import { clearDesktopAgentRuntime, shouldClearViewedAgentState } from './agentStateCleanup';
+import {
+  clearDesktopAgentRuntime,
+  pruneStaleBackgroundRunningSessions,
+  shouldClearViewedAgentState,
+} from './agentStateCleanup';
 import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
-import { dispatchAgentHistoryCleared, dispatchMemoryChanged } from '@/lib/agentUiEvents';
+import { dispatchAgentHistoryCleared, dispatchMemoryChanged, dispatchWorkOrderUpdated } from '@/lib/agentUiEvents';
+import type { WorkOrderActivityUpdate } from '@/services/api';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
 import {
@@ -551,7 +556,7 @@ export interface PlatformAgentState {
   /** The tool currently being executed by this platform agent. */
   currentTool?: string;
   /** Recent tool activity log for display in the tracker. */
-  toolHistory?: Array<{ tool: string; timestamp: number }>;
+  toolHistory?: Array<{ tool: string; timestamp: number; sessionKey?: string }>;
   /** Current thinking/activity text (what the agent is doing right now). */
   thinking?: string | null;
   /** Step progress (current iteration / max). */
@@ -770,6 +775,7 @@ interface ComputerStore {
  */
 import {
   AGENT_RUNNING_TIMEOUT_MS,
+  BACKGROUND_SESSION_IDLE_CLEAR_MS,
   MAX_CHAT_MESSAGES,
   AGENT_EMAIL_DOMAIN,
   OVERSEER_ALERTS_PER_SESSION,
@@ -4648,7 +4654,7 @@ export const useComputerStore = create<ComputerStore>()(
           if (!toolSubagentId) {
             updateAgent(pa => {
               const history = (pa.toolHistory || []).slice(-19);
-              history.push({ tool: currentToolDisplay, timestamp: Date.now() });
+              history.push({ tool: currentToolDisplay, timestamp: Date.now(), sessionKey: eventSessionKey });
               return { currentTool: currentToolDisplay, toolHistory: history };
             });
           }
@@ -4959,26 +4965,47 @@ export const useComputerStore = create<ComputerStore>()(
           // Maintain an accurate per-session set so concurrent chats (and the
           // thinking indicator / empty state) reflect the session the user
           // is looking at, not just whichever last broadcast happened.
-          const nextRunning = new Set(get().runningSessions);
+          let nextRunning = new Set(get().runningSessions);
           if (status === 'idle') {
             nextRunning.delete(eventSessionKey);
           } else {
             nextRunning.add(eventSessionKey);
           }
+          const activeViewKey = get().activeSessionKey;
+          nextRunning = pruneStaleBackgroundRunningSessions(
+            nextRunning,
+            get().activeSessions,
+            activeViewKey,
+            BACKGROUND_SESSION_IDLE_CLEAR_MS,
+          );
           if (status === 'idle') {
             useAgentTrackerStore.getState().completeOperationsForSessionIdle(
               eventSessionKey,
               nextRunning.size > 0,
             );
           }
-          const activeViewKey = get().activeSessionKey;
           const agentRunningForActiveView = nextRunning.has(activeViewKey);
           const idleAffectsViewedChat = eventSessionKey === activeViewKey;
 
           if (status === 'idle' && !idleAffectsViewedChat) {
-            set({
-              runningSessions: nextRunning,
-              agentRunning: agentRunningForActiveView,
+            set(state => {
+              const updates: Partial<ComputerStore> = {
+                runningSessions: nextRunning,
+                agentRunning: agentRunningForActiveView,
+              };
+              const desktop = state.platformAgents.desktop;
+              if (desktop?.toolHistory?.length) {
+                const toolHistory = desktop.toolHistory.filter(
+                  (entry) => !entry.sessionKey || entry.sessionKey !== eventSessionKey,
+                );
+                if (toolHistory.length !== desktop.toolHistory.length) {
+                  updates.platformAgents = {
+                    ...state.platformAgents,
+                    desktop: { ...desktop, toolHistory },
+                  };
+                }
+              }
+              return updates;
             });
             break;
           }
@@ -6187,6 +6214,64 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'model_policy:decision': {
+          if (!shouldUpdateVisibleDesktopAgent || !isActiveSession) break;
+          const effective = event.data?.effectiveModel as string | undefined;
+          const reason = event.data?.decisions as Array<{ reason?: string }> | undefined;
+          const mainReason = reason?.[0]?.reason;
+          if (effective && mainReason && typeof mainReason === 'string' && mainReason.includes('toolHeavy')) {
+            logger.debug('Model policy', { sessionKey: eventSessionKey, effectiveModel: effective, reason: mainReason });
+          }
+          break;
+        }
+
+        case 'model_fallback': {
+          if (!shouldUpdateVisibleDesktopAgent) break;
+          const toModel = event.data?.toModel as string | undefined;
+          const fromModel = event.data?.fromModel as string | undefined;
+          const reason = event.data?.reason as string | undefined;
+          if (toModel && fromModel && toModel !== fromModel) {
+            logger.info('Model fallback', { sessionKey: eventSessionKey, reason, fromModel, toModel });
+          }
+          break;
+        }
+
+        case 'work_order:updated': {
+          const workOrder = event.data?.workOrder as WorkOrderActivityUpdate | undefined;
+          if (!workOrder?.id) break;
+          dispatchWorkOrderUpdated(workOrder);
+          if (['completed', 'failed', 'cancelled'].includes(workOrder.status)) {
+            const wasActive = workOrder.status === 'completed';
+            useNotificationStore.getState().addNotification({
+              title: wasActive ? 'Task completed' : 'Task ended',
+              body: workOrder.activityHint || workOrder.objective,
+              source: 'Construct',
+              variant: workOrder.status === 'failed' ? 'error' : wasActive ? 'success' : 'info',
+              onClick: () => {
+                useNotificationStore.getState().openDrawerTab('agents', { workOrderId: workOrder.id });
+              },
+            }, 6000);
+          }
+          break;
+        }
+
+        case 'agent_notice': {
+          const message = event.data?.message as string | undefined;
+          const isError = (event.data?.variant as string) === 'error';
+          const toastVariant = isError ? 'error' : 'info';
+          if (!message || !shouldUpdateVisibleDesktopAgent) break;
+          appendToAgentChat({ role: 'notice', content: message, timestamp: new Date() });
+          if (isActiveSession) {
+            useNotificationStore.getState().addNotification({
+              title: isError ? 'Construct issue' : 'Construct',
+              body: message,
+              source: 'Construct',
+              variant: toastVariant,
+            }, isError ? 8000 : 6000);
+          }
+          break;
+        }
+
         case 'error': {
           const message = event.data?.message as string || 'Unknown error';
           if (isAgentUserCancelErrorMessage(message) || isLateStopRelatedFailure(eventSessionKey, event.data)) {
@@ -6225,20 +6310,21 @@ export const useComputerStore = create<ComputerStore>()(
           // chat message and the duplicate toast in that case.
           const blocked = useBillingStore.getState().lastBlock;
           const isUsageBlock = !!blocked;
-          if (!isUsageBlock) {
+          const skipChatMessage = event.data?.skipChatMessage === true;
+          if (!isUsageBlock && !skipChatMessage) {
             appendToAgentChat({ role: 'agent', content: `Error: ${message}`, timestamp: new Date(), isError: true });
           }
           if (isDesktop) {
             set({ agentThinking: null, agentThinkingStream: null });
           }
-          if (!isUsageBlock) {
+          if (!isUsageBlock && !skipChatMessage) {
             useNotificationStore.getState().addNotification({
               title: 'Construct issue',
               body: message,
               source: 'Construct',
               variant: 'error',
             }, 8000);
-          } else {
+          } else if (isUsageBlock) {
             // Fire the structured provider-block toast once.
             const copy = providerCopy(
               blocked!.kind === 'byok-cap'

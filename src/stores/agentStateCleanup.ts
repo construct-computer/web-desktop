@@ -29,6 +29,25 @@ export function shouldClearViewedAgentState(input: {
   );
 }
 
+export function pruneStaleBackgroundRunningSessions(
+  runningSessions: Set<string>,
+  activeSessions: Record<string, { lastHeartbeatAt?: number; startedAt?: number } | undefined>,
+  activeViewKey: string,
+  idleClearMs: number,
+  now = Date.now(),
+): Set<string> {
+  const next = new Set(runningSessions);
+  for (const key of next) {
+    if (key === activeViewKey) continue;
+    const meta = activeSessions[key];
+    const lastBeat = meta?.lastHeartbeatAt ?? meta?.startedAt ?? 0;
+    if (lastBeat > 0 && now - lastBeat > idleClearMs) {
+      next.delete(key);
+    }
+  }
+  return next;
+}
+
 export function clearDesktopAgentRuntime<T extends PlatformAgentRuntimeSnapshot>(
   desktopAgent: T | undefined,
   now: number = Date.now(),
