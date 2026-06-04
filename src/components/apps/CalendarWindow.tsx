@@ -26,8 +26,14 @@ import {
   createAgentCalendarEvent,
   updateAgentCalendarEvent,
   deleteAgentCalendarEvent,
+  completeAgentCalendarOccurrence,
+  uncompleteAgentCalendarOccurrence,
   type AgentCalendarEvent,
 } from '@/services/api';
+import {
+  filterCancelledOccurrences,
+  occurrenceArrayIncludes,
+} from '@/lib/calendarOccurrences';
 import type { WindowConfig } from '@/types';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import {
@@ -236,13 +242,25 @@ function expandAllRecurrences(
   }
   // Deduplicate by start+id (BYDAY expansion can create duplicates for the original day)
   const seen = new Set<string>();
-  return result.filter(e => {
+  const deduped = result.filter(e => {
     const key = `${e.id}:${e.start}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return filterCancelledOccurrences(deduped);
 }
+
+function eventActionKey(event: Pick<AgentCalendarEvent, 'id' | 'start'>): string {
+  return `${event.id}:${event.start}`;
+}
+
+type DeleteConfirmTarget = {
+  seriesId: string;
+  occurrenceStart: string;
+  summary: string;
+  isRecurring: boolean;
+};
 
 function toLocalDatetimeString(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -263,9 +281,14 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  * For recurring events: checks if this occurrence's start is in completedOccurrences.
  */
 function isOccurrenceCompleted(event: AgentCalendarEvent): boolean {
-  if (event.status === 'completed' && !event.recurrence) return true;
-  if (event.completedOccurrences && event.completedOccurrences.includes(event.start)) return true;
-  return false;
+  if (isRecurringEvent(event)) {
+    return occurrenceArrayIncludes(event.completedOccurrences, event.start);
+  }
+  return event.status === 'completed';
+}
+
+function isRecurringEvent(event: AgentCalendarEvent): boolean {
+  return !!(event.recurrence && event.recurrence.length > 0);
 }
 
 /** Format source info into a human-readable label + icon for display. */
@@ -432,7 +455,8 @@ export function CalendarWindow(props: CalendarWindowProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; summary: string } | null>(null);
+  const [completing, setCompleting] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<DeleteConfirmTarget | null>(null);
 
   const fetchEvents = useCallback(async () => {
     const requestSeq = ++calendarRequestSeqRef.current;
@@ -630,20 +654,63 @@ export function CalendarWindow(props: CalendarWindowProps) {
     }
   };
 
-  const handleDelete = async (eventId: string) => {
-    setConfirmDelete({ id: eventId, summary: events.find(e => e.id === eventId)?.summary || 'this event' });
+  const handleDelete = (event: AgentCalendarEvent) => {
+    setConfirmDelete({
+      seriesId: event.id,
+      occurrenceStart: event.start,
+      summary: event.summary || 'this event',
+      isRecurring: isRecurringEvent(event),
+    });
   };
 
-  const executeDelete = async (eventId: string) => {
+  const executeDelete = async (scope: 'series' | 'occurrence') => {
+    if (!confirmDelete) return;
+    const target = confirmDelete;
     setConfirmDelete(null);
-    setDeleting(eventId);
+    const actionKey = eventActionKey({ id: target.seriesId, start: target.occurrenceStart });
+    setDeleting(actionKey);
     try {
-      await deleteAgentCalendarEvent(eventId);
+      if (scope === 'occurrence') {
+        const result = await deleteAgentCalendarEvent(target.seriesId, {
+          scope: 'occurrence',
+          occurrenceStart: target.occurrenceStart,
+        });
+        if (!result.success) throw new Error(result.error || 'Delete failed');
+      } else {
+        const result = await deleteAgentCalendarEvent(target.seriesId);
+        if (!result.success) throw new Error(result.error || 'Delete failed');
+      }
       await fetchEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleToggleComplete = async (event: AgentCalendarEvent) => {
+    const actionKey = eventActionKey(event);
+    setCompleting(actionKey);
+    try {
+      const completed = isOccurrenceCompleted(event);
+      const recurring = isRecurringEvent(event);
+      if (completed) {
+        if (recurring) {
+          const result = await uncompleteAgentCalendarOccurrence(event.id, event.start);
+          if (!result.success) throw new Error(result.error || 'Failed to update event');
+        } else {
+          const result = await updateAgentCalendarEvent(event.id, { status: 'confirmed' });
+          if (!result.success) throw new Error(result.error || 'Failed to update event');
+        }
+      } else {
+        const result = await completeAgentCalendarOccurrence(event.id, event.start);
+        if (!result.success) throw new Error(result.error || 'Failed to update event');
+      }
+      await fetchEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setCompleting(null);
     }
   };
 
@@ -753,8 +820,10 @@ export function CalendarWindow(props: CalendarWindowProps) {
             isMobile={isMobile}
             onEdit={handleEditEvent}
             onDelete={handleDelete}
+            onToggleComplete={handleToggleComplete}
             onNew={() => handleNewEvent()}
             deleting={deleting}
+            completing={completing}
           />
         </div>
       ) : (
@@ -763,7 +832,9 @@ export function CalendarWindow(props: CalendarWindowProps) {
           events={events}
           onEdit={handleEditEvent}
           onDelete={handleDelete}
+          onToggleComplete={handleToggleComplete}
           deleting={deleting}
+          completing={completing}
           onNew={() => handleNewEvent()}
         />
       )}
@@ -783,10 +854,18 @@ export function CalendarWindow(props: CalendarWindowProps) {
       <ConfirmDialog
         open={!!confirmDelete}
         title="Delete Event"
-        message={`Are you sure you want to delete "${confirmDelete?.summary}"? This action cannot be undone.`}
-        confirmLabel="Delete"
+        message={
+          confirmDelete?.isRecurring
+            ? `Remove "${confirmDelete.summary}" from your calendar.`
+            : `Are you sure you want to delete "${confirmDelete?.summary}"? This action cannot be undone.`
+        }
+        confirmLabel={confirmDelete?.isRecurring ? undefined : 'Delete'}
         destructive
-        onConfirm={() => confirmDelete && executeDelete(confirmDelete.id)}
+        recurringOptions={confirmDelete?.isRecurring ? {
+          onDeleteOccurrence: () => void executeDelete('occurrence'),
+          onDeleteSeries: () => void executeDelete('series'),
+        } : undefined}
+        onConfirm={() => confirmDelete && !confirmDelete.isRecurring && void executeDelete('series')}
         onCancel={() => setConfirmDelete(null)}
       />
     </div>
@@ -949,16 +1028,20 @@ function DayEventsSidebar({
   isMobile,
   onEdit,
   onDelete,
+  onToggleComplete,
   onNew,
   deleting,
+  completing,
 }: {
   selectedDate: Date;
   events: AgentCalendarEvent[];
   isMobile: boolean;
   onEdit: (e: AgentCalendarEvent) => void;
-  onDelete: (id: string) => void;
+  onDelete: (e: AgentCalendarEvent) => void;
+  onToggleComplete: (e: AgentCalendarEvent) => void;
   onNew: () => void;
   deleting: string | null;
+  completing: string | null;
 }) {
   const isToday = isSameDay(selectedDate, new Date());
   const eventLabel = events.length === 1 ? '1 event' : `${events.length} events`;
@@ -1007,8 +1090,10 @@ function DayEventsSidebar({
               event={event}
               isMobile={isMobile}
               onEdit={() => onEdit(event)}
-              onDelete={() => onDelete(event.id)}
-              isDeleting={deleting === event.id}
+              onDelete={() => onDelete(event)}
+              onToggleComplete={() => onToggleComplete(event)}
+              isDeleting={deleting === eventActionKey(event)}
+              isCompleting={completing === eventActionKey(event)}
             />
           ))
         )}
@@ -1044,13 +1129,17 @@ function DayEventCard({
   isMobile,
   onEdit,
   onDelete,
+  onToggleComplete,
   isDeleting,
+  isCompleting,
 }: {
   event: AgentCalendarEvent;
   isMobile: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleComplete: () => void;
   isDeleting: boolean;
+  isCompleting: boolean;
 }) {
   const completed = isOccurrenceCompleted(event);
   const toneClass = getEventToneClass(event, completed);
@@ -1090,6 +1179,18 @@ function DayEventCard({
           <div className={cn('flex gap-0.5 shrink-0 transition-opacity', showActions)}>
             <button
               type="button"
+              aria-label={completed ? 'Mark as not done' : 'Mark as done'}
+              className={cn(
+                'p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10',
+                completed && 'text-[var(--color-accent)]',
+              )}
+              onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
+              disabled={isCompleting || isDeleting}
+            >
+              {isCompleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
               aria-label="Edit event"
               className="p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10"
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -1101,7 +1202,7 @@ function DayEventCard({
               aria-label="Delete event"
               className="p-1.5 rounded-md hover:bg-red-500/15 text-red-600 dark:text-red-400"
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={isDeleting}
+              disabled={isDeleting || isCompleting}
             >
               {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
             </button>
@@ -1127,13 +1228,17 @@ function EventListView({
   events,
   onEdit,
   onDelete,
+  onToggleComplete,
   deleting,
+  completing,
   onNew,
 }: {
   events: AgentCalendarEvent[];
   onEdit: (e: AgentCalendarEvent) => void;
-  onDelete: (id: string) => void;
+  onDelete: (e: AgentCalendarEvent) => void;
+  onToggleComplete: (e: AgentCalendarEvent) => void;
   deleting: string | null;
+  completing: string | null;
   onNew: () => void;
 }) {
   // Group events by date
@@ -1211,17 +1316,29 @@ function EventListView({
                       </div>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onToggleComplete(event)}
+                        disabled={completing === eventActionKey(event) || deleting === eventActionKey(event)}
+                        className={cn(isCompleted && 'text-[var(--color-accent)]')}
+                        aria-label={isCompleted ? 'Mark as not done' : 'Mark as done'}
+                      >
+                        {completing === eventActionKey(event)
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Check className="w-3.5 h-3.5" />}
+                      </Button>
                       <Button variant="ghost" size="icon-sm" onClick={() => onEdit(event)}>
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => onDelete(event.id)}
-                        disabled={deleting === event.id}
+                        onClick={() => onDelete(event)}
+                        disabled={deleting === eventActionKey(event)}
                         className="text-red-500 hover:text-red-600"
                       >
-                        {deleting === event.id
+                        {deleting === eventActionKey(event)
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : <Trash2 className="w-3.5 h-3.5" />}
                       </Button>
@@ -1617,6 +1734,7 @@ function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  recurringOptions,
   onConfirm,
   onCancel,
 }: {
@@ -1626,6 +1744,10 @@ function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  recurringOptions?: {
+    onDeleteOccurrence: () => void;
+    onDeleteSeries: () => void;
+  };
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -1650,27 +1772,50 @@ function ConfirmDialog({
           <h3 className="text-sm font-semibold mb-1">{title}</h3>
           <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{message}</p>
         </div>
-        <div className="flex border-t border-black/10 dark:border-white/10">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 text-xs font-medium text-[var(--color-text-secondary)]
-                       hover:bg-black/5 dark:hover:bg-white/5 transition-colors
-                       border-r border-black/10 dark:border-white/10"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            onClick={onConfirm}
-            className={cn(
-              'flex-1 py-2.5 text-xs font-semibold transition-colors',
-              destructive
-                ? 'text-red-500 hover:bg-red-500/10'
-                : 'text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)]',
-            )}
-          >
-            {confirmLabel}
-          </button>
-        </div>
+        {recurringOptions ? (
+          <div className="flex flex-col border-t border-black/10 dark:border-white/10">
+            <button
+              onClick={recurringOptions.onDeleteOccurrence}
+              className="py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500/10 transition-colors border-b border-black/10 dark:border-white/10"
+            >
+              Delete only this event
+            </button>
+            <button
+              onClick={recurringOptions.onDeleteSeries}
+              className="py-2.5 text-xs font-semibold text-red-600 hover:bg-red-500/10 transition-colors border-b border-black/10 dark:border-white/10"
+            >
+              Delete all events
+            </button>
+            <button
+              onClick={onCancel}
+              className="py-2.5 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              {cancelLabel}
+            </button>
+          </div>
+        ) : (
+          <div className="flex border-t border-black/10 dark:border-white/10">
+            <button
+              onClick={onCancel}
+              className="flex-1 py-2.5 text-xs font-medium text-[var(--color-text-secondary)]
+                         hover:bg-black/5 dark:hover:bg-white/5 transition-colors
+                         border-r border-black/10 dark:border-white/10"
+            >
+              {cancelLabel}
+            </button>
+            <button
+              onClick={onConfirm}
+              className={cn(
+                'flex-1 py-2.5 text-xs font-semibold transition-colors',
+                destructive
+                  ? 'text-red-500 hover:bg-red-500/10'
+                  : 'text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)]',
+              )}
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

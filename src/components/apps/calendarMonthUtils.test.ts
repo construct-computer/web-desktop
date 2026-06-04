@@ -18,6 +18,7 @@ function mockEvent(overrides: Partial<AgentCalendarEvent> & Pick<AgentCalendarEv
     allDay: false,
     status: 'confirmed',
     completedOccurrences: null,
+    cancelledOccurrences: null,
     sourceType: null,
     sourceMeta: null,
     htmlLink: '',

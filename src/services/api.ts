@@ -1951,6 +1951,7 @@ export interface AgentCalendarEvent {
   allDay: boolean;
   status: string;
   completedOccurrences: string[] | null;
+  cancelledOccurrences: string[] | null;
   sourceType: string | null;
   sourceMeta: Record<string, unknown> | null;
   htmlLink: string;
@@ -2007,6 +2008,8 @@ export async function updateAgentCalendarEvent(eventId: string, updates: {
   all_day?: boolean;
   recurrence?: string[] | null;
   completedOccurrences?: string[] | null;
+  cancelledOccurrences?: string[] | null;
+  status?: string;
 }): Promise<ApiResult<{ event: AgentCalendarEvent }>> {
   return request(`/calendar/agent/events/${encodeURIComponent(eventId)}`, {
     method: 'PUT',
@@ -2042,8 +2045,37 @@ export async function listAgentSchedules(status = 'active'): Promise<ApiResult<{
   return request(`/calendar/schedules?${params.toString()}`);
 }
 
-export async function deleteAgentCalendarEvent(eventId: string): Promise<ApiResult<{ status: string }>> {
-  return request(`/calendar/agent/events/${encodeURIComponent(eventId)}`, {
+export async function completeAgentCalendarOccurrence(
+  eventId: string,
+  occurrenceStart: string,
+): Promise<ApiResult<{ event: AgentCalendarEvent }>> {
+  return request(`/calendar/agent/events/${encodeURIComponent(eventId)}/occurrences/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ occurrenceStart }),
+  });
+}
+
+export async function uncompleteAgentCalendarOccurrence(
+  eventId: string,
+  occurrenceStart: string,
+): Promise<ApiResult<{ event: AgentCalendarEvent }>> {
+  return request(`/calendar/agent/events/${encodeURIComponent(eventId)}/occurrences/uncomplete`, {
+    method: 'POST',
+    body: JSON.stringify({ occurrenceStart }),
+  });
+}
+
+export async function deleteAgentCalendarEvent(
+  eventId: string,
+  options?: { scope?: 'series' | 'occurrence'; occurrenceStart?: string },
+): Promise<ApiResult<{ status: string; event?: AgentCalendarEvent }>> {
+  const params = new URLSearchParams();
+  if (options?.scope === 'occurrence') {
+    params.set('scope', 'occurrence');
+    if (options.occurrenceStart) params.set('occurrence_start', options.occurrenceStart);
+  }
+  const qs = params.toString();
+  return request(`/calendar/agent/events/${encodeURIComponent(eventId)}${qs ? `?${qs}` : ''}`, {
     method: 'DELETE',
   });
 }
