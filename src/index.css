@@ -800,6 +800,7 @@ html.dark .notification-glass-window::before {
 .soft-popover {
   --glass-filter: blur(24px) saturate(1.25);
   border: none !important;
+  animation: popover-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 .soft-popover::before {
   background-color: rgba(255, 255, 255, 0.78);
@@ -808,6 +809,51 @@ html.dark .notification-glass-window::before {
 html.dark .soft-popover::before {
   background-color: rgba(14, 16, 22, 0.68);
   border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Animations for App Popups, Dialogs, Tooltips & Scrims */
+@keyframes scrim-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes popover-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.contained-scrim::before,
+.modal-scrim::before,
+.soft-scrim::before,
+.glass-scrim::before {
+  animation: scrim-fade-in 0.28s ease-out forwards;
+}
+
+.glass-popover {
+  animation: popover-fade-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.glass-tooltip {
+  animation: tooltip-fade-in 0.15s ease-out forwards;
 }
 
 /* Month grid: fully transparent — color comes from the window glass only */
