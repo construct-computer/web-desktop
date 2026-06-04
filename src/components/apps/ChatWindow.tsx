@@ -344,7 +344,14 @@ function SubAgentLine({ agent }: { agent: TrackedSubAgent }) {
             <div className="space-y-0.5 mb-1">
               {agent.activities.map((act, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <ToolActivityIcon type={act.activityType as ChatMessage['activityType']} label={act.text} />
+                  <ToolActivityIcon
+                    type={act.activityType as ChatMessage['activityType']}
+                    tool={act.tool}
+                    label={act.text}
+                    iconPlatform={act.iconPlatform}
+                    iconUrl={act.iconUrl}
+                    className="w-3 h-3"
+                  />
                   <span className="truncate">{act.text}</span>
                 </div>
               ))}

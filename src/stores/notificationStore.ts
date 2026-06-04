@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { NOTIFICATION_DEDUP_WINDOW_MS } from '@/lib/config';
+import { shouldPersistNotification, type NotificationPriority } from '@/lib/notificationPolicy';
 
 export interface Notification {
   id: string;
@@ -39,7 +40,11 @@ interface NotificationStore {
   setSelectedWorkOrderId: (workOrderId: string | null) => void;
 
   /** Add a notification to history and show a toast banner. */
-  addNotification: (n: Omit<Notification, 'id' | 'timestamp' | 'read'>, toastDurationMs?: number) => string;
+  addNotification: (
+    n: Omit<Notification, 'id' | 'timestamp' | 'read'>,
+    toastDurationMs?: number,
+    options?: { priority?: NotificationPriority },
+  ) => string;
   /** Dismiss a toast banner (keeps notification in history). */
   dismissToast: (id: string) => void;
   /** Remove a single notification from history entirely. */
@@ -72,7 +77,12 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   }),
   setSelectedWorkOrderId: (workOrderId) => set({ selectedWorkOrderId: workOrderId }),
 
-  addNotification: (n, toastDurationMs = 5000) => {
+  addNotification: (n, toastDurationMs = 5000, options) => {
+    const priority = options?.priority ?? 'default';
+    if (!shouldPersistNotification(priority)) {
+      return '';
+    }
+
     // Dedup: skip if an identical notification was added in the last 10s.
     // This prevents duplicates from replayed WebSocket events on reconnect.
     const fingerprint = `${n.title}|${n.body || ''}|${n.source || ''}`;

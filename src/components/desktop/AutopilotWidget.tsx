@@ -316,7 +316,6 @@ export function AutopilotPanel() {
   const [pendingActions, setPendingActions] = useState<api.PendingUserAction[]>([]);
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [expiringPolicyId, setExpiringPolicyId] = useState<number | null>(null);
-  const [workOrderActionId, setWorkOrderActionId] = useState<string | null>(null);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
   const [nextEvent, setNextEvent] = useState<api.AgentCalendarEvent | null>(null);
 
@@ -756,11 +755,12 @@ export function AutopilotPanel() {
     summary,
   ]);
 
-  const visibleWorkOrders = useMemo(() => (
-    (displayStatus?.workOrders || [])
-      .filter((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status))
-      .slice(0, 3)
-  ), [displayStatus]);
+  const activeWorkOrderCount = displayStatus?.activeWorkOrderCount ?? 0;
+  const blockedWorkOrderCount = displayStatus?.blockedWorkOrderCount ?? 0;
+  const firstBlockedWorkOrderId = useMemo(
+    () => (displayStatus?.workOrders || []).find((o) => o.status === 'blocked')?.id,
+    [displayStatus],
+  );
   const visibleLearnedPolicies = useMemo(() => (
     (displayStatus?.learnedPolicies || []).slice(0, 3)
   ), [displayStatus]);
@@ -769,7 +769,8 @@ export function AutopilotPanel() {
       .filter((schedule) => schedule.status === 'active' || schedule.status === 'paused')
       .slice(0, 3)
   ), [displayStatus]);
-  const showOperationalLedger = visibleWorkOrders.length > 0 || visibleScheduledWork.length > 0 || visibleLearnedPolicies.length > 0;
+  const showOperationalLedger = visibleScheduledWork.length > 0 || visibleLearnedPolicies.length > 0;
+  const showWorkStatusLink = activeWorkOrderCount > 0;
 
   const isIdleGlance = !attention && !hasActiveRun && mode === 'idle';
   const idleItems = useMemo<IdleGlanceItem[]>(() => {
@@ -1002,26 +1003,6 @@ export function AutopilotPanel() {
     });
   };
 
-  const handleResolveWorkOrder = (order: api.AutopilotWorkOrderSnapshot) => {
-    if (workOrderActionId !== null) return;
-    setWorkOrderActionId(`resolve:${order.id}`);
-    api.resolveWorkOrderBlocker(order.id)
-      .then((result) => {
-        if (result.success) applyWorkOrderUpdate(result.data.workOrder);
-      })
-      .finally(() => setWorkOrderActionId(null));
-  };
-
-  const handleCancelWorkOrder = (order: api.AutopilotWorkOrderSnapshot) => {
-    if (workOrderActionId !== null) return;
-    setWorkOrderActionId(`cancel:${order.id}`);
-    api.cancelWorkOrder(order.id)
-      .then((result) => {
-        if (result.success) applyWorkOrderUpdate(result.data.workOrder);
-      })
-      .finally(() => setWorkOrderActionId(null));
-  };
-
   return (
     <div
       onClick={isIdleGlance || showActiveTrace ? () => void openSpotlightSession(activeSessionForOpen) : undefined}
@@ -1153,109 +1134,31 @@ export function AutopilotPanel() {
           </div>
         )}
 
+        {showWorkStatusLink && (
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              openNotificationTab(
+                'agents',
+                firstBlockedWorkOrderId ? { workOrderId: firstBlockedWorkOrderId } : undefined,
+              );
+            }}
+            className="mt-2 flex h-[28px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 text-left transition-colors hover:bg-white/[0.05]"
+          >
+            <ListChecks size={13} strokeWidth={2.1} className="shrink-0 text-cyan-200/[0.55]" />
+            <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/[0.72]">
+              {blockedWorkOrderCount > 0
+                ? `${blockedWorkOrderCount} task${blockedWorkOrderCount === 1 ? '' : 's'} need you`
+                : `${activeWorkOrderCount} background task${activeWorkOrderCount === 1 ? '' : 's'}`}
+            </span>
+            <span className="shrink-0 text-[10px] text-white/[0.40]">Work Status</span>
+          </button>
+        )}
+
         {showOperationalLedger && (
           <div className="mt-2 space-y-2 border-t border-white/[0.055] pt-2">
-            {visibleWorkOrders.length > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
-                  <span className="inline-flex items-center gap-1">
-                    Background tasks
-                    <InfoHint side="top" className="text-white/40 hover:text-white/80">Tasks Construct can continue while you do other work.</InfoHint>
-                  </span>
-                  <span>{displayStatus?.activeWorkOrderCount ?? visibleWorkOrders.length}</span>
-                </div>
-                {visibleWorkOrders.map((order) => {
-                  const isBlocked = order.status === 'blocked';
-                  const canCancel = order.status === 'active' || order.status === 'waiting' || order.status === 'blocked';
-                  const resolveActionId = `resolve:${order.id}`;
-                  const cancelActionId = `cancel:${order.id}`;
-                  const hint = order.activityHint
-                    || (isBlocked ? order.blockerReason : null)
-                    || order.latestStepTitle
-                    || formatLedgerStatus(order.status);
-                  return (
-                    <div
-                      key={order.id}
-                      className="group flex h-[30px] w-full min-w-0 items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-white/[0.035]"
-                      title={`${formatLedgerStatus(order.status)}: ${order.objective}`}
-                    >
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openNotificationTab('agents', { workOrderId: order.id });
-                        }}
-                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-                      >
-                        {order.stalled && (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/90" title="May be stuck" />
-                        )}
-                        <ListChecks
-                          size={13}
-                          strokeWidth={2.1}
-                          className={`shrink-0 ${isBlocked ? 'text-blue-200/[0.62]' : 'text-cyan-200/[0.50]'}`}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[11px] font-medium text-white/[0.72]">
-                            {cleanWidgetText(order.objective, 74)}
-                          </span>
-                          <span className="block truncate text-[9.5px] text-white/[0.38]">
-                            {formatLedgerStatus(order.status)}
-                            {hint ? ` · ${cleanWidgetText(hint, 68)}` : ''}
-                          </span>
-                        </span>
-                      </button>
-                      {(isBlocked || canCancel) && (
-                        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                          {isBlocked && (
-                            <button
-                              type="button"
-                              aria-label={`Resolve blocker for ${order.objective}`}
-                              title="Mark blocker resolved"
-                              disabled={workOrderActionId !== null}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleResolveWorkOrder(order);
-                              }}
-                              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-md text-blue-100/[0.50] transition hover:bg-white/[0.045] hover:text-blue-100 disabled:cursor-default disabled:opacity-40"
-                            >
-                              {workOrderActionId === resolveActionId ? (
-                                <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
-                              ) : (
-                                <CheckCircle2 size={11} strokeWidth={2.3} />
-                              )}
-                            </button>
-                          )}
-                          {canCancel && (
-                            <button
-                              type="button"
-                              aria-label={`Cancel background task: ${order.objective}`}
-                              title="Cancel background task"
-                              disabled={workOrderActionId !== null}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleCancelWorkOrder(order);
-                              }}
-                              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-md text-white/[0.30] transition hover:bg-white/[0.045] hover:text-red-100 disabled:cursor-default disabled:opacity-40"
-                            >
-                              {workOrderActionId === cancelActionId ? (
-                                <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
-                              ) : (
-                                <X size={11} strokeWidth={2.4} />
-                              )}
-                            </button>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
             {visibleLearnedPolicies.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">

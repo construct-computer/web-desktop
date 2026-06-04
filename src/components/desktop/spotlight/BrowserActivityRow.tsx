@@ -75,14 +75,10 @@ export function BrowserActivityRow({
   message,
   duration,
   repeatCount,
-  isFirst = false,
-  isLast = false,
 }: {
   message: ChatMessage;
   duration?: string;
   repeatCount?: number;
-  isFirst?: boolean;
-  isLast?: boolean;
 }) {
   const [showPayload, setShowPayload] = useState(false);
   const meta = message.browserAction;
@@ -95,11 +91,6 @@ export function BrowserActivityRow({
   return (
     <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
       <div className="flex items-center gap-2.5">
-        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
-          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
-          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-          <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
-        </div>
         <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${color}`}>
           <Icon className="w-3 h-3" />
         </div>

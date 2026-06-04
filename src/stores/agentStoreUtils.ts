@@ -770,6 +770,7 @@ export function patchToolActivityFailure<T extends {
   role: string;
   tool?: string;
   toolCallId?: string;
+  activityType?: string;
   activityStatus?: string;
   content: string;
 }>(

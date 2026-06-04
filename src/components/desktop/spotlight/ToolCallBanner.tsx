@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square, Brain, Check, Copy } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
-import { ActivityIcon } from './ActivityIcon';
-import { ACTIVITY_ICON_CLASS } from './activityStyles';
+import { ActivityIconBadge } from './ActivityIconBadge';
+import { ActivityIconFrame } from './ActivityIconFrame';
 import { memoryActivityTitle, memoryActivitySummary } from './ChatEventRow';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
@@ -164,13 +164,13 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               /* ── Merged timeline: sub-agents + main activities ── */
               timeline.map((entry, i) => {
                 if (entry.kind === 'subagent') {
-                  return <SubAgentEntry key={entry.agent.id} agent={entry.agent} isFirst={i === 0} isLast={i === timeline.length - 1} />;
+                  return <SubAgentEntry key={entry.agent.id} agent={entry.agent} />;
                 }
-                return <FlatActivityLine key={`main-${i}`} activity={entry.activity} isFirst={i === 0} isLast={i === timeline.length - 1} />;
+                return <FlatActivityLine key={`main-${i}`} activity={entry.activity} />;
               })
             ) : (
               /* ── Flat activity list (no sub-agents) ── */
-              itemsWithDuration.map(({ act, dur, repeat, key }, index) => {
+              itemsWithDuration.map(({ act, dur, repeat, key }) => {
                 if (act.memoryActivity) {
                   return (
                     <MemoryTimelineRow
@@ -178,8 +178,6 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                       message={act}
                       duration={dur}
                       repeatCount={repeat}
-                      isFirst={index === 0}
-                      isLast={index === itemsWithDuration.length - 1}
                     />
                   );
                 }
@@ -190,8 +188,6 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                       message={act}
                       duration={dur || undefined}
                       repeatCount={repeat}
-                      isFirst={index === 0}
-                      isLast={index === itemsWithDuration.length - 1}
                     />
                   );
                 }
@@ -199,14 +195,15 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                 const isFailed = act.activityStatus === 'failed' || act.isError;
                 return (
                   <div key={key} className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
-                    <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
-                      {index > 0 && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
-                      {index < itemsWithDuration.length - 1 && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-                      <div className={`relative z-10 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--color-surface)] ${isFailed ? 'bg-red-300/70' : 'bg-blue-300/45'}`} />
-                    </div>
-                    <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${isFailed ? 'bg-red-500/10 text-red-300/80' : ACTIVITY_ICON_CLASS}`}>
-                      <ActivityIcon type={act.activityType} tool={act.tool} label={act.content} className="w-3 h-3" />
-                    </div>
+                    <ActivityIconBadge
+                      type={act.activityType}
+                      tool={act.tool}
+                      label={act.content}
+                      iconPlatform={act.iconPlatform}
+                      iconUrl={act.iconUrl}
+                      failed={isFailed}
+                      size="sm"
+                    />
                     <span className={`text-[12px] truncate flex-1 ${isTerminal ? 'font-mono' : ''} ${isFailed ? 'text-red-300/75' : 'text-[var(--color-text-muted)]/50'}`}>
                       {act.content}
                     </span>
@@ -228,7 +225,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
 
 /* ── Sub-agent entry (expandable with nested activities) ── */
 
-export function SubAgentEntry({ agent, isFirst = false, isLast = false }: { agent: TrackedSubAgent; isFirst?: boolean; isLast?: boolean }) {
+export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = agent.status === 'running' || agent.status === 'pending';
   const isFailed = agent.status === 'failed';
@@ -244,26 +241,19 @@ export function SubAgentEntry({ agent, isFirst = false, isLast = false }: { agen
         onClick={() => hasActivities && setExpanded(!expanded)}
         className={`w-full flex items-center gap-2 rounded-md px-1 py-[3px] text-left transition-colors ${hasActivities ? 'hover:bg-white/[0.03] cursor-pointer' : 'cursor-default'}`}
       >
-        {/* Expand chevron */}
-        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
-          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
-          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-          {hasActivities ? (
-            expanded
-              ? <ChevronDown className="relative z-10 w-3 h-3 text-blue-300/70" />
-              : <ChevronRight className="relative z-10 w-3 h-3 text-blue-300/70" />
-          ) : (
-            <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
-          )}
-        </div>
+        {hasActivities && (
+          <span className="flex h-5 w-4 shrink-0 items-center justify-center text-blue-300/70">
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </span>
+        )}
 
         {/* Status icon */}
-        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${ACTIVITY_ICON_CLASS}`}>
-          {isRunning ? <Loader2 className="w-3 h-3 animate-spin" />
-            : isFailed ? <XCircle className="w-3 h-3" />
-            : isCancelled ? <Square className="w-3 h-3" />
-            : <CheckCircle2 className="w-3 h-3" />}
-        </span>
+        <ActivityIconFrame size="sm" variant={isFailed || isCancelled ? 'failed' : 'default'}>
+          {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : isFailed ? <XCircle className="h-3.5 w-3.5" />
+            : isCancelled ? <Square className="h-3.5 w-3.5" />
+            : <CheckCircle2 className="h-3.5 w-3.5" />}
+        </ActivityIconFrame>
 
         <span className={`text-[12px] truncate flex-1 ${isRunning ? 'text-[var(--color-text-muted)]/60' : isFailed || isCancelled ? 'text-red-400/60' : 'text-[var(--color-text-muted)]/50'}`}>
           {shortGoal}
@@ -275,9 +265,14 @@ export function SubAgentEntry({ agent, isFirst = false, isLast = false }: { agen
         <div className="ml-8 mb-1 border-l border-blue-300/10 pl-3">
           {agent.activities.map((act, i) => (
             <div key={i} className="flex items-center gap-2.5 rounded-md py-[2px]">
-              <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
-                <ActivityIcon type={act.activityType as ChatMessage['activityType']} label={act.text} className="w-3 h-3" />
-              </div>
+              <ActivityIconBadge
+                type={act.activityType as ChatMessage['activityType']}
+                tool={act.tool}
+                label={act.text}
+                iconPlatform={act.iconPlatform}
+                iconUrl={act.iconUrl}
+                size="sm"
+              />
               <span className="text-[11px] text-[var(--color-text-muted)]/40 truncate flex-1">
                 {act.text}
               </span>
@@ -291,18 +286,18 @@ export function SubAgentEntry({ agent, isFirst = false, isLast = false }: { agen
 
 /* ── Flat activity line (for main-agent activities in merged timeline) ── */
 
-function FlatActivityLine({ activity, isFirst = false, isLast = false }: { activity: ChatMessage; isFirst?: boolean; isLast?: boolean }) {
+function FlatActivityLine({ activity }: { activity: ChatMessage }) {
   const isTerminal = activity.activityType === 'terminal';
   return (
     <div className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
-      <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
-        {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
-        {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-        <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
-      </div>
-      <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
-        <ActivityIcon type={activity.activityType} tool={activity.tool} label={activity.content} className="w-3 h-3" />
-      </div>
+      <ActivityIconBadge
+        type={activity.activityType}
+        tool={activity.tool}
+        label={activity.content}
+        iconPlatform={activity.iconPlatform}
+        iconUrl={activity.iconUrl}
+        size="sm"
+      />
       <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
         {activity.content}
       </span>
@@ -316,14 +311,10 @@ function MemoryTimelineRow({
   message,
   duration,
   repeatCount,
-  isFirst = false,
-  isLast = false,
 }: {
   message: ChatMessage;
   duration?: string;
   repeatCount?: number;
-  isFirst?: boolean;
-  isLast?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -342,14 +333,9 @@ function MemoryTimelineRow({
   return (
     <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
       <div className="flex items-start gap-2.5">
-        <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
-          {!isFirst && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
-          {!isLast && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-          <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
-        </div>
-        <div className={`mt-[1px] w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
-          <Brain className="w-3 h-3" />
-        </div>
+        <ActivityIconFrame size="sm" variant="default" className="mt-[1px]">
+          <Brain className="h-3.5 w-3.5" />
+        </ActivityIconFrame>
         <div className="min-w-0 flex-1">
           <button
             type="button"

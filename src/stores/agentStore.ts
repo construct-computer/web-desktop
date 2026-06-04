@@ -14,6 +14,7 @@ import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
+import { workOrderNotificationPriority } from '@/lib/notificationPolicy';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
@@ -49,6 +50,7 @@ import {
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
+import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
 import {
   coerceExternalAccess,
   coerceExternalSource,
@@ -189,6 +191,10 @@ export interface ChatMessage {
   timestamp: Date;
   /** For activity messages: which tool triggered it */
   tool?: string;
+  /** Branded icon: platform slug for PlatformIcon / Composio logos */
+  iconPlatform?: string;
+  /** Branded icon: explicit logo URL (builtin PNG, connected toolkit, registry app) */
+  iconUrl?: string;
   /** For activity messages: icon hint for rendering */
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** Correlates activity rows with tool_result / terminal_exit events */
@@ -4701,10 +4707,14 @@ export const useComputerStore = create<ComputerStore>()(
           // If this tool call belongs to a subagent, route it to the tracker
           // store instead of the main chat feed.
           if (toolSubagentId) {
+            const subIconHints = resolveActivityIconHints(tool, params);
             useAgentTrackerStore.getState().addSubAgentActivity(toolSubagentId, {
               text: activityText,
               activityType: activityType || 'tool',
               timestamp: Date.now(),
+              tool: tool === 'composio' ? composioDisplayTool(params) : tool,
+              iconPlatform: subIconHints.iconPlatform,
+              iconUrl: subIconHints.iconUrl,
             });
             // Auto-open the relevant window even for subagent tool calls
             // (e.g. open the browser window when a subagent navigates).
@@ -4801,11 +4811,14 @@ export const useComputerStore = create<ComputerStore>()(
           const displayTool = tool === 'composio'
             ? composioDisplayTool(params)
             : tool;
+          const iconHints = resolveActivityIconHints(tool, params);
           const toolActivityMsg: ChatMessage = {
             role: 'activity' as const,
             content: activityText,
             timestamp: new Date(),
             tool: displayTool,
+            iconPlatform: iconHints.iconPlatform,
+            iconUrl: iconHints.iconUrl,
             activityType,
             toolCallId,
             activityStatus: 'running',
@@ -5081,14 +5094,6 @@ export const useComputerStore = create<ComputerStore>()(
             const anyOtherSessionRunning = nextRunning.size > 0;
             if (!anyOtherSessionRunning) {
               closeAllAutoOpened(2000);
-              if (get().agentRunning && document.hidden) {
-                useNotificationStore.getState().addNotification({
-                  title: 'Done',
-                  body: 'Your request has been completed.',
-                  source: 'Construct',
-                  variant: 'success',
-                }, 3000);
-              }
             }
 
             const { browserState: bs } = get();
@@ -5200,7 +5205,7 @@ export const useComputerStore = create<ComputerStore>()(
               body: text,
               source: 'Construct',
               variant: 'error',
-            }, 5000);
+            }, 5000, { priority: 'default' });
           }
           break;
         }
@@ -5218,7 +5223,7 @@ export const useComputerStore = create<ComputerStore>()(
                 body: notice.content.split('\n')[0] || 'Construct hit an issue.',
                 source: 'Construct',
                 variant: 'error',
-              }, 5000);
+              }, 5000, { priority: 'default' });
             }
           }
           break;
@@ -5743,7 +5748,11 @@ export const useComputerStore = create<ComputerStore>()(
           // Help requests get a longer toast duration (30s) so the user doesn't miss them
           const isHelpRequest = source === 'Help Request';
           const toastDuration = isHelpRequest ? 30_000 : undefined;
-          useNotificationStore.getState().addNotification({ title, body, source, variant }, toastDuration);
+          useNotificationStore.getState().addNotification(
+            { title, body, source, variant },
+            toastDuration,
+            { priority: 'critical' },
+          );
           break;
         }
 
@@ -5809,7 +5818,7 @@ export const useComputerStore = create<ComputerStore>()(
               });
               openAuthRedirect(acUrl);
             } : undefined,
-          }, 30_000);
+          }, 30_000, { priority: 'critical' });
           if (notifId) {
             authConnectNotifIds.set(authRequest.sourceId, notifId);
           }
@@ -5850,7 +5859,8 @@ export const useComputerStore = create<ComputerStore>()(
                 useWindowStore.getState().ensureWindowOpen('access-control');
               },
             },
-            15_000, // 15s toast — give the owner time to notice
+            15_000,
+            { priority: 'critical' },
           );
           break;
         }
@@ -5899,7 +5909,8 @@ export const useComputerStore = create<ComputerStore>()(
                 useWindowStore.getState().ensureWindowOpen('access-control');
               },
             },
-            15_000, // 15s toast — give the owner time to notice
+            15_000,
+            { priority: 'critical' },
           );
           break;
         }
@@ -5965,7 +5976,7 @@ export const useComputerStore = create<ComputerStore>()(
               source: 'Usage',
               variant: copy.toastVariant,
               onClick: copy.cta ? () => openSettingsToSection('subscription') : undefined,
-            });
+            }, 5000, { priority: copy.toastVariant === 'error' ? 'critical' : 'default' });
           };
 
           switch (state) {
@@ -5974,12 +5985,6 @@ export const useComputerStore = create<ComputerStore>()(
               // Transition back to platform after being on BYOK-fallback or
               // blocked → success toast.
               if (prevKind === 'byok-fallback' || prevKind.startsWith('blocked')) {
-                useNotificationStore.getState().addNotification({
-                  title: 'Back on platform',
-                  body: 'Platform cap reset — you are back on the platform model.',
-                  source: 'Usage',
-                  variant: 'success',
-                });
                 fireNotice('Platform cap reset — back on platform.');
               }
               break;
@@ -6036,16 +6041,7 @@ export const useComputerStore = create<ComputerStore>()(
                 : `Add an OpenRouter key to keep working, or wait until ${resetStr}.`,
               source: 'Usage',
               variant: byokWillFallback ? 'info' : 'error',
-            });
-          } else {
-            useNotificationStore.getState().addNotification({
-              title: `${threshold}% of weekly limit`,
-              body: byokWillFallback
-                ? `Your OpenRouter key will take over at 100%. Resets at ${resetStr}.`
-                : `Resets at ${resetStr}.`,
-              source: 'Usage',
-              variant: 'info',
-            });
+            }, 5000, { priority: 'critical' });
           }
           break;
         }
@@ -6165,7 +6161,7 @@ export const useComputerStore = create<ComputerStore>()(
             body: error.length > 100 ? error.slice(0, 100) + '...' : error,
             source: 'Construct',
             variant: 'error',
-          });
+          }, 8000, { priority: 'critical' });
           break;
         }
 
@@ -6232,7 +6228,7 @@ export const useComputerStore = create<ComputerStore>()(
               body: `\`${shortCmd}\` exited with code ${exitCode}`,
               source: 'terminal',
               variant: 'error',
-            });
+            }, 5000, { priority: 'default' });
           }
           break;
         }
@@ -6296,33 +6292,26 @@ export const useComputerStore = create<ComputerStore>()(
           dispatchWorkOrderUpdated(workOrder);
           if (['completed', 'failed', 'cancelled'].includes(workOrder.status)) {
             const wasActive = workOrder.status === 'completed';
-            useNotificationStore.getState().addNotification({
-              title: wasActive ? 'Task completed' : 'Task ended',
-              body: workOrder.activityHint || workOrder.objective,
-              source: 'Construct',
-              variant: workOrder.status === 'failed' ? 'error' : wasActive ? 'success' : 'info',
-              onClick: () => {
-                useNotificationStore.getState().openDrawerTab('agents', { workOrderId: workOrder.id });
-              },
-            }, 6000);
+            const priority = workOrderNotificationPriority(workOrder.status);
+            if (priority !== 'silent') {
+              useNotificationStore.getState().addNotification({
+                title: wasActive ? 'Task completed' : 'Task ended',
+                body: workOrder.activityHint || workOrder.objective,
+                source: 'Construct',
+                variant: workOrder.status === 'failed' ? 'error' : wasActive ? 'success' : 'info',
+                onClick: () => {
+                  useNotificationStore.getState().openDrawerTab('agents', { workOrderId: workOrder.id });
+                },
+              }, 6000, { priority });
+            }
           }
           break;
         }
 
         case 'agent_notice': {
           const message = event.data?.message as string | undefined;
-          const isError = (event.data?.variant as string) === 'error';
-          const toastVariant = isError ? 'error' : 'info';
           if (!message || !shouldUpdateVisibleDesktopAgent) break;
           appendToAgentChat({ role: 'notice', content: message, timestamp: new Date() });
-          if (isActiveSession) {
-            useNotificationStore.getState().addNotification({
-              title: isError ? 'Construct issue' : 'Construct',
-              body: message,
-              source: 'Construct',
-              variant: toastVariant,
-            }, isError ? 8000 : 6000);
-          }
           break;
         }
 
@@ -6377,7 +6366,7 @@ export const useComputerStore = create<ComputerStore>()(
               body: message,
               source: 'Construct',
               variant: 'error',
-            }, 8000);
+            }, 8000, { priority: 'default' });
           } else if (isUsageBlock) {
             // Fire the structured provider-block toast once.
             const copy = providerCopy(
@@ -6394,7 +6383,7 @@ export const useComputerStore = create<ComputerStore>()(
                 onClick: copy.cta
                   ? () => openSettingsToSection('subscription')
                   : undefined,
-              }, 8000);
+              }, 8000, { priority: 'critical' });
             }
           }
           break;

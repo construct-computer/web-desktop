@@ -2,12 +2,16 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, AlertCircle, Info, Trash2, Activity } from 'lucide-react';
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
-import { useComputerStore } from '@/stores/agentStore';
-import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
-import { getSwarmMetrics } from '@/lib/agentSwarm';
 import { TrackerWindow } from '@/components/apps/TrackerWindow';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
+import {
+  MENUBAR_HEIGHT,
+  MOBILE_MENUBAR_HEIGHT,
+  MOBILE_APP_BAR_HEIGHT,
+  NOTIFICATION_DRAWER_WIDTH,
+  Z_INDEX,
+} from '@/lib/constants';
+import { useWorkOrders } from '@/hooks/useWorkOrders';
 
 // ─── Time helpers ──────────────────────────────────────────────────────────
 
@@ -111,8 +115,6 @@ function NotificationCard({ n, onRemove }: { n: Notification; onRemove: () => vo
 
 // ─── Notification Center drawer ────────────────────────────────────────────
 
-const DRAWER_WIDTH = 360;
-
 export function NotificationCenter() {
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const setDrawerOpen = useNotificationStore((s) => s.setDrawerOpen);
@@ -123,6 +125,7 @@ export function NotificationCenter() {
   const clearAll = useNotificationStore((s) => s.clearAll);
   const drawerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const { blockedCount, activeCount } = useWorkOrders();
 
   // Close on Escape
   useEffect(() => {
@@ -156,10 +159,11 @@ export function NotificationCenter() {
   }, [drawerOpen, setDrawerOpen]);
 
   const grouped = groupNotifications(notifications);
-  const drawerWidth = isMobile ? '100dvw' : `${DRAWER_WIDTH}px`;
+  const drawerWidthPx = isMobile ? null : NOTIFICATION_DRAWER_WIDTH;
+  const drawerWidth = isMobile ? '100dvw' : `${NOTIFICATION_DRAWER_WIDTH}px`;
   const topOffset = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
   const bottomOffset = isMobile ? MOBILE_APP_BAR_HEIGHT : 0;
-  const translateHidden = isMobile ? 'translateX(100dvw)' : `translateX(${DRAWER_WIDTH}px)`;
+  const translateHidden = isMobile ? 'translateX(100dvw)' : `translateX(${NOTIFICATION_DRAWER_WIDTH}px)`;
 
   return createPortal(
     <>
@@ -197,9 +201,8 @@ export function NotificationCenter() {
         {/* Tabs */}
         {(() => {
           const unreadCount = useNotificationStore.getState().unreadCount();
-          const { agentRunning, platformAgents } = useComputerStore.getState();
-          const ops = useAgentTrackerStore.getState().operations;
-          const { total: activeAgentCount } = getSwarmMetrics(platformAgents, agentRunning, ops);
+          const workStatusBadge = blockedCount > 0 ? blockedCount : activeCount > 0 ? activeCount : 0;
+          const workStatusBadgeVariant = blockedCount > 0 ? 'blocked' : 'active';
 
           return (
             <div className="flex items-center px-3 pt-3 pb-1 gap-1 flex-shrink-0">
@@ -228,9 +231,11 @@ export function NotificationCenter() {
               >
                 <Activity className="w-3 h-3" />
                 Work Status
-                {activeAgentCount > 0 && (
-                  <span className="text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full bg-blue-500 text-white font-semibold px-1">
-                    {activeAgentCount}
+                {workStatusBadge > 0 && (
+                  <span className={`text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full text-white font-semibold px-1 ${
+                    workStatusBadgeVariant === 'blocked' ? 'bg-amber-500' : 'bg-blue-500'
+                  }`}>
+                    {workStatusBadge > 99 ? '99+' : workStatusBadge}
                   </span>
                 )}
               </button>
@@ -287,8 +292,8 @@ export function NotificationCenter() {
           </>
         ) : (
           /* Work status tracker tab */
-          <div className="flex-1 overflow-y-auto">
-            <TrackerWindow config={{ type: 'settings' as any, id: 'nc-tracker', title: 'Work Status', x: 0, y: 0, width: 360, height: 600, minWidth: 360, minHeight: 400, state: 'normal', zIndex: 0, workspaceId: 'main' }} />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <TrackerWindow config={{ type: 'settings' as any, id: 'nc-tracker', title: 'Work Status', x: 0, y: 0, width: drawerWidthPx ?? 420, height: 600, minWidth: drawerWidthPx ?? 420, minHeight: 400, state: 'normal', zIndex: 0, workspaceId: 'main' }} />
           </div>
         )}
       </div>

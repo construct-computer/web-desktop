@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { ActivityIcon } from './ActivityIcon';
-import { ACTIVITY_COLORS } from './activityStyles';
+import { ActivityIconBadge } from './ActivityIconBadge';
 import { ChatEventRow } from './ChatEventRow';
 import type { ChatMessage } from '@/stores/agentStore';
 
@@ -25,14 +24,24 @@ export function ActivityGroup({ activities }: { activities: ChatMessage[] }) {
         >
           <ChevronRight className="w-3 h-3 shrink-0" />
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <div className={`w-4 h-4 shrink-0 rounded-full flex items-center justify-center ${ACTIVITY_COLORS[first.activityType || 'tool'] || ACTIVITY_COLORS.tool}`}>
-              <ActivityIcon type={first.activityType} tool={first.tool} label={first.content} className="w-2.5 h-2.5" />
-            </div>
+            <ActivityIconBadge
+              type={first.activityType}
+              tool={first.tool}
+              label={first.content}
+              iconPlatform={first.iconPlatform}
+              iconUrl={first.iconUrl}
+              size="sm"
+            />
             <span className="truncate">{first.content}</span>
             <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-white/5 text-[10px]">+{middle} more</span>
-            <div className={`w-4 h-4 shrink-0 rounded-full flex items-center justify-center ${ACTIVITY_COLORS[last.activityType || 'tool'] || ACTIVITY_COLORS.tool}`}>
-              <ActivityIcon type={last.activityType} tool={last.tool} label={last.content} className="w-2.5 h-2.5" />
-            </div>
+            <ActivityIconBadge
+              type={last.activityType}
+              tool={last.tool}
+              label={last.content}
+              iconPlatform={last.iconPlatform}
+              iconUrl={last.iconUrl}
+              size="sm"
+            />
             <span className="truncate">{last.content}</span>
           </div>
         </button>

@@ -92,6 +92,8 @@ export interface ChatMessage {
   timestamp: Date;
   /** For activity messages: which tool triggered it */
   tool?: string;
+  iconPlatform?: string;
+  iconUrl?: string;
   /** For activity messages: icon hint for rendering */
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** True for error/stopped messages — rendered with event styling */

@@ -10,6 +10,9 @@ export interface SubAgentActivity {
   text: string;
   activityType: string;
   timestamp: number;
+  tool?: string;
+  iconPlatform?: string;
+  iconUrl?: string;
 }
 
 export interface TrackedSubAgent {

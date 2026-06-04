@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Brain, Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
-import { ActivityIcon } from './ActivityIcon';
-import { activityToneClass, ACTIVITY_ICON_CLASS, type ActivityTone } from './activityStyles';
+import { ActivityIconBadge } from './ActivityIconBadge';
+import { ActivityIconFrame } from './ActivityIconFrame';
+import type { ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
 
 function cleanErrorTitle(content: string): { title: string; detail?: string; raw?: string; badges?: string[] } {
@@ -103,7 +104,6 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
   const isTerminal = msg.activityType === 'terminal';
   const memoryActivity = msg.memoryActivity;
   const hasDetails = Boolean(meta.detail || meta.raw);
-  const colors = activityToneClass(msg.activityType, meta.tone);
 
   const handleCopy = useCallback(() => {
     const memoryText = memoryActivity?.items
@@ -126,9 +126,9 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     return (
       <div className={compact ? 'flex items-start gap-2 py-[2px]' : 'px-3 sm:px-6 py-[2px]'}>
         <div className={compact ? 'flex items-start gap-2 min-w-0 w-full' : 'flex items-start gap-2 sm:gap-3 min-w-0 w-full'}>
-          <div className={`${compact ? 'h-5 w-5' : 'h-6 w-6'} shrink-0 rounded-full flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
-            <Brain className="w-3 h-3" />
-          </div>
+          <ActivityIconFrame size={compact ? 'sm' : 'md'} variant="default">
+            <Brain className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+          </ActivityIconFrame>
           <div className="min-w-0 flex-1">
             <button
               type="button"
@@ -180,9 +180,16 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
   return (
     <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
       <div className={compact ? 'flex items-center gap-2.5 min-w-0' : 'flex items-center gap-2.5 sm:gap-3 min-w-0'}>
-        <div className={`${compact ? 'h-5 w-5' : 'h-6 w-6'} shrink-0 rounded-full flex items-center justify-center ${colors}`}>
-          <ActivityIcon type={msg.activityType} tone={meta.tone} tool={meta.tool} label={meta.title} className="w-3 h-3" />
-        </div>
+        <ActivityIconBadge
+          type={msg.activityType}
+          tone={meta.tone}
+          tool={msg.tool ?? meta.tool}
+          label={meta.title}
+          iconPlatform={msg.iconPlatform}
+          iconUrl={msg.iconUrl}
+          failed={meta.tone === 'error' || meta.tone === 'warn'}
+          size={compact ? 'sm' : 'md'}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className={`text-[12px] truncate ${isTerminal ? 'font-mono' : ''} ${meta.tone === 'error' ? 'text-red-300/75' : meta.tone === 'warn' ? 'text-amber-200/70' : 'text-[var(--color-text-muted)]/55'}`}>
