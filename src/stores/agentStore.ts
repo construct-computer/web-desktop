@@ -2957,7 +2957,7 @@ export const useComputerStore = create<ComputerStore>()(
           : normalizedAttachments;
         if (nonImagePaths.length > 0) {
           const attachList = nonImagePaths.map(p => `- ${p}`).join('\n');
-          messageForAgent = `${content}\n\n[Attached workspace files]\n${attachList}\nUse read_file for text/metadata. Use load_from_workspace before terminal/sandbox processing.\n[End attached workspace files]`;
+          messageForAgent = `${content}\n\n[Attached workspace files]\n${attachList}\nUse read_file for text/metadata, or /construct/workspace/<path> in terminal after the sandbox mounts.\n[End attached workspace files]`;
         }
       }
 

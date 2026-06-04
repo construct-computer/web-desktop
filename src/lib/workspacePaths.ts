@@ -1,6 +1,7 @@
 export function normalizeWorkspacePath(path: string | undefined | null): string {
   const raw = String(path || '')
     .replace(/\\/g, '/')
+    .replace(/^\/construct\/workspace\/?/, '')
     .replace(/^\/home\/sandbox\/workspace\/?/, '')
     .replace(/^\/+/, '');
   const segments: string[] = [];
