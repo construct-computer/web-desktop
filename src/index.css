@@ -666,24 +666,33 @@ html.dark {
 
 .glass-window {
   --glass-filter: blur(28px) saturate(1.45);
+  border: none !important;
 }
 .glass-window::before {
   background-color: var(--glass-window-bg);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+html.dark .glass-window::before {
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .glass-toolbar {
   --glass-filter: blur(18px) saturate(1.35);
+  border: none !important;
 }
 .glass-toolbar::before {
   background-color: var(--surface-toolbar-bg);
+  border: 1px solid var(--color-border);
 }
 
 .glass-drawer {
   --glass-filter: blur(24px) saturate(1.35);
   transform: translateZ(0);
+  border: none !important;
 }
 .glass-drawer::before {
   background-color: var(--glass-drawer-bg);
+  border: 1px solid var(--color-border);
 }
 
 .glass-sidebar,
@@ -698,20 +707,25 @@ html.dark {
 .glass-popover {
   --glass-filter: blur(28px) saturate(1.5);
   transform: translateZ(0);
+  border: none !important;
 }
 .glass-popover::before {
   background-color: var(--glass-popover-bg);
+  border: 1px solid var(--color-border);
 }
 
 .glass-tooltip {
   --glass-filter: blur(14px) saturate(1.25);
+  border: none !important;
 }
 .glass-tooltip::before {
   background-color: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-scrim {
   --glass-filter: blur(10px) saturate(1.2);
+  border: none !important;
 }
 .glass-scrim::before {
   background-color: var(--glass-scrim-bg);
@@ -719,6 +733,7 @@ html.dark {
 
 .spotlight-scrim {
   --glass-filter: blur(8px) saturate(1.1);
+  border: none !important;
 }
 .spotlight-scrim::before {
   background-color: rgba(0, 0, 0, 0.26);
@@ -726,16 +741,20 @@ html.dark {
 
 .spotlight-glass-window {
   --glass-filter: blur(24px) saturate(1.25);
+  border: none !important;
 }
 .spotlight-glass-window::before {
   background-color: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 html.dark .spotlight-glass-window::before {
   background-color: rgba(8, 10, 16, 0.64);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .launchpad-scrim {
   --glass-filter: blur(8px) saturate(1.1);
+  border: none !important;
 }
 .launchpad-scrim::before {
   background-color: rgba(0, 0, 0, 0.65);
@@ -743,6 +762,7 @@ html.dark .spotlight-glass-window::before {
 
 .soft-scrim {
   --glass-filter: blur(8px) saturate(1.12);
+  border: none !important;
 }
 .soft-scrim::before {
   background-color: rgba(0, 0, 0, 0.18);
@@ -750,6 +770,7 @@ html.dark .spotlight-glass-window::before {
 
 .modal-scrim {
   --glass-filter: blur(10px) saturate(1.15);
+  border: none !important;
 }
 .modal-scrim::before {
   background-color: rgba(0, 0, 0, 0.22);
@@ -757,6 +778,7 @@ html.dark .spotlight-glass-window::before {
 
 .contained-scrim {
   --glass-filter: blur(8px) saturate(1.12);
+  border: none !important;
 }
 .contained-scrim::before {
   background-color: rgba(0, 0, 0, 0.16);
@@ -764,22 +786,28 @@ html.dark .spotlight-glass-window::before {
 
 .notification-glass-window {
   --glass-filter: blur(24px) saturate(1.25);
+  border: none !important;
 }
 .notification-glass-window::before {
   background-color: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 html.dark .notification-glass-window::before {
   background-color: rgba(10, 12, 18, 0.50);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .soft-popover {
   --glass-filter: blur(24px) saturate(1.25);
+  border: none !important;
 }
 .soft-popover::before {
   background-color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(0, 0, 0, 0.10);
 }
 html.dark .soft-popover::before {
   background-color: rgba(14, 16, 22, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 /* Month grid: fully transparent — color comes from the window glass only */
