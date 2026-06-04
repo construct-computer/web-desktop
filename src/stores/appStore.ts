@@ -229,10 +229,6 @@ export function localAppsToDefinitions(apps: LocalApp[]): AppDefinition[] {
       ui: {
         type: 'static' as const,
         entry: 'index.html',
-        ...(app.manifest.window?.width && { width: app.manifest.window.width }),
-        ...(app.manifest.window?.height && { height: app.manifest.window.height }),
-        ...(app.manifest.window?.minWidth && { minWidth: app.manifest.window.minWidth }),
-        ...(app.manifest.window?.minHeight && { minHeight: app.manifest.window.minHeight }),
       },
     },
   }));

@@ -10,5 +10,7 @@ export { ActivityIconFrame } from './ActivityIconFrame';
 export { ChatEventRow } from './ChatEventRow';
 export { OperationCard } from './OperationCard';
 export { ToolCallBanner } from './ToolCallBanner';
+export { CompactActivityRow } from './CompactActivityRow';
+export { formatActivityLine } from './formatActivityLine';
 export { UserMessage } from './UserMessage';
 export { AgentMessage } from './AgentMessage';

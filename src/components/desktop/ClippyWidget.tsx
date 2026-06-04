@@ -3,7 +3,10 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useClippyActivitySummary, type ClippyActivityKind, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
+import { useClippyActivitySummary, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
+import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivityRow';
+import { ActivityIcon } from '@/components/desktop/spotlight/ActivityIcon';
+import { Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { DOCK_HEIGHT, MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
@@ -355,12 +358,12 @@ export function ClippyWidget() {
     injectStyles();
   }, []);
 
-  const activitySummary = useClippyActivitySummary();
+  const isMobile = useIsMobile();
+  const activitySummary = useClippyActivitySummary(isMobile);
   const { headline: stateLabel, detail: scrollText, isActive, isIdle } = activitySummary;
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
-  const isMobile = useIsMobile();
   const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
   // ── Position (ratio-based, driven by visible app-window state) ──
@@ -849,22 +852,18 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
   summary: ClippyActivitySummary;
   isMobile: boolean;
 }) {
-  const visibleFeed = summary.activityFeed.slice(0, isMobile ? 2 : 3);
-  const visibleSubagents = summary.subagents.slice(0, isMobile ? 2 : 4);
-  const hiddenSubagents = Math.max(0, summary.counts.total - visibleSubagents.length);
-  const counters = summary.counts.total > 0
-    ? [
-        summary.counts.running > 0 ? `${summary.counts.running} running` : '',
-        summary.counts.complete > 0 ? `${summary.counts.complete} done` : '',
-        summary.counts.failed > 0 ? `${summary.counts.failed} failed` : '',
-      ].filter(Boolean).join(' · ')
+  const visibleFeed = summary.activityFeed;
+  const visibleSubagents = summary.subagents.slice(0, isMobile ? 2 : 2);
+  const hiddenSubagents = Math.max(0, summary.subagents.length - visibleSubagents.length);
+  const helperPill = summary.counts.total > 0
+    ? `${summary.counts.total} helper${summary.counts.total === 1 ? '' : 's'}`
     : '';
 
   return (
     <div className="flex h-full w-full flex-col text-left text-white">
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-start justify-between gap-2">
         <div
-          className="truncate"
+          className="min-w-0 truncate"
           style={{
             fontSize: isMobile ? '11px' : '12px',
             fontWeight: 700,
@@ -874,67 +873,81 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
         >
           {summary.headline}
         </div>
-        {counters && (
-          <div
-            className="truncate"
+        {helperPill && (
+          <span
+            className="shrink-0 rounded-full px-1.5 py-0.5"
             style={{
-              marginTop: 2,
-              color: 'rgba(255,255,255,0.72)',
               fontSize: isMobile ? '8px' : '9px',
-              lineHeight: 1.2,
-              textShadow: '0 1px 2px rgba(0,0,0,0.18)',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.75)',
+              background: 'rgba(255,255,255,0.12)',
             }}
           >
-            {counters}
-          </div>
+            {helperPill}
+          </span>
         )}
       </div>
 
-      <div
-        className="mt-2 overflow-hidden rounded-[10px]"
-        style={{
-          background: 'rgba(4, 28, 64, 0.18)',
-          border: '1px solid rgba(255,255,255,0.16)',
-        }}
-      >
-        {visibleFeed.length > 0 ? visibleFeed.map(item => (
-          <ActivityRow key={item.id} item={item} compact={isMobile} />
-        )) : (
+      {summary.detail && (
+        <div
+          className="mt-1 line-clamp-1"
+          style={{
+            color: 'rgba(255,255,255,0.72)',
+            fontSize: isMobile ? '9px' : '10px',
+            lineHeight: 1.3,
+            textShadow: '0 1px 2px rgba(0,0,0,0.18)',
+          }}
+        >
+          {summary.detail}
+        </div>
+      )}
+
+      {visibleFeed.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5">
+          {visibleFeed.map(item => (
+            <CompactActivityRow
+              key={item.id}
+              content={item.text}
+              activityType={item.activityType}
+              tool={item.tool}
+              iconPlatform={item.iconPlatform}
+              iconUrl={item.iconUrl}
+              failed={item.failed}
+              dense
+              bare
+            />
+          ))}
+        </div>
+      ) : (
+        !summary.detail && (
           <div
-            className="line-clamp-2"
+            className="mt-1 line-clamp-2"
             style={{
-              padding: '7px 8px',
               color: 'rgba(255,255,255,0.82)',
               fontSize: isMobile ? '9px' : '10px',
               lineHeight: 1.35,
             }}
           >
-            {summary.detail || 'Gathering activity...'}
+            Gathering activity...
           </div>
-        )}
-      </div>
+        )
+      )}
 
       {visibleSubagents.length > 0 && (
-        <div
-          className="mt-2 grid gap-1.5"
-          style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}
-        >
+        <div className="mt-1.5 space-y-1">
           {visibleSubagents.map(agent => (
-            <SubagentTile key={agent.id} agent={agent} compact={isMobile} />
+            <HelperChip key={agent.id} agent={agent} compact={isMobile} />
           ))}
-          {hiddenSubagents > 0 && !isMobile && (
+          {hiddenSubagents > 0 && (
             <div
-              className="flex items-center justify-center rounded-[9px]"
+              className="text-center"
               style={{
-                minHeight: 36,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px dashed rgba(255,255,255,0.25)',
-                color: 'rgba(255,255,255,0.78)',
-                fontSize: '10px',
-                fontWeight: 700,
+                color: 'rgba(255,255,255,0.65)',
+                fontSize: isMobile ? '8px' : '9px',
+                fontWeight: 600,
               }}
             >
-              +{hiddenSubagents} more
+              +{hiddenSubagents} more in Spotlight
             </div>
           )}
         </div>
@@ -943,164 +956,48 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
   );
 }
 
-function ActivityRow({ item, compact }: {
-  item: ClippyActivitySummary['activityFeed'][number];
-  compact: boolean;
-}) {
-  return (
-    <div
-      className="flex min-w-0 items-center gap-1.5 border-b last:border-b-0"
-      style={{
-        padding: compact ? '5px 7px' : '6px 8px',
-        borderColor: 'rgba(255,255,255,0.11)',
-      }}
-    >
-      <KindDot kind={item.kind} status={item.status} />
-      <div className="min-w-0 flex-1">
-        <div
-          className="truncate"
-          style={{
-            color: 'rgba(255,255,255,0.68)',
-            fontSize: compact ? '7px' : '8px',
-            fontWeight: 700,
-            letterSpacing: '0.03em',
-            lineHeight: 1.05,
-            textTransform: 'uppercase',
-          }}
-        >
-          {item.actor}
-        </div>
-        <div
-          className="truncate"
-          style={{
-            color: 'rgba(255,255,255,0.9)',
-            fontSize: compact ? '8px' : '9px',
-            lineHeight: 1.25,
-          }}
-        >
-          {item.text}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SubagentTile({ agent, compact }: {
+function HelperChip({ agent, compact }: {
   agent: ClippyActivitySummary['subagents'][number];
   compact: boolean;
 }) {
+  const isRunning = agent.status === 'running' || agent.status === 'pending';
+  const isFailed = agent.status === 'failed' || agent.status === 'cancelled';
+  const line = agent.currentActivity || agent.goal;
+
   return (
     <div
-      className="min-w-0 rounded-[9px]"
-      style={{
-        padding: compact ? '6px 7px' : '7px 8px',
-        minHeight: compact ? 34 : 46,
-        background: 'rgba(255,255,255,0.13)',
-        border: '1px solid rgba(255,255,255,0.16)',
-      }}
+      className="flex min-w-0 items-center gap-1.5"
+      style={{ padding: compact ? '2px 0' : '3px 0' }}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
-        <StatusDot status={agent.status} />
-        <span
-          className="truncate"
-          style={{
-            color: 'rgba(255,255,255,0.94)',
-            fontSize: compact ? '9px' : '10px',
-            fontWeight: 700,
-            lineHeight: 1.1,
-          }}
-        >
-          {agent.label}
-        </span>
-        {agent.terminalActive && (
-          <span
-            style={{
-              marginLeft: 'auto',
-              color: 'rgba(255,255,255,0.66)',
-              fontSize: compact ? '8px' : '9px',
-              fontWeight: 700,
-            }}
-          >
-            Terminal
-          </span>
-        )}
-      </div>
-      <div
-        className="mt-1 line-clamp-2"
+      <ActivityIcon
+        type={agent.activityType}
+        tool={agent.tool}
+        label={line}
+        className={`h-3 w-3 shrink-0 ${isFailed ? 'text-red-200' : 'text-white/85'}`}
+      />
+      {isRunning && (
+        <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-sky-200/70 -ml-1" />
+      )}
+      <span
+        className="min-w-0 flex-1 truncate"
         style={{
-          color: 'rgba(255,255,255,0.76)',
+          color: 'rgba(255,255,255,0.88)',
           fontSize: compact ? '8px' : '9px',
-          lineHeight: 1.25,
+          lineHeight: 1.2,
         }}
+        title={agent.goal}
       >
-        {agent.currentActivity || agent.goal}
-      </div>
+        {agent.goal}
+      </span>
+      {agent.terminalActive && (
+        <span
+          className="shrink-0 text-[8px] font-semibold uppercase tracking-wide"
+          style={{ color: 'rgba(255,255,255,0.45)' }}
+        >
+          term
+        </span>
+      )}
     </div>
   );
 }
 
-function KindDot({ kind, status }: {
-  kind: ClippyActivityKind;
-  status?: ClippyActivitySummary['activityFeed'][number]['status'];
-}) {
-  const color = kindColor(kind, status);
-  return (
-    <span
-      className="shrink-0 rounded-full"
-      style={{
-        width: 7,
-        height: 7,
-        background: color,
-        boxShadow: `0 0 8px ${color}`,
-      }}
-    />
-  );
-}
-
-function StatusDot({ status }: {
-  status: ClippyActivitySummary['subagents'][number]['status'];
-}) {
-  const color =
-    status === 'running' ? 'rgb(125, 211, 252)' :
-    status === 'pending' ? 'rgb(253, 224, 71)' :
-    status === 'complete' ? 'rgb(134, 239, 172)' :
-    status === 'failed' || status === 'cancelled' ? 'rgb(252, 165, 165)' :
-    'rgba(255,255,255,0.55)';
-  return (
-    <span
-      className="shrink-0 rounded-full"
-      style={{
-        width: 7,
-        height: 7,
-        background: color,
-        boxShadow: `0 0 8px ${color}`,
-      }}
-    />
-  );
-}
-
-function kindColor(kind: ClippyActivityKind, status?: ClippyActivitySummary['activityFeed'][number]['status']): string {
-  if (status === 'failed') return 'rgb(252, 165, 165)';
-  if (status === 'completed') return 'rgb(134, 239, 172)';
-  switch (kind) {
-    case 'terminal':
-      return 'rgb(251, 191, 36)';
-    case 'browser':
-    case 'web':
-      return 'rgb(56, 189, 248)';
-    case 'file':
-      return 'rgb(167, 139, 250)';
-    case 'delegation':
-    case 'background':
-      return 'rgb(45, 212, 191)';
-    case 'desktop':
-      return 'rgb(96, 165, 250)';
-    case 'calendar':
-      return 'rgb(244, 114, 182)';
-    case 'text':
-    case 'agent':
-      return 'rgb(255, 255, 255)';
-    default:
-      return 'rgb(147, 197, 253)';
-  }
-}

@@ -10,7 +10,7 @@ import {
 import type { LocalApp } from '@/services/api';
 
 describe('localAppsToDefinitions', () => {
-  it('uses composed local app icon urls and preserves window sizing', () => {
+  it('uses composed local app icon urls without manifest window sizing', () => {
     const apps: LocalApp[] = [{
       id: 'construct-builder-gallery',
       icon_url: 'data:image/svg+xml,%3Csvg%3Ecomposed%3C%2Fsvg%3E',
@@ -30,13 +30,9 @@ describe('localAppsToDefinitions', () => {
 
     expect(definition.icon).toBe(apps[0].icon_url);
     expect(definition.appMetadata?.appId).toBe('construct-builder-gallery');
-    expect(definition.appMetadata?.ui).toMatchObject({
+    expect(definition.appMetadata?.ui).toEqual({
       type: 'static',
       entry: 'index.html',
-      width: 1120,
-      height: 760,
-      minWidth: 760,
-      minHeight: 560,
     });
   });
 });

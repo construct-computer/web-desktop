@@ -12,8 +12,19 @@ export type { RecognizedPromoCode } from './config';
 // Window defaults
 export const DEFAULT_WINDOW_WIDTH = 800;
 export const DEFAULT_WINDOW_HEIGHT = 600;
-export const MIN_WINDOW_WIDTH = 300;
-export const MIN_WINDOW_HEIGHT = 200;
+/** Desktop open/maximize inset — matches maximizeWindow padding. */
+export const DEFAULT_OPEN_PADDING = 24;
+/** Default open size as a fraction of the usable desktop (centered). */
+export const DEFAULT_OPEN_WIDTH_SCALE = 0.65;
+export const DEFAULT_OPEN_HEIGHT_SCALE = 0.72;
+/**
+ * Horizontal shift applied when centering new windows (fraction of screen width).
+ * Dock is viewport-centered; a left nudge aligns the window frame with the dock
+ * perceptually (right-side desktop widgets add visual weight).
+ */
+export const DEFAULT_OPEN_CENTER_OFFSET_X_RATIO = -0.025;
+export const MIN_WINDOW_WIDTH = 480;
+export const MIN_WINDOW_HEIGHT = 360;
 export const MENUBAR_HEIGHT = 40;
 export const MOBILE_MENUBAR_HEIGHT = 44;
 export const DOCK_HEIGHT = 80; // dock bar height including magnification space

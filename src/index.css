@@ -750,6 +750,153 @@ html.dark .soft-popover {
   background-color: rgba(14, 16, 22, 0.68);
 }
 
+/* Month grid: fully transparent — color comes from the window glass only */
+.calendar-month-pane {
+  background-color: transparent;
+}
+
+/* Event tones — fixed palette, assigned by stable hash of event.id */
+.calendar-event-tone-0 {
+  --calendar-event-bar: #60a5fa;
+  --calendar-event-bg: rgba(96, 165, 250, 0.16);
+}
+.calendar-event-tone-1 {
+  --calendar-event-bar: #a78bfa;
+  --calendar-event-bg: rgba(167, 139, 250, 0.16);
+}
+.calendar-event-tone-2 {
+  --calendar-event-bar: #2dd4bf;
+  --calendar-event-bg: rgba(45, 212, 191, 0.14);
+}
+.calendar-event-tone-3 {
+  --calendar-event-bar: #4ade80;
+  --calendar-event-bg: rgba(74, 222, 128, 0.14);
+}
+.calendar-event-tone-4 {
+  --calendar-event-bar: #fbbf24;
+  --calendar-event-bg: rgba(251, 191, 36, 0.14);
+}
+.calendar-event-tone-5 {
+  --calendar-event-bar: #fb923c;
+  --calendar-event-bg: rgba(251, 146, 60, 0.14);
+}
+.calendar-event-tone-6 {
+  --calendar-event-bar: #f472b6;
+  --calendar-event-bg: rgba(244, 114, 182, 0.14);
+}
+.calendar-event-tone-7 {
+  --calendar-event-bar: #818cf8;
+  --calendar-event-bg: rgba(129, 140, 248, 0.16);
+}
+
+.calendar-event-tone-completed {
+  --calendar-event-bar: var(--color-text-subtle);
+  --calendar-event-bg: color-mix(in srgb, var(--color-item-hover) 80%, transparent);
+}
+
+/* Shared flat accent rail — grid, sidebar, and list use the same geometry */
+.calendar-event-accent-rail {
+  width: 3px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border-radius: 0;
+  background-color: var(--calendar-event-bar);
+}
+
+.calendar-event-preview-timed {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  min-height: 1.125rem;
+}
+
+.calendar-event-preview-timed .calendar-event-preview-body {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 0 4px 4px 0;
+  background: var(--calendar-event-bg);
+}
+
+.calendar-event-preview-allday {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 1.125rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--calendar-event-bar) 25%, var(--color-border));
+  background: var(--calendar-event-bg);
+  color: var(--color-text);
+}
+
+/* Square left edge so accent rail matches month-grid preview chips */
+.calendar-event-sidebar-card {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+/* Rail uses .calendar-event-accent-rail in markup */
+
+.calendar-event-sidebar-card .calendar-event-sidebar-body {
+  flex: 1;
+  min-width: 0;
+  border-radius: 0 6px 6px 0;
+  border: 1px solid var(--color-border);
+  background-color: var(--surface-card-bg);
+  transition: background-color 0.15s ease;
+}
+
+.calendar-event-sidebar-card:hover .calendar-event-sidebar-body {
+  background-color: color-mix(in srgb, var(--color-item-hover) 55%, var(--surface-card-bg) 45%);
+}
+
+/* List rows use .calendar-event-accent-rail in markup */
+
+.calendar-event-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  background-color: var(--surface-control-bg);
+}
+
+.calendar-day-cell {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 35%, transparent);
+}
+
+.calendar-day-cell:hover {
+  background-color: var(--color-item-hover);
+}
+
+.calendar-day-cell.is-selected {
+  background-color: var(--color-accent-muted);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* gap-px + --color-border background painted a milky grid over the whole month */
+.calendar-month-grid {
+  background-color: transparent;
+  gap: 0;
+}
+
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   :root {
     --surface-app-bg: rgba(255, 255, 255, 0.86);
@@ -776,6 +923,7 @@ html.dark .soft-popover {
     --glass-popover-bg: rgba(18, 18, 20, 0.98);
     --glass-scrim-bg: rgba(0, 0, 0, 0.58);
   }
+
 }
 
 /* ═══════════════════════════════════════════════

@@ -29,6 +29,11 @@ export interface ClippyActivityItem {
   kind: ClippyActivityKind;
   timestamp: number;
   status?: 'running' | 'completed' | 'failed';
+  tool?: string;
+  activityType?: ChatMessage['activityType'];
+  iconPlatform?: string;
+  iconUrl?: string;
+  failed?: boolean;
 }
 
 export interface ClippySubagentItem {
@@ -39,6 +44,10 @@ export interface ClippySubagentItem {
   currentActivity: string;
   activityKind: ClippyActivityKind;
   terminalActive: boolean;
+  tool?: string;
+  activityType?: ChatMessage['activityType'];
+  iconPlatform?: string;
+  iconUrl?: string;
 }
 
 export interface ClippyActivitySummary {
@@ -56,8 +65,10 @@ export interface ClippyActivitySummary {
   subagents: ClippySubagentItem[];
 }
 
-const MAX_FEED_ITEMS = 5;
+const MAX_FEED_ITEMS = 3;
+const MAX_FEED_ITEMS_MOBILE = 2;
 const MAX_SUBAGENTS = 6;
+const THINKING_MAX = 56;
 
 function isRunningOperation(op: TrackedOperation): boolean {
   return op.status === 'running' || op.status === 'aggregating';
@@ -65,6 +76,29 @@ function isRunningOperation(op: TrackedOperation): boolean {
 
 function matchesSession(op: TrackedOperation, activeSessionKey: string): boolean {
   return !op.sessionKey || op.sessionKey === activeSessionKey;
+}
+
+function coerceActivityType(
+  activityType?: string,
+): ChatMessage['activityType'] | undefined {
+  switch (activityType) {
+    case 'browser':
+    case 'web':
+    case 'terminal':
+    case 'file':
+    case 'desktop':
+    case 'calendar':
+    case 'tool':
+    case 'delegation':
+    case 'background':
+    case 'delegation-group':
+    case 'consultation-group':
+    case 'background-group':
+    case 'orchestration-group':
+      return activityType;
+    default:
+      return undefined;
+  }
 }
 
 function normalizeKind(kind: string | undefined): ClippyActivityKind {
@@ -119,10 +153,29 @@ function terminalActivity(run: TerminalRun, actor: string): ClippyActivityItem {
     kind: 'terminal',
     timestamp: run.endedAt || run.startedAt,
     status: run.status,
+    activityType: 'terminal',
+    tool: 'terminal',
   };
 }
 
-export function useClippyActivitySummary(): ClippyActivitySummary {
+function activityFromMessage(message: ChatMessage, actor: string, idPrefix: string): ClippyActivityItem | null {
+  if (!message.content.trim()) return null;
+  return {
+    id: `${idPrefix}:${timestampOf(message)}`,
+    actor,
+    text: truncate(message.content, 86),
+    kind: normalizeKind(message.activityType),
+    timestamp: timestampOf(message),
+    status: message.activityStatus === 'failed' || message.isError ? 'failed' : undefined,
+    tool: message.tool,
+    activityType: message.activityType,
+    iconPlatform: message.iconPlatform,
+    iconUrl: message.iconUrl,
+    failed: message.activityStatus === 'failed' || message.isError,
+  };
+}
+
+export function useClippyActivitySummary(mobile = false): ClippyActivitySummary {
   const { stateLabel, scrollText, isActive, isIdle } = useAgentStateLabel();
   const chatMessages = useComputerStore(s => s.chatMessages);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
@@ -171,6 +224,10 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
         currentActivity: truncate(agent.currentActivity || lastActivity?.text || agent.goal || 'Starting up', 82),
         activityKind: normalizeKind(lastActivity?.activityType),
         terminalActive: runningTerminal,
+        tool: lastActivity?.tool,
+        activityType: coerceActivityType(lastActivity?.activityType),
+        iconPlatform: lastActivity?.iconPlatform,
+        iconUrl: lastActivity?.iconUrl,
       };
     });
 
@@ -185,37 +242,40 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
       { running: 0, complete: 0, failed: 0, total: 0 },
     );
 
+    const hasSubagents = focusedSubagents.length > 0;
     const feed: ClippyActivityItem[] = [];
+    const feedCap = mobile ? MAX_FEED_ITEMS_MOBILE : MAX_FEED_ITEMS;
 
     const recentChatActivity = chatMessages
       .filter(message => message.role === 'activity' && !message.operationId)
       .slice(-8);
     for (const [index, message] of recentChatActivity.entries()) {
-      if (!message.content.trim()) continue;
-      feed.push({
-        id: `main:${timestampOf(message)}:${index}`,
-        actor: 'Main',
-        text: truncate(message.content, 86),
-        kind: normalizeKind(message.activityType),
-        timestamp: timestampOf(message),
-      });
+      const item = activityFromMessage(message, 'Main', `main:${index}`);
+      if (item) feed.push(item);
     }
 
-    for (const agent of focusedSubagents) {
-      const latest = agent.activities[agent.activities.length - 1];
-      if (!latest?.text.trim()) continue;
-      feed.push({
-        id: `subagent:${agent.id}:${latest.timestamp}`,
-        actor: agent.label || 'Helper',
-        text: truncate(latest.text, 86),
-        kind: normalizeKind(latest.activityType),
-        timestamp: latest.timestamp,
-      });
+    if (!hasSubagents) {
+      for (const agent of focusedSubagents) {
+        const latest = agent.activities[agent.activities.length - 1];
+        if (!latest?.text.trim()) continue;
+        feed.push({
+          id: `subagent:${agent.id}:${latest.timestamp}`,
+          actor: agent.label || 'Helper',
+          text: truncate(latest.text, 86),
+          kind: normalizeKind(latest.activityType),
+          timestamp: latest.timestamp,
+          tool: latest.tool,
+          activityType: coerceActivityType(latest.activityType),
+          iconPlatform: latest.iconPlatform,
+          iconUrl: latest.iconUrl,
+        });
+      }
     }
 
     for (const run of runs) {
       const belongsToFocusedSubagent = !!run.subagentId && subagentIds.has(run.subagentId);
       const belongsToActiveSession = run.sessionKey === activeSessionKey || (!run.sessionKey && !run.subagentId);
+      if (hasSubagents && belongsToFocusedSubagent) continue;
       if (!belongsToFocusedSubagent && !belongsToActiveSession) continue;
 
       const agent = run.subagentId
@@ -227,16 +287,23 @@ export function useClippyActivitySummary(): ClippyActivitySummary {
     const activityFeed = feed
       .sort((a, b) => b.timestamp - a.timestamp)
       .filter((item, index, items) => items.findIndex(other => other.actor === item.actor && other.text === item.text) === index)
-      .slice(0, MAX_FEED_ITEMS);
+      .slice(0, feedCap);
+
+    const thinkingDetail = scrollText ? truncate(scrollText, THINKING_MAX) : '';
+    const topFeed = activityFeed[0]?.text?.toLowerCase() ?? '';
+    const detail =
+      thinkingDetail && topFeed && thinkingDetail.toLowerCase().includes(topFeed.slice(0, 24))
+        ? ''
+        : thinkingDetail;
 
     return {
       headline: stateLabel,
-      detail: scrollText,
+      detail,
       isActive,
       isIdle,
       counts,
       activityFeed,
       subagents,
     };
-  }, [activeSessionKey, chatMessages, isActive, isIdle, operations, scrollText, stateLabel, terminalRuns]);
+  }, [activeSessionKey, chatMessages, isActive, isIdle, mobile, operations, scrollText, stateLabel, terminalRuns]);
 }

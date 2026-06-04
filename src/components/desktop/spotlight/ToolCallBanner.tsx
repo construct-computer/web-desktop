@@ -6,6 +6,8 @@ import { ActivityIconFrame } from './ActivityIconFrame';
 import { memoryActivityTitle, memoryActivitySummary } from './ChatEventRow';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
+import { CompactActivityRow } from './CompactActivityRow';
+import { formatActivityLine } from './formatActivityLine';
 import { mergeBrowserRepeats } from './browserActivityUtils';
 import { useElapsed } from './hooks';
 import { formatDuration } from './utils';
@@ -113,6 +115,26 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     ? subAgents.length + activities.length
     : activities.length;
 
+  const collapsedPreview = useMemo(() => {
+    if (expanded) return null;
+    if (hasSubAgents && subAgents.length > 0) {
+      const running = subAgents.find(a => a.status === 'running' || a.status === 'pending');
+      const agent = running ?? subAgents[subAgents.length - 1];
+      return { kind: 'subagent' as const, text: agent.goal, activityType: undefined, tool: undefined };
+    }
+    const last = activities[activities.length - 1];
+    if (!last) return null;
+    return {
+      kind: 'activity' as const,
+      text: formatActivityLine(last.content, { activityType: last.activityType }),
+      activityType: last.activityType,
+      tool: last.tool,
+      iconPlatform: last.iconPlatform,
+      iconUrl: last.iconUrl,
+      failed: last.activityStatus === 'failed' || last.isError,
+    };
+  }, [activities, expanded, hasSubAgents, subAgents]);
+
   // Auto-scroll to bottom of the tool list when new items appear
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -133,10 +155,15 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
           ? <ChevronDown className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />
           : <ChevronRight className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />}
         <Clock className="w-3.5 h-3.5 text-blue-300/70 shrink-0" />
-        <span className="text-[12px] text-[var(--color-text-muted)]/60 font-medium">
+        <span className="min-w-0 flex-1 text-[12px] text-[var(--color-text-muted)]/60 font-medium truncate">
           {isRunning ? 'Working' : 'Worked'}{durationText ? ` for ${durationText}` : ''}
+          {collapsedPreview && (
+            <span className="text-[var(--color-text-muted)]/35 font-normal">
+              {' · '}{collapsedPreview.text}
+            </span>
+          )}
         </span>
-        {!expanded && (
+        {!expanded && !collapsedPreview && (
           <span className="text-[10px] text-[var(--color-text-muted)]/30 ml-auto shrink-0">
             {hasSubAgents
               ? `${subAgents.length} helper${subAgents.length !== 1 ? 's' : ''}`
@@ -159,7 +186,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               />
             </div>
           )}
-          <div ref={scrollRef} className="mt-2 max-h-[200px] overflow-y-auto pr-0.5">
+          <div ref={scrollRef} className="mt-2 max-h-[min(200px,40dvh)] overflow-y-auto pr-0.5">
             {hasSubAgents && timeline ? (
               /* ── Merged timeline: sub-agents + main activities ── */
               timeline.map((entry, i) => {
@@ -191,28 +218,19 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     />
                   );
                 }
-                const isTerminal = act.activityType === 'terminal';
                 const isFailed = act.activityStatus === 'failed' || act.isError;
                 return (
-                  <div key={key} className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
-                    <ActivityIconBadge
-                      type={act.activityType}
-                      tool={act.tool}
-                      label={act.content}
-                      iconPlatform={act.iconPlatform}
-                      iconUrl={act.iconUrl}
-                      failed={isFailed}
-                      size="sm"
-                    />
-                    <span className={`text-[12px] truncate flex-1 ${isTerminal ? 'font-mono' : ''} ${isFailed ? 'text-red-300/75' : 'text-[var(--color-text-muted)]/50'}`}>
-                      {act.content}
-                    </span>
-                    {dur && (
-                      <span className="text-[10px] text-[var(--color-text-muted)]/25 shrink-0 tabular-nums">
-                        {dur}
-                      </span>
-                    )}
-                  </div>
+                  <CompactActivityRow
+                    key={key}
+                    content={act.content}
+                    activityType={act.activityType}
+                    tool={act.tool}
+                    iconPlatform={act.iconPlatform}
+                    iconUrl={act.iconUrl}
+                    failed={isFailed}
+                    duration={dur}
+                    className="hover:bg-white/[0.025]"
+                  />
                 );
               })
             )}
@@ -287,21 +305,16 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
 /* ── Flat activity line (for main-agent activities in merged timeline) ── */
 
 function FlatActivityLine({ activity }: { activity: ChatMessage }) {
-  const isTerminal = activity.activityType === 'terminal';
   return (
-    <div className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
-      <ActivityIconBadge
-        type={activity.activityType}
-        tool={activity.tool}
-        label={activity.content}
-        iconPlatform={activity.iconPlatform}
-        iconUrl={activity.iconUrl}
-        size="sm"
-      />
-      <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
-        {activity.content}
-      </span>
-    </div>
+    <CompactActivityRow
+      content={activity.content}
+      activityType={activity.activityType}
+      tool={activity.tool}
+      iconPlatform={activity.iconPlatform}
+      iconUrl={activity.iconUrl}
+      failed={activity.activityStatus === 'failed' || activity.isError}
+      className="hover:bg-white/[0.025] text-[var(--color-text-muted)]/50"
+    />
   );
 }
 

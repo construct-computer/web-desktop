@@ -148,7 +148,7 @@ export const STORAGE_KEYS = {
   nativePushDeviceId: 'construct:nativePushDeviceId',
 
   // Window state
-  windowPositions: 'construct:windows',
+  windowPositions: 'construct:windows:v2',
   openAppWindows: 'construct:openAppWindows',
 
   // Chat

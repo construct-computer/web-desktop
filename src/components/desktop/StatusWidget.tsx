@@ -73,6 +73,9 @@ export function StatusWidget() {
   const { containerStyle, containerProps } = useDraggableWidget('status', 'tr');
   const { className: dragClassName, ...dragProps } = containerProps;
   const userPlan = useAuthStore((s) => s.user?.plan);
+  const agentDisplayName = useComputerStore(
+    (s) => s.computer?.config?.identityName?.trim() || 'Construct',
+  );
 
   // Agent status — only the session the user is viewing (not background scheduled runs).
   const connected = useComputerStore((s) => s.agentConnected);
@@ -105,8 +108,6 @@ export function StatusWidget() {
     : running
       ? (thinking && thinking.length < 30 ? thinking : 'Working…')
       : 'Idle';
-
-  const dotColor = running ? '#4ade80' : connected ? 'rgba(255,255,255,0.25)' : '#f87171';
 
   // Usage stats
   const [usage, setUsage] = useState<CurrentUsage | null>(null);
@@ -181,19 +182,27 @@ export function StatusWidget() {
         className="px-5 py-4 rounded-2xl w-full glass-window border border-black/10 dark:border-white/10 shadow-[var(--shadow-window)]"
       >
       {/* ── Agent status ── */}
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Construct
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="min-w-0 truncate text-[13px] font-semibold"
+          style={{ color: 'rgba(255,255,255,0.82)' }}
+          title={agentDisplayName}
+        >
+          {agentDisplayName}
         </span>
-        <div className="flex items-center gap-1.5">
-          <span
-            className={`inline-block w-[6px] h-[6px] rounded-full ${running ? 'animate-pulse' : ''}`}
-            style={{ backgroundColor: dotColor }}
-          />
-          <span className="text-[13px] font-medium truncate max-w-[120px]" style={{ color: 'rgba(255,255,255,0.7)' }}>
-            {statusText}
-          </span>
-        </div>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${running ? 'animate-pulse' : ''}`}
+          style={{
+            color: running ? '#22d3ee' : connected ? 'rgba(255,255,255,0.65)' : '#f87171',
+            background: running
+              ? 'rgba(34,211,238,0.12)'
+              : connected
+                ? 'rgba(255,255,255,0.08)'
+                : 'rgba(248,113,113,0.12)',
+          }}
+        >
+          {statusText}
+        </span>
       </div>
 
       {/* Recent tools */}

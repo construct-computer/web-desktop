@@ -296,6 +296,9 @@ function authRequestActions(records: AuthRequestRecord[], hiddenSourceIds: Set<s
 
 export function AutopilotPanel() {
   const agentRunning = useComputerStore((s) => s.agentRunning);
+  const agentDisplayName = useComputerStore(
+    (s) => s.computer?.config?.identityName?.trim() || 'Construct',
+  );
   const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
   const chatSessions = useComputerStore((s) => s.chatSessions);
   const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
@@ -590,19 +593,6 @@ export function AutopilotPanel() {
       : mode === 'idle'
         ? 'Ready. No active task is running.'
         : summary;
-  const activeHeadline = (() => {
-    if (!hasActiveRun) return null;
-    if (currentAction?.title && !isGenericActionTitle(currentAction.title)) return currentAction.title;
-    if (currentWorkOrder?.objective) return currentWorkOrder.objective;
-    if (currentGoal?.title) return currentGoal.title;
-    if (currentTask?.title) return currentTask.title;
-    return formatTool(currentTool);
-  })();
-  const headline = attention
-    ? hasGroupedAuth ? 'Connections needed' : attention.title
-    : hasActiveRun
-      ? activeHeadline || formatTool(currentTool)
-      : copy.label;
   const footerLabel = attention
     ? authAttentionItems.length
       ? `${authAttentionItems.length} action${authAttentionItems.length === 1 ? '' : 's'}`
@@ -1018,11 +1008,12 @@ export function AutopilotPanel() {
               <ModeIcon size={15} strokeWidth={2.2} className={copy.spin ? 'animate-spin' : undefined} />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.38)' }}>
-                Construct
-              </div>
-              <div className="text-[13px] font-medium truncate max-w-[160px]" style={{ color: 'rgba(255,255,255,0.78)' }}>
-                {clampText(headline, 46)}
+              <div
+                className="truncate text-[13px] font-semibold tracking-wide"
+                style={{ color: 'rgba(255,255,255,0.82)' }}
+                title={agentDisplayName}
+              >
+                {agentDisplayName}
               </div>
             </div>
           </div>

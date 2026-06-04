@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -19,7 +19,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, FreshnessText, Input, Label, RefreshButton, Separator, Select, StatusBanner } from '@/components/ui';
+import { Button, FreshnessText, Input, Label, RefreshButton, Select, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
 import {
   listAgentCalendarEvents,
@@ -30,6 +30,16 @@ import {
 } from '@/services/api';
 import type { WindowConfig } from '@/types';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import {
+  formatEventSidebarTime,
+  formatPreviewTime,
+  formatRecurrenceLabel,
+  getEventToneClass,
+  getEventsForCalendarDay,
+  getMonthCellPreviewLimit,
+  sliceMonthCellPreviews,
+  sortEventsForDayCell,
+} from './calendarMonthUtils';
 
 // ── Helpers ──
 
@@ -170,6 +180,9 @@ function expandRecurrence(
 
     // Advance to next occurrence
     switch (freq) {
+      case 'HOURLY':
+        current = new Date(current.getTime() + interval * 60 * 60 * 1000);
+        break;
       case 'DAILY':
         current = new Date(current);
         current.setDate(current.getDate() + interval);
@@ -244,18 +257,6 @@ function toLocalDateString(date: Date): string {
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// Event colors based on index
-const EVENT_COLORS = [
-  'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30',
-  'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30',
-  'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
-  'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30',
-  'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30',
-  'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-500/30',
-];
-
-const COMPLETED_COLOR = 'bg-neutral-500/10 text-neutral-600 dark:text-neutral-300 border-neutral-400/20';
-
 /**
  * Check if a specific event occurrence is completed.
  * For non-recurring events: checks status === 'completed'.
@@ -265,11 +266,6 @@ function isOccurrenceCompleted(event: AgentCalendarEvent): boolean {
   if (event.status === 'completed' && !event.recurrence) return true;
   if (event.completedOccurrences && event.completedOccurrences.includes(event.start)) return true;
   return false;
-}
-
-function getEventColor(event: AgentCalendarEvent, idx: number): string {
-  if (isOccurrenceCompleted(event)) return COMPLETED_COLOR;
-  return EVENT_COLORS[idx % EVENT_COLORS.length];
 }
 
 /** Format source info into a human-readable label + icon for display. */
@@ -651,27 +647,14 @@ export function CalendarWindow(props: CalendarWindowProps) {
     }
   };
 
-  // Get events for a given day
-  const getEventsForDay = (date: Date): AgentCalendarEvent[] => {
-    return events.filter(e => {
-      const start = new Date(e.start);
-      const end = new Date(e.end);
-      // For all-day events, end is exclusive
-      if (e.allDay) {
-        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const dayEnd = new Date(dayStart.getTime() + 86400000);
-        return start < dayEnd && end > dayStart;
-      }
-      return isSameDay(start, date) || (start <= date && end >= date);
-    });
-  };
+  const getEventsForDay = (date: Date) => getEventsForCalendarDay(date, events);
 
-  const selectedDayEvents = getEventsForDay(selectedDate);
+  const selectedDayEvents = sortEventsForDayCell(getEventsForDay(selectedDate));
 
   return (
-    <div className="flex flex-col h-full surface-app select-none">
+    <div className="calendar-app relative flex flex-col h-full select-none text-[var(--color-text)]">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-titlebar)]">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
         <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">
           Today
         </Button>
@@ -679,7 +662,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
           <Button variant="ghost" size="icon-sm" onClick={handlePrevMonth}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <span className="text-sm font-medium min-w-[110px] sm:min-w-[140px] text-center">
+          <span className="text-sm sm:text-base font-medium sm:font-semibold min-w-[110px] sm:min-w-[140px] text-center">
             {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
           </span>
           <Button variant="ghost" size="icon-sm" onClick={handleNextMonth}>
@@ -687,20 +670,26 @@ export function CalendarWindow(props: CalendarWindowProps) {
           </Button>
         </div>
         <div className="flex-1 min-w-0" />
-        <div className="flex items-center gap-1 surface-control rounded-md border border-[var(--color-border)] p-0.5">
+        <div className="flex items-center gap-0.5">
           <button
+            type="button"
             className={cn(
-              'px-2 py-1 text-xs rounded transition-colors min-h-[28px]',
-              view === 'month' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]'
+              'px-2.5 py-1 text-xs rounded-md transition-colors min-h-[28px]',
+              view === 'month'
+                ? 'bg-[var(--color-accent)] text-white font-medium'
+                : 'text-[var(--color-text)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]',
             )}
             onClick={() => setView('month')}
           >
             Month
           </button>
           <button
+            type="button"
             className={cn(
-              'px-2 py-1 text-xs rounded transition-colors min-h-[28px]',
-              view === 'list' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]'
+              'px-2.5 py-1 text-xs rounded-md transition-colors min-h-[28px]',
+              view === 'list'
+                ? 'bg-[var(--color-accent)] text-white font-medium'
+                : 'text-[var(--color-text)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]',
             )}
             onClick={() => setView('list')}
           >
@@ -748,51 +737,25 @@ export function CalendarWindow(props: CalendarWindowProps) {
       ) : view === 'month' ? (
         <div className={`flex ${isMobile ? 'flex-col' : ''} flex-1 overflow-hidden`}>
           {/* Month grid */}
-          <div className={`flex-1 flex flex-col min-w-0 ${isMobile ? 'max-h-[60%]' : ''} overflow-y-auto`}>
+          <div className={`calendar-month-pane flex-1 flex flex-col min-w-0 min-h-0 ${isMobile ? 'max-h-[60%]' : ''} overflow-y-auto`}>
             <MonthGrid
               currentMonth={currentMonth}
               selectedDate={selectedDate}
               events={events}
+              isMobile={isMobile}
               onDateClick={handleDateClick}
-              onDateDoubleClick={handleNewEvent}
             />
           </div>
 
-          {/* Day detail sidebar */}
-          <div className={`${isMobile ? 'w-full border-t flex-1' : 'w-[220px] border-l'} border-[var(--color-border)] flex flex-col min-h-0 overflow-hidden`}>
-            <div className="px-3 py-2 border-b border-[var(--color-border)]">
-              <div className="text-xs text-[var(--color-text-muted)]">
-                {selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}
-              </div>
-              <div className="text-lg font-semibold">
-                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-              {selectedDayEvents.length === 0 ? (
-                <p className="text-xs text-[var(--color-text-muted)] text-center py-4">
-                  No events
-                </p>
-              ) : (
-                selectedDayEvents.map((event, idx) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    colorClass={getEventColor(event, idx)}
-                    onEdit={() => handleEditEvent(event)}
-                    onDelete={() => handleDelete(event.id)}
-                    isDeleting={deleting === event.id}
-                  />
-                ))
-              )}
-            </div>
-            <div className="p-2 border-t border-[var(--color-border)]">
-              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => handleNewEvent()}>
-                <Plus className="w-3 h-3 mr-1" />
-                Add event
-              </Button>
-            </div>
-          </div>
+          <DayEventsSidebar
+            selectedDate={selectedDate}
+            events={selectedDayEvents}
+            isMobile={isMobile}
+            onEdit={handleEditEvent}
+            onDelete={handleDelete}
+            onNew={() => handleNewEvent()}
+            deleting={deleting}
+          />
         </div>
       ) : (
         /* List view */
@@ -815,6 +778,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         saving={saving}
         isEdit={!!editingEvent}
         error={saveError}
+        isMobile={isMobile}
       />
       <ConfirmDialog
         open={!!confirmDelete}
@@ -829,20 +793,59 @@ export function CalendarWindow(props: CalendarWindowProps) {
   );
 }
 
+// ── Month cell event preview ──
+
+function MonthEventPreview({
+  event,
+  variant,
+  completed,
+}: {
+  event: AgentCalendarEvent;
+  variant: 'timed' | 'allDay';
+  completed: boolean;
+}) {
+  const toneClass = getEventToneClass(event, completed);
+
+  if (variant === 'allDay') {
+    return (
+      <div className={cn('calendar-event-preview-allday text-[10px] pointer-events-none', toneClass)}>
+        <CalendarDays className="w-2.5 h-2.5 shrink-0 opacity-70" />
+        <span className={cn('truncate font-medium', completed && 'line-through opacity-60')}>
+          {event.summary}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('calendar-event-preview-timed pointer-events-none', toneClass)}>
+      <div className="calendar-event-accent-rail" aria-hidden />
+      <div className="calendar-event-preview-body">
+        <span className={cn('truncate flex-1 text-[10px] font-medium leading-tight text-[var(--color-text)]', completed && 'line-through opacity-60')}>
+          {event.summary}
+        </span>
+        <span className="shrink-0 text-[10px] tabular-nums text-[var(--color-text-muted)] leading-tight">
+          {formatPreviewTime(event.start)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Month Grid ──
 
 function MonthGrid({
   currentMonth,
   selectedDate,
   events,
+  isMobile,
   onDateClick,
-  onDateDoubleClick,
 }: {
   currentMonth: Date;
   selectedDate: Date;
   events: AgentCalendarEvent[];
+  isMobile: boolean;
   onDateClick: (d: Date) => void;
-  onDateDoubleClick: (d: Date) => void;
 }) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -870,22 +873,10 @@ function MonthGrid({
     cells.push({ date: new Date(year, month + 1, d), isCurrentMonth: false });
   }
 
-  // Get event dots for a day
-  const getEventDots = (date: Date): AgentCalendarEvent[] => {
-    return events.filter(e => {
-      const start = new Date(e.start);
-      const end = new Date(e.end);
-      if (e.allDay) {
-        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const dayEnd = new Date(dayStart.getTime() + 86400000);
-        return start < dayEnd && end > dayStart;
-      }
-      return isSameDay(start, date);
-    });
-  };
+  const previewLimit = getMonthCellPreviewLimit(isMobile);
 
   return (
-    <div className="flex flex-col flex-1 p-2">
+    <div className="flex flex-col flex-1 p-2 min-h-0">
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {DAY_NAMES.map(d => (
@@ -896,50 +887,48 @@ function MonthGrid({
       </div>
 
       {/* Calendar cells */}
-      <div className="grid grid-cols-7 flex-1 gap-px">
+      <div className="calendar-month-grid grid grid-cols-7 flex-1 rounded-md overflow-hidden">
         {cells.map(({ date, isCurrentMonth }, i) => {
           const isToday = isSameDay(date, today);
           const isSelected = isSameDay(date, selectedDate);
-          const dayEvents = getEventDots(date);
+          const dayEvents = sortEventsForDayCell(getEventsForCalendarDay(date, events));
+          const { previews, overflowCount } = sliceMonthCellPreviews(dayEvents, previewLimit);
 
           return (
             <button
               key={i}
+              type="button"
               className={cn(
-                'relative flex flex-col items-center pt-0.5 rounded-md transition-colors min-h-[48px]',
-                'hover:bg-[var(--color-accent-muted)]',
-                !isCurrentMonth && 'opacity-30',
-                isSelected && 'bg-[var(--color-accent-muted)] ring-1 ring-[var(--color-accent)]',
+                'calendar-day-cell relative flex flex-col items-stretch p-1 transition-colors',
+                isMobile ? 'min-h-[64px]' : 'min-h-[80px]',
+                !isCurrentMonth && 'opacity-50 text-[var(--color-text-subtle)]',
+                isSelected && 'is-selected',
               )}
               onClick={() => onDateClick(date)}
-              onDoubleClick={() => onDateDoubleClick(date)}
             >
-              <span
-                className={cn(
-                  'text-xs w-6 h-6 flex items-center justify-center rounded-full',
-                  isToday && 'bg-[var(--color-accent)] text-white font-bold',
-                )}
-              >
-                {date.getDate()}
-              </span>
-              {/* Event dots */}
-              {dayEvents.length > 0 && (
-                <div className="flex gap-0.5 mt-0.5 flex-wrap justify-center max-w-full px-0.5">
-                  {dayEvents.slice(0, 3).map((evt, idx) => {
-                    const dotColors = ['bg-violet-500', 'bg-blue-500', 'bg-emerald-500'];
-                    return (
-                      <div
-                        key={idx}
-                        className={cn(
-                          'w-1 h-1 rounded-full',
-                          isOccurrenceCompleted(evt) ? 'bg-neutral-400 dark:bg-neutral-600' : dotColors[idx],
-                        )}
-                      />
-                    );
-                  })}
-                  {dayEvents.length > 3 && (
-                    <span className="text-[8px] text-[var(--color-text-muted)]">
-                      +{dayEvents.length - 3}
+              <div className="flex justify-end shrink-0">
+                <span
+                  className={cn(
+                    'text-xs w-6 h-6 flex items-center justify-center rounded-full',
+                    isToday && 'bg-[var(--color-accent)] text-white font-bold',
+                  )}
+                >
+                  {date.getDate()}
+                </span>
+              </div>
+              {previews.length > 0 && (
+                <div className="flex flex-col items-stretch gap-1 mt-0.5 flex-1 min-h-0 overflow-hidden w-full pointer-events-none">
+                  {previews.map((evt) => (
+                    <MonthEventPreview
+                      key={`${evt.id}:${evt.start}`}
+                      event={evt}
+                      variant={evt.allDay ? 'allDay' : 'timed'}
+                      completed={isOccurrenceCompleted(evt)}
+                    />
+                  ))}
+                  {overflowCount > 0 && (
+                    <span className="text-[9px] text-[var(--color-text-muted)] pl-0.5">
+                      +{overflowCount} more
                     </span>
                   )}
                 </div>
@@ -952,77 +941,183 @@ function MonthGrid({
   );
 }
 
-// ── Event Card (sidebar) ──
+// ── Day events sidebar (month view) ──
 
-function EventCard({
+function DayEventsSidebar({
+  selectedDate,
+  events,
+  isMobile,
+  onEdit,
+  onDelete,
+  onNew,
+  deleting,
+}: {
+  selectedDate: Date;
+  events: AgentCalendarEvent[];
+  isMobile: boolean;
+  onEdit: (e: AgentCalendarEvent) => void;
+  onDelete: (id: string) => void;
+  onNew: () => void;
+  deleting: string | null;
+}) {
+  const isToday = isSameDay(selectedDate, new Date());
+  const eventLabel = events.length === 1 ? '1 event' : `${events.length} events`;
+
+  return (
+    <div
+      className={cn(
+        'border-[var(--color-border)] flex flex-col min-h-0 overflow-hidden surface-sidebar',
+        isMobile ? 'w-full border-t flex-1' : 'w-[min(100%,280px)] shrink-0 border-l',
+      )}
+    >
+      <div className="px-3 py-3 border-b border-[var(--color-border)]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+              {selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}
+              {isToday && (
+                <span className="ml-1.5 normal-case tracking-normal text-[var(--color-accent)]">· Today</span>
+              )}
+            </p>
+            <h2 className="text-xl font-semibold leading-tight mt-0.5">
+              {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+            </h2>
+          </div>
+          {events.length > 0 && (
+            <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)]">
+              {eventLabel}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+        {events.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 px-3 text-center">
+            <CalendarDays className="w-8 h-8 text-[var(--color-text-muted)] opacity-50 mb-2" />
+            <p className="text-sm font-medium text-[var(--color-text-muted)]">Nothing scheduled</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-[200px]">
+              Add an event using the button below.
+            </p>
+          </div>
+        ) : (
+          events.map((event) => (
+            <DayEventCard
+              key={`${event.id}:${event.start}`}
+              event={event}
+              isMobile={isMobile}
+              onEdit={() => onEdit(event)}
+              onDelete={() => onDelete(event.id)}
+              isDeleting={deleting === event.id}
+            />
+          ))
+        )}
+      </div>
+
+      <div className="p-2 border-t border-[var(--color-border)]">
+        <Button variant="default" size="sm" className="w-full text-xs" onClick={onNew}>
+          <Plus className="w-3.5 h-3.5 mr-1.5" />
+          Add event
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function EventMetaChip({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Clock;
+  label: string;
+}) {
+  return (
+    <span className="calendar-event-meta-chip">
+      <Icon className="w-2.5 h-2.5 shrink-0 opacity-70" />
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+function DayEventCard({
   event,
-  colorClass,
+  isMobile,
   onEdit,
   onDelete,
   isDeleting,
 }: {
   event: AgentCalendarEvent;
-  colorClass: string;
+  isMobile: boolean;
   onEdit: () => void;
   onDelete: () => void;
   isDeleting: boolean;
 }) {
-  const isCompleted = isOccurrenceCompleted(event);
+  const completed = isOccurrenceCompleted(event);
+  const toneClass = getEventToneClass(event, completed);
+  const recurrence = formatRecurrenceLabel(event.recurrence);
+  const source = formatSource(event);
+  const showActions = isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100';
 
   return (
-    <div className={cn('rounded-md border p-2 text-xs group', colorClass)}>
-      <div className="flex items-start justify-between gap-1">
-        <div className="flex items-center gap-1 min-w-0">
-          {isCompleted && <Check className="w-3 h-3 shrink-0 text-neutral-400" />}
-          <span className={cn('font-medium truncate', isCompleted && 'line-through')}>{event.summary}</span>
-        </div>
-        <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10" onClick={onEdit}>
-            <Pencil className="w-3 h-3" />
-          </button>
-          <button
-            className="p-0.5 rounded hover:bg-red-500/20 text-red-600 dark:text-red-400"
-            onClick={onDelete}
-            disabled={isDeleting}
-          >
-            {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-          </button>
-        </div>
-      </div>
-      <div className="flex items-center gap-1 mt-1 text-[10px] opacity-80">
-        <Clock className="w-2.5 h-2.5" />
-        <span>{event.allDay ? 'All day' : formatDateRange(event)}</span>
-      </div>
-      {event.location && (
-        <div className="flex items-center gap-1 mt-0.5 text-[10px] opacity-80">
-          <MapPin className="w-2.5 h-2.5" />
-          <span className="truncate">{event.location}</span>
-        </div>
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onEdit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
+      className={cn(
+        'calendar-event-sidebar-card group text-left w-full cursor-pointer',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-md',
+        toneClass,
+        completed && 'opacity-70',
       )}
-      {event.recurrence && (
-        <div className="flex items-center gap-1 mt-0.5 text-[10px] opacity-80">
-          <Repeat className="w-2.5 h-2.5" />
-          <span>Recurring</span>
-        </div>
-      )}
-      {(() => {
-        const source = formatSource(event);
-        if (!source) return null;
-        const { label, Icon } = source;
-        return (
-          <div className="flex items-center gap-1 mt-0.5 text-[10px] opacity-70">
-            <Icon className="w-2.5 h-2.5" />
-            <span className="truncate">{label}</span>
+    >
+      <div className="calendar-event-accent-rail" aria-hidden />
+      <div className="calendar-event-sidebar-body pl-3 pr-2 py-2.5">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className={cn('text-sm font-medium leading-snug pr-1', completed && 'line-through text-[var(--color-text-muted)]')}>
+              {event.summary}
+            </h3>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 tabular-nums">
+              {formatEventSidebarTime(event)}
+            </p>
           </div>
-        );
-      })()}
-      {isCompleted && (
-        <div className="flex items-center gap-1 mt-0.5 text-[10px] opacity-60">
-          <Check className="w-2.5 h-2.5" />
-          <span>Done</span>
+          <div className={cn('flex gap-0.5 shrink-0 transition-opacity', showActions)}>
+            <button
+              type="button"
+              aria-label="Edit event"
+              className="p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10"
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Delete event"
+              className="p-1.5 rounded-md hover:bg-red-500/15 text-red-600 dark:text-red-400"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
-      )}
-    </div>
+
+        {(event.location || recurrence || source || completed) && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {recurrence && <EventMetaChip icon={Repeat} label={recurrence} />}
+            {source && <EventMetaChip icon={source.Icon} label={source.label} />}
+            {event.location && <EventMetaChip icon={MapPin} label={event.location} />}
+            {completed && <EventMetaChip icon={Check} label="Completed" />}
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -1057,7 +1152,7 @@ function EventListView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 min-h-0 overflow-y-auto">
       {events.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--color-text-muted)]">
           <CalendarDays className="w-10 h-10 opacity-40" />
@@ -1071,28 +1166,31 @@ function EventListView({
         <div className="divide-y divide-[var(--color-border)]">
           {Array.from(grouped).map(([dateLabel, dayEvents]) => (
             <div key={dateLabel}>
-              <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-titlebar)] sticky top-0">
+              <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] surface-toolbar sticky top-0 border-b border-[var(--color-border)]">
                 {dateLabel}
               </div>
               <div className="divide-y divide-[var(--color-border)]/50">
-                {dayEvents.map((event, idx) => {
+                {dayEvents.map((event) => {
                   const isCompleted = isOccurrenceCompleted(event);
                   return (
                   <div
-                    key={event.id}
+                    key={`${event.id}:${event.start}`}
                     className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--color-accent-muted)] transition-colors group"
                   >
-                    <div className={cn('w-1 h-8 rounded-full shrink-0', getEventColor(event, idx).split(' ')[0])} />
+                    <div
+                      className={cn('calendar-event-accent-rail', getEventToneClass(event, isCompleted))}
+                    />
                     <div className="flex-1 min-w-0">
-                      <div className={cn('text-sm font-medium truncate flex items-center gap-1.5', isCompleted && 'text-neutral-600 dark:text-neutral-300')}>
+                      <div className={cn('text-sm font-medium truncate flex items-center gap-1.5', isCompleted && 'text-[var(--color-text-muted)]')}>
                         {isCompleted && <Check className="w-3.5 h-3.5 shrink-0" />}
                         <span className={cn(isCompleted && 'line-through')}>{event.summary}</span>
                       </div>
-                      <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-2">
-                        <span>{event.allDay ? 'All day' : formatDateRange(event)}</span>
-                        {event.recurrence && (
+                      <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-2 flex-wrap">
+                        <span className="tabular-nums">{formatEventSidebarTime(event)}</span>
+                        {formatRecurrenceLabel(event.recurrence) && (
                           <span className="flex items-center gap-0.5">
-                            <Repeat className="w-2.5 h-2.5" /> Recurring
+                            <Repeat className="w-2.5 h-2.5" />
+                            {formatRecurrenceLabel(event.recurrence)}
                           </span>
                         )}
                         {(() => {
@@ -1106,7 +1204,7 @@ function EventListView({
                           );
                         })()}
                         {isCompleted && (
-                          <span className="flex items-center gap-0.5 text-neutral-500 dark:text-neutral-400">
+                          <span className="flex items-center gap-0.5 text-[var(--color-text-muted)]">
                             <Check className="w-2.5 h-2.5" /> Done
                           </span>
                         )}
@@ -1142,6 +1240,30 @@ function EventListView({
 
 // ── Event Create/Edit Dialog ──
 
+function FormSection({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn('space-y-3', className)}>
+      <div>
+        <h3 className="text-xs font-semibold text-[var(--color-text)]">{title}</h3>
+        {description && (
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug">{description}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function EventDialog({
   open,
   onClose,
@@ -1151,6 +1273,7 @@ function EventDialog({
   saving,
   isEdit,
   error,
+  isMobile,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1160,252 +1283,325 @@ function EventDialog({
   saving: boolean;
   isEdit: boolean;
   error: string | null;
+  isMobile: boolean;
 }) {
   const update = (patch: Partial<EventFormData>) => setForm({ ...form, ...patch });
   const overlayRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Focus title once when the dialog opens — not on every parent re-render (form typing
+  // used to pass a new onClose inline and retriggered this effect).
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => titleInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onCloseRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, saving]);
 
   if (!open) return null;
 
+  const panelClass = 'surface-card rounded-lg border border-[var(--color-border)] p-3 space-y-3';
+
   return (
-    // Overlay contained inside the calendar window (absolute, not fixed)
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-50 flex items-center justify-center contained-scrim rounded-b-xl"
-      onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      className="absolute inset-0 z-50 flex items-end sm:items-center justify-center contained-scrim rounded-b-xl p-2 sm:p-4"
+      onClick={(e) => { if (e.target === overlayRef.current && !saving) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="calendar-event-dialog-title"
     >
-      <div className="soft-popover
-                      border border-black/10 dark:border-white/15 rounded-xl
-                      shadow-[0_8px_24px_rgba(0,0,0,0.14)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.32)]
-                      w-[96%] max-w-[620px] max-h-[92%] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-black/10 dark:border-white/10 select-none">
-          <span className="text-sm font-medium">{isEdit ? 'Edit Event' : 'New Event'}</span>
-          <Button variant="ghost" size="icon-sm" onClick={onClose}
-                  className="hover:bg-[var(--color-error)] hover:text-white">
+      <div
+        className={cn(
+          'soft-popover border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-window)]',
+          'w-full flex flex-col overflow-hidden',
+          isMobile ? 'max-h-[94%]' : 'max-w-[640px] max-h-[92%]',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-[var(--color-border)] surface-toolbar select-none">
+          <div className="min-w-0">
+            <h2 id="calendar-event-dialog-title" className="text-base font-semibold">
+              {isEdit ? 'Edit event' : 'New event'}
+            </h2>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              {isEdit ? 'Update details, schedule, or recurrence.' : 'Add something to your calendar.'}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="Close"
+            className="shrink-0 hover:bg-[var(--color-error)] hover:text-white"
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* Two-column body */}
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* Left: Event details */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-w-0">
-            <div>
-              <Label className="text-xs">Title</Label>
-              <Input
-                value={form.summary}
-                onChange={(e) => update({ summary: e.target.value })}
-                placeholder="Event title"
-                className="mt-1"
-                autoFocus
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs">Description</Label>
-              <textarea
-                value={form.description}
-                onChange={(e) => update({ description: e.target.value })}
-                placeholder="Optional description..."
-                className="mt-1 w-full px-3 py-2 text-sm rounded-md border border-black/10 dark:border-white/10
-                           bg-black/5 dark:bg-white/5 focus:outline-none
-                           resize-none"
-                rows={2}
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs">Location</Label>
-              <Input
-                value={form.location}
-                onChange={(e) => update({ location: e.target.value })}
-                placeholder="Optional location"
-                className="mt-1"
-              />
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="w-px bg-black/10 dark:bg-white/10" />
-
-          {/* Right: When & Repeat */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-w-0">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="allDay"
-                checked={form.allDay}
-                onChange={(e) => update({ allDay: e.target.checked })}
-                className="rounded border-[var(--color-border)]"
-              />
-              <Label htmlFor="allDay" className="text-xs cursor-pointer">All day event</Label>
-            </div>
-
-            {form.allDay ? (
-              <div className="space-y-2">
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className={cn('p-4 gap-4', isMobile ? 'flex flex-col' : 'grid grid-cols-2')}>
+            <FormSection title="Details" description="What is this event about?">
+              <div className="space-y-3">
                 <div>
-                  <Label className="text-xs">Start date</Label>
+                  <Label className="text-xs font-medium">Title</Label>
                   <Input
-                    type="date"
-                    value={form.startDate}
-                    onChange={(e) => update({ startDate: e.target.value })}
-                    className="mt-1"
+                    ref={titleInputRef}
+                    value={form.summary}
+                    onChange={(e) => update({ summary: e.target.value })}
+                    placeholder="e.g. Team standup"
+                    className="mt-1.5"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && form.summary.trim()) onSave();
+                    }}
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">End date</Label>
+                  <Label className="text-xs font-medium">Description</Label>
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => update({ description: e.target.value })}
+                    placeholder="Notes or agenda (optional)"
+                    className={cn(
+                      'mt-1.5 w-full px-3 py-2 text-sm rounded-md border border-[var(--color-border)]',
+                      'surface-control focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 resize-none',
+                    )}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Location</Label>
                   <Input
-                    type="date"
-                    value={form.endDate}
-                    onChange={(e) => update({ endDate: e.target.value })}
-                    className="mt-1"
+                    value={form.location}
+                    onChange={(e) => update({ location: e.target.value })}
+                    placeholder="Room, link, or address (optional)"
+                    className="mt-1.5"
                   />
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-xs">Start</Label>
-                  <Input
-                    type="datetime-local"
-                    value={form.startDatetime}
-                    onChange={(e) => update({ startDatetime: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">End</Label>
-                  <Input
-                    type="datetime-local"
-                    value={form.endDatetime}
-                    onChange={(e) => update({ endDatetime: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            )}
+            </FormSection>
 
-            <Separator />
+            <div className="space-y-4">
+              <FormSection title="When" description="Set the date and time.">
+                <div className={panelClass}>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="allDay"
+                      checked={form.allDay}
+                      onChange={(e) => update({ allDay: e.target.checked })}
+                      className="rounded border-[var(--color-border)] accent-[var(--color-accent)]"
+                    />
+                    <span className="text-sm">All-day event</span>
+                  </label>
 
-            {/* Repeat / Recurrence */}
-            <div className="space-y-2">
-              <Label className="text-xs">Repeat</Label>
-              <Select
-                value={form.repeatType}
-                onChange={(v) => update({ repeatType: v as RepeatType })}
-                options={[
-                  { value: 'none', label: 'Does not repeat' },
-                  { value: 'hourly', label: 'Hourly' },
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'monthly', label: 'Monthly' },
-                  { value: 'yearly', label: 'Yearly' },
-                  { value: 'custom', label: 'Custom...' },
-                ]}
-              />
-
-              {form.repeatType !== 'none' && (
-                <div className="space-y-2.5">
-                  {/* Interval */}
-                  {(form.repeatType === 'custom' || form.repeatInterval > 1) && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-[var(--color-text-muted)]">Every</span>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={99}
-                        value={form.repeatInterval}
-                        onChange={(e) => update({ repeatInterval: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                        className="w-[4.5rem] pl-2 pr-5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {form.repeatType === 'daily' ? 'day(s)' :
-                         form.repeatType === 'monthly' ? 'month(s)' :
-                         form.repeatType === 'yearly' ? 'year(s)' : 'week(s)'}
-                      </span>
+                  {form.allDay ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs font-medium">Start date</Label>
+                        <Input
+                          type="date"
+                          value={form.startDate}
+                          onChange={(e) => update({ startDate: e.target.value })}
+                          className="mt-1.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-medium">End date</Label>
+                        <Input
+                          type="date"
+                          value={form.endDate}
+                          onChange={(e) => update({ endDate: e.target.value })}
+                          className="mt-1.5"
+                        />
+                      </div>
                     </div>
-                  )}
-
-                  {/* Day picker for weekly / custom */}
-                  {(form.repeatType === 'weekly' || form.repeatType === 'custom') && (
-                    <div>
-                      <span className="text-xs text-[var(--color-text-muted)]">On</span>
-                      <div className="flex gap-1 mt-1">
-                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            className={cn(
-                              'w-7 h-7 rounded-full text-xs font-medium transition-colors',
-                              form.repeatDays[i]
-                                ? 'bg-[var(--color-accent)] text-white'
-                                : 'bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15'
-                            )}
-                            onClick={() => {
-                              const days = [...form.repeatDays];
-                              days[i] = !days[i];
-                              update({ repeatDays: days });
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ))}
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs font-medium">Starts</Label>
+                        <Input
+                          type="datetime-local"
+                          value={form.startDatetime}
+                          onChange={(e) => update({ startDatetime: e.target.value })}
+                          className="mt-1.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-medium">Ends</Label>
+                        <Input
+                          type="datetime-local"
+                          value={form.endDatetime}
+                          onChange={(e) => update({ endDatetime: e.target.value })}
+                          className="mt-1.5"
+                        />
                       </div>
                     </div>
                   )}
-
-                  {/* End condition */}
-                  <div>
-                    <span className="text-xs text-[var(--color-text-muted)]">Ends</span>
-                    <div className="space-y-1.5 mt-1">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="repeatEnd" checked={form.repeatEndType === 'never'}
-                          onChange={() => update({ repeatEndType: 'never' })} className="accent-[var(--color-accent)]" />
-                        <span className="text-xs">Never</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="repeatEnd" checked={form.repeatEndType === 'after'}
-                          onChange={() => update({ repeatEndType: 'after' })} className="accent-[var(--color-accent)]" />
-                        <span className="text-xs">After</span>
-                        <Input type="number" min={1} max={999} value={form.repeatCount}
-                          onChange={(e) => update({ repeatCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                          className="w-[4.5rem] pl-2 pr-5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                          disabled={form.repeatEndType !== 'after'} />
-                        <span className="text-xs">time(s)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="repeatEnd" checked={form.repeatEndType === 'on'}
-                          onChange={() => update({ repeatEndType: 'on' })} className="accent-[var(--color-accent)]" />
-                        <span className="text-xs shrink-0">On</span>
-                        <Input type="date" value={form.repeatUntilDate}
-                          onChange={(e) => update({ repeatUntilDate: e.target.value })}
-                          className="flex-1" disabled={form.repeatEndType !== 'on'} />
-                      </label>
-                    </div>
-                  </div>
                 </div>
-              )}
+              </FormSection>
+
+              <FormSection title="Repeat" description="Optional recurring schedule.">
+                <div className={panelClass}>
+                  <div>
+                    <Label className="text-xs font-medium">Frequency</Label>
+                    <Select
+                      value={form.repeatType}
+                      onChange={(v) => update({ repeatType: v as RepeatType })}
+                      options={[
+                        { value: 'none', label: 'Does not repeat' },
+                        { value: 'hourly', label: 'Hourly' },
+                        { value: 'daily', label: 'Daily' },
+                        { value: 'weekly', label: 'Weekly' },
+                        { value: 'monthly', label: 'Monthly' },
+                        { value: 'yearly', label: 'Yearly' },
+                        { value: 'custom', label: 'Custom (weekly)' },
+                      ]}
+                    />
+                  </div>
+
+                  {form.repeatType !== 'none' && (
+                    <div className="space-y-3 pt-1 border-t border-[var(--color-border)]/60">
+                      {(form.repeatType === 'custom' || form.repeatInterval > 1) && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs text-[var(--color-text-muted)]">Every</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={form.repeatInterval}
+                            onChange={(e) => update({ repeatInterval: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                            className="w-16 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            {form.repeatType === 'daily' ? 'day(s)'
+                              : form.repeatType === 'monthly' ? 'month(s)'
+                                : form.repeatType === 'yearly' ? 'year(s)'
+                                  : form.repeatType === 'hourly' ? 'hour(s)'
+                                    : 'week(s)'}
+                          </span>
+                        </div>
+                      )}
+
+                      {(form.repeatType === 'weekly' || form.repeatType === 'custom') && (
+                        <div>
+                          <p className="text-xs text-[var(--color-text-muted)] mb-1.5">On these days</p>
+                          <div className="flex gap-1">
+                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                aria-pressed={form.repeatDays[i]}
+                                className={cn(
+                                  'w-8 h-8 rounded-full text-xs font-medium transition-colors',
+                                  form.repeatDays[i]
+                                    ? 'bg-[var(--color-accent)] text-white'
+                                    : 'surface-control border border-[var(--color-border)] hover:bg-[var(--color-accent-muted)]',
+                                )}
+                                onClick={() => {
+                                  const days = [...form.repeatDays];
+                                  days[i] = !days[i];
+                                  update({ repeatDays: days });
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-xs text-[var(--color-text-muted)] mb-1.5">Ends</p>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer min-h-[28px]">
+                            <input
+                              type="radio"
+                              name="repeatEnd"
+                              checked={form.repeatEndType === 'never'}
+                              onChange={() => update({ repeatEndType: 'never' })}
+                              className="accent-[var(--color-accent)]"
+                            />
+                            <span className="text-sm">Never</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer flex-wrap min-h-[28px]">
+                            <input
+                              type="radio"
+                              name="repeatEnd"
+                              checked={form.repeatEndType === 'after'}
+                              onChange={() => update({ repeatEndType: 'after' })}
+                              className="accent-[var(--color-accent)]"
+                            />
+                            <span className="text-sm shrink-0">After</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={999}
+                              value={form.repeatCount}
+                              onChange={(e) => update({ repeatCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                              className="w-16 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                              disabled={form.repeatEndType !== 'after'}
+                            />
+                            <span className="text-sm text-[var(--color-text-muted)]">occurrences</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer flex-wrap min-h-[28px]">
+                            <input
+                              type="radio"
+                              name="repeatEnd"
+                              checked={form.repeatEndType === 'on'}
+                              onChange={() => update({ repeatEndType: 'on' })}
+                              className="accent-[var(--color-accent)]"
+                            />
+                            <span className="text-sm shrink-0">On date</span>
+                            <Input
+                              type="date"
+                              value={form.repeatUntilDate}
+                              onChange={(e) => update({ repeatUntilDate: e.target.value })}
+                              className="flex-1 min-w-[140px]"
+                              disabled={form.repeatEndType !== 'on'}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </FormSection>
             </div>
           </div>
         </div>
 
-        {/* Error banner */}
         {error && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border-t border-red-500/20 text-red-600 dark:text-red-400 text-xs">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <div className="flex items-start gap-2 mx-4 mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-black/10 dark:border-white/10">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={onSave} disabled={saving || !form.summary.trim()}>
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-            {isEdit ? 'Save Changes' : 'Create Event'}
-          </Button>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-[var(--color-border)] surface-toolbar">
+          <p className="text-[10px] text-[var(--color-text-muted)] hidden sm:block">
+            {isEdit ? 'Esc to close' : '⌘↵ to save when title is filled'}
+          </p>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={onSave} disabled={saving || !form.summary.trim()}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+              {isEdit ? 'Save changes' : 'Create event'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

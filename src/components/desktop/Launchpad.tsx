@@ -176,16 +176,12 @@ export function Launchpad() {
 
       // Installed / Composio app — open in an app window
       if (app.category === 'installed' && app.appMetadata) {
-        const { appId, ui, composioSlug } = app.appMetadata;
+        const { appId, composioSlug } = app.appMetadata;
         openWindow('app', {
           title: app.label,
           icon: app.icon,
           metadata: { appId, ...(composioSlug && { composioSlug }) },
-          ...(ui?.width && { width: ui.width }),
-          ...(ui?.height && { height: ui.height }),
-          ...(ui?.minWidth && { minWidth: ui.minWidth }),
-          ...(ui?.minHeight && { minHeight: ui.minHeight }),
-        } as Partial<import('@/types').WindowConfig>);
+        });
         closeLaunchpad();
         return;
       }

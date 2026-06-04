@@ -5438,10 +5438,6 @@ export const useComputerStore = create<ComputerStore>()(
               useWindowStore.getState().openWindow('app', {
                 title,
                 metadata: { appId: openAppId },
-                ...(win?.width && { width: win.width }),
-                ...(win?.height && { height: win.height }),
-                ...(win?.minWidth && { minWidth: win.minWidth }),
-                ...(win?.minHeight && { minHeight: win.minHeight }),
               });
             }
           }

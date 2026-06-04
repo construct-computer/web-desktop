@@ -13,10 +13,7 @@ const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'app-registry', 'app-builder',
 ]);
 import {
-  DEFAULT_WINDOW_WIDTH,
-  DEFAULT_WINDOW_HEIGHT,
-  MIN_WINDOW_WIDTH,
-  MIN_WINDOW_HEIGHT,
+  DEFAULT_OPEN_PADDING,
   MENUBAR_HEIGHT,
   MOBILE_MENUBAR_HEIGHT,
   DOCK_HEIGHT,
@@ -25,6 +22,12 @@ import {
   Z_INDEX,
   STORAGE_KEYS,
 } from '@/lib/constants';
+import {
+  getDesktopWorkArea,
+  computeDefaultOpenBounds,
+  clampBoundsToWorkArea,
+  computeOpenMinSize,
+} from '@/lib/windowBounds';
 import { isMobileViewport } from '@/hooks/useIsMobile';
 
 /** Default workspace for the desktop/main context. */
@@ -33,21 +36,6 @@ const MAIN_WORKSPACE: Workspace = {
   name: 'Desktop',
   platform: 'desktop',
   color: '#6366f1', // indigo
-};
-
-const loadWindowPositions = (): Record<string, Partial<WindowBounds>> => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.windowPositions);
-    return data ? JSON.parse(data) : {};
-  } catch {
-    return {};
-  }
-};
-
-const saveWindowPosition = (type: WindowType, bounds: Partial<WindowBounds>) => {
-  const current = loadWindowPositions();
-  current[type] = { ...current[type], ...bounds };
-  localStorage.setItem(STORAGE_KEYS.windowPositions, JSON.stringify(current));
 };
 
 /** Persisted app window entry — just enough to re-open it. */
@@ -191,150 +179,28 @@ interface WindowStore {
   removeWindowFromStageGroup: (id: string) => void;
 }
 
-// Window type default configurations
+// Window type default configurations (title + resize behavior only; size is unified)
 const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
   browser: {
     title: 'Browser',
-    width: 960,
-    height: 628,  // 540 content (16:9 at 960w) + 88 chrome
-    minWidth: 400,
-    minHeight: 313, // 225 content (16:9 at 400w) + 88 chrome
-    maxWidth: 1920,
-    maxHeight: 1168, // 1080 content (16:9 at 1920w) + 88 chrome
     aspectRatio: 16 / 9,
     chromeHeight: 88, // titlebar(32) + navbar(33) + statusbar(23)
   },
-  terminal: {
-    title: 'Terminal',
-    width: 720,
-    height: 480,
-    minWidth: 350,
-    minHeight: 200,
-    maxWidth: 1600,
-    maxHeight: 1000,
-  },
-  files: {
-    title: 'Files',
-    width: 540,
-    height: 500,
-    minWidth: 300,
-    minHeight: 200,
-    maxWidth: 1200,
-    maxHeight: 900,
-  },
-  editor: {
-    title: 'Editor',
-    width: 680,
-    height: 640,
-    minWidth: 400,
-    minHeight: 300,
-    maxWidth: 1600,
-    maxHeight: 1200,
-  },
-  settings: {
-    title: 'Settings',
-    width: 680,
-    height: 560,
-    minWidth: 560,
-    minHeight: 400,
-    maxWidth: 1400,
-    maxHeight: 900,
-  },
-  about: {
-    title: 'About',
-    width: 480,
-    height: 480,
-    minWidth: 380,
-    minHeight: 400,
-    maxWidth: 600,
-    maxHeight: 600,
-  },
-  calendar: {
-    title: 'Calendar',
-    width: 660,
-    height: 620,
-    minWidth: 500,
-    minHeight: 400,
-    maxWidth: 1200,
-    maxHeight: 900,
-  },
-  auditlogs: {
-    title: 'Activity',
-    width: 600,
-    height: 560,
-    minWidth: 450,
-    minHeight: 350,
-    maxWidth: 1000,
-    maxHeight: 900,
-  },
-  memory: {
-    title: 'Knowledge',
-    width: 760,
-    height: 600,
-    minWidth: 520,
-    minHeight: 400,
-    maxWidth: 1200,
-    maxHeight: 900,
-  },
-  email: {
-    title: 'Email',
-    width: 900,
-    height: 620,
-    minWidth: 600,
-    minHeight: 400,
-  },
-  'access-control': {
-    title: 'Approvals',
-    width: 560,
-    height: 640,
-    minWidth: 420,
-    minHeight: 400,
-  },
-  'app-registry': {
-    title: 'Apps',
-    width: 780,
-    height: 620,
-    minWidth: 520,
-    minHeight: 420,
-    maxWidth: 1100,
-    maxHeight: 900,
-  },
-  'app-builder': {
-    title: 'Builder',
-    width: 1180,
-    height: 760,
-    minWidth: 760,
-    minHeight: 520,
-    maxWidth: 1800,
-    maxHeight: 1200,
-  },
-  'document-viewer': {
-    title: 'Document Viewer',
-    width: 800,
-    height: 680,
-    minWidth: 400,
-    minHeight: 300,
-    maxWidth: 1600,
-    maxHeight: 1200,
-  },
-  'document-workbench': {
-    title: 'Document Workbench',
-    width: 980,
-    height: 700,
-    minWidth: 560,
-    minHeight: 420,
-    maxWidth: 1800,
-    maxHeight: 1200,
-  },
-  app: {
-    title: 'App',
-    width: 600,
-    height: 500,
-    minWidth: 320,
-    minHeight: 240,
-    maxWidth: 1400,
-    maxHeight: 1000,
-  },
+  terminal: { title: 'Terminal' },
+  files: { title: 'Files' },
+  editor: { title: 'Editor' },
+  settings: { title: 'Settings' },
+  about: { title: 'About' },
+  calendar: { title: 'Calendar' },
+  auditlogs: { title: 'Activity' },
+  memory: { title: 'Knowledge' },
+  email: { title: 'Email' },
+  'access-control': { title: 'Approvals' },
+  'app-registry': { title: 'Apps' },
+  'app-builder': { title: 'Builder' },
+  'document-viewer': { title: 'Document Viewer' },
+  'document-workbench': { title: 'Document Workbench' },
+  app: { title: 'App' },
 };
 
 /**
@@ -355,210 +221,6 @@ function scheduleArrangeWindows(workspaceId: string) {
       useWindowStore.getState().arrangeWindows(workspaceId);
     }, 500),
   );
-}
-
-/**
- * Compute a grid layout for N windows within the available screen area.
- * Returns an array of { x, y, width, height } for each window.
- *
- * Uses a 3×3 grid framework with progressive fill:
- *
- *   [1] [2] [7]
- *   [3] [4] [8]
- *   [5] [6] [9]
- *
- * 1-4 windows fill the top-left 2×2 quadrant first, then 5-6 extend
- * downward to a 2×3 (left two columns, all three rows), then 7-9 fill
- * the right column for a full 3×3.  >9 overflows into additional rows.
- */
-function computeGridLayout(
-  types: WindowType[],
-  screenWidth: number,
-  screenHeight: number,
-): Array<{ x: number; y: number; width: number; height: number }> {
-  const count = types.length;
-  if (count === 0) return [];
-
-  const padding = 16; // outer padding
-  const gap = 12;     // gap between windows
-
-  const availW = screenWidth - padding * 2;
-  const availH = screenHeight - padding * 2;
-
-  // Always 3 columns; at least 3 rows, more if >9 windows
-  const cols = 3;
-  const rows = Math.max(3, Math.ceil(count / 3));
-
-  const cellW = Math.floor((availW - gap * (cols - 1)) / cols);
-  const cellH = Math.floor((availH - gap * (rows - 1)) / rows);
-
-  // Progressive fill order (row, col):
-  // top-left 2×2 → third row left 2 cols (2×3) → right column (3×3)
-  const fillOrder: [number, number][] = [
-    [0, 0], [0, 1],             // top row, left 2 cols
-    [1, 0], [1, 1],             // second row, left 2 cols  → 2×2
-    [2, 0], [2, 1],             // third row, left 2 cols   → 2×3
-    [0, 2], [1, 2], [2, 2],    // right column              → 3×3
-  ];
-
-  return types.map((type, i) => {
-    let row: number, col: number;
-    if (i < fillOrder.length) {
-      [row, col] = fillOrder[i];
-    } else {
-      // Overflow beyond 9: row-major into additional rows below the 3×3
-      col = (i - fillOrder.length) % cols;
-      row = 3 + Math.floor((i - fillOrder.length) / cols);
-    }
-
-    const defaults = windowDefaults[type] || {};
-    const minW = defaults.minWidth ?? MIN_WINDOW_WIDTH;
-    const minH = defaults.minHeight ?? MIN_WINDOW_HEIGHT;
-
-    const w = Math.max(cellW, minW);
-    const h = Math.max(cellH, minH);
-
-    // Position within the grid cell (centered if window is smaller)
-    const cellX = padding + col * (cellW + gap);
-    const cellY = padding + row * (cellH + gap);
-    const x = cellX + Math.max(0, Math.floor((cellW - w) / 2));
-    const y = cellY + Math.max(0, Math.floor((cellH - h) / 2));
-
-    return { x, y, width: w, height: h };
-  });
-}
-
-/**
- * Find a position for a new window that doesn't overlap existing windows.
- *
- * Strategy:
- *  1. First window always opens near top-left
- *  2. Subsequent windows: scan candidates (grid + edges of existing windows),
- *     pick the one with least overlap, breaking ties by proximity to top-left
- *  3. If screen is too crowded, cascade from top-left with offset
- */
-function getSmartPosition(
-  windows: WindowConfig[],
-  width: number,
-  height: number,
-): { x: number; y: number } {
-  const screenW = globalThis.innerWidth;
-  const screenH = globalThis.innerHeight - MENUBAR_HEIGHT - DOCK_HEIGHT;
-  const padding = 16;
-  const gap = 12;
-
-  // Usable area bounds
-  const maxX = Math.max(0, screenW - width - padding);
-  const maxY = Math.max(0, screenH - height - padding);
-
-  // Only consider visible (non-minimized) windows for overlap
-  const visible = windows.filter((w) => w.state !== 'minimized');
-
-  // First window — center of screen
-  if (visible.length === 0) {
-    return {
-      x: Math.max(padding, Math.round((screenW - width) / 2)),
-      y: Math.max(padding, Math.round((screenH - height) / 2)),
-    };
-  }
-
-  // Minimum spacing between windows on all sides
-  const spacing = 12;
-
-  // Helper: overlap area between a candidate rect and an existing window.
-  // Each window is inflated by `spacing` so positions that are too close
-  // are penalised even if they don't technically overlap pixel-for-pixel.
-  function overlapArea(cx: number, cy: number, win: WindowConfig): number {
-    const ox = Math.max(0, Math.min(cx + width, win.x + win.width + spacing) - Math.max(cx, win.x - spacing));
-    const oy = Math.max(0, Math.min(cy + height, win.y + win.height + spacing) - Math.max(cy, win.y - spacing));
-    return ox * oy;
-  }
-
-  // Total overlap for a candidate position
-  function totalOverlap(cx: number, cy: number): number {
-    let total = 0;
-    for (const win of visible) {
-      total += overlapArea(cx, cy, win);
-    }
-    return total;
-  }
-
-  // Distance from top-left (for tie-breaking — prefer positions closer to origin)
-  function distFromOrigin(cx: number, cy: number): number {
-    return cx + cy;
-  }
-
-  // --- Build candidate positions ---
-  const candidates: Array<{ x: number; y: number }> = [];
-
-  // 1. Snapped positions adjacent to existing windows (most natural tiling)
-  for (const win of visible) {
-    // Right of window, aligned to its top
-    const rx = win.x + win.width + gap;
-    if (rx >= 0 && rx <= maxX) {
-      candidates.push({ x: rx, y: clamp(win.y, padding, maxY) });
-    }
-    // Below window, aligned to its left
-    const by = win.y + win.height + gap;
-    if (by >= 0 && by <= maxY) {
-      candidates.push({ x: clamp(win.x, padding, maxX), y: by });
-    }
-    // Left of window
-    const lx = win.x - width - gap;
-    if (lx >= 0 && lx <= maxX) {
-      candidates.push({ x: lx, y: clamp(win.y, padding, maxY) });
-    }
-    // Above window
-    const ay = win.y - height - gap;
-    if (ay >= 0 && ay <= maxY) {
-      candidates.push({ x: clamp(win.x, padding, maxX), y: ay });
-    }
-  }
-
-  // 2. Grid scan across the screen (finer near top-left, coarser elsewhere)
-  const step = 50;
-  for (let cy = padding; cy <= maxY; cy += step) {
-    for (let cx = padding; cx <= maxX; cx += step) {
-      candidates.push({ x: cx, y: cy });
-    }
-  }
-
-  // 3. Always include top-left as a candidate
-  candidates.unshift({ x: padding, y: padding });
-
-  // --- Score and pick best candidate ---
-  let bestPos = { x: padding, y: padding };
-  let bestOverlap = Infinity;
-  let bestDist = Infinity;
-
-  for (const c of candidates) {
-    const ov = totalOverlap(c.x, c.y);
-    const dist = distFromOrigin(c.x, c.y);
-
-    // Better if: less overlap, or same overlap but closer to top-left
-    if (ov < bestOverlap || (ov === bestOverlap && dist < bestDist)) {
-      bestOverlap = ov;
-      bestDist = dist;
-      bestPos = c;
-    }
-  }
-
-  // If everything overlaps heavily, cascade from center with offset
-  if (bestOverlap > width * height * 0.3) {
-    const offset = 30;
-    const cascadeIndex = visible.length % 10;
-    const cx = Math.round((screenW - width) / 2);
-    const cy = Math.round((screenH - height) / 2);
-    return {
-      x: clamp(cx + cascadeIndex * offset, 0, maxX),
-      y: clamp(cy + cascadeIndex * offset, 0, maxY),
-    };
-  }
-
-  return {
-    x: clamp(bestPos.x, padding, maxX),
-    y: clamp(bestPos.y, padding, maxY),
-  };
 }
 
 /** Platform accent colors for auto-created workspaces. */
@@ -841,28 +503,14 @@ export const useWindowStore = create<WindowStore>()(
 
       const defaults = windowDefaults[type] || {};
       const mobile = isMobileViewport();
-      
-      const screenWidth = globalThis.innerWidth;
-      const menuH = mobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
-      const bottomH = mobile ? MOBILE_APP_BAR_HEIGHT : 0;
-      const screenHeight = globalThis.innerHeight - menuH - bottomH;
-      
-      // On mobile, force full-screen windows. Otherwise, enforce a standard size or persisted size.
-      const persisted = loadWindowPositions()[type];
-      const width = mobile ? screenWidth : (persisted?.width ?? defaults.width ?? DEFAULT_WINDOW_WIDTH);
-      const height = mobile ? screenHeight : (persisted?.height ?? defaults.height ?? DEFAULT_WINDOW_HEIGHT);
-      
+      const workArea = getDesktopWorkArea({
+        stageManagerActive: get().stageManagerActive,
+        mobile,
+      });
+      const { x, y, width, height } = computeDefaultOpenBounds(workArea);
+
       const { windows, nextZIndex } = get();
-      // Only consider windows in the same workspace for smart positioning
-      const wsWindows = windows.filter(w => w.workspaceId === wsId);
-      
-      // Always center on screen (or {0,0} for mobile) - ignoring custom option coordinates
-      const availH = screenHeight - DOCK_HEIGHT;
-      const position = mobile ? { x: 0, y: 0 } : {
-        x: persisted?.x ?? Math.max(0, Math.floor((screenWidth - width) / 2)),
-        y: persisted?.y ?? Math.max(0, Math.floor((availH - height) / 2)),
-      };
-      
+
       const id = options.id ?? generateId('window');
       
       // Auto-assign terminal session ID: first terminal gets 'main' (shared
@@ -874,28 +522,29 @@ export const useWindowStore = create<WindowStore>()(
         metadata = { ...metadata, terminalId };
       }
 
-      // On mobile, MobileWindow renders full-screen and never resizes. Force
-      // the minWidth/minHeight to be at most the viewport so any layout that
-      // reads `window.minWidth` (e.g. resize clamp) doesn't try to enforce a
-      // 600px minimum on a 375px screen.
-      const minWidthRaw = options.minWidth ?? defaults.minWidth ?? MIN_WINDOW_WIDTH;
-      const minHeightRaw = options.minHeight ?? defaults.minHeight ?? MIN_WINDOW_HEIGHT;
-      const minWidth = mobile ? Math.min(minWidthRaw, screenWidth) : minWidthRaw;
-      const minHeight = mobile ? Math.min(minHeightRaw, screenHeight) : minHeightRaw;
+      const openMin = computeOpenMinSize(workArea);
+      const minWidthRaw = Math.max(options.minWidth ?? 0, openMin.minWidth);
+      const minHeightRaw = Math.max(options.minHeight ?? 0, openMin.minHeight);
+      const minWidth = mobile
+        ? Math.min(minWidthRaw, width)
+        : minWidthRaw;
+      const minHeight = mobile
+        ? Math.min(minHeightRaw, height)
+        : minHeightRaw;
 
       const newWindow: WindowConfig = {
         id,
         type,
         title: options.title ?? defaults.title ?? type,
         icon: options.icon,
-        x: position.x,
-        y: position.y,
+        x,
+        y,
         width,
         height,
         minWidth,
         minHeight,
-        maxWidth: options.maxWidth ?? defaults.maxWidth,
-        maxHeight: options.maxHeight ?? defaults.maxHeight,
+        maxWidth: workArea.width,
+        maxHeight: workArea.height,
         aspectRatio: options.aspectRatio ?? defaults.aspectRatio,
         chromeHeight: options.chromeHeight ?? defaults.chromeHeight,
         state: mobile ? 'maximized' : 'normal',
@@ -1144,7 +793,7 @@ export const useWindowStore = create<WindowStore>()(
       const stageStripW = get().stageManagerActive && !mobile ? STAGE_STRIP_WIDTH : 0;
       const screenHeight = globalThis.innerHeight - menuH - bottomH;
 
-      const padding = mobile ? 0 : 24; // 24px equal spacing margin
+      const padding = mobile ? 0 : DEFAULT_OPEN_PADDING;
       const usableWidth = screenWidth - stageStripW;
       
       set({
@@ -1172,12 +821,14 @@ export const useWindowStore = create<WindowStore>()(
       const window = windows.find((w) => w.id === id);
       if (!window) return;
       
-      const bounds = window.previousBounds || {
-        x: 100,
-        y: 100,
-        width: windowDefaults[window.type]?.width ?? DEFAULT_WINDOW_WIDTH,
-        height: windowDefaults[window.type]?.height ?? DEFAULT_WINDOW_HEIGHT,
-      };
+      const mobile = isMobileViewport();
+      const workArea = getDesktopWorkArea({
+        stageManagerActive: get().stageManagerActive,
+        mobile,
+      });
+      const bounds = window.previousBounds
+        ? clampBoundsToWorkArea(window.previousBounds, workArea)
+        : computeDefaultOpenBounds(workArea);
       
       set({
         windows: windows.map((w) =>
@@ -1209,7 +860,6 @@ export const useWindowStore = create<WindowStore>()(
     moveWindow: (id, x, y) => {
       const { windows } = get();
       const window = windows.find((w) => w.id === id);
-      if (window) saveWindowPosition(window.type, { x, y });
       set({
         windows: windows.map((w) =>
           w.id === id ? { ...w, x, y, state: 'normal' } : w
@@ -1224,7 +874,6 @@ export const useWindowStore = create<WindowStore>()(
       
       const wWidth = clamp(width, window.minWidth, window.maxWidth ?? Infinity);
       const wHeight = clamp(height, window.minHeight, window.maxHeight ?? Infinity);
-      saveWindowPosition(window.type, { width: wWidth, height: wHeight });
       
       set({
         windows: windows.map((w) =>
@@ -1249,13 +898,6 @@ export const useWindowStore = create<WindowStore>()(
       const newHeight = bounds.height !== undefined ? clamp(bounds.height, window.minHeight, window.maxHeight ?? Infinity) : window.height;
       const newX = bounds.x ?? window.x;
       const newY = bounds.y ?? window.y;
-      
-      saveWindowPosition(window.type, {
-        x: newX,
-        y: newY,
-        width: newWidth,
-        height: newHeight,
-      });
       
       set({
         windows: windows.map((w) =>
@@ -1420,29 +1062,12 @@ export const useWindowStore = create<WindowStore>()(
 
       if (newTypes.length === 0) return;
 
-      // On mobile, just open them one at a time (they'll auto-maximize)
-      if (isMobileViewport()) {
-        for (const type of newTypes) get().ensureWindowOpen(type);
-        return;
-      }
-
-      const screenWidth = globalThis.innerWidth;
-      const screenHeight = globalThis.innerHeight - MENUBAR_HEIGHT;
-      const grid = computeGridLayout(newTypes, screenWidth, screenHeight);
-
-      for (let i = 0; i < newTypes.length; i++) {
-        const type = newTypes[i];
+      for (const type of newTypes) {
         const platform = WINDOW_PLATFORM_MAP[type];
         const targetWsId = platform
           ? get().getOrCreateWorkspaceForPlatform(platform)
           : 'main';
-        get().openWindow(type, {
-          x: grid[i].x,
-          y: grid[i].y,
-          width: grid[i].width,
-          height: grid[i].height,
-          workspaceId: targetWsId,
-        });
+        get().openWindow(type, { workspaceId: targetWsId });
       }
     },
 
@@ -1452,25 +1077,16 @@ export const useWindowStore = create<WindowStore>()(
         (w) => w.workspaceId === wsId && w.state !== 'minimized',
       );
       if (targets.length === 0) return;
-
-      // On mobile, windows auto-maximize — nothing to arrange
       if (isMobileViewport()) return;
 
-      const screenWidth = globalThis.innerWidth;
-      const screenHeight = globalThis.innerHeight - MENUBAR_HEIGHT;
-      const grid = computeGridLayout(
-        targets.map((w) => w.type),
-        screenWidth,
-        screenHeight,
-      );
+      const workArea = getDesktopWorkArea({
+        stageManagerActive: get().stageManagerActive,
+        mobile: false,
+      });
+      const { x, y, width, height } = computeDefaultOpenBounds(workArea);
 
-      for (let i = 0; i < targets.length; i++) {
-        get().setBounds(targets[i].id, {
-          x: grid[i].x,
-          y: grid[i].y,
-          width: grid[i].width,
-          height: grid[i].height,
-        });
+      for (const win of targets) {
+        get().setBounds(win.id, { x, y, width, height });
       }
     },
 

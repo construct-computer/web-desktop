@@ -2241,8 +2241,6 @@ function DeveloperSection() {
         title: appInfo?.name || 'Dev App',
         icon: appInfo?.iconUrl || undefined,
         metadata: { appId: 'dev-app' },
-        width: 560,
-        height: 620,
       });
     });
   };
