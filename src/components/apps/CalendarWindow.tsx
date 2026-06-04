@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button, FreshnessText, Input, Label, RefreshButton, Select, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useDelayUnmount } from '@/hooks/useDelayUnmount';
 import {
   listAgentCalendarEvents,
   createAgentCalendarEvent,
@@ -1425,14 +1426,19 @@ function EventDialog({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, saving]);
 
-  if (!open) return null;
+  const { shouldRender, isClosing } = useDelayUnmount(open, 250);
+
+  if (!shouldRender) return null;
 
   const panelClass = 'surface-card rounded-lg border border-[var(--color-border)] p-3 space-y-3';
 
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-50 flex items-end sm:items-center justify-center contained-scrim rounded-b-xl p-2 sm:p-4"
+      className={cn(
+        "absolute inset-0 z-50 flex items-end sm:items-center justify-center contained-scrim rounded-b-xl p-2 sm:p-4",
+        isClosing && "closing"
+      )}
       onClick={(e) => { if (e.target === overlayRef.current && !saving) onClose(); }}
       role="dialog"
       aria-modal="true"
@@ -1442,6 +1448,7 @@ function EventDialog({
         className={cn(
           'soft-popover border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-window)]',
           'w-full flex flex-col overflow-hidden',
+          isClosing && 'closing',
           isMobile ? 'max-h-[94%]' : 'max-w-[640px] max-h-[92%]',
         )}
         onClick={(e) => e.stopPropagation()}
@@ -1752,19 +1759,25 @@ function ConfirmDialog({
   onCancel: () => void;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const { shouldRender, isClosing } = useDelayUnmount(open, 250);
 
-  if (!open) return null;
+  if (!shouldRender) return null;
 
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-[60] flex items-center justify-center contained-scrim rounded-b-xl"
+      className={cn(
+        "absolute inset-0 z-[60] flex items-center justify-center contained-scrim rounded-b-xl",
+        isClosing && "closing"
+      )}
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
     >
-      <div className="soft-popover
-                      border border-black/10 dark:border-white/15 rounded-xl
-                      shadow-[0_8px_24px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.36)]
-                      w-[280px] overflow-hidden">
+      <div className={cn(
+        "soft-popover border border-black/10 dark:border-white/15 rounded-xl",
+        "shadow-[0_8px_24px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.36)]",
+        "w-[280px] overflow-hidden",
+        isClosing && "closing"
+      )}>
         <div className="px-5 pt-5 pb-4 text-center">
           <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-red-500/10 flex items-center justify-center">
             <AlertCircle className="w-5 h-5 text-red-500" />

@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
 import { Z_INDEX } from '@/lib/constants';
+import { useDelayUnmount } from '@/hooks/useDelayUnmount';
 
 interface DialogProps {
   open: boolean;
@@ -13,6 +14,7 @@ interface DialogProps {
 
 export function Dialog({ open, onClose, children, className }: DialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const { shouldRender, isClosing } = useDelayUnmount(open, 250);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -25,12 +27,15 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!shouldRender) return null;
 
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 modal-scrim flex items-center justify-center"
+      className={cn(
+        "fixed inset-0 modal-scrim flex items-center justify-center",
+        isClosing && "closing"
+      )}
       style={{ zIndex: Z_INDEX.modal }}
       onClick={(e) => {
         if (e.target === overlayRef.current) {
@@ -44,6 +49,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
            border border-[var(--color-border)] rounded-xl
            shadow-[var(--shadow-window)] min-w-[300px] max-w-[90vw] max-h-[90vh]
            flex flex-col overflow-hidden`,
+          isClosing && "closing",
           className
         )}
       >
