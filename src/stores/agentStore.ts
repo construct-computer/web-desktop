@@ -6188,7 +6188,6 @@ export const useComputerStore = create<ComputerStore>()(
             command: cmd,
             timestamp: event.timestamp,
           });
-          window.dispatchEvent(new CustomEvent('terminal_command', { detail: { ...(event.data || {}), command: cmd } }));
           break;
         }
 
@@ -6201,7 +6200,6 @@ export const useComputerStore = create<ComputerStore>()(
             timestamp: event.timestamp,
           });
           useDocumentPreviewStore.getState().appendTerminalOutput(event.data || {});
-          window.dispatchEvent(new CustomEvent('terminal_output', { detail: { ...(event.data || {}), data: _chunk } }));
           break;
         }
 
@@ -6214,7 +6212,6 @@ export const useComputerStore = create<ComputerStore>()(
             command: exitCmd,
             timestamp: event.timestamp,
           });
-          window.dispatchEvent(new CustomEvent('terminal_exit', { detail: { ...(event.data || {}), exitCode, command: exitCmd } }));
           // Notify on command failure
           if (exitCode !== 0) {
             const shortCmd = exitCmd.length > 60 ? exitCmd.slice(0, 60) + '...' : exitCmd;

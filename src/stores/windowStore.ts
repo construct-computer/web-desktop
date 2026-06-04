@@ -206,8 +206,8 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
   },
   terminal: {
     title: 'Terminal',
-    width: 600,
-    height: 540,
+    width: 720,
+    height: 480,
     minWidth: 350,
     minHeight: 200,
     maxWidth: 1600,

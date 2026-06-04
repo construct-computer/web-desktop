@@ -34,6 +34,8 @@ export interface TerminalRun {
   chunks: TerminalChunk[];
   outputText: string;
   outputTruncated: boolean;
+  /** Full log fetched from API and merged into chunks. */
+  hydratedFull?: boolean;
 }
 
 export interface TerminalSession {
@@ -41,6 +43,7 @@ export interface TerminalSession {
   runIds: string[];
   activeRunId?: string;
   selectedRunId?: string;
+  scrollTargetRunId?: string;
   hydratedAt?: number;
 }
 
@@ -85,7 +88,11 @@ interface TerminalStore {
   ingestOutput: (payload: TerminalEventPayload) => void;
   ingestExit: (payload: TerminalEventPayload) => void;
   hydrateRuns: (runs: HydratedTerminalRun[]) => void;
+  appendRunsFromApi: (runs: HydratedTerminalRun[]) => void;
+  mergeRunOutput: (toolCallId: string, output: string) => void;
   selectRun: (terminalId: string, runId: string | null) => void;
+  scrollToRun: (terminalId: string, runId: string) => void;
+  clearScrollTarget: (terminalId: string) => void;
   clearTerminal: (terminalId: string) => void;
   clearSession: (sessionKey: string) => void;
 }
@@ -141,6 +148,13 @@ export function getRunTranscript(run: TerminalRun): string {
     : (run.preview || run.outputText || '');
   const exit = typeof run.exitCode === 'number' ? `\n[exit ${run.exitCode}]\n` : '';
   return `\n$ ${run.command}\n${output}${exit}`;
+}
+
+export function getSessionTranscript(runs: TerminalRun[]): string {
+  return [...runs]
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .map((run) => getRunTranscript(run))
+    .join('\n');
 }
 
 export const useTerminalStore = create<TerminalStore>((set) => ({
@@ -319,7 +333,103 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
     });
   },
 
+  appendRunsFromApi: (hydratedRuns) => {
+    if (hydratedRuns.length === 0) return;
+    set((state) => {
+      const sessions = { ...state.sessions };
+      const runs = { ...state.runs };
+
+      for (const row of hydratedRuns) {
+        const terminalId = row.terminal_id || 'main';
+        const id = row.tool_call_id;
+        if (runs[id]) continue;
+
+        const session = ensureSession(sessions, terminalId);
+        runs[id] = {
+          id,
+          toolCallId: row.tool_call_id,
+          terminalId,
+          sandboxInstanceId: row.sandbox_instance_id || undefined,
+          sessionKey: row.session_key || undefined,
+          subagentId: row.subagent_id || undefined,
+          correlationId: row.correlation_id || undefined,
+          command: row.command,
+          status: normalizeStatus(row.status, row.exit_code),
+          startedAt: row.started_at,
+          endedAt: row.ended_at || undefined,
+          exitCode: typeof row.exit_code === 'number' ? row.exit_code : undefined,
+          durationMs: typeof row.duration_ms === 'number' ? row.duration_ms : undefined,
+          stdoutBytes: row.stdout_bytes || 0,
+          stderrBytes: row.stderr_bytes || 0,
+          outputBytes: row.output_bytes || 0,
+          outputRef: row.output_ref || undefined,
+          preview: row.preview || undefined,
+          chunks: [],
+          outputText: row.preview || '',
+          outputTruncated: Boolean(row.output_ref),
+        };
+
+        sessions[terminalId] = {
+          ...session,
+          runIds: session.runIds.includes(id) ? session.runIds : [...session.runIds, id],
+          selectedRunId: session.selectedRunId || id,
+        };
+      }
+
+      return { sessions, runs };
+    });
+  },
+
+  mergeRunOutput: (toolCallId, output) => {
+    if (!output) return;
+    set((state) => {
+      const existing = state.runs[toolCallId];
+      if (!existing || existing.hydratedFull) return state;
+
+      const sequence = existing.chunks.length + 1;
+      const chunk: TerminalChunk = {
+        id: `${toolCallId}:hydrated:${sequence}`,
+        runId: toolCallId,
+        data: output,
+        stream: 'stdout',
+        timestamp: existing.endedAt || Date.now(),
+        sequence,
+      };
+      const searchText = appendSearchText('', output);
+
+      return {
+        runs: {
+          ...state.runs,
+          [toolCallId]: {
+            ...existing,
+            chunks: [chunk],
+            outputText: searchText.text,
+            outputTruncated: searchText.truncated,
+            hydratedFull: true,
+            preview: undefined,
+          },
+        },
+      };
+    });
+  },
+
   selectRun: (terminalId, runId) => {
+    set((state) => {
+      const session = ensureSession(state.sessions, terminalId);
+      const resolved = runId || session.activeRunId || session.runIds[session.runIds.length - 1];
+      return {
+        sessions: {
+          ...state.sessions,
+          [terminalId]: {
+            ...session,
+            selectedRunId: resolved,
+          },
+        },
+      };
+    });
+  },
+
+  scrollToRun: (terminalId, runId) => {
     set((state) => {
       const session = ensureSession(state.sessions, terminalId);
       return {
@@ -327,7 +437,24 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
           ...state.sessions,
           [terminalId]: {
             ...session,
-            selectedRunId: runId || session.activeRunId || session.runIds[session.runIds.length - 1],
+            selectedRunId: runId,
+            scrollTargetRunId: runId,
+          },
+        },
+      };
+    });
+  },
+
+  clearScrollTarget: (terminalId) => {
+    set((state) => {
+      const session = state.sessions[terminalId];
+      if (!session?.scrollTargetRunId) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [terminalId]: {
+            ...session,
+            scrollTargetRunId: undefined,
           },
         },
       };
