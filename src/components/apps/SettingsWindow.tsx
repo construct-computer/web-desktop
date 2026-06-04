@@ -1518,7 +1518,7 @@ function ConnectionsSection() {
           value={searchQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Search for more integrations (Notion, Linear, Discord...)"
-          className="w-full text-[12px] pl-9 pr-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
+          className="w-full text-[12px] pl-9 pr-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none placeholder:text-[var(--color-text-muted)]"
         />
       </div>
 
@@ -2347,7 +2347,7 @@ function DeveloperSection() {
                                  bg-black/[0.04] dark:bg-white/[0.06]
                                  border border-black/[0.08] dark:border-white/[0.08]
                                  text-[var(--color-text)] placeholder-black/30 dark:placeholder-white/30
-                                 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40
+                                 focus:outline-none
                                  disabled:opacity-50"
                     />
                     <button

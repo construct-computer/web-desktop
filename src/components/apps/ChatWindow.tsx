@@ -220,7 +220,7 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
             {editingKey === session.key ? (
               <input
                 ref={editRef}
-                className="flex-1 min-w-0 bg-white/60 dark:bg-white/10 rounded px-1 py-0.5 text-xs outline-none border border-[var(--color-accent)]/50 focus:border-[var(--color-accent)]"
+                className="flex-1 min-w-0 bg-white/60 dark:bg-white/10 rounded px-1 py-0.5 text-xs outline-none border border-[var(--color-accent)]/50"
                 value={editValue}
                 maxLength={64}
                 onChange={(e) => setEditValue(e.target.value)}
@@ -795,7 +795,7 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
             placeholder={isConnected ? 'Type a message...' : 'Start your computer first'}
             disabled={!isConnected}
             rows={1}
-            className="flex-1 min-h-[32px] max-h-[120px] px-3 py-1.5 bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)] rounded-[var(--radius-input)] text-sm shadow-inner shadow-black/[0.02] placeholder:text-[var(--color-text-subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-150 resize-none"
+            className="flex-1 min-h-[32px] max-h-[120px] px-3 py-1.5 bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)] rounded-[var(--radius-input)] text-sm shadow-inner shadow-black/[0.02] placeholder:text-[var(--color-text-subtle)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-150 resize-none"
           />
           {isChatBusy && (
             <Button

@@ -324,7 +324,7 @@ export function SpotlightSidebar() {
               placeholder="Search chats..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-3 py-1.5 rounded-md text-[12px] surface-control border border-white/[0.06] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/20 outline-none focus:border-white/[0.12] transition-colors"
+              className="w-full pl-7 pr-3 py-1.5 rounded-md text-[12px] surface-control border border-white/[0.06] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/20 outline-none transition-colors"
             />
           </div>
         </div>

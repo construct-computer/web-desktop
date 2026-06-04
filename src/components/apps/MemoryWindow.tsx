@@ -544,7 +544,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-7 pr-2 py-1 w-full max-w-[180px] min-w-0 text-xs rounded-md border border-[var(--color-border)]
-                       bg-[var(--color-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                       bg-[var(--color-surface)] focus:outline-none"
           />
         </div>
 

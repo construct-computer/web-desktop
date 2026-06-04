@@ -247,10 +247,41 @@ html.dark ::-webkit-scrollbar-thumb:active {
   background: transparent;
 }
 
-/* Focus visible for accessibility */
-:focus-visible {
+/* Focus visible for accessibility (not text fields — see below) */
+:focus-visible:not(
+  input,
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable='false']),
+  [role='textbox']
+) {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+
+/* Text fields: no focus ring, outline, or border highlight (including autofocus) */
+:where(
+  input:not(
+      [type='button'],
+      [type='submit'],
+      [type='reset'],
+      [type='range'],
+      [type='file'],
+      [type='image'],
+      [type='hidden'],
+      [type='color']
+    ),
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable='false']),
+  [role='textbox']
+):is(:focus, :focus-visible) {
+  outline: none !important;
+  --tw-ring-width: 0px !important;
+  --tw-ring-offset-width: 0px !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  border-color: revert-layer !important;
 }
 
 /* ═══════════════════════════════════════════════

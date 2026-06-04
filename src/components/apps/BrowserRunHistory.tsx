@@ -245,7 +245,7 @@ export function BrowserRunHistory() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by task..."
             className="w-full pl-7 pr-7 py-1 text-xs bg-white/5 border border-white/10 rounded
-                       focus:outline-none focus:border-white/20 text-[var(--color-text)]
+                       focus:outline-none text-[var(--color-text)]
                        placeholder:text-[var(--color-text-subtle)] placeholder:opacity-40"
           />
           {query && (

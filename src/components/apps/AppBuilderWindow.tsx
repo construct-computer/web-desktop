@@ -713,7 +713,7 @@ function LayoutControls({
               value={String(columns)}
               onChange={(event) => onChange({ layout: 'grid', columns: Number(event.target.value) })}
               disabled={layout !== 'grid'}
-              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50 disabled:cursor-not-allowed disabled:opacity-45"
+              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none disabled:cursor-not-allowed disabled:opacity-45"
             >
               {[2, 3, 4].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
@@ -723,7 +723,7 @@ function LayoutControls({
             <select
               value={gap}
               onChange={(event) => onChange({ gap: event.target.value })}
-              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+              className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
             >
               {GAP_OPTIONS.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}
             </select>
@@ -771,7 +771,7 @@ function JsonObjectEditor({
           }
         }}
         spellCheck={false}
-        className={`${minHeight} w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 font-mono text-[11px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50`}
+        className={`${minHeight} w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 font-mono text-[11px] leading-relaxed outline-none`}
       />
     </label>
   );
@@ -837,7 +837,7 @@ function CollectionPropControls({
                               onChange={(event) => updateItems(items.map((entry, itemIndex) => (
                                 itemIndex === index ? { ...entry, [field.key]: event.target.value } : entry
                               )))}
-                              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                             >
                               {(field.options || []).map((option) => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -857,7 +857,7 @@ function CollectionPropControls({
                                 ? { ...entry, [field.key]: nextFieldValue(event.target.value, field.kind) }
                                 : entry
                             )))}
-                            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                           />
                         </label>
                       );
@@ -914,7 +914,7 @@ function SegmentedControlEditor({
                 const nextItems = items.map((entry, itemIndex) => itemIndex === index ? event.target.value : entry);
                 update(nextItems, active === item ? event.target.value : active);
               }}
-              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
             />
             <button
               type="button"
@@ -978,7 +978,7 @@ function TableDataEditor({
                   columnIndex === index ? { ...entry, key: event.target.value } : entry
                 )))}
                 placeholder="key"
-                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
               />
               <input
                 value={fieldValue(column, 'label')}
@@ -986,7 +986,7 @@ function TableDataEditor({
                   columnIndex === index ? { ...entry, label: event.target.value } : entry
                 )))}
                 placeholder="Label"
-                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
               />
               <button
                 type="button"
@@ -1042,7 +1042,7 @@ function TableDataEditor({
                       onChange={(event) => updateRows(rows.map((entry, itemIndex) => (
                         itemIndex === rowIndex ? { ...entry, [key]: event.target.value } : entry
                       )))}
-                      className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                      className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                     />
                   </label>
                 ))}
@@ -1084,7 +1084,7 @@ function QuickPropControls({
                 <select
                   value={value}
                   onChange={(event) => onChange({ [control.key]: event.target.value })}
-                  className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                  className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                 >
                   {(control.options || []).map((option) => (
                     <option key={option.value || 'default'} value={option.value}>{option.label}</option>
@@ -1100,7 +1100,7 @@ function QuickPropControls({
                 <textarea
                   value={value}
                   onChange={(event) => onChange({ [control.key]: event.target.value })}
-                  className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50"
+                  className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none"
                 />
               </label>
             );
@@ -1111,7 +1111,7 @@ function QuickPropControls({
               <input
                 value={value}
                 onChange={(event) => onChange({ [control.key]: event.target.value })}
-                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
               />
             </label>
           );
@@ -1174,7 +1174,7 @@ function BindingControls({
             <select
               value={key}
               onChange={(event) => setBinding(key, event.target.value, path)}
-              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
             >
               {[...new Set([key, ...options])].map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
@@ -1183,7 +1183,7 @@ function BindingControls({
               list={pathListId}
               onChange={(event) => setBinding(key, key, event.target.value)}
               placeholder="state.path"
-              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+              className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
             />
             <button
               type="button"
@@ -1199,7 +1199,7 @@ function BindingControls({
           <select
             value={newProp}
             onChange={(event) => setNewProp(event.target.value)}
-            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
           >
             {options.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
@@ -1208,7 +1208,7 @@ function BindingControls({
             list={pathListId}
             onChange={(event) => setNewPath(event.target.value)}
             placeholder="state.path"
-            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+            className="h-8 min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
           />
           <button
             type="button"
@@ -1267,7 +1267,7 @@ function QuickActionControls({
               if (next === 'state.patch') onChange({ type: 'state.patch', patch: action?.type === 'state.patch' ? action.patch || {} : { status: 'updated' } });
               if (next === 'tool.call') onChange({ type: 'tool.call', tool: action?.type === 'tool.call' ? action.tool || toolNames[0] || '' : toolNames[0] || '', args: action?.type === 'tool.call' ? action.args || {} : {} });
             }}
-            className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+            className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
           >
             <option value="none">None</option>
             <option value="state.patch">Patch state</option>
@@ -1283,7 +1283,7 @@ function QuickActionControls({
                 value={action?.type === 'tool.call' ? action.tool || '' : ''}
                 list={toolListId}
                 onChange={(event) => onChange({ type: 'tool.call', tool: event.target.value, args: action?.type === 'tool.call' ? action.args || {} : {} })}
-                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 font-mono text-[12px] outline-none"
               />
               <datalist id={toolListId}>
                 {toolNames.map((name) => <option key={name} value={name} />)}
@@ -2159,7 +2159,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                 value={componentQuery}
                 onChange={(event) => setComponentQuery(event.target.value)}
                 placeholder="Find by label, id, type"
-                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
               />
             </label>
           </div>
@@ -2456,7 +2456,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       <input
                         value={spec.name}
                         onChange={(event) => patchSpecRoot({ name: event.target.value })}
-                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                        className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                       />
                     </label>
                     <label className="block">
@@ -2464,7 +2464,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       <textarea
                         value={spec.description || ''}
                         onChange={(event) => patchSpecRoot({ description: event.target.value })}
-                        className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none focus:border-[var(--color-accent)]/50"
+                        className="h-16 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none"
                       />
                     </label>
                     <div>
@@ -2529,7 +2529,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                               children: CONTAINER_TYPES.has(type) ? selected.children || [] : undefined,
                             });
                           }}
-                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                         >
                           {COMPONENT_TYPES.map((type) => (
                             <option key={type} value={type}>{type}</option>
@@ -2541,7 +2541,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         <input
                           value={selected.label || ''}
                           onChange={(event) => patchSelected({ label: event.target.value })}
-                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                         />
                       </label>
                     </div>
@@ -2571,7 +2571,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         <input
                           value={typeof selected.props?.[key] === 'string' ? selected.props[key] as string : ''}
                           onChange={(event) => patchSelected({ props: { [key]: event.target.value } })}
-                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]/50"
+                          className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] outline-none"
                         />
                       </label>
                     ))}
@@ -2655,7 +2655,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                         value={agentPrompt}
                         onChange={(event) => setAgentPrompt(event.target.value)}
                         placeholder="Add behavior, wire this to a tool, change the data binding..."
-                        className="h-24 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                        className="h-24 w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.04] p-2 text-[12px] leading-relaxed outline-none placeholder:text-[var(--color-text-muted)]/45"
                       />
                     </label>
                     <button
@@ -2681,7 +2681,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       value={paletteQuery}
                       onChange={(event) => setPaletteQuery(event.target.value)}
                       placeholder="Search components"
-                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45 focus:border-[var(--color-accent)]/50"
+                      className="h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] pl-7 pr-2 text-[12px] outline-none placeholder:text-[var(--color-text-muted)]/45"
                     />
                   </label>
                   <div className="mb-2 flex gap-1 overflow-x-auto">

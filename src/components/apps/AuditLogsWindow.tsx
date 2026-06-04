@@ -356,7 +356,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 pr-3 py-1.5 w-full max-w-[200px] min-w-0 text-xs rounded-lg border border-[var(--color-border)]
-                         surface-control focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)] shadow-sm transition-all"
+                         surface-control focus:outline-none shadow-sm transition-all"
             />
           </div>
         </div>

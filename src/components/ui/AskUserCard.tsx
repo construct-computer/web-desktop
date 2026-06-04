@@ -291,7 +291,7 @@ export function AskUserCard({ data }: AskUserCardProps) {
                       }}
                       placeholder="Type your answer..."
                       autoFocus
-                      className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none focus:border-[var(--color-accent)]/40"
+                      className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none"
                     />
                   </div>
                 )}
@@ -326,7 +326,7 @@ export function AskUserCard({ data }: AskUserCardProps) {
                 onChange={e => setFieldValues(values => ({ ...values, [field.id]: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter' && !missingRequiredField) handleFieldsSubmit(); }}
                 placeholder={field.placeholder || field.label}
-                className="w-full px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none focus:border-[var(--color-accent)]/40"
+                className="w-full px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none"
               />
             </label>
           ))}
@@ -363,7 +363,7 @@ export function AskUserCard({ data }: AskUserCardProps) {
                 }}
                 placeholder="Type your answer..."
                 autoFocus
-                className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none focus:border-[var(--color-accent)]/40"
+                className="flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)]/20 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]/40 outline-none"
               />
               <button
                 onClick={() => {

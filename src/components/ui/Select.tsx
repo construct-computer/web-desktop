@@ -231,7 +231,7 @@ export function Select({
           'surface-control',
           'border border-black/[0.08] dark:border-white/[0.08]',
           'text-[var(--color-text)] hover:bg-black/[0.06] dark:hover:bg-white/[0.08]',
-          'focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/40',
+          'focus:outline-none',
           'disabled:opacity-40 disabled:cursor-not-allowed transition-colors',
           inline ? '' : 'w-full',
           className,

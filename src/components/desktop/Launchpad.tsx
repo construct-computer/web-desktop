@@ -277,7 +277,7 @@ export function Launchpad() {
               className="w-full pl-9 pr-4 py-2 text-sm text-white placeholder-white/40
                         bg-white/10 border border-white/15 rounded-lg
                         surface-control
-                        outline-none focus:bg-white/15 focus:border-white/25
+                        outline-none focus:bg-white/15
                         transition-colors duration-200"
             />
           </div>

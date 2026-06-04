@@ -16,7 +16,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
            text-sm
            shadow-inner shadow-black/[0.02]
            placeholder:text-[var(--color-text-subtle)]
-           focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50 focus:border-[var(--color-accent)]
+           focus:outline-none
            disabled:cursor-not-allowed disabled:opacity-50
            transition-all duration-150`,
           className

@@ -1208,7 +1208,7 @@ function EventDialog({
                 onChange={(e) => update({ description: e.target.value })}
                 placeholder="Optional description..."
                 className="mt-1 w-full px-3 py-2 text-sm rounded-md border border-black/10 dark:border-white/10
-                           bg-black/5 dark:bg-white/5 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]
+                           bg-black/5 dark:bg-white/5 focus:outline-none
                            resize-none"
                 rows={2}
               />

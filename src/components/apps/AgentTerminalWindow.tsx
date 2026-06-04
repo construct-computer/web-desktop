@@ -466,7 +466,7 @@ export function AgentTerminalWindow({ config }: AgentTerminalWindowProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search commands and output"
-                className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[11px] text-white/80 outline-none placeholder:text-white/25 focus:border-cyan-300/40"
+                className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[11px] text-white/80 outline-none placeholder:text-white/25"
               />
               <div className="mt-1 flex items-center justify-between text-[10px] text-white/30">
                 <span>{filteredRuns.length} shown</span>

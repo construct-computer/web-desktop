@@ -269,7 +269,7 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${tools.length} actions...`}
-            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md surface-control border border-black/[0.06] dark:border-white/[0.06] focus:outline-none focus:border-[var(--color-accent)]/40 placeholder:text-[var(--color-text-muted)]"
+            className="w-full text-[11.5px] pl-7 pr-2.5 py-1.5 rounded-md surface-control border border-black/[0.06] dark:border-white/[0.06] focus:outline-none placeholder:text-[var(--color-text-muted)]"
           />
         </div>
       )}

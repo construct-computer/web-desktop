@@ -400,7 +400,7 @@ function CredentialField({
           onChange={(e) => onChange(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className={`w-full ${isSecret ? 'pr-9' : ''} px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] font-mono outline-none focus:border-[var(--color-accent)] transition-colors`}
+          className={`w-full ${isSecret ? 'pr-9' : ''} px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] font-mono outline-none transition-colors`}
           placeholder={`Enter ${field.displayName.toLowerCase()}`}
         />
         {isSecret && (

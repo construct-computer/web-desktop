@@ -377,7 +377,7 @@ export function UsageSection() {
                     onChange={(e) => setTweetUrl(e.target.value)}
                     placeholder={onCooldown ? 'On cooldown...' : 'Paste your tweet link...'}
                     disabled={onCooldown}
-                    className="settings-form-field flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] outline-none focus:ring-1 focus:ring-[var(--color-accent)] placeholder:text-[var(--color-text-muted)]/50 disabled:opacity-50"
+                    className="settings-form-field flex-1 px-3 py-1.5 rounded-lg text-[13px] bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08] outline-none placeholder:text-[var(--color-text-muted)]/50 disabled:opacity-50"
                   />
                   <Button
                     size="sm"

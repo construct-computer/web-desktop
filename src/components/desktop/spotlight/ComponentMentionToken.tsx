@@ -41,7 +41,7 @@ export function ComponentMentionToken({
       className={[
         'inline-flex max-w-[280px] shrink-0 items-center gap-1.5 align-baseline',
         'rounded-md border px-1.5 text-[11px] leading-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
-        clickable && 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20',
+        clickable && 'cursor-pointer focus:outline-none',
         isMessage
           ? 'mb-1 mr-1 border-white/10 bg-white/15 py-0 text-white/90'
           : 'h-7 border-white/10 bg-white/[0.08] py-0.5 text-[var(--color-text)]',

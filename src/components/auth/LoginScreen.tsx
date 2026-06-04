@@ -281,7 +281,7 @@ export function LoginScreen() {
                                border border-black/10 dark:border-white/15
                                text-black/90 dark:text-white
                                placeholder-black/20 dark:placeholder-white/20
-                               focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/40
+                               focus:outline-none
                                transition-all"
                   />
                   <button
@@ -322,7 +322,7 @@ export function LoginScreen() {
                                border border-black/10 dark:border-white/15
                                text-black/90 dark:text-white shadow-inner
                                placeholder-black/40 dark:placeholder-white/40
-                               focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/40
+                               focus:outline-none
                                transition-all"
                   />
                   <button

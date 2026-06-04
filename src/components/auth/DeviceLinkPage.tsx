@@ -122,7 +122,7 @@ export function DeviceLinkPage() {
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="ABC123"
                 maxLength={8}
-                className="w-48 text-center text-2xl font-mono tracking-[0.3em] bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none focus:border-white/25 transition-colors"
+                className="w-48 text-center text-2xl font-mono tracking-[0.3em] bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none transition-colors"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleApprove()}
               />

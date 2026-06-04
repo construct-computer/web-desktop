@@ -161,7 +161,7 @@ const FindBar = memo(function FindBar({
         className="w-full max-w-[200px] min-w-0 h-[24px] px-2 text-[12px] surface-control border border-[var(--color-border)]
                    rounded-[var(--radius-input)] outline-none text-[var(--color-text)]
                    placeholder:text-[var(--color-text-subtle)]
-                   focus:border-[var(--color-accent)]/60"
+"
         placeholder="Find in page..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}

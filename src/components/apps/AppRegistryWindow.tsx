@@ -771,7 +771,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           <input
             type="text"
             disabled={tab === 'from_url'}
-            className={`w-full pl-9 ${search ? 'pr-8' : 'pr-4'} py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-sm outline-none focus:border-[var(--color-accent)] transition-colors placeholder:text-black/30 dark:placeholder:text-white/25 disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`w-full pl-9 ${search ? 'pr-8' : 'pr-4'} py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-sm outline-none transition-colors placeholder:text-black/30 dark:placeholder:text-white/25 disabled:opacity-40 disabled:cursor-not-allowed`}
             placeholder={
               tab === 'from_url'
                 ? 'Search is on Available / Connected…'
@@ -878,7 +878,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  className="w-full text-[13px] pl-9 pr-3 py-3 rounded-[12px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50 transition-colors placeholder:text-black/30 dark:placeholder:text-white/25"
+                  className="w-full text-[13px] pl-9 pr-3 py-3 rounded-[12px] bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none transition-colors placeholder:text-black/30 dark:placeholder:text-white/25"
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
@@ -901,7 +901,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                       resetFromUrlProbe();
                     }}
                     placeholder="/mcp"
-                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50"
+                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none"
                   />
                 </div>
                 <div>
@@ -911,7 +911,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                     value={fromDisplayName}
                     onChange={(e) => setFromDisplayName(e.target.value)}
                     placeholder="Auto-filled from hostname"
-                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none focus:border-[var(--color-accent)]/50"
+                    className="w-full text-[12px] px-2.5 py-2 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] outline-none"
                   />
                 </div>
               </div>

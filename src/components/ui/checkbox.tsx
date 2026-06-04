@@ -29,7 +29,6 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
              border border-[var(--color-border-strong)]
              border-t-[var(--color-border-strong)] border-l-[var(--color-border-strong)]
              border-b-[var(--color-surface)] border-r-[var(--color-surface)]
-             peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-accent)]
              peer-disabled:cursor-not-allowed peer-disabled:opacity-50
              flex items-center justify-center`,
             checked && 'bg-[var(--color-accent)] border-[var(--color-accent)]',

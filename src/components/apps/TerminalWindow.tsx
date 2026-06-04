@@ -388,7 +388,7 @@ export function LegacyTerminalWindow({ config }: TerminalWindowProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Find"
-                className="w-28 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-[11px] outline-none focus:border-white/25"
+                className="w-28 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-[11px] outline-none"
               />
               <span className="text-[10px] text-white/35 min-w-8">{matchCount}</span>
             </div>
