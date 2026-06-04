@@ -55,6 +55,14 @@ function eventMeta(msg: ChatMessage): {
     };
   }
 
+  if (msg.activityStatus === 'failed') {
+    return {
+      title: msg.content,
+      tone: 'error',
+      tool: msg.tool,
+    };
+  }
+
   if (msg.noticeKind === 'watchdog' || msg.noticeKind === 'system_recovery') {
     return {
       title: msg.content,

@@ -736,3 +736,77 @@ export function desktopActionToWindowType(action: string): WindowType | null {
     default: return null;
   }
 }
+
+export function describeToolFailure(
+  tool: string,
+  params: Record<string, unknown> | undefined,
+  opts: { exitCode?: number; error?: string } = {},
+): string {
+  const exitSuffix = opts.exitCode != null ? ` · exit ${opts.exitCode}` : '';
+  const sandboxDetail = opts.error?.replace(/^Sandbox error:\s*/i, '').slice(0, 100);
+
+  if (tool === 'exec' || tool === 'terminal') {
+    const cmd = (params?.command as string) || '';
+    const display = cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd;
+    if (sandboxDetail) return `Failed \`${display}\` · ${sandboxDetail}`;
+    return `Failed \`${display}\`${exitSuffix}`;
+  }
+  if (tool === 'sandbox_read_file') return `Failed reading ${params?.path || 'file'}${exitSuffix}`;
+  if (tool === 'sandbox_write_file') return `Failed writing ${params?.path || 'file'}${exitSuffix}`;
+  if (tool === 'save_to_workspace') return `Failed saving ${params?.workspace_path || 'file'}${exitSuffix}`;
+  if (tool === 'load_from_workspace') return `Failed loading ${params?.workspace_path || 'file'}${exitSuffix}`;
+  return `Failed ${tool}${exitSuffix}`;
+}
+
+export type ToolActivityPatch = {
+  toolCallId?: string;
+  tool?: string;
+  params?: Record<string, unknown>;
+  exitCode?: number;
+  error?: string;
+};
+
+export function patchToolActivityFailure<T extends {
+  role: string;
+  tool?: string;
+  toolCallId?: string;
+  activityStatus?: string;
+  content: string;
+}>(
+  messages: T[],
+  opts: ToolActivityPatch,
+): T[] {
+  const { toolCallId, tool, params, exitCode, error } = opts;
+  if (!toolCallId && !tool) return messages;
+
+  let matchIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') continue;
+    if (toolCallId && msg.toolCallId === toolCallId) {
+      matchIndex = i;
+      break;
+    }
+    if (!toolCallId && tool && msg.tool === tool && msg.activityStatus !== 'failed') {
+      matchIndex = i;
+      break;
+    }
+    if (!toolCallId && tool === 'terminal' && msg.activityType === 'terminal' && msg.activityStatus !== 'failed') {
+      matchIndex = i;
+      break;
+    }
+  }
+  if (matchIndex < 0) return messages;
+
+  const existing = messages[matchIndex];
+  const content = describeToolFailure(
+    existing.tool || tool || 'tool',
+    params,
+    { exitCode, error },
+  );
+  return messages.map((msg, index) => (
+    index === matchIndex
+      ? { ...msg, content, activityStatus: 'failed' as const, isError: true }
+      : msg
+  ));
+}

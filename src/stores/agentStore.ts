@@ -44,6 +44,7 @@ import {
   findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent,
   describeToolCall,
   composioDisplayTool,
+  patchToolActivityFailure,
 } from './agentStoreUtils';
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
@@ -190,6 +191,10 @@ export interface ChatMessage {
   tool?: string;
   /** For activity messages: icon hint for rendering */
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
+  /** Correlates activity rows with tool_result / terminal_exit events */
+  toolCallId?: string;
+  /** Live execution status for tool activity rows */
+  activityStatus?: 'running' | 'completed' | 'failed';
   /** True for error/stopped messages — rendered with event styling */
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
@@ -4130,6 +4135,36 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
+      const patchToolActivityFailureInChat = (opts: {
+        toolCallId?: string;
+        tool?: string;
+        params?: Record<string, unknown>;
+        exitCode?: number;
+        error?: string;
+      }) => {
+        set(state => {
+          const updates: Partial<typeof state> = {};
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            const existing = pa.chatMessages || [];
+            updates.platformAgents = {
+              ...state.platformAgents,
+              [eventPlatform]: {
+                ...pa,
+                chatMessages: patchToolActivityFailure(existing, opts),
+              },
+            };
+          }
+          if (isActiveSession) {
+            updates.chatMessages = patchToolActivityFailure(state.chatMessages, opts);
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, patchToolActivityFailure(cached, opts));
+          }
+          return updates;
+        });
+      };
+
       const resolveMemoryActivityMessage = (operationId: string, replacement: ChatMessage | null): boolean => {
         if (!operationId) return false;
         let matched = false;
@@ -4640,6 +4675,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'tool_call': {
           if (!get().runningSessions.has(eventSessionKey)) break;
           const tool = event.data?.tool as string || event.data?.name as string || 'tool';
+          const toolCallId = event.data?.toolCallId as string | undefined;
           const params = (event.data?.params ?? event.data?.args ?? event.data?.input) as Record<string, unknown> | undefined;
           const toolSubagentId = event.data?.subagentId as string | undefined;
           // Agent may specify which workspace this tool's window should open in
@@ -4771,6 +4807,8 @@ export const useComputerStore = create<ComputerStore>()(
             timestamp: new Date(),
             tool: displayTool,
             activityType,
+            toolCallId,
+            activityStatus: 'running',
           };
           appendToAgentChat(toolActivityMsg);
 
@@ -4796,7 +4834,18 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'tool_result': {
           const tool = event.data?.tool as string || event.data?.name as string || '';
+          const toolCallId = event.data?.toolCallId as string | undefined;
+          const success = event.data?.success as boolean | undefined;
+          const error = event.data?.error as string | undefined;
           const resultSubagentId = event.data?.subagentId as string | undefined;
+
+          if (!resultSubagentId && success === false) {
+            patchToolActivityFailureInChat({
+              toolCallId,
+              tool,
+              error,
+            });
+          }
 
           // Schedule auto-close for windows opened by this tool type
           if (!resultSubagentId) {
@@ -6173,6 +6222,11 @@ export const useComputerStore = create<ComputerStore>()(
           // Notify on command failure
           if (exitCode !== 0) {
             const shortCmd = exitCmd.length > 60 ? exitCmd.slice(0, 60) + '...' : exitCmd;
+            patchToolActivityFailureInChat({
+              tool: 'terminal',
+              params: { command: exitCmd },
+              exitCode,
+            });
             useNotificationStore.getState().addNotification({
               title: 'Command failed',
               body: `\`${shortCmd}\` exited with code ${exitCode}`,

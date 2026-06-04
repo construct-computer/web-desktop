@@ -196,17 +196,18 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                   );
                 }
                 const isTerminal = act.activityType === 'terminal';
+                const isFailed = act.activityStatus === 'failed' || act.isError;
                 return (
                   <div key={key} className="flex items-center gap-2.5 rounded-md px-1 py-[3px] hover:bg-white/[0.025]">
                     <div className="relative flex h-7 w-5 shrink-0 items-center justify-center">
                       {index > 0 && <div className="absolute top-0 h-1/2 w-px bg-blue-300/10" />}
                       {index < itemsWithDuration.length - 1 && <div className="absolute bottom-0 h-1/2 w-px bg-blue-300/10" />}
-                      <div className="relative z-10 h-1.5 w-1.5 rounded-full bg-blue-300/45 ring-2 ring-[var(--color-surface)]" />
+                      <div className={`relative z-10 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--color-surface)] ${isFailed ? 'bg-red-300/70' : 'bg-blue-300/45'}`} />
                     </div>
-                    <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${ACTIVITY_ICON_CLASS}`}>
+                    <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${isFailed ? 'bg-red-500/10 text-red-300/80' : ACTIVITY_ICON_CLASS}`}>
                       <ActivityIcon type={act.activityType} tool={act.tool} label={act.content} className="w-3 h-3" />
                     </div>
-                    <span className={`text-[12px] text-[var(--color-text-muted)]/50 truncate flex-1 ${isTerminal ? 'font-mono' : ''}`}>
+                    <span className={`text-[12px] truncate flex-1 ${isTerminal ? 'font-mono' : ''} ${isFailed ? 'text-red-300/75' : 'text-[var(--color-text-muted)]/50'}`}>
                       {act.content}
                     </span>
                     {dur && (
