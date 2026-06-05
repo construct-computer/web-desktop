@@ -51,6 +51,9 @@ const WEB_TOOLS = new Set([
   'remote_browser',
   'remote_browser_session',
   'browser',
+  'arxiv',
+  'youtube',
+  'domain_intel',
 ]);
 
 /** Tools with a native app icon that routeToolToWindow does not cover. */

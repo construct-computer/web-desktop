@@ -115,11 +115,14 @@ function toolkitRoute(toolkit: string | undefined): ToolWindowRoute {
 export function routeToolToWindow(tool: string, params?: Record<string, unknown>): ToolWindowRoute | null {
   const p = params || {};
 
-  // ── Browser ──────────────────────────────────────────────────────
-  // `browser` / `browser_*` focus the browser window; `remote_browser*`
-  // open it through the `browser:start` event flow instead.
-  if (tool === 'browser' || tool.startsWith('browser_')) {
-    return { type: 'browser', autoClose: true };
+  // ── Browser + cheap web/research tools (unified Browser app tabs) ─
+  const BROWSER_WEB_TOOLS = new Set([
+    'web_search', 'web_fetch', 'arxiv', 'youtube', 'domain_intel',
+  ]);
+  if (
+    tool === 'browser' || tool.startsWith('browser_') || BROWSER_WEB_TOOLS.has(tool)
+  ) {
+    return { type: 'browser', autoClose: false };
   }
 
   // ── Terminal / sandbox / github ──────────────────────────────────

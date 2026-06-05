@@ -21,13 +21,11 @@ import {
   getAgentConfig, updateAgentConfig,
   getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
   getComposioToolkitDetail,
-  getAutopilotPolicy, updateAutopilotPolicy,
-  type AutopilotPolicy,
 } from '@/services/api';
 import { ComposioAuthPanel } from '../ComposioAuthPanel';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
 import {
-  SectionPanel, SettingsCard, SettingsRow, SettingsSubsection, Toggle,
+  SectionPanel, SettingsCard, SettingsRow, SettingsSubsection,
 } from './SettingsPrimitives';
 
 type TelegramWidgetUser = Record<string, string>;
@@ -435,104 +433,6 @@ function ConstructIdentityPanel() {
         </button>
       </div>
     </div>
-  );
-}
-function ConstructAutonomyPanel() {
-  const [policy, setPolicy] = useState<AutopilotPolicy | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAutopilotPolicy().then((result) => {
-      if (cancelled) return;
-      if (result.success) {
-        setPolicy(result.data);
-        setError(null);
-      } else {
-        setError(result.error || 'Failed to load Construct settings');
-      }
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  const savePolicy = async (
-    update: { highAutonomyEnabled: boolean },
-    busyKey: string,
-    optimistic: (current: AutopilotPolicy) => AutopilotPolicy,
-  ) => {
-    if (!policy || savingKey) return;
-    const previous = policy;
-    setSavingKey(busyKey);
-    setError(null);
-    setPolicy(optimistic(policy));
-    const result = await updateAutopilotPolicy(update);
-    if (result.success) {
-      setPolicy(result.data);
-    } else {
-      setPolicy(previous);
-      setError(result.error || 'Failed to save Construct settings');
-    }
-    setSavingKey(null);
-  };
-
-  const highAutonomyEnabled = policy?.highAutonomyEnabled ?? true;
-  const handleHighAutonomyChange = (enabled: boolean) => {
-    if (!policy || highAutonomyEnabled === enabled) return;
-    void savePolicy(
-      { highAutonomyEnabled: enabled },
-      'highAutonomyEnabled',
-      (current) => ({ ...current, highAutonomyEnabled: enabled }),
-    );
-  };
-
-  return (
-    <>
-      {error && (
-        <div className="flex items-center gap-2 text-[13px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3.5 py-2.5 mb-4">
-          <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-        </div>
-      )}
-
-      <SettingsCard>
-        <SettingsRow
-          label="High autonomy failsafe"
-          info="Lets Construct continue routine trusted work without asking every time. It still asks before sensitive actions."
-          description="When on, Construct can recover work and continue routine trusted actions by default."
-        >
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
-          ) : (
-            <Toggle
-              checked={highAutonomyEnabled}
-              disabled={!!savingKey}
-              onChange={handleHighAutonomyChange}
-            />
-          )}
-        </SettingsRow>
-
-        <div className="px-4 py-3.5">
-          <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.035] px-3 py-2.5">
-            <h3 className="text-[13px] font-medium">Self-managed work</h3>
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug">
-              Construct chooses how much it can do from the task, prior outcomes, and your saved preferences.
-            </p>
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-snug">
-              It still asks before credentials, destructive actions, payments or financial commitments, legal commitments, broad data exposure, or access from unknown or unauthorized people.
-            </p>
-          </div>
-
-          {!loading && !highAutonomyEnabled && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/15 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>High autonomy is off. Recovery stays on, but Construct asks more often before actions outside your workspace.</span>
-            </div>
-          )}
-        </div>
-      </SettingsCard>
-    </>
   );
 }
 function ConstructConnectionsPanel() {
@@ -1339,10 +1239,6 @@ export function ConstructSection() {
     <SectionPanel title="Construct" subtitle="Name your Construct, set how it works, and connect services.">
       <SettingsSubsection title="Identity">
         <ConstructIdentityPanel />
-      </SettingsSubsection>
-
-      <SettingsSubsection title="Autonomy" className="mt-5">
-        <ConstructAutonomyPanel />
       </SettingsSubsection>
 
       <div className="mt-5">

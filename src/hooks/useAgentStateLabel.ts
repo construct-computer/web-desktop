@@ -57,6 +57,7 @@ export function useAgentStateLabel(): { stateLabel: string; scrollText: string; 
         file_list: 'Listing files',
         remote_browser: 'Remote browsing',
         web_search: 'Searching web',
+        web_fetch: 'Fetching page',
         web_scrape: 'Remote browsing',
         email: 'Handling email',
         slack: 'Using Slack',

@@ -1108,7 +1108,8 @@ export async function getAutopilotStatus(): Promise<ApiResult<AutopilotStatus>> 
 }
 
 export interface AutopilotPolicy {
-  highAutonomyEnabled: boolean;
+  autonomyMode?: 'standard';
+  highAutonomyEnabled?: boolean;
   rules: AutonomyPolicyRule[];
 }
 
@@ -2826,6 +2827,10 @@ export async function listBrowserActiveSessions(): Promise<ApiResult<{ sessions:
 
 export async function stopBrowserRun(runId: string): Promise<ApiResult<{ status: string; already?: string }>> {
   return request(`/browser/runs/${encodeURIComponent(runId)}/stop`, { method: 'POST' });
+}
+
+export async function stopBrowserSession(sessionId: string): Promise<ApiResult<{ status: string; stopped?: number; attempted?: number }>> {
+  return request(`/browser/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST' });
 }
 
 export async function stopAllBrowserForSession(sessionKey: string): Promise<ApiResult<{ status: string; stopped: number; attempted: number }>> {

@@ -9,6 +9,8 @@ import { browserWS } from '@/services/websocket';
 import type { WindowConfig } from '@/types';
 import { BrowserDashboardPanel } from './browser/BrowserDashboardPanel';
 import { BrowserLivePreview } from './browser/BrowserLivePreview';
+import { BrowserUnifiedShell } from './browser/BrowserUnifiedShell';
+import { useBrowserTabStore } from '@/stores/browserTabStore';
 import { captureBrowserScreenshot, listBrowserActiveSessions } from '@/services/api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -321,12 +323,14 @@ interface BrowserWindowProps { config: WindowConfig; }
 
 export function BrowserWindow({ config }: BrowserWindowProps) {
   const windowId = config.id;
+  const emulatedTabCount = useBrowserTabStore((s) => s.tabs.length);
 
   /* ── Window metadata ────────────────────────────────────────────────────── */
   const daemonTabId = config.metadata?.daemonTabId as string | null;
   const subagentId = config.metadata?.subagentId as string | null;
   const browserSubagentId = config.metadata?.browserSubagentId as string | null;
   const isAgentBrowserWindow = !!config.metadata?.browserAppWindow || !!browserSubagentId;
+  const useUnifiedShell = isAgentBrowserWindow || emulatedTabCount > 0;
 
   /** Send a browser action targeted at THIS window's daemon tab. */
   const sendTabAction = useCallback((action: Record<string, unknown>) => {
@@ -945,6 +949,10 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   /* ═══════════════════════════════════════════════════════════════════════════
      Render
      ═══════════════════════════════════════════════════════════════════════════ */
+
+  if (useUnifiedShell) {
+    return <BrowserUnifiedShell isAgentBrowserWindow={isAgentBrowserWindow} />;
+  }
 
   // Default state — no local browser; the agent uses a remote browser (Web Agent)
   if ((!isRunning || !connected) && !isAgentBrowserWindow) {

@@ -357,7 +357,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
       return { text: `Web: ${shortGoal}`, activityType: 'web' };
     }
     const shortQuery = query && query.length > 50 ? query.slice(0, 50) + '...' : query;
-    return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'tool' };
+    return { text: `Searching: ${shortQuery || 'web'}`, activityType: 'web' };
   }
 
   if (tool === 'web_fetch') {
@@ -737,7 +737,16 @@ export function describeToolFailure(
   opts: { exitCode?: number; error?: string } = {},
 ): string {
   const exitSuffix = opts.exitCode != null ? ` · exit ${opts.exitCode}` : '';
-  const sandboxDetail = opts.error?.replace(/^Sandbox error:\s*/i, '').slice(0, 100);
+  const rawError = opts.error || '';
+  const skippedBecause = rawError.match(/^Skipped because (\S+) failed:\s*(.+)$/i);
+  if (skippedBecause) {
+    const [, rootTool, detail] = skippedBecause;
+    return `Skipped (${rootTool} failed) · ${detail.slice(0, 100)}`;
+  }
+  if (/^Skipped: (a )?sibling tool /i.test(rawError)) {
+    return `Skipped (blocked by earlier failure) · ${rawError.replace(/^Skipped: (a )?sibling tool /i, '').slice(0, 100)}`;
+  }
+  const sandboxDetail = rawError.replace(/^Sandbox error:\s*/i, '').slice(0, 100);
 
   if (tool === 'exec' || tool === 'terminal') {
     const cmd = (params?.command as string) || '';

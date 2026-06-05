@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, FileText, StopCircle } from 'lucide-react';
+import { Check, X, Copy, ExternalLink, FileText, StopCircle, Loader2, AlertTriangle, CheckCircle2, Play } from 'lucide-react';
 import type { BrowserSessionRecord } from '@/stores/agentStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -13,12 +13,13 @@ type BrowserDashboardTab = 'sessions' | 'runs' | 'shots' | 'files';
 export function BrowserDashboardPanel({
   sessions,
   activeSessionId,
+  onClose,
 }: {
   sessions: BrowserSessionRecord[];
   activeSessionId: string | null;
+  onClose?: () => void;
 }) {
   const [tab, setTab] = useState<BrowserDashboardTab>('sessions');
-  const [collapsed, setCollapsed] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [filesScope, setFilesScope] = useState<'active' | 'all'>('active');
   const [shotsScope, setShotsScope] = useState<'active' | 'all'>('active');
@@ -32,6 +33,7 @@ export function BrowserDashboardPanel({
   const runningCount = visibleSessions.filter((s) => s.status === 'running' || s.status === 'starting').length;
   const terminalCount = visibleSessions.filter((s) => s.status === 'complete' || s.status === 'error' || s.status === 'idle').length;
   const stoppableCount = visibleSessions.filter((s) => s.status !== 'complete' && s.status !== 'error' && s.status !== 'expired').length;
+  
   const onStopAll = async () => {
     if (stopping || stoppableCount === 0) return;
     setStopping(true);
@@ -43,68 +45,45 @@ export function BrowserDashboardPanel({
     }
   };
 
-  if (collapsed) {
-    return (
-      <div className="w-[44px] shrink-0 border-l border-[var(--color-border)] surface-sidebar flex flex-col items-center py-2 gap-2">
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded-md border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.06] flex items-center justify-center"
-          title="Show browser details"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <div
-          className="text-[10px] uppercase tracking-wider text-[var(--color-text-subtle)] select-none"
-          style={{ writingMode: 'vertical-rl' }}
-        >
-          Details
-        </div>
-        {(runningCount > 0 || terminalCount > 0) && (
-          <div className="mt-auto mb-1 flex flex-col items-center gap-1">
-            {runningCount > 0 && <span className="w-2 h-2 rounded-full bg-amber-400" title={`${runningCount} running`} />}
-            {terminalCount > 0 && <span className="text-[10px] text-[var(--color-text-subtle)]">{terminalCount}</span>}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="w-[360px] shrink-0 border-l border-[var(--color-border)] surface-sidebar flex flex-col min-h-0">
-      <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar">
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.06] flex items-center justify-center"
-            title="Collapse browser details"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-wider text-[var(--color-text-subtle)]">Browser app</p>
-            <p className="text-xs text-[var(--color-text)] truncate">
-              {active?.task || active?.streamUrl || 'No active browser session'}
+    <div className="w-[360px] shrink-0 border-l border-[var(--color-border)] bg-[var(--color-sidebar)] flex flex-col min-h-0 animate-[fadeIn_0.2s_ease-out]">
+      <div className="px-3.5 py-3 border-b border-[var(--color-border)] surface-toolbar select-none">
+        <div className="flex items-center justify-between gap-3">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 w-7 h-7 rounded-lg border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.06] flex items-center justify-center transition-colors"
+              title="Close console details"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">Browser Session</p>
+            <p className="text-xs font-semibold text-[var(--color-text)] truncate mt-0.5">
+              {active?.task || active?.streamUrl || 'No active session'}
             </p>
           </div>
-          <span className="shrink-0 text-[10px] rounded-full px-2 py-0.5 bg-white/5 text-[var(--color-text-subtle)]">
-            <ExpiresCountdown expiresAt={active?.expiresAt} status={active?.status} />
-          </span>
+          {active && (
+            <span className="shrink-0 text-[9px] font-semibold rounded-md px-2 py-0.5 bg-white/[0.06] border border-white/[0.04] text-[var(--color-text-subtle)]">
+              <ExpiresCountdown expiresAt={active?.expiresAt} status={active?.status} />
+            </span>
+          )}
           <button
             type="button"
             onClick={onStopAll}
             disabled={stopping || stoppableCount === 0}
-            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-red-500/20 bg-red-500/[0.06] text-[10px] text-red-400/80 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-red-500/30 bg-red-500/[0.08] text-[10px] font-sans font-medium text-red-400 hover:bg-red-500/15 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
             title="Stop all live browser sessions"
           >
             <StopCircle className="w-3 h-3" />
-            {stopping ? 'Stopping' : 'Stop all'}
+            {stopping ? 'Stopping' : 'Stop All'}
           </button>
         </div>
       </div>
 
-      <div className="flex border-b border-[var(--color-border)] surface-toolbar text-[11px]">
+      <div className="flex border-b border-[var(--color-border)] surface-toolbar text-[11px] p-1 gap-1 bg-white/[0.01] select-none">
         {([
           ['sessions', 'Sessions'],
           ['runs', 'Runs'],
@@ -114,7 +93,11 @@ export function BrowserDashboardPanel({
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex-1 px-2 py-1.5 ${tab === key ? 'text-[var(--color-text)] bg-white/[0.04]' : 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}`}
+            className={`flex-1 py-1.5 rounded-md transition-all duration-150 font-sans ${
+              tab === key
+                ? 'text-[var(--color-text)] bg-white/10 shadow-sm font-medium'
+                : 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-white/[0.02]'
+            }`}
           >
             {label}
           </button>
@@ -128,17 +111,17 @@ export function BrowserDashboardPanel({
         {tab === 'runs' && <BrowserRunHistory />}
         {tab === 'shots' && (
           <div className="h-full flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2">
-              <span className="text-[11px] text-[var(--color-text-subtle)]">
-                {shotsScope === 'active' ? 'Selected session screenshots' : 'All screenshots'}
+            <div className="px-3.5 py-2.5 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2 select-none">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
+                {shotsScope === 'active' ? 'Active Screenshots' : 'All Screenshots'}
               </span>
               <button
                 type="button"
                 onClick={() => setShotsScope((scope) => scope === 'active' ? 'all' : 'active')}
                 disabled={!active}
-                className="text-[10px] px-2 py-1 rounded border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-40"
+                className="text-[10px] px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors disabled:opacity-40"
               >
-                {shotsScope === 'active' ? 'Show all' : 'Active only'}
+                {shotsScope === 'active' ? 'Show All' : 'Active Only'}
               </button>
             </div>
             <BrowserScreenshotGallery
@@ -182,7 +165,7 @@ function BrowserSessionList({
 
   if (sessions.length === 0) {
     return (
-      <div className="h-full overflow-y-auto p-3">
+      <div className="h-full overflow-y-auto p-4 select-none">
         <EmptyState>
           Browser sessions will appear here when Construct or screenshot actions open a live browser.
         </EmptyState>
@@ -191,29 +174,63 @@ function BrowserSessionList({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-3 space-y-2">
-      {sessions.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          onClick={() => setActiveBrowserSession(s.id)}
-          className={`w-full text-left rounded-md border p-2 text-xs transition-colors ${s.id === activeSessionId ? 'border-[var(--color-accent)]/50 bg-[var(--color-accent-muted)]/20' : 'border-white/[0.08] bg-black/10 hover:bg-white/[0.04]'}`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-medium text-[var(--color-text)] capitalize">{sessionStatusLabel(s.status)}</span>
-            <span className="text-[10px] text-[var(--color-text-subtle)]">
-              <ExpiresCountdown expiresAt={s.expiresAt} status={s.status} />
-            </span>
-          </div>
-          <p className="mt-1 text-[var(--color-text-subtle)] line-clamp-2">{s.task || s.streamUrl || s.id}</p>
-          {s.stepCount != null && (
-            <p className="mt-1 text-[10px] text-[var(--color-text-subtle)] opacity-70">
-              {s.stepCount} step{s.stepCount === 1 ? '' : 's'}
+    <div className="h-full overflow-y-auto p-3.5 space-y-2.5">
+      {sessions.map((s) => {
+        const isRunning = s.status === 'running' || s.status === 'starting';
+        const isSuccess = s.status === 'complete';
+        const isErr = s.status === 'error';
+        const active = s.id === activeSessionId;
+        
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setActiveBrowserSession(s.id)}
+            className={`w-full text-left rounded-xl border p-3.5 text-xs transition-all duration-200 ${
+              active
+                ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent-muted)]/15 shadow-md'
+                : 'border-white/[0.05] bg-white/[0.01] hover:bg-white/[0.04]'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 select-none">
+              <div className="flex items-center gap-1.5">
+                {isRunning ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                ) : isSuccess ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : isErr ? (
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 text-[var(--color-text-subtle)]" />
+                )}
+                <span className="font-semibold text-[var(--color-text)] capitalize">
+                  {sessionStatusLabel(s.status)}
+                </span>
+              </div>
+              <span className="text-[10px] text-[var(--color-text-subtle)] font-mono">
+                <ExpiresCountdown expiresAt={s.expiresAt} status={s.status} />
+              </span>
+            </div>
+            
+            <p className="mt-2 text-[var(--color-text-muted)] line-clamp-2 leading-relaxed font-sans">
+              {s.task || s.streamUrl || s.id}
             </p>
-          )}
-          {s.error && <p className="mt-1 text-[10px] text-red-400">{s.error}</p>}
-        </button>
-      ))}
+            
+            {s.stepCount != null && (
+              <p className="mt-2 text-[10px] text-[var(--color-text-subtle)] font-mono opacity-80">
+                {s.stepCount} step{s.stepCount === 1 ? '' : 's'} executed
+              </p>
+            )}
+            
+            {s.error && (
+              <div className="mt-2 text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1.5 rounded-lg flex items-start gap-1.5 leading-relaxed font-sans">
+                <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>{s.error}</span>
+              </div>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -230,9 +247,11 @@ function BrowserFilesPanel({
   onToggleScope: () => void;
 }) {
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  
   const openFiles = () => {
     useWindowStore.getState().ensureWindowOpen('files');
   };
+  
   const copyPath = async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
@@ -245,52 +264,54 @@ function BrowserFilesPanel({
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="px-3 py-2 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--color-text-subtle)]">
-          {activeOnly ? 'Active session files' : 'All synced files'}
+      <div className="px-3.5 py-2.5 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2 select-none">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
+          {activeOnly ? 'Active Session Files' : 'All Synced Files'}
         </span>
         <button
           type="button"
           onClick={onToggleScope}
           disabled={!hasActiveSession}
-          className="text-[10px] px-2 py-1 rounded border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-40"
+          className="text-[10px] px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors disabled:opacity-40"
         >
-          {activeOnly ? 'Show all' : 'Active only'}
+          {activeOnly ? 'Show All' : 'Active Only'}
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5">
         {files.length === 0 ? (
           <EmptyState>
-            Synced browser files will appear here after tasks create or download files.
+            Synced files will appear here after task downloads or document creations.
           </EmptyState>
         ) : files.map((file) => (
-          <div key={`${file.sessionId}:${file.workspacePath}`} className="rounded-md border border-white/[0.08] bg-black/10 p-2">
-            <div className="flex items-start gap-2">
-              <FileText className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
+          <div key={`${file.sessionId}:${file.workspacePath}`} className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-3">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-center shrink-0 text-[var(--color-text-subtle)] select-none">
+                <FileText className="w-4 h-4" />
+              </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-[var(--color-text)] truncate">{file.name || file.workspacePath}</p>
-                <p className="text-[10px] text-[var(--color-text-subtle)] truncate">{file.workspacePath}</p>
+                <p className="text-xs font-semibold text-[var(--color-text)] truncate">{file.name || file.workspacePath}</p>
+                <p className="text-[10px] text-[var(--color-text-subtle)] font-mono truncate mt-0.5">{file.workspacePath}</p>
                 {file.size != null && (
-                  <p className="text-[10px] text-[var(--color-text-subtle)] opacity-60">{formatBytes(file.size)}</p>
+                  <p className="text-[9px] text-[var(--color-text-subtle)] opacity-70 font-mono mt-0.5">{formatBytes(file.size)}</p>
                 )}
               </div>
             </div>
-            <div className="mt-2 flex items-center gap-1.5">
+            <div className="mt-3.5 flex items-center gap-2 select-none border-t border-white/[0.04] pt-2">
               <button
                 type="button"
                 onClick={openFiles}
-                className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.05] transition-all duration-150"
               >
                 <ExternalLink className="w-3 h-3" />
-                Open in Files
+                View Files
               </button>
               <button
                 type="button"
                 onClick={() => copyPath(file.workspacePath)}
-                className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.05] transition-all duration-150"
               >
-                {copiedPath === file.workspacePath ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                {copiedPath === file.workspacePath ? 'Copied' : 'Copy path'}
+                {copiedPath === file.workspacePath ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedPath === file.workspacePath ? 'Copied' : 'Copy Path'}
               </button>
             </div>
           </div>
@@ -318,9 +339,12 @@ function ExpiresCountdown({ expiresAt, status }: { expiresAt?: number; status?: 
 
 function EmptyState({ children }: { children: string }) {
   return (
-    <p className="text-xs text-[var(--color-text-subtle)] opacity-60 leading-relaxed">
-      {children}
-    </p>
+    <div className="flex flex-col items-center justify-center py-10 px-4 text-center select-none">
+      <FileText className="w-8 h-8 text-[var(--color-text-subtle)] opacity-10 mb-2" />
+      <p className="text-xs text-[var(--color-text-subtle)] opacity-60 leading-relaxed font-sans">
+        {children}
+      </p>
+    </div>
   );
 }
 
@@ -329,3 +353,4 @@ function sessionStatusLabel(status: BrowserSessionRecord['status']): string {
   if (status === 'complete') return 'finished';
   return status;
 }
+

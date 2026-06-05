@@ -7,6 +7,12 @@ describe('describeToolFailure', () => {
       error: 'Sandbox error: InvalidMountConfigError: R2 binding mounts require exporting ContainerProxy',
     })).toContain('Failed `ls -la`');
   });
+
+  it('formats skipped sibling failures with root cause', () => {
+    expect(describeToolFailure('sandbox_write_file', { path: '/tmp/state.json' }, {
+      error: 'Skipped because agent_schedule failed: Scheduled time must be in the future',
+    })).toContain('Skipped (agent_schedule failed)');
+  });
 });
 
 describe('patchToolActivityFailure', () => {

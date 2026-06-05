@@ -53,6 +53,7 @@ import {
   desktopActionToWindowType,
   type ToolWindowRoute,
 } from '../lib/toolWindowRouting';
+import { useBrowserTabStore, isBrowserWebTool } from './browserTabStore';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
 import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
@@ -2734,6 +2735,14 @@ export const useComputerStore = create<ComputerStore>()(
                 });
                 break;
               }
+              case 'browser:tab_open': {
+                useBrowserTabStore.getState().openTabFromEvent(payload);
+                break;
+              }
+              case 'browser:tab_update': {
+                useBrowserTabStore.getState().updateTabFromEvent(payload);
+                break;
+              }
               default:
                 // Unknown/future event — ignore rather than fail.
                 break;
@@ -3920,6 +3929,12 @@ export const useComputerStore = create<ComputerStore>()(
       frameRenderers.delete(windowId);
       canvasClearFns.delete(windowId);
 
+      // Drop emulated search/fetch/research tabs when the agent browser window closes.
+      if (win.metadata?.browserAppWindow) {
+        useBrowserTabStore.getState().clearStaticTabs();
+        useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
+      }
+
       // Close the window
       useWindowStore.getState().closeWindow(windowId);
 
@@ -4781,6 +4796,17 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Browser: focus existing window in THIS session's workspace, kick reconciler
           if (windowType === 'browser') {
+            getOrCreateBrowserAppWindow({
+              workspaceId: targetWsId,
+              metadata: { browserAppWindow: true },
+            });
+            if (isBrowserWebTool(tool)) {
+              useBrowserTabStore.getState().openTabFromToolCall(
+                tool,
+                toolCallId,
+                params || {},
+              );
+            }
             const wStore = useWindowStore.getState();
             const existingBrowser = wStore.windows.find(
               w => w.type === 'browser' && w.state !== 'minimized' && w.workspaceId === targetWsId
@@ -4909,26 +4935,8 @@ export const useComputerStore = create<ComputerStore>()(
             }
           }
 
-          // Clear Browser overlay when web_scrape tool completes (safety net).
-          if (tool === 'web_scrape' || tool === 'web_search') {
-            const tfSubagentId = (event.data?.subagentId as string) || 'main';
-            const { browserState: bs } = get();
-            const { [tfSubagentId]: _removed, ...remainingStreams } = bs.browserStreams;
-
-            // Close the Web Agent browser window
-            const tfWindowId = findWindowForBrowser(tfSubagentId);
-            if (tfWindowId) {
-              frameRenderers.delete(tfWindowId);
-              canvasClearFns.delete(tfWindowId);
-              useWindowStore.getState().closeWindow(tfWindowId);
-            }
-
-            set({
-              browserState: {
-                ...bs,
-                browserStreams: remainingStreams,
-              },
-            });
+          if (success === false && isBrowserWebTool(tool)) {
+            useBrowserTabStore.getState().failTab(toolCallId, error || 'Tool failed');
           }
 
           // Extract screenshot from browser tool results as fallback frame
@@ -6519,6 +6527,21 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'browser:tab_open': {
+          useBrowserTabStore.getState().openTabFromEvent(event.data || {});
+          const tfWorkspaceId = event.data?.workspace_id as string | undefined;
+          getOrCreateBrowserAppWindow({
+            workspaceId: tfWorkspaceId,
+            metadata: { browserAppWindow: true },
+          });
+          break;
+        }
+
+        case 'browser:tab_update': {
+          useBrowserTabStore.getState().updateTabFromEvent(event.data || {});
+          break;
+        }
+
         // Web agent events — show progress in activity log + browser view
         case 'browser:start': {
           const url = event.data?.url as string || '';
@@ -6529,6 +6552,12 @@ export const useComputerStore = create<ComputerStore>()(
           const browserExpiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt as number : undefined;
           const shortGoal = goal.length > 60 ? goal.slice(0, 60) + '...' : goal;
           const isSubagentBrowser = tfSubagentId !== 'main';
+
+          useBrowserTabStore.getState().ensureLiveTab(browserSessionId, {
+            goal,
+            url: url || undefined,
+            title: shortGoal,
+          });
 
           // Route to tracker if this Browser call belongs to a subagent
           if (isSubagentBrowser) {
@@ -6737,6 +6766,11 @@ export const useComputerStore = create<ComputerStore>()(
           const expiresAt = typeof event.data?.expiresAt === 'number' ? event.data.expiresAt as number : undefined;
           if (streamingUrl) {
             const { browserState: bs } = get();
+            useBrowserTabStore.getState().patchLiveTabBySession(browserSessionId, {
+              streamUrl: streamingUrl,
+              runPhase: 'live',
+              status: 'complete',
+            });
             set({
               browserState: {
                 ...bs,
@@ -6831,6 +6865,15 @@ export const useComputerStore = create<ComputerStore>()(
             ...(subActions ? { subActions } : {}),
           };
 
+          const activeSessionId = get().browserState.activeBrowserSessionId;
+          if (activeSessionId) {
+            useBrowserTabStore.getState().patchLiveTabBySession(activeSessionId, {
+              progressLabel: headLabel,
+              ...(url ? { pageUrl: url, url } : {}),
+              ...(typeof event.data?.stepCount === 'number' ? { stepCount: event.data.stepCount as number } : {}),
+            });
+          }
+
           // Mirror the latest known page URL onto the matching browser
           // window's metadata so the in-app screenshot button can use it
           // without re-deriving from chatMessages.
@@ -6914,6 +6957,17 @@ export const useComputerStore = create<ComputerStore>()(
             }
           }
 
+          const completeSessionId = tfRunId || get().browserState.activeBrowserSessionId;
+          if (completeSessionId) {
+            useBrowserTabStore.getState().patchLiveTabBySession(completeSessionId, {
+              runPhase: 'complete',
+              status: 'complete',
+              ...(tfRunId ? { runId: tfRunId } : {}),
+              ...(tfStepCount !== undefined ? { stepCount: tfStepCount } : {}),
+              ...(lastStreamUrl ? { streamUrl: lastStreamUrl } : {}),
+            });
+          }
+
           set({
             agentThinking: null,
             browserState: {
@@ -6942,6 +6996,7 @@ export const useComputerStore = create<ComputerStore>()(
           if (Object.keys(remainingStreams).length === 0) {
             set({ agentActivity: restActivity });
           }
+          useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
           break;
         }
 
@@ -6983,6 +7038,17 @@ export const useComputerStore = create<ComputerStore>()(
             }
           }
 
+          const errorSessionId = tfRunId || get().browserState.activeBrowserSessionId;
+          if (errorSessionId) {
+            useBrowserTabStore.getState().patchLiveTabBySession(errorSessionId, {
+              runPhase: 'error',
+              status: 'error',
+              error: errText,
+              ...(tfRunId ? { runId: tfRunId } : {}),
+              ...(tfStepCount !== undefined ? { stepCount: tfStepCount } : {}),
+            });
+          }
+
           set({
             agentThinking: null,
             browserState: {
@@ -7006,6 +7072,7 @@ export const useComputerStore = create<ComputerStore>()(
               } : bs.browserSessions,
             },
           });
+          useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
           break;
         }
 
