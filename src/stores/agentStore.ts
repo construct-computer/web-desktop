@@ -12,6 +12,7 @@ import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
+import { isTriggeredSessionKey } from './agentSessionKeys';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { workOrderNotificationPriority, type NotificationPriority } from '@/lib/notificationPolicy';
@@ -634,6 +635,8 @@ interface ComputerStore {
   chatMessages: ChatMessage[];
   /** True while switching sessions — prevents empty state flash in MessageList */
   sessionSwitching: boolean;
+  /** True while the active session's chat history is being fetched. */
+  historyLoading: boolean;
   /** Non-null when the last chat history fetch failed for the active session. */
   historyLoadError: string | null;
   agentThinking: string | null;
@@ -1398,6 +1401,7 @@ let chatHistoryLoading = false;
 let pendingHistorySessionKey: string | null = null;
 /** Sessions whose history was successfully hydrated this page load. */
 const historyHydratedKeys = new Set<string>();
+const historyEmptyRetryAttempted = new Set<string>();
 /** Tracks sessions that already received a failure retry. */
 const historyRetryAttempted = new Set<string>();
 const LAST_VIEWED_SESSION_KEY = 'construct:last-viewed-session';
@@ -1579,6 +1583,7 @@ export const useComputerStore = create<ComputerStore>()(
     chatMessages: [],
     replyingTo: null as ChatMessage | null,
     sessionSwitching: false,
+    historyLoading: false,
     historyLoadError: null,
     agentThinking: null,
     agentThinkingStream: null,
@@ -2317,6 +2322,7 @@ export const useComputerStore = create<ComputerStore>()(
         if (localStorage.getItem('construct:history-cleared') === '1') {
           localStorage.removeItem('construct:history-cleared');
           logger.info('Skipping chat history load — /clear was used recently');
+          set({ historyLoading: false });
           return;
         }
       } catch { /* */ }
@@ -2327,6 +2333,7 @@ export const useComputerStore = create<ComputerStore>()(
         return;
       }
       chatHistoryLoading = true;
+      set({ historyLoading: true });
 
       // Capture the session key before the async fetch so we can detect
       // if the user switched sessions while the request was in flight.
@@ -2367,8 +2374,21 @@ export const useComputerStore = create<ComputerStore>()(
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
         if ((!messages || messages.length === 0) && (!events || events.length === 0)) {
+          if (
+            isTriggeredSessionKey(requestedSessionKey)
+            && !historyEmptyRetryAttempted.has(requestedSessionKey)
+          ) {
+            historyEmptyRetryAttempted.add(requestedSessionKey);
+            setTimeout(() => {
+              if (get().activeSessionKey === requestedSessionKey) {
+                void get().loadChatHistory();
+              }
+            }, 1500);
+            return;
+          }
           if (get().activeSessionKey === requestedSessionKey) {
-            set({ chatMessages: [] });
+            historyHydratedKeys.add(requestedSessionKey);
+            set({ chatMessages: [], historyLoadError: null });
             sessionMessageCache.set(requestedSessionKey, []);
           }
           return;
@@ -2461,10 +2481,10 @@ export const useComputerStore = create<ComputerStore>()(
         const history: ChatMessage[] = [];
 
         for (const msg of messages) {
-          if (msg.role === 'user' && msg.content) {
-            const content = typeof msg.content === 'string'
+          if (msg.role === 'user' && (msg.content || msg.metadata)) {
+            let content = typeof msg.content === 'string'
               ? msg.content
-              : String(msg.content);
+              : String(msg.content || '');
             // Skip injected screenshot placeholders
             if (content === '[Screenshot of the current browser page]') continue;
             if (isSystemRecoveryInstruction(content)) {
@@ -2503,10 +2523,24 @@ export const useComputerStore = create<ComputerStore>()(
               sourceMeta = coerceExternalSource(meta.source) || coerceExternalSource((meta.platformReply as Record<string, unknown> | undefined)?.source);
               access = coerceExternalAccess(meta.access) || coerceExternalAccess((meta.platformReply as Record<string, unknown> | undefined)?.access);
               if (typeof meta.clientId === 'string') clientId = meta.clientId;
+              if (meta.scheduledTask) {
+                source = 'scheduled';
+                if (!content.trim()) {
+                  const scheduledSource = meta.source as Record<string, unknown> | undefined;
+                  const senderName = typeof scheduledSource?.senderName === 'string'
+                    ? scheduledSource.senderName.trim()
+                    : '';
+                  content = senderName || 'Scheduled task';
+                }
+                if (!sourceMeta) {
+                  sourceMeta = coerceExternalSource(meta.source) || { platform: 'scheduled', senderName: content };
+                }
+              }
             }
             if (!source) {
               source = sourceMeta?.platform || inferExternalPlatform(requestedSessionKey) || undefined;
             }
+            if (!content.trim()) continue;
             history.push({
               role: 'user',
               content: stripAttachmentInstructionBlocks(content),
@@ -2910,6 +2944,9 @@ export const useComputerStore = create<ComputerStore>()(
         }
       } finally {
         chatHistoryLoading = false;
+        if (get().activeSessionKey === requestedSessionKey) {
+          set({ historyLoading: false, sessionSwitching: false });
+        }
         const nextPending = pendingHistorySessionKey;
         pendingHistorySessionKey = null;
         // Re-run for whichever session is now visible (switch during fetch or queued request).
@@ -3618,6 +3655,12 @@ export const useComputerStore = create<ComputerStore>()(
             ),
           }));
           sessionsLoadedAt = Date.now();
+          const needsHistory = activeKey
+            && !historyHydratedKeys.has(activeKey)
+            && get().chatMessages.length === 0;
+          if (needsHistory) {
+            await get().loadChatHistory();
+          }
         }
       })()
         .catch((err) => {
@@ -3719,6 +3762,19 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Silently refresh from API (updates cache with latest)
           await get().loadChatHistory();
+          if (
+            get().activeSessionKey === key
+            && get().chatMessages.length === 0
+            && isTriggeredSessionKey(key)
+            && !historyEmptyRetryAttempted.has(key)
+          ) {
+            historyEmptyRetryAttempted.add(key);
+            setTimeout(() => {
+              if (get().activeSessionKey === key && get().chatMessages.length === 0) {
+                void get().loadChatHistory();
+              }
+            }, 1500);
+          }
         }
       } catch (err) {
         logger.warn('Error switching session:', err);

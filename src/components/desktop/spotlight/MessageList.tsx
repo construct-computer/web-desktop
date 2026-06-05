@@ -243,18 +243,21 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   const sessionRunning = activeKey ? runningSessions.has(activeKey) : false;
   const hasContent = groups.length > 0 || sessionRunning;
   const sessionSwitching = useComputerStore(s => s.sessionSwitching);
+  const historyLoading = useComputerStore(s => s.historyLoading);
   const historyLoadError = useComputerStore(s => s.historyLoadError);
   const loadChatHistory = useComputerStore(s => s.loadChatHistory);
 
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
 
-  if (sessionSwitching) {
+  if (sessionSwitching || (historyLoading && !hasContent)) {
     return (
       <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col gap-3 p-4 pt-6">
         <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-4/5 max-w-md mx-auto motion-safe:animate-pulse" />
         <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-2/3 max-w-sm mx-auto motion-safe:animate-pulse" />
         <div className="h-3 bg-white/[0.08] dark:bg-white/[0.05] rounded-md w-1/2 max-w-xs mx-auto motion-safe:animate-pulse" />
-        <p className="text-center text-[12px] text-[var(--color-text-muted)]/50 mt-4">Switching chat…</p>
+        <p className="text-center text-[12px] text-[var(--color-text-muted)]/50 mt-4">
+          {sessionSwitching ? 'Switching chat…' : 'Loading chat…'}
+        </p>
       </div>
     );
   }

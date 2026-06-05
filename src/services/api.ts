@@ -1946,6 +1946,8 @@ export interface AgentCalendarEvent {
   id: string;
   summary: string;
   description: string;
+  /** User-authored agent instructions for schedule-backed events. */
+  prompt?: string | null;
   location: string;
   start: string;
   end: string;
@@ -1981,6 +1983,7 @@ export async function listAgentCalendarEvents(options?: {
 
 export async function createAgentCalendarEvent(event: {
   summary: string;
+  prompt: string;
   description?: string;
   location?: string;
   start_datetime?: string;
@@ -1999,6 +2002,7 @@ export async function createAgentCalendarEvent(event: {
 
 export async function updateAgentCalendarEvent(eventId: string, updates: {
   summary?: string;
+  prompt?: string;
   description?: string;
   location?: string;
   start_datetime?: string;

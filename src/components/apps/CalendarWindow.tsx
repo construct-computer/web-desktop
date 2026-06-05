@@ -159,6 +159,7 @@ type RepeatEndType = 'never' | 'after' | 'on';
 interface EventFormData {
   summary: string;
   description: string;
+  prompt: string;
   location: string;
   allDay: boolean;
   startDatetime: string;
@@ -181,6 +182,7 @@ const emptyForm = (): EventFormData => {
   return {
     summary: '',
     description: '',
+    prompt: '',
     location: '',
     allDay: false,
     startDatetime: toLocalDatetimeString(fiveMin),
@@ -419,6 +421,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
       ...base,
       summary: original.summary,
       description: original.description,
+      prompt: original.prompt || '',
       location: original.location,
       allDay: original.allDay,
       startDatetime: original.allDay ? base.startDatetime : toLocalDatetimeString(new Date(original.start)),
@@ -442,6 +445,10 @@ export function CalendarWindow(props: CalendarWindowProps) {
 
   const handleSave = async () => {
     if (!form.summary.trim()) return;
+    if (!form.prompt.trim()) {
+      setSaveError('Agent instructions are required');
+      return;
+    }
 
     setSaveError(null);
 
@@ -470,6 +477,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         // Update
         const updates: Record<string, unknown> = {
           summary: form.summary,
+          prompt: form.prompt.trim(),
           description: form.description || undefined,
           location: form.location || undefined,
           time_zone: tz,
@@ -488,6 +496,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         // Create
         const params: Parameters<typeof createAgentCalendarEvent>[0] = {
           summary: form.summary,
+          prompt: form.prompt.trim(),
           description: form.description || undefined,
           location: form.location || undefined,
           time_zone: tz,
@@ -1390,6 +1399,22 @@ function EventDialog({
                   />
                 </div>
                 <div>
+                  <Label className="text-xs font-medium">Agent instructions</Label>
+                  <textarea
+                    value={form.prompt}
+                    onChange={(e) => update({ prompt: e.target.value })}
+                    placeholder="What should the agent do when this fires? (required)"
+                    className={cn(
+                      'mt-1.5 w-full px-3 py-2 text-sm rounded-md border border-[var(--color-border)]',
+                      'surface-control focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 resize-none',
+                    )}
+                    rows={3}
+                  />
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                    Internal task prompt — not shown on the calendar grid.
+                  </p>
+                </div>
+                <div>
                   <Label className="text-xs font-medium">Location</Label>
                   <Input
                     value={form.location}
@@ -1606,7 +1631,7 @@ function EventDialog({
             <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" onClick={onSave} disabled={saving || !form.summary.trim()}>
+            <Button variant="primary" size="sm" onClick={onSave} disabled={saving || !form.summary.trim() || !form.prompt.trim()}>
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
               {isEdit ? 'Save changes' : 'Create event'}
             </Button>
