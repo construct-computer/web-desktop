@@ -5,6 +5,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ChatMessage, type OverseerAlert } from '@/stores/agentStore';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
+import { activityBufferHasWebBrowserTools } from '@/stores/agentStoreUtils';
 import { getChatRenderKind, groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
@@ -144,7 +145,10 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
       const hasOp = !!opId;
 
       if (hasActs) {
-        if (acts.length >= 3 || hasOp) {
+        const useBanner = acts.length >= 3
+          || hasOp
+          || activityBufferHasWebBrowserTools(acts);
+        if (useBanner) {
           result.push({
             key: `${keyPrefix}-tcb`,
             node: <ToolCallBanner

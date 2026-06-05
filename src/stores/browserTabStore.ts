@@ -3,9 +3,49 @@
  */
 
 import { create } from 'zustand';
-import { API_BASE_URL } from '@/lib/constants';
+import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
+import { normalizeReaderMarkdown, splitReaderPreviewAtSections } from '@/lib/readerMarkdownNormalize';
 
-export type BrowserTabMode = 'search' | 'fetch' | 'live' | 'arxiv' | 'youtube' | 'domain';
+const MAX_DISMISSED_TABS = 300;
+
+function loadDismissedTabIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.browserDismissedTabs);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissedTabIds(ids: Set<string>): void {
+  try {
+    const trimmed = [...ids].slice(-MAX_DISMISSED_TABS);
+    localStorage.setItem(STORAGE_KEYS.browserDismissedTabs, JSON.stringify(trimmed));
+  } catch { /* */ }
+}
+
+function persistDismissedTabId(tabId: string): Set<string> {
+  const ids = loadDismissedTabIds();
+  ids.add(tabId);
+  saveDismissedTabIds(ids);
+  return ids;
+}
+
+function persistUndismissedTabId(tabId: string): Set<string> {
+  const ids = loadDismissedTabIds();
+  ids.delete(tabId);
+  saveDismissedTabIds(ids);
+  return ids;
+}
+
+function persistDismissedTabIds(tabIds: Iterable<string>): Set<string> {
+  const ids = loadDismissedTabIds();
+  for (const tabId of tabIds) ids.add(tabId);
+  saveDismissedTabIds(ids);
+  return ids;
+}
+
+export type BrowserTabMode = 'search' | 'fetch' | 'live' | 'arxiv' | 'domain';
 export type BrowserTabStatus = 'loading' | 'complete' | 'error';
 
 export interface BrowserSearchResult {
@@ -36,11 +76,17 @@ export interface BrowserTab {
 
   query?: string;
   results?: BrowserSearchResult[];
+  searchResultCount?: number;
+  searchCountry?: string;
 
   url?: string;
   pageTitle?: string;
   readerContent?: string;
+  readerContentFull?: string;
+  readerChromeStripped?: number;
+  readerDedupeTitle?: boolean;
   readerTruncated?: boolean;
+  readerRemainingSections?: number;
   publishedTime?: string;
   fetchView?: 'site' | 'reader';
   proxyUrl?: string;
@@ -56,9 +102,6 @@ export interface BrowserTab {
   sessionId?: string;
 
   papers?: BrowserArxivPaper[];
-  transcript?: string;
-  videoId?: string;
-  durationSeconds?: number;
   domain?: string;
   domainAction?: string;
   domainData?: Record<string, unknown>;
@@ -84,7 +127,6 @@ function modeFromTool(tool: string): BrowserTabMode {
     case 'web_search': return 'search';
     case 'web_fetch': return 'fetch';
     case 'arxiv': return 'arxiv';
-    case 'youtube': return 'youtube';
     case 'domain_intel': return 'domain';
     case 'browser':
     case 'remote_browser':
@@ -106,8 +148,6 @@ function titleFromToolCall(tool: string, params: Record<string, unknown>): strin
       return url ? hostFromUrl(url) : 'Page';
     case 'arxiv':
       return query ? `arXiv: ${query.slice(0, 32)}` : 'arXiv';
-    case 'youtube':
-      return url ? hostFromUrl(url) : 'YouTube';
     case 'domain_intel':
       return domain || 'Domain';
     case 'browser':
@@ -131,17 +171,56 @@ function applySearchPayload(tab: BrowserTab, payload: Record<string, unknown>): 
         };
       })
     : tab.results;
-  return { ...tab, query, results, status: 'complete' };
+  const searchResultCount = typeof payload.resultCount === 'number'
+    ? payload.resultCount
+    : (results?.length ?? tab.searchResultCount);
+  const searchCountry = typeof payload.country === 'string'
+    ? payload.country
+    : tab.searchCountry;
+  return {
+    ...tab,
+    query,
+    results,
+    searchResultCount,
+    searchCountry,
+    status: 'complete',
+  };
+}
+
+function shortTabTitle(text: string, max = 42): string {
+  const t = text.trim();
+  if (!t) return '';
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
 function applyFetchPayload(tab: BrowserTab, payload: Record<string, unknown>): BrowserTab {
   const url = typeof payload.url === 'string' ? payload.url : tab.url;
+  const pageTitle = typeof payload.title === 'string' ? payload.title : tab.pageTitle;
+  const rawFull = typeof payload.fullContent === 'string'
+    ? payload.fullContent
+    : (typeof payload.content === 'string' ? payload.content : tab.readerContent);
+  const normalizeOpts = { pageTitle, url };
+  const normalizedFull = typeof rawFull === 'string'
+    ? normalizeReaderMarkdown(rawFull, normalizeOpts)
+    : null;
+  const fullMarkdown = normalizedFull?.content ?? (typeof rawFull === 'string' ? rawFull : '');
+  const split = fullMarkdown
+    ? splitReaderPreviewAtSections(fullMarkdown)
+    : { preview: '', full: '', hasMore: false, remainingSectionCount: 0 };
+  const displayTitle = pageTitle
+    ? shortTabTitle(pageTitle)
+    : (url ? hostFromUrl(url) : tab.title);
   return {
     ...tab,
     url,
-    pageTitle: typeof payload.title === 'string' ? payload.title : tab.pageTitle,
-    readerContent: typeof payload.content === 'string' ? payload.content : tab.readerContent,
-    readerTruncated: payload.truncated === true,
+    pageTitle,
+    title: displayTitle || tab.title,
+    readerContent: split.preview,
+    readerContentFull: split.hasMore ? split.full : undefined,
+    readerRemainingSections: split.remainingSectionCount,
+    readerChromeStripped: normalizedFull?.strippedLineCount,
+    readerDedupeTitle: normalizedFull?.dedupeTitle,
+    readerTruncated: payload.truncated === true || split.hasMore,
     publishedTime: typeof payload.publishedTime === 'string' ? payload.publishedTime : tab.publishedTime,
     proxyUrl: url ? proxyUrlFor(url) : tab.proxyUrl,
     fetchView: tab.fetchView ?? 'reader',
@@ -166,18 +245,6 @@ function applyArxivPayload(tab: BrowserTab, payload: Record<string, unknown>): B
       })
     : tab.papers;
   return { ...tab, query, papers, status: 'complete' };
-}
-
-function applyYoutubePayload(tab: BrowserTab, payload: Record<string, unknown>): BrowserTab {
-  return {
-    ...tab,
-    videoId: typeof payload.videoId === 'string' ? payload.videoId : tab.videoId,
-    url: typeof payload.url === 'string' ? payload.url : tab.url,
-    transcript: typeof payload.transcript === 'string' ? payload.transcript : tab.transcript,
-    durationSeconds: typeof payload.durationSeconds === 'number' ? payload.durationSeconds : tab.durationSeconds,
-    pageTitle: typeof payload.title === 'string' ? payload.title : tab.pageTitle,
-    status: 'complete',
-  };
 }
 
 function applyDomainPayload(tab: BrowserTab, payload: Record<string, unknown>): BrowserTab {
@@ -234,16 +301,37 @@ function applyPayload(tab: BrowserTab, payload: Record<string, unknown>): Browse
     case 'search': return applySearchPayload(tab, payload);
     case 'fetch': return applyFetchPayload(tab, payload);
     case 'arxiv': return applyArxivPayload(tab, payload);
-    case 'youtube': return applyYoutubePayload(tab, payload);
     case 'domain': return applyDomainPayload(tab, payload);
     default:
       return { ...tab, payload, status: 'complete' };
   }
 }
 
+function buildTabFromOpenEvent(data: Record<string, unknown>, id: string): BrowserTab {
+  const tool = typeof data.tool === 'string' ? data.tool : 'web_fetch';
+  const mode = (typeof data.mode === 'string' ? data.mode : modeFromTool(tool)) as BrowserTabMode;
+  const url = typeof data.url === 'string' ? data.url : undefined;
+  return {
+    id,
+    toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
+    tool,
+    mode,
+    status: 'loading',
+    title: typeof data.title === 'string' ? data.title : titleFromToolCall(tool, data),
+    createdAt: Date.now(),
+    ...(typeof data.query === 'string' ? { query: data.query } : {}),
+    ...(url ? { url, proxyUrl: proxyUrlFor(url), fetchView: 'reader' } : {}),
+    ...(typeof data.domain === 'string' ? { domain: data.domain } : {}),
+    ...(typeof data.goal === 'string' ? { goal: data.goal } : {}),
+  };
+}
+
 interface BrowserTabStore {
   tabs: BrowserTab[];
   activeTabId: string | null;
+  /** Latest tab payloads for dismissed tabs — rebuilt on history replay for explicit reopen. */
+  tabSnapshots: Record<string, BrowserTab>;
+  dismissedTabIds: Set<string>;
   openTabFromToolCall: (tool: string, toolCallId: string | undefined, params: Record<string, unknown>) => string;
   openTabFromEvent: (data: Record<string, unknown>) => string;
   updateTabFromEvent: (data: Record<string, unknown>) => void;
@@ -255,6 +343,7 @@ interface BrowserTabStore {
   ensureLiveTab: (sessionId: string, data: { goal?: string; url?: string; title?: string }) => string;
   patchLiveTabBySession: (sessionId: string, patch: Partial<BrowserTab>) => void;
   closeTab: (tabId: string) => void;
+  reopenTab: (tabId: string) => boolean;
   clearStaticTabs: () => void;
   pruneInactiveLiveTabs: (sessions: Record<string, { status?: string }>) => void;
   removeLiveTabForSession: (sessionId: string) => void;
@@ -264,12 +353,17 @@ interface BrowserTabStore {
 export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
   tabs: [],
   activeTabId: null,
+  tabSnapshots: {},
+  dismissedTabIds: loadDismissedTabIds(),
 
   openTabFromToolCall: (tool, toolCallId, params) => {
     const id = toolCallId ? `tab_${toolCallId}` : `tab_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const existing = get().tabs.find((t) => t.id === id);
     if (existing) {
       set({ activeTabId: id });
+      return id;
+    }
+    if (get().dismissedTabIds.has(id)) {
       return id;
     }
     const mode = modeFromTool(tool);
@@ -302,22 +396,13 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
       set({ activeTabId: id });
       return id;
     }
-    const tool = typeof data.tool === 'string' ? data.tool : 'web_fetch';
-    const mode = (typeof data.mode === 'string' ? data.mode : modeFromTool(tool)) as BrowserTabMode;
-    const url = typeof data.url === 'string' ? data.url : undefined;
-    const tab: BrowserTab = {
-      id,
-      toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
-      tool,
-      mode,
-      status: 'loading',
-      title: typeof data.title === 'string' ? data.title : titleFromToolCall(tool, data),
-      createdAt: Date.now(),
-      ...(typeof data.query === 'string' ? { query: data.query } : {}),
-      ...(url ? { url, proxyUrl: proxyUrlFor(url), fetchView: 'reader' } : {}),
-      ...(typeof data.domain === 'string' ? { domain: data.domain } : {}),
-      ...(typeof data.goal === 'string' ? { goal: data.goal } : {}),
-    };
+    const tab = buildTabFromOpenEvent(data, id);
+    if (get().dismissedTabIds.has(id)) {
+      set((state) => ({
+        tabSnapshots: { ...state.tabSnapshots, [id]: tab },
+      }));
+      return id;
+    }
     set((state) => ({
       tabs: [...state.tabs, tab],
       activeTabId: id,
@@ -334,17 +419,34 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
       : undefined;
     const error = typeof data.error === 'string' ? data.error : undefined;
 
-    set((state) => ({
-      tabs: state.tabs.map((tab) => {
-        if (tab.id !== tabId) return tab;
-        if (status === 'error') {
-          return { ...tab, status: 'error', error: error || 'Request failed' };
-        }
-        if (payload) return applyPayload(tab, payload);
-        return { ...tab, status };
-      }),
-      activeTabId: tabId,
-    }));
+    const applyUpdate = (tab: BrowserTab): BrowserTab => {
+      if (status === 'error') {
+        return { ...tab, status: 'error', error: error || 'Request failed' };
+      }
+      if (payload) return applyPayload(tab, payload);
+      return { ...tab, status };
+    };
+
+    set((state) => {
+      const inTabs = state.tabs.some((tab) => tab.id === tabId);
+      if (inTabs) {
+        return {
+          tabs: state.tabs.map((tab) => (tab.id === tabId ? applyUpdate(tab) : tab)),
+          activeTabId: tabId,
+        };
+      }
+      if (state.dismissedTabIds.has(tabId) || state.tabSnapshots[tabId]) {
+        const base = state.tabSnapshots[tabId] || state.tabs.find((t) => t.id === tabId);
+        if (!base) return state;
+        return {
+          tabSnapshots: {
+            ...state.tabSnapshots,
+            [tabId]: applyUpdate(base),
+          },
+        };
+      }
+      return state;
+    });
   },
 
   failTab: (toolCallId, error) => {
@@ -382,6 +484,27 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
 
   ensureLiveTab: (sessionId, data) => {
     const id = `tab_live_${sessionId}`;
+    if (get().dismissedTabIds.has(id)) {
+      const title = data.title || (data.goal
+        ? (data.goal.length > 36 ? `${data.goal.slice(0, 35)}…` : data.goal)
+        : 'Live session');
+      const snapshot: BrowserTab = {
+        id,
+        tool: 'browser',
+        mode: 'live',
+        status: 'loading',
+        title,
+        createdAt: Date.now(),
+        runPhase: 'live',
+        sessionId,
+        ...(data.goal ? { goal: data.goal } : {}),
+        ...(data.url ? { url: data.url, pageUrl: data.url } : {}),
+      };
+      set((state) => ({
+        tabSnapshots: { ...state.tabSnapshots, [id]: snapshot },
+      }));
+      return id;
+    }
     const existing = get().tabs.find((t) => t.id === id);
     if (existing) {
       set((state) => ({
@@ -420,31 +543,68 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
 
   patchLiveTabBySession: (sessionId, patch) => {
     const id = `tab_live_${sessionId}`;
-    set((state) => ({
-      tabs: state.tabs.map((t) => t.id === id ? { ...t, sessionId, ...patch } : t),
-    }));
+    set((state) => {
+      if (state.tabs.some((t) => t.id === id)) {
+        return {
+          tabs: state.tabs.map((t) => (t.id === id ? { ...t, sessionId, ...patch } : t)),
+        };
+      }
+      if (state.dismissedTabIds.has(id) && state.tabSnapshots[id]) {
+        return {
+          tabSnapshots: {
+            ...state.tabSnapshots,
+            [id]: { ...state.tabSnapshots[id], sessionId, ...patch },
+          },
+        };
+      }
+      return state;
+    });
   },
 
   closeTab: (tabId) => {
+    const dismissedTabIds = persistDismissedTabId(tabId);
     set((state) => {
+      const closing = state.tabs.find((t) => t.id === tabId);
       const tabs = state.tabs.filter((t) => t.id !== tabId);
       return {
         tabs,
+        dismissedTabIds,
+        tabSnapshots: closing
+          ? { ...state.tabSnapshots, [tabId]: closing }
+          : state.tabSnapshots,
         activeTabId: pickActiveTabId(tabs, tabId, state.activeTabId),
       };
     });
   },
 
+  reopenTab: (tabId) => {
+    const dismissedTabIds = persistUndismissedTabId(tabId);
+    const snap = get().tabSnapshots[tabId];
+    if (!snap) {
+      set({ dismissedTabIds });
+      return false;
+    }
+    set((state) => ({
+      dismissedTabIds,
+      tabs: state.tabs.some((t) => t.id === tabId) ? state.tabs : [...state.tabs, snap],
+      activeTabId: tabId,
+    }));
+    return true;
+  },
+
   clearStaticTabs: () => {
     set((state) => {
+      const removed = state.tabs.filter((t) => isStaticBrowserTab(t));
+      const removedIds = new Set(removed.map((t) => t.id));
+      if (removedIds.size === 0) return state;
+      const dismissedTabIds = persistDismissedTabIds(removedIds);
+      const tabSnapshots = { ...state.tabSnapshots };
+      for (const tab of removed) tabSnapshots[tab.id] = tab;
       const tabs = state.tabs.filter((t) => !isStaticBrowserTab(t));
-      const removedIds = new Set(
-        state.tabs.filter((t) => isStaticBrowserTab(t)).map((t) => t.id),
-      );
       const activeTabId = state.activeTabId && !removedIds.has(state.activeTabId)
         ? state.activeTabId
         : (tabs[tabs.length - 1]?.id ?? null);
-      return { tabs, activeTabId };
+      return { tabs, activeTabId, dismissedTabIds, tabSnapshots };
     });
   },
 
@@ -455,11 +615,16 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
         .map((t) => t.id);
       if (toRemove.length === 0) return state;
       const removeSet = new Set(toRemove);
+      const dismissedTabIds = persistDismissedTabIds(removeSet);
+      const tabSnapshots = { ...state.tabSnapshots };
+      for (const tab of state.tabs) {
+        if (removeSet.has(tab.id)) tabSnapshots[tab.id] = tab;
+      }
       const tabs = state.tabs.filter((t) => !removeSet.has(t.id));
       const activeTabId = state.activeTabId && !removeSet.has(state.activeTabId)
         ? state.activeTabId
         : (tabs[tabs.length - 1]?.id ?? null);
-      return { tabs, activeTabId };
+      return { tabs, activeTabId, dismissedTabIds, tabSnapshots };
     });
   },
 
@@ -467,14 +632,18 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
     get().closeTab(`tab_live_${sessionId}`);
   },
 
-  reset: () => set({ tabs: [], activeTabId: null }),
+  reset: () => set({
+    tabs: [],
+    activeTabId: null,
+    tabSnapshots: {},
+    dismissedTabIds: loadDismissedTabIds(),
+  }),
 }));
 
 export const BROWSER_WEB_TOOLS = new Set([
   'web_search',
   'web_fetch',
   'arxiv',
-  'youtube',
   'domain_intel',
 ]);
 

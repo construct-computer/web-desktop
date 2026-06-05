@@ -1135,7 +1135,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
 
         {/* Path bar */}
         {activeTab === 'local' ? (
-          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto text-xs">
+          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto scrollbar-x-none text-xs">
             <span
               className="cursor-pointer hover:text-[var(--color-accent)] flex-shrink-0 font-medium"
               onClick={() => navigateTo('/')}
@@ -1158,7 +1158,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             })}
           </div>
         ) : (
-          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto text-xs text-[var(--color-text-muted)]">
+          <div className="flex-1 flex items-center gap-0.5 ml-2 px-2 py-1 surface-control rounded border border-[var(--color-border)] overflow-x-auto scrollbar-x-none text-xs text-[var(--color-text-muted)]">
             {driveFiles.folderStack.map((folder, i) => (
               <span key={folder.id} className="flex items-center gap-0.5 whitespace-nowrap flex-shrink-0">
                 {i > 0 && <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}

@@ -20,7 +20,7 @@ export function InfoHint({ children, side = 'top', className }: InfoHintProps) {
       <button
         type="button"
         className={cn(
-          'inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-muted)]/70 transition-colors hover:text-[var(--color-text)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/45',
+          'inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-muted)]/70 transition-colors hover:text-[var(--color-text)] focus:outline-none focus-visible:outline-none',
           className,
         )}
         aria-label="More information"

@@ -64,7 +64,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const [wifiHover, setWifiHover] = useState(false);
   const wifiRef = useRef<HTMLDivElement>(null);
   const latency = useLatency(wifiHover);
-  const { isStandalone, isInstalled, deferredPrompt, installPWA } = usePWA();
+  const { isStandalone, isInstalled, deferredPrompt, installPWA, openInstalledApp } = usePWA();
   const { soundEnabled, toggleSound } = useSettingsStore();
   const { windows, focusedWindowId, openWindow } = useWindowStore();
   const workspaces = useWindowStore((s) => s.workspaces);
@@ -368,9 +368,19 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
           </button>
         )}
 
-        {/* PWA Install / Open App Pill */}
+        {/* PWA Install / Use App Pill */}
         {!isStandalone && !isMobile && (
-          (deferredPrompt || !isInstalled) ? (
+          isInstalled ? (
+            <button
+              onClick={openInstalledApp}
+              className="flex items-center justify-center gap-1.5 h-6 pl-2 pr-2 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 xl:pr-2.5"
+              title="Use App"
+              aria-label="Use app"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden text-xs font-medium xl:inline">Use App</span>
+            </button>
+          ) : (
             <button
               onClick={installPWA}
               disabled={!deferredPrompt}
@@ -384,18 +394,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden text-xs font-medium xl:inline">Install App</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                alert("To open the app, click the 'Open in app' icon in your browser's address bar or launch it from your applications folder.");
-              }}
-              className="flex items-center justify-center gap-1.5 h-6 pl-2 pr-2 mr-1 rounded-md transition-all cursor-pointer bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 xl:pr-2.5"
-              title="Open in App"
-              aria-label="Open in app"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden text-xs font-medium xl:inline">Open in App</span>
             </button>
           )
         )}

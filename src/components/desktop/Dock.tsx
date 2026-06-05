@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useMemo, forwardRef } from 'react';
+import { useHorizontalWheelScroll } from '@/hooks/useHorizontalWheelScroll';
 import { cn } from '@/lib/utils';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -338,7 +339,7 @@ function DockItem({
 // ── Main Dock component ──────────────────────────────────────
 
 export function Dock() {
-  const dockRef = useRef<HTMLDivElement>(null);
+  const setDockScrollEl = useHorizontalWheelScroll();
   const [mouseX, setMouseX] = useState<number | null>(null);
   const { play } = useSound();
   const { windows, focusedWindowId, openWindow, focusWindow, minimizeWindow, switchWorkspace } = useWindowStore();
@@ -485,13 +486,13 @@ export function Dock() {
       <div className="relative bottom-0">
         {/* Dock bar */}
         <div
-          ref={dockRef}
+          ref={setDockScrollEl}
           className={cn(
             'relative flex items-end px-3 pt-1 pb-1 rounded-t-[14px]',
             'glass-window',
             'border-t border-l border-r border-black/10 dark:border-white/10',
             'shadow-[0_-5px_20px_rgba(0,0,0,0.1)] dark:shadow-[0_-5px_20px_rgba(0,0,0,0.35)]',
-            needsScroll && 'overflow-x-auto scrollbar-none',
+            needsScroll && 'overflow-x-auto scroll-x-instant scrollbar-none',
           )}
           style={{ gap: `${gap}px` }}
           onMouseMove={(e) => setMouseX(e.clientX)}

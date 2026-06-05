@@ -52,7 +52,6 @@ const WEB_TOOLS = new Set([
   'remote_browser_session',
   'browser',
   'arxiv',
-  'youtube',
   'domain_intel',
 ]);
 

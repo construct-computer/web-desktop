@@ -796,7 +796,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
         {/* Categories */}
         {tab === 'discover' && !isSearching && (
-          <div className="flex gap-1.5 pb-2 overflow-x-auto shrink-0 custom-scrollbar mb-2">
+          <div className="flex gap-1.5 pb-2 overflow-x-auto shrink-0 scrollbar-x-none mb-2">
             {CATEGORIES.map(c => (
               <button
                 key={c.id}

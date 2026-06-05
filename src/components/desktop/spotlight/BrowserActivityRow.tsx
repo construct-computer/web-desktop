@@ -144,6 +144,23 @@ export function BrowserActivityRow({
         </div>
       )}
 
+      {meta?.screenshotUrl && (
+        <div className="ml-[58px] mt-1">
+          <a
+            href={meta.screenshotUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block rounded border border-white/[0.08] overflow-hidden hover:border-white/[0.15] transition-colors"
+          >
+            <img
+              src={meta.screenshotUrl}
+              alt="Browser step screenshot"
+              className="max-h-24 max-w-[200px] object-cover object-top"
+            />
+          </a>
+        </div>
+      )}
+
       {showPayload && meta?.payload != null && (
         <pre className="ml-[58px] mt-1 mb-1 text-[10px] text-[var(--color-text-muted)]/60 bg-black/30 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono">
           {JSON.stringify(meta.payload, null, 2)}

@@ -41,6 +41,7 @@ function clearStaleUserData(newUserId: string): void {
     STORAGE_KEYS.windowPositions,
     'construct:tracker:dismissedGoals',
     'construct:tracker:operations',
+    STORAGE_KEYS.browserDismissedTabs,
     'construct:tour-completed',
     'construct:tour-skipped',
     'construct:agent-widget-pos',
@@ -83,6 +84,7 @@ function clearLocalSessionData(): void {
   try { sessionStorage.clear(); } catch { /* */ }
   try { localStorage.removeItem('construct:tracker:dismissedGoals'); } catch { /* */ }
   try { localStorage.removeItem('construct:tracker:operations'); } catch { /* */ }
+  try { localStorage.removeItem(STORAGE_KEYS.browserDismissedTabs); } catch { /* */ }
   try { localStorage.removeItem(STORAGE_KEYS.windowPositions); } catch { /* */ }
   try { localStorage.removeItem(STORAGE_KEYS.userId); } catch { /* */ }
   try { localStorage.removeItem('construct:tour-completed'); } catch { /* */ }

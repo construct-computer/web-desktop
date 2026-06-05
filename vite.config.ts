@@ -41,6 +41,7 @@ export default defineConfig(({ mode }) => {
         navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/v1\//, /^\/health$/],
       },
       manifest: {
+        id: '/',
         name: 'construct.computer',
         short_name: 'Construct',
         description: 'AI Agent Platform - Your AI agents run autonomously 24/7',

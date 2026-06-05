@@ -4,6 +4,9 @@ import { ActivityIconBadge } from './ActivityIconBadge';
 import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
 import type { ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
+import { isBrowserWebTool } from '@/stores/browserTabStore';
+import { BrowserActivityRow } from './BrowserActivityRow';
+import { WebToolActivityRow } from './WebToolActivityRow';
 
 function cleanErrorTitle(content: string): { title: string; detail?: string; raw?: string; badges?: string[] } {
   const simple = content.match(/^Error:\s*(.+)$/s);
@@ -116,6 +119,25 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
 
   if (msg.codePreview) {
     return <CodePreviewCard msg={msg} compact={compact} />;
+  }
+
+  if (msg.tool && isBrowserWebTool(msg.tool)) {
+    return (
+      <div className={compact ? 'px-1 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+        <WebToolActivityRow
+          message={msg}
+          failed={msg.activityStatus === 'failed' || msg.isError}
+        />
+      </div>
+    );
+  }
+
+  if (msg.activityType === 'web' && msg.browserAction) {
+    return (
+      <div className={compact ? 'px-1 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+        <BrowserActivityRow message={msg} />
+      </div>
+    );
   }
 
   if (memoryActivity) {

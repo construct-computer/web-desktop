@@ -8,7 +8,6 @@ function modeLabel(tab: BrowserTab | null, fetchView: 'site' | 'reader'): string
     case 'fetch': return fetchView === 'site' ? 'Preview' : 'Reading';
     case 'live': return 'Live Use';
     case 'arxiv': return 'arXiv';
-    case 'youtube': return 'YouTube';
     case 'domain': return 'Domain';
     default: return null;
   }
@@ -25,14 +24,11 @@ function modeClass(tab: BrowserTab | null): string {
   if (tab.mode === 'search') {
     return 'bg-blue-500/10 text-blue-300 border-blue-500/20';
   }
-  if (tab.mode === 'youtube') {
-    return 'bg-red-500/10 text-red-400 border-red-500/20';
-  }
   if (tab.mode === 'arxiv') {
     return 'bg-purple-500/10 text-purple-300 border-purple-500/20';
   }
   if (tab.mode === 'domain') {
-    return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+    return 'bg-[#2d6a5a]/10 text-[#2d6a5a] border-[#2d6a5a]/20';
   }
   return 'bg-white/5 text-[var(--color-text-muted)] border-white/10';
 }
@@ -41,12 +37,10 @@ export const BrowserModeStatusBar = memo(function BrowserModeStatusBar({
   tab,
   fetchView,
   pageTitle,
-  connected,
 }: {
   tab: BrowserTab | null;
   fetchView: 'site' | 'reader';
   pageTitle?: string;
-  connected?: boolean;
 }) {
   const label = modeLabel(tab, fetchView);
   const subtitle = tab?.progressLabel || tab?.pageTitle || pageTitle || '';
@@ -71,18 +65,7 @@ export const BrowserModeStatusBar = memo(function BrowserModeStatusBar({
             {label}
           </span>
         )}
-        {connected !== undefined && (
-          <span
-            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-              connected 
-                ? 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.8)]' 
-                : 'bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.8)]'
-            }`}
-            title={connected ? 'Daemon Agent Connected' : 'Daemon Agent Disconnected'}
-          />
-        )}
       </div>
     </div>
   );
 });
-

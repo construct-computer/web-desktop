@@ -32,7 +32,7 @@ function AppIcon({
         'flex flex-col items-center gap-1.5 p-2 rounded-2xl',
         'transition-all duration-200 ease-out',
         'hover:bg-white/10 active:scale-90',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+        'focus:outline-none focus-visible:outline-none',
         pressed && 'scale-90',
       )}
       style={{

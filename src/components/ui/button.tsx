@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 const buttonVariants = cva(
   // Base styles - soft and rounded
   `inline-flex items-center justify-center font-medium transition-all duration-150
-   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1
+   focus:outline-none focus-visible:outline-none
    disabled:pointer-events-none disabled:opacity-50
    select-none cursor-pointer rounded-[var(--radius-button)]`,
   {

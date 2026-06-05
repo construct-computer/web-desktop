@@ -253,14 +253,43 @@ html.dark ::-webkit-scrollbar-thumb:active {
   background: transparent;
 }
 
-/* Focus visible for accessibility (not text fields — see below) */
-:focus-visible:not(input,
-  textarea,
-  select,
-  [contenteditable]:not([contenteditable='false']),
-  [role='textbox']) {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+/* Hide horizontal scrollbar thumbs globally; vertical scrollbars stay thin */
+::-webkit-scrollbar:horizontal {
+  height: 0 !important;
+  display: none;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-x-none {
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar:horizontal {
+    height: 0;
+    display: none;
+  }
+}
+
+@utility scroll-x-instant {
+  scroll-behavior: auto;
+  overflow-x: auto;
+}
+
+/* No focus rings on any interactive element (Shift+Tab / keyboard nav) */
+:focus,
+:focus-visible {
+  outline: none !important;
+  --tw-ring-width: 0px !important;
+  --tw-ring-offset-width: 0px !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
 }
 
 /* Text fields: no focus ring, outline, or border highlight (including autofocus) */
@@ -1533,6 +1562,7 @@ html.dark .md-inline-code {
   margin: 0;
   padding: 0.75em 1em;
   overflow-x: auto;
+  scrollbar-width: none;
   font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.55;
@@ -1609,6 +1639,7 @@ html.dark .md-inline-code {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   margin: 0.5em 0;
+  scrollbar-width: none;
 }
 
 .md-table-wrap table {
@@ -1778,6 +1809,14 @@ html.dark .md-table-wrap tr:nth-child(even) {
   background: rgba(0, 0, 0, 0.3);
   border-radius: 6px;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.md-code-block pre::-webkit-scrollbar,
+.markdown-rendered pre::-webkit-scrollbar,
+.md-table-wrap::-webkit-scrollbar {
+  display: none;
+  height: 0;
 }
 
 .markdown-rendered pre code {
@@ -1820,6 +1859,223 @@ html.dark .md-table-wrap tr:nth-child(even) {
 .markdown-rendered input[type="checkbox"] {
   margin-right: 0.4em;
   accent-color: var(--color-accent);
+}
+
+/* ── Browser Reader view (.reader-prose) ───────────────────────────────────── */
+.reader-article {
+  max-width: 42rem;
+}
+
+.reader-article-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.reader-prose {
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--color-text);
+}
+
+.reader-prose .reader-paragraph {
+  margin: 0.85em 0;
+}
+
+.reader-prose ul,
+.reader-prose ol {
+  margin: 0.65em 0;
+  padding-left: 1.5em;
+}
+
+.reader-prose li {
+  margin: 0.35em 0;
+}
+
+.reader-prose h1 {
+  font-size: 1.65em;
+  margin-top: 1.25em;
+}
+
+.reader-prose h2 {
+  font-size: 1.35em;
+  margin-top: 1.15em;
+}
+
+.reader-prose h3 {
+  font-size: 1.15em;
+  margin-top: 1em;
+}
+
+.reader-figure {
+  margin: 1.25em auto;
+  max-width: 100%;
+  text-align: center;
+}
+
+.reader-figure-img {
+  max-width: 100%;
+  max-height: min(420px, 50vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  margin: 0 auto;
+  display: block;
+}
+
+.reader-prose em:only-child,
+.reader-prose p:has(+ .reader-figure) + p > em:only-child {
+  display: block;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-top: 0.35em;
+  font-style: normal;
+}
+
+.reader-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+  display: inline;
+}
+
+.reader-link-icon {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-left: 0.2em;
+  vertical-align: -0.1em;
+  opacity: 0.55;
+}
+
+.reader-nav-removed {
+  font-size: 0.7rem;
+  color: var(--color-text-subtle);
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.03);
+  display: inline-block;
+}
+
+.reader-prose ul:has(a[href]) {
+  font-size: 0.92em;
+}
+
+/* ── Browser read pane — white paper surface for all read-only tab modes ───── */
+.browser-read-pane {
+  min-height: 100%;
+  background: #fafafa;
+  isolation: isolate;
+  color: #111111;
+  --color-text: #111111;
+  --color-text-muted: #444444;
+  --color-text-subtle: #5f6368;
+  --color-border: rgba(0, 0, 0, 0.1);
+}
+
+.browser-read-pane .search-result-title a,
+.browser-read-pane .reader-link {
+  color: #1a0dab;
+}
+
+.browser-read-pane .search-result-snippet,
+.browser-read-pane .reader-prose {
+  color: #1a1a1a;
+}
+
+.browser-read-pane .search-result-breadcrumb,
+.browser-read-pane .search-result-date,
+.browser-read-pane .reader-nav-removed {
+  color: #5f6368;
+}
+
+.browser-read-pane .search-results header {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.browser-read-pane .reader-article-title {
+  color: #111111;
+}
+
+.browser-read-pane .reader-prose h1,
+.browser-read-pane .reader-prose h2,
+.browser-read-pane .reader-prose h3 {
+  color: #111111;
+}
+
+.browser-read-pane .reader-figure-img {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.browser-read-pane .reader-prose em:only-child,
+.browser-read-pane .reader-prose p:has(+ .reader-figure) + p > em:only-child {
+  color: #5f6368;
+}
+
+.browser-read-pane .reader-nav-removed {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.browser-read-pane .search-result:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.browser-read-pane .domain-record-label {
+  color: #2d6a5a;
+}
+
+/* ── Browser Search results (.search-results) ──────────────────────────────── */
+.search-results {
+  max-width: 48rem;
+}
+
+.search-result-breadcrumb {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--color-text-subtle);
+}
+
+.search-result-title {
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.search-result-title a {
+  color: #7eb8ff;
+  text-decoration: none;
+}
+
+.search-result-title a:visited {
+  color: #b4a7ff;
+}
+
+.search-result-title a:hover {
+  text-decoration: underline;
+}
+
+.search-result-snippet {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.search-result-date {
+  color: var(--color-text-subtle);
+  font-weight: 500;
+}
+
+.search-result-rank {
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+  opacity: 0.65;
 }
 
 /* ── Browser viewport visual feedback ──────────────────────────────────────── */

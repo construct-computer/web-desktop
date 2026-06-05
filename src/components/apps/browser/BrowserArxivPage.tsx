@@ -4,10 +4,10 @@ import type { BrowserTab } from '@/stores/browserTabStore';
 
 function SkeletonPaper() {
   return (
-    <div className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-5 space-y-3">
-      <div className="h-4 w-4/5 rounded bg-white/[0.05] animate-pulse" />
-      <div className="h-3 w-1/3 rounded bg-white/[0.03] animate-pulse" />
-      <div className="h-3 w-full rounded bg-white/[0.03] animate-pulse" />
+    <div className="rounded-xl border border-black/[0.08] bg-black/[0.02] p-5 space-y-3">
+      <div className="h-4 w-4/5 rounded bg-black/[0.05] animate-pulse" />
+      <div className="h-3 w-1/3 rounded bg-black/[0.04] animate-pulse" />
+      <div className="h-3 w-full rounded bg-black/[0.04] animate-pulse" />
     </div>
   );
 }
@@ -29,7 +29,7 @@ export const BrowserArxivPage = memo(function BrowserArxivPage({ tab }: { tab: B
   const papers = tab.papers || [];
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--color-surface)] text-[var(--color-text)]">
+    <div className="h-full overflow-y-auto browser-read-pane">
       <div className="max-w-2xl mx-auto px-6 py-12">
         <div className="flex items-center gap-2.5 mb-8 opacity-90 select-none">
           <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center border border-purple-500/20">
@@ -57,7 +57,7 @@ export const BrowserArxivPage = memo(function BrowserArxivPage({ tab }: { tab: B
             {papers.map((p, i) => (
               <article
                 key={p.id}
-                className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-5 hover:border-purple-500/30 hover:bg-white/[0.02] hover:shadow-lg transition-all duration-200 animate-[fadeIn_0.25s_ease-out_forwards]"
+                className="rounded-xl border border-black/[0.08] bg-black/[0.02] p-5 hover:border-purple-500/40 hover:bg-black/[0.03] hover:shadow-md transition-all duration-200 animate-[fadeIn_0.25s_ease-out_forwards]"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <h3 className="text-sm font-semibold text-[var(--color-text)] leading-snug hover:text-purple-400 transition-colors">
@@ -81,7 +81,7 @@ export const BrowserArxivPage = memo(function BrowserArxivPage({ tab }: { tab: B
                   {p.summary}
                 </p>
 
-                <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center justify-between">
+                <div className="mt-4 pt-3 border-t border-black/[0.06] flex items-center justify-between">
                   <a
                     href={p.pdfUrl}
                     target="_blank"

@@ -49,9 +49,14 @@ describe('routeToolToWindow — built-in tools', () => {
     expect(routeToolToWindow('memory', { action: 'recall' })?.type).toBe('memory');
   });
 
+  it('routes cheap web/research tools to the browser app', () => {
+    for (const t of ['web_search', 'web_fetch', 'arxiv', 'domain_intel']) {
+      expect(routeToolToWindow(t, {})).toMatchObject({ type: 'browser', autoClose: false });
+    }
+  });
+
   it('returns null for tools with no visual counterpart', () => {
-    for (const t of ['web_search', 'web_fetch', 'arxiv', 'youtube', 'domain_intel',
-      'tool_search', 'ask_user', 'spawn_agent', 'wait_for_agents', 'coding_guide',
+    for (const t of ['tool_search', 'ask_user', 'spawn_agent', 'wait_for_agents', 'coding_guide',
       'task_create', 'slack', 'telegram', 'notify_user', 'read_agent_output', 'desktop']) {
       expect(routeToolToWindow(t, {})).toBeNull();
     }

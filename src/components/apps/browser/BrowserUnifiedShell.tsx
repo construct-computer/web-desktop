@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Globe } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui';
+import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
 import { useComputerStore } from '@/stores/agentStore';
 import {
@@ -31,7 +32,8 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
 
   const browserSessions = useComputerStore((s) => s.browserState.browserSessions);
   const activeBrowserSessionId = useComputerStore((s) => s.browserState.activeBrowserSessionId);
-  const connected = useComputerStore((s) => s.browserState.connected);
+  const hasBrowserUseKey = useComputerStore((s) => s.hasBrowserUseKey);
+  const configChecked = useComputerStore((s) => s.configChecked);
 
   const sessionList = useMemo(
     () => Object.values(browserSessions).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)),
@@ -76,6 +78,20 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
     }
     finalizeCloseTab(tab);
   }, [browserSessions, finalizeCloseTab]);
+
+  useEffect(() => {
+    registerBrowserTabCloseHandler(handleCloseTab);
+    return () => registerBrowserTabCloseHandler(null);
+  }, [handleCloseTab]);
+
+  const onShellKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const mod = e.ctrlKey || e.altKey || e.metaKey;
+    if (mod && e.key === 'w' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeTab) handleCloseTab(activeTab);
+    }
+  }, [activeTab, handleCloseTab]);
 
   const confirmCloseLiveTab = useCallback(async () => {
     if (!pendingCloseTab || closingTab) return;
@@ -149,27 +165,32 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
     }
   }, [activeTab, browserSessions, stoppingLive, finalizeCloseTab]);
 
-  const showProgress = activeTab?.status === 'loading';
-
   return (
-    <div className="relative flex flex-col h-full surface-app overflow-hidden">
-      <BrowserTabBar
-        tabs={tabs}
-        activeTabId={activeTab?.id ?? null}
-        onSelect={setActiveTab}
-        onClose={handleCloseTab}
-      />
-      <BrowserChromeBar
-        tab={activeTab}
-        fetchView={fetchView}
-        onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
-        onStopLive={activeTab?.mode === 'live' ? onStopLive : undefined}
-        stoppingLive={stoppingLive}
-      />
+    <div
+      className="relative flex flex-col h-full surface-app overflow-hidden outline-none"
+      onKeyDown={onShellKeyDown}
+      tabIndex={-1}
+    >
+      <div className="shrink-0">
+        <BrowserTabBar
+          tabs={tabs}
+          activeTabId={activeTab?.id ?? null}
+          onSelect={setActiveTab}
+          onClose={handleCloseTab}
+        />
+        <BrowserChromeBar
+          tab={activeTab}
+          fetchView={fetchView}
+          onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
+          onStopLive={activeTab?.mode === 'live' ? onStopLive : undefined}
+          stoppingLive={stoppingLive}
+        />
+      </div>
 
-      {showProgress && (
-        <div className="h-[2px] bg-black/40 overflow-hidden select-none relative z-20">
-          <div className="h-full w-2/3 bg-gradient-to-r from-transparent via-[var(--color-accent)] to-transparent animate-[shimmer_1.4s_ease-in-out_infinite] shadow-[0_0_8px_var(--color-accent)]" />
+      {configChecked && !hasBrowserUseKey && (
+        <div className="px-3 py-1.5 text-[11px] leading-snug border-b border-amber-500/15 bg-amber-500/[0.06] text-amber-300/90">
+          Interactive browser (Browser Use) is unavailable — check the platform API key or subscription.
+          Use <strong>web_search</strong> or <strong>web_fetch</strong> for read-only page text in the meantime.
         </div>
       )}
 
@@ -197,6 +218,11 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
                   ? 'When Construct searches the web or opens pages, they will appear here as tabs.'
                   : 'Ask Construct to search the web or visit a page.'}
               </p>
+              {configChecked && !hasBrowserUseKey && (
+                <p className="text-[11px] text-amber-400/80 leading-relaxed mt-1">
+                  Live browsing requires Browser Use. Search and fetch tabs still work without it.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -205,7 +231,6 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
       <BrowserModeStatusBar
         tab={activeTab}
         fetchView={fetchView}
-        connected={connected}
       />
 
       <ConfirmDialog

@@ -7,6 +7,8 @@ import { memoryActivityTitle, memoryActivitySummary } from './ChatEventRow';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
 import { CompactActivityRow } from './CompactActivityRow';
+import { WebToolActivityRow } from './WebToolActivityRow';
+import { isBrowserWebTool } from '@/stores/browserTabStore';
 import { formatActivityLine } from './formatActivityLine';
 import { mergeBrowserRepeats } from './browserActivityUtils';
 import { useElapsed } from './hooks';
@@ -104,7 +106,10 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
   const browserRunMeta = useMemo(() => {
     if (hasSubAgents) return null;
     const start = activities.find(
-      (a) => (a.tool === 'browser' || a.tool === 'remote_browser') && typeof a.content === 'string' && a.content.startsWith('Browsing '),
+      (a) => (a.tool === 'browser' || a.tool === 'remote_browser') && (
+        (typeof a.content === 'string' && a.content.startsWith('Browsing '))
+        || !!a.browserAction
+      ),
     );
     if (!start) return null;
     const startUrl = start.content.replace(/^Browsing\s+/, '').trim() || undefined;
@@ -170,22 +175,28 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               : `${stepCount} step${stepCount !== 1 ? 's' : ''}`}
           </span>
         )}
+        {!isRunning && collapsedPreview?.failed && (
+          <XCircle className="ml-auto shrink-0 w-3.5 h-3.5 text-red-400/70" />
+        )}
         {isRunning && (
           <span className="ml-auto shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         )}
       </button>
 
+      {browserRunMeta && (
+        <div className={`px-3 ${expanded ? 'border-t border-white/[0.04]' : 'pb-2'}`}>
+          <div className={expanded ? 'mt-2' : ''}>
+            <BrowserRunCard
+              goal={browserRunMeta.goal}
+              startUrl={browserRunMeta.startUrl}
+              activities={activities}
+            />
+          </div>
+        </div>
+      )}
+
       {expanded && (
         <div className="px-3 pb-2.5 border-t border-white/[0.04]">
-          {browserRunMeta && (
-            <div className="mt-2">
-              <BrowserRunCard
-                goal={browserRunMeta.goal}
-                startUrl={browserRunMeta.startUrl}
-                activities={activities}
-              />
-            </div>
-          )}
           <div ref={scrollRef} className="mt-2 max-h-[min(200px,40dvh)] overflow-y-auto pr-0.5">
             {hasSubAgents && timeline ? (
               /* ── Merged timeline: sub-agents + main activities ── */
@@ -218,6 +229,17 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     />
                   );
                 }
+                if (act.tool && isBrowserWebTool(act.tool)) {
+                  const isFailed = act.activityStatus === 'failed' || act.isError;
+                  return (
+                    <WebToolActivityRow
+                      key={key}
+                      message={act}
+                      duration={dur}
+                      failed={isFailed}
+                    />
+                  );
+                }
                 const isFailed = act.activityStatus === 'failed' || act.isError;
                 return (
                   <CompactActivityRow
@@ -228,6 +250,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     iconPlatform={act.iconPlatform}
                     iconUrl={act.iconUrl}
                     failed={isFailed}
+                    activityStatus={act.activityStatus}
                     duration={dur}
                     className="hover:bg-white/[0.025]"
                   />

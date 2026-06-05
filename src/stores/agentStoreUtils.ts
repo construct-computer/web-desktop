@@ -8,6 +8,7 @@
 import type { ChatMessage } from './agentStoreTypes';
 import type { WindowType } from '@/types';
 import { routeToolToWindow } from '../lib/toolWindowRouting';
+import { readerMarkdownSnippet } from '../lib/readerMarkdownNormalize';
 import { useWindowStore } from './windowStore';
 
 // ── Auth card persistence ──────────────────────────────────────────────────
@@ -191,7 +192,6 @@ const TOOL_ACTIVITY_VERB: Record<string, string> = {
   task_get: 'Reading task',
   slack: 'Slack',
   github: 'GitHub',
-  youtube: 'Transcript',
   arxiv: 'arXiv search',
   domain_intel: 'Domain intel',
   app: 'Apps',
@@ -364,7 +364,7 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const url = p.url as string | undefined;
     const selector = typeof p.selector === 'string' ? p.selector.trim() : '';
     const loc = url ? formatActivityUrl(url) : 'page';
-    return { text: selector ? `Fetching: ${loc} (${selector})` : `Fetching: ${loc}`, activityType: 'tool' };
+    return { text: selector ? `Fetching: ${loc} (${selector})` : `Fetching: ${loc}`, activityType: 'web' };
   }
 
   if (tool === 'remote_browser' || tool === 'web_scrape') {
@@ -521,11 +521,6 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const repo = p.repo as string | undefined;
     const base = repo ? `${action || 'github'} (${repo})` : (action || 'GitHub');
     return { text: `GitHub: ${base}`, activityType: 'tool' };
-  }
-
-  if (tool === 'youtube') {
-    const url = p.url as string | undefined;
-    return { text: url ? `Transcript: ${formatActivityUrl(url)}` : 'Fetching YouTube transcript', activityType: 'tool' };
   }
 
   if (tool === 'arxiv') {
@@ -715,7 +710,7 @@ export function titleCaseToolkit(name: string): string {
     clickup: 'ClickUp', googlecalendar: 'Google Calendar',
     googledrive: 'Google Drive', googlesheets: 'Google Sheets',
     googledocs: 'Google Docs', mongodb: 'MongoDB', postgresql: 'PostgreSQL',
-    youtube: 'YouTube', bitbucket: 'Bitbucket', gmail: 'Gmail',
+    bitbucket: 'Bitbucket', gmail: 'Gmail',
     microsoft_teams: 'Microsoft Teams', dropbox: 'Dropbox',
   };
   return brands[lower] || (lower.charAt(0).toUpperCase() + lower.slice(1));
@@ -758,7 +753,34 @@ export function describeToolFailure(
   if (tool === 'sandbox_write_file') return `Failed writing ${params?.path || 'file'}${exitSuffix}`;
   if (tool === 'save_to_workspace') return `Failed saving ${params?.workspace_path || 'file'}${exitSuffix}`;
   if (tool === 'load_from_workspace') return `Failed loading ${params?.workspace_path || 'file'}${exitSuffix}`;
+  if (tool === 'browser' || tool === 'remote_browser' || tool.startsWith('browser_')) {
+    const detail = rawError.slice(0, 140);
+    return detail ? `Browser failed · ${detail}` : `Browser failed${exitSuffix}`;
+  }
+  if (tool === 'web_search' || tool === 'web_fetch') {
+    const detail = rawError.slice(0, 120);
+    return detail ? `Failed ${tool === 'web_search' ? 'search' : 'fetch'} · ${detail}` : `Failed ${tool}${exitSuffix}`;
+  }
   return `Failed ${tool}${exitSuffix}`;
+}
+
+const WEB_BROWSER_TOOLS = new Set([
+  'web_search', 'web_fetch', 'arxiv', 'domain_intel',
+  'browser', 'remote_browser',
+]);
+
+/** True when an activity buffer should use ToolCallBanner polish (web/browser tools). */
+export function isWebBrowserToolActivity(tool: string | undefined, activityType?: string): boolean {
+  if (!tool && activityType !== 'web' && activityType !== 'browser') return false;
+  if (tool && WEB_BROWSER_TOOLS.has(tool)) return true;
+  if (tool?.startsWith('browser_')) return true;
+  return activityType === 'web' || activityType === 'browser';
+}
+
+export function activityBufferHasWebBrowserTools(
+  activities: Array<{ tool?: string; activityType?: string; browserAction?: unknown }>,
+): boolean {
+  return activities.some((a) => isWebBrowserToolActivity(a.tool, a.activityType) || !!a.browserAction);
 }
 
 export type ToolActivityPatch = {
@@ -813,4 +835,232 @@ export function patchToolActivityFailure<T extends {
       ? { ...msg, content, activityStatus: 'failed' as const, isError: true }
       : msg
   ));
+}
+
+export function patchToolActivitySuccess<T extends {
+  role: string;
+  tool?: string;
+  toolCallId?: string;
+  activityStatus?: string;
+}>(
+  messages: T[],
+  opts: { toolCallId?: string; tool?: string },
+): T[] {
+  const { toolCallId, tool } = opts;
+  if (!toolCallId && !tool) return messages;
+
+  let matchIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') continue;
+    if (msg.activityStatus === 'failed' || msg.activityStatus === 'completed') continue;
+    if (toolCallId && msg.toolCallId === toolCallId) {
+      matchIndex = i;
+      break;
+    }
+    if (!toolCallId && tool && msg.tool === tool) {
+      matchIndex = i;
+      break;
+    }
+  }
+  if (matchIndex < 0) return messages;
+
+  return messages.map((msg, index) => (
+    index === matchIndex
+      ? { ...msg, activityStatus: 'completed' as const }
+      : msg
+  ));
+}
+
+/** Mark all trailing browser activity rows as failed after browser:error. */
+export function patchTrailingBrowserActivitiesFailed<T extends {
+  role: string;
+  tool?: string;
+  activityType?: string;
+  activityStatus?: string;
+  content: string;
+  isError?: boolean;
+  browserAction?: unknown;
+}>(
+  messages: T[],
+  error: string,
+): T[] {
+  const failDetail = error.length > 120 ? `${error.slice(0, 117)}…` : error;
+  let hitNonActivity = false;
+  const indices = new Set<number>();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') {
+      hitNonActivity = true;
+      continue;
+    }
+    if (hitNonActivity) break;
+    const isBrowser = msg.tool === 'browser'
+      || msg.tool === 'remote_browser'
+      || msg.activityType === 'web'
+      || !!msg.browserAction;
+    if (isBrowser && msg.activityStatus !== 'failed' && msg.activityStatus !== 'completed') {
+      indices.add(i);
+    }
+  }
+  if (indices.size === 0) {
+    return [...messages, {
+      role: 'activity' as const,
+      content: `Browser failed · ${failDetail}`,
+      activityType: 'web' as const,
+      tool: 'browser',
+      activityStatus: 'failed' as const,
+      isError: true,
+    } as T];
+  }
+  let first = true;
+  return messages.map((msg, index) => {
+    if (!indices.has(index)) return msg;
+    const content = first
+      ? (msg.content.startsWith('Failed') ? msg.content : `Failed · ${failDetail}`)
+      : msg.content;
+    first = false;
+    return { ...msg, content, activityStatus: 'failed' as const, isError: true };
+  });
+}
+
+/** Mark trailing in-progress browser activities as completed after browser:complete. */
+export function patchTrailingBrowserActivitiesCompleted<T extends {
+  role: string;
+  tool?: string;
+  activityType?: string;
+  activityStatus?: string;
+  browserAction?: unknown;
+}>(messages: T[]): T[] {
+  const indices = new Set<number>();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') break;
+    const isBrowser = msg.tool === 'browser'
+      || msg.tool === 'remote_browser'
+      || msg.activityType === 'web'
+      || !!msg.browserAction;
+    if (isBrowser && msg.activityStatus !== 'failed' && msg.activityStatus !== 'completed') {
+      indices.add(i);
+    }
+  }
+  if (indices.size === 0) return messages;
+  return messages.map((msg, index) => (
+    indices.has(index) ? { ...msg, activityStatus: 'completed' as const } : msg
+  ));
+}
+
+export function buildWebPreviewFromTabPayload(
+  tool: string,
+  payload: Record<string, unknown>,
+): { kind: 'search' | 'fetch'; query?: string; url?: string; pageTitle?: string; snippet?: string; resultCount?: number; results?: Array<{ title: string; url: string; snippet: string }>; truncated?: boolean } | undefined {
+  if (tool === 'web_search' || Array.isArray(payload.results)) {
+    const results = (payload.results as Array<Record<string, unknown>> || []).slice(0, 3).map((r) => ({
+      title: String(r.title ?? ''),
+      url: String(r.url ?? ''),
+      snippet: String(r.snippet ?? '').slice(0, 160),
+    }));
+    return {
+      kind: 'search',
+      query: typeof payload.query === 'string' ? payload.query : undefined,
+      resultCount: Array.isArray(payload.results) ? payload.results.length : results.length,
+      results,
+    };
+  }
+  if (tool === 'web_fetch' || typeof payload.content === 'string') {
+    const content = String(payload.content ?? '');
+    const pageTitle = typeof payload.title === 'string' ? payload.title : undefined;
+    const url = typeof payload.url === 'string' ? payload.url : undefined;
+    return {
+      kind: 'fetch',
+      url,
+      pageTitle,
+      snippet: readerMarkdownSnippet(content, { pageTitle, url }),
+      truncated: payload.truncated === true,
+    };
+  }
+  return undefined;
+}
+
+export function attachWebPreviewToActivity<T extends {
+  role: string;
+  toolCallId?: string;
+  webPreview?: unknown;
+}>(
+  messages: T[],
+  toolCallId: string,
+  preview: NonNullable<ReturnType<typeof buildWebPreviewFromTabPayload>>,
+): T[] {
+  let matchIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'activity' && messages[i].toolCallId === toolCallId) {
+      matchIndex = i;
+      break;
+    }
+  }
+  if (matchIndex < 0) return messages;
+  return messages.map((msg, index) => (
+    index === matchIndex ? { ...msg, webPreview: preview } : msg
+  ));
+}
+
+export type BrowserRunHistorySummary = {
+  run_id: string;
+  session_key: string | null;
+  task: string | null;
+  started_at: number;
+  ended_at: number | null;
+  status: 'running' | 'success' | 'error' | 'cancelled';
+  live_url?: string | null;
+};
+
+type BrowserRunHistoryMessage = {
+  role: string;
+  content: string;
+  timestamp: Date;
+  tool?: string;
+  activityType?: string;
+  activityStatus?: string;
+  browserAction?: { actionType?: string | null; url?: string };
+};
+
+/** Inject collapsed browser-run summaries when live progress events were not persisted. */
+export function appendBrowserRunHistorySummaries<M extends BrowserRunHistoryMessage>(
+  messages: M[],
+  runs: BrowserRunHistorySummary[],
+  sessionKey: string,
+): M[] {
+  const hasBrowserTimeline = messages.some((m) =>
+    m.role === 'activity'
+    && (m.tool === 'browser' || m.tool === 'remote_browser' || !!m.browserAction)
+    && (m.content.startsWith('Browsing ') || !!m.browserAction),
+  );
+  if (hasBrowserTimeline) return messages;
+
+  const sessionRuns = runs
+    .filter((r) => (r.session_key === sessionKey || r.session_key == null) && r.status !== 'running')
+    .sort((a, b) => (b.ended_at ?? b.started_at) - (a.ended_at ?? a.started_at))
+    .slice(0, 5);
+  if (sessionRuns.length === 0) return messages;
+
+  const extras = sessionRuns.map((run) => {
+    const task = (run.task || 'browser task').trim();
+    const shortTask = task.length > 72 ? `${task.slice(0, 71)}…` : task;
+    return {
+      role: 'activity' as const,
+      content: run.status === 'success'
+        ? `Previous browser run · ${shortTask}`
+        : `Previous browser run failed · ${shortTask}`,
+      timestamp: new Date(run.ended_at ?? run.started_at),
+      activityType: 'web' as const,
+      tool: 'browser',
+      activityStatus: run.status === 'success' ? 'completed' as const : 'failed' as const,
+      browserAction: {
+        actionType: 'task',
+        ...(run.live_url ? { url: run.live_url } : {}),
+      },
+    } as M;
+  });
+
+  return [...messages, ...extras].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 }

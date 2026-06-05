@@ -117,7 +117,7 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
 
   // ── Browser + cheap web/research tools (unified Browser app tabs) ─
   const BROWSER_WEB_TOOLS = new Set([
-    'web_search', 'web_fetch', 'arxiv', 'youtube', 'domain_intel',
+    'web_search', 'web_fetch', 'arxiv', 'domain_intel',
   ]);
   if (
     tool === 'browser' || tool.startsWith('browser_') || BROWSER_WEB_TOOLS.has(tool)

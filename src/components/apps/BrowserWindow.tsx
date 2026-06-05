@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, memo, useMemo } from 'react';
 import {
   RefreshCw, Globe, X,
-  Lock, AlertTriangle,
+  AlertTriangle,
   ChevronUp, ChevronDown, Square, Camera, Check,
 } from 'lucide-react';
 import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from '@/stores/agentStore';
@@ -42,67 +42,18 @@ function displayDomain(url: string): string {
   }
 }
 
-/** Determine security indicator for the address bar */
-function getSecurityInfo(url: string): { type: 'secure' | 'insecure' | 'internal' | 'none'; label?: string } {
-  if (!url || url.startsWith('data:') || url === 'about:blank') return { type: 'internal' };
-  try {
-    const u = new URL(url);
-    if (u.protocol === 'https:') return { type: 'secure' };
-    if (u.protocol === 'http:') return { type: 'insecure', label: 'Not secure' };
-    return { type: 'internal' };
-  } catch {
-    return { type: 'none' };
-  }
-}
-
 // Tab component removed — each browser tab is now its own independent window.
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Progress Bar — simulated loading progress
+   Progress Bar — indeterminate loading indicator
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const ProgressBar = memo(function ProgressBar({ isLoading }: { isLoading: boolean }) {
-  const [progress, setProgress] = useState(0);
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (isLoading) {
-      setVisible(true);
-      setProgress(0);
-      // Simulated progress curve
-      const steps = [
-        { delay: 100, value: 15 },    // DNS/connect — fast jump
-        { delay: 500, value: 30 },     // downloading
-        { delay: 1500, value: 50 },    // rendering
-        { delay: 3000, value: 70 },    // slow crawl
-        { delay: 5000, value: 85 },    // almost there...
-        { delay: 8000, value: 92 },    // stalls
-      ];
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      for (const step of steps) {
-        timers.push(setTimeout(() => setProgress(step.value), step.delay));
-      }
-      return () => { timers.forEach(clearTimeout); };
-    } else if (visible) {
-      // Snap to 100%, then fade out
-      setProgress(100);
-      timerRef.current = setTimeout(() => {
-        setVisible(false);
-        setProgress(0);
-      }, 300);
-      return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }
-  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!visible) return null;
+  if (!isLoading) return null;
 
   return (
-    <div className="absolute top-0 left-0 right-0 h-[2px] z-30 bg-transparent overflow-hidden">
-      <div
-        className="h-full bg-[var(--color-accent)] transition-all duration-300 ease-out"
-        style={{ width: `${progress}%` }}
-      />
+    <div className="absolute top-0 left-0 right-0 h-[2px] z-30 bg-black/20 overflow-hidden">
+      <div className="h-full w-full bg-[var(--color-accent)] animate-pulse opacity-80" />
     </div>
   );
 });
@@ -935,8 +886,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     }
   }, [handleClose, findBarOpen, isLoading, sendTabAction]);
 
-  /* ── Security info for address bar ──────────────────────────────────────── */
-  const security = useMemo(() => getSecurityInfo(url), [url]);
   const unfocusedDisplay = useMemo(() => displayDomain(url), [url]);
 
   // This window is "active" if it has a daemon tab, is a Browser window,
@@ -991,33 +940,12 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     >
       {/* ── Address bar (read-only, agent-controlled) — hidden for Browser windows ── */}
       {!isAgentBrowserWindow && (
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2 surface-toolbar border-b border-[var(--color-border)]">
-        <div
-          className="flex-1 min-w-0 flex items-center gap-1.5 h-[28px] px-2 text-[12px] font-mono
-                     rounded-md shadow-inner cursor-default
-                     surface-control border border-[var(--color-border)]"
-        >
-          {hasContent && url ? (
-            <>
-              {security.type === 'secure' ? (
-                <Lock className="w-3 h-3 text-[var(--color-text-subtle)] shrink-0" />
-              ) : security.type === 'insecure' ? (
-                <AlertTriangle className="w-3 h-3 text-[var(--color-warning)] shrink-0" />
-              ) : (
-                <Globe className="w-3 h-3 text-[var(--color-text-subtle)] shrink-0" />
-              )}
-              <span className="truncate text-[var(--color-text-muted)] flex-1">
-                {unfocusedDisplay || url}
-              </span>
-            </>
-          ) : (
-            <>
-              <Globe className="w-3 h-3 text-[var(--color-text-subtle)] shrink-0" />
-              <span className="truncate text-[var(--color-text-subtle)] flex-1">
-                Construct-controlled browser
-              </span>
-            </>
-          )}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 min-h-[44px] surface-toolbar border-b border-[var(--color-border)]">
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 text-[12px] font-sans">
+          <Globe className="w-3.5 h-3.5 text-[var(--color-text-subtle)] shrink-0" />
+          <span className="truncate text-[var(--color-text-muted)] flex-1">
+            {hasContent && url ? (unfocusedDisplay || url) : 'Construct-controlled browser'}
+          </span>
         </div>
         {hasContent && url && (
           <AddressBarScreenshotButton url={url} />
@@ -1135,14 +1063,9 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
 
 function ChromeBar() {
   return (
-    <div className="shrink-0 pointer-events-none opacity-50">
-      <div className="flex items-center gap-2 px-3 py-2 surface-toolbar border-b border-[var(--color-border)]">
-        <div className="flex-1 h-[28px] px-2.5 flex items-center text-[12px] font-mono rounded-md shadow-inner
-                        surface-control border border-[var(--color-border)]">
-          <Globe className="w-3 h-3 text-[var(--color-text-subtle)] mr-2" />
-          <span className="text-[var(--color-text-subtle)]">Construct-controlled browser</span>
-        </div>
-      </div>
+    <div className="shrink-0 flex items-center gap-2 px-3 py-2 min-h-[44px] surface-toolbar border-b border-[var(--color-border)] select-none">
+      <Globe className="w-3.5 h-3.5 text-[var(--color-text-subtle)] shrink-0 opacity-50" />
+      <span className="text-[12px] text-[var(--color-text-subtle)] font-sans opacity-50">Remote browser</span>
     </div>
   );
 }

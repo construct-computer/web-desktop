@@ -46,6 +46,12 @@ import {
   describeToolCall,
   composioDisplayTool,
   patchToolActivityFailure,
+  patchToolActivitySuccess,
+  patchTrailingBrowserActivitiesFailed,
+  patchTrailingBrowserActivitiesCompleted,
+  buildWebPreviewFromTabPayload,
+  attachWebPreviewToActivity,
+  appendBrowserRunHistorySummaries,
 } from './agentStoreUtils';
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
 import {
@@ -240,6 +246,8 @@ export interface ChatMessage {
   clientId?: string;
   /** Structured details for browser activity rows (icons, payload disclosures). */
   browserAction?: BrowserActionMeta;
+  /** Inline snapshot of web_search/web_fetch results for chat preview cards. */
+  webPreview?: WebPreviewData;
   /** Stable incident id for deduping live + history notices. */
   incidentId?: string;
   /** Additional incident ids collapsed into this notice. */
@@ -283,6 +291,19 @@ export interface BrowserActionMeta {
   payload?: unknown;
   /** Sub-actions when the source label was a "x; y; z" compound. */
   subActions?: string[];
+  /** Step screenshot URL from browser:progress (when provided). */
+  screenshotUrl?: string;
+}
+
+export interface WebPreviewData {
+  kind: 'search' | 'fetch';
+  query?: string;
+  url?: string;
+  pageTitle?: string;
+  snippet?: string;
+  resultCount?: number;
+  results?: Array<{ title: string; url: string; snippet: string }>;
+  truncated?: boolean;
 }
 
 
@@ -1455,6 +1476,24 @@ function findWindowForBrowser(subagentId: string): string | undefined {
   );
 }
 
+function browserWindowsInWorkspace(workspaceId: string | undefined) {
+  const ws = useWindowStore.getState();
+  const targetWs = workspaceId || 'main';
+  return ws.windows.filter(
+    (w) => w.type === 'browser' && (w.workspaceId || 'main') === targetWs,
+  );
+}
+
+/** Close duplicate browser windows in a workspace, keeping the canonical one. */
+function consolidateBrowserWindows(canonicalId: string, workspaceId: string | undefined) {
+  const ws = useWindowStore.getState();
+  for (const win of browserWindowsInWorkspace(workspaceId)) {
+    if (win.id !== canonicalId) {
+      ws.closeWindow(win.id);
+    }
+  }
+}
+
 export function getOrCreateBrowserAppWindow(options: {
   focus?: boolean;
   title?: string;
@@ -1464,46 +1503,32 @@ export function getOrCreateBrowserAppWindow(options: {
   const ws = useWindowStore.getState();
   const focus = options.focus ?? true;
   const title = options.title || 'Browser';
+  const targetWs = options.workspaceId || 'main';
   const metadata = { ...(options.metadata || {}), browserAppWindow: true };
-  const existing = ws.windows.find(w => w.type === 'browser' && w.metadata?.browserAppWindow);
+  const inWs = browserWindowsInWorkspace(targetWs);
+
+  const existing = inWs.find((w) => w.metadata?.browserAppWindow) || inWs[0];
   if (existing) {
     ws.updateWindow(existing.id, {
       title,
       metadata: { ...(existing.metadata || {}), ...metadata },
     });
-    if (options.workspaceId && existing.workspaceId !== options.workspaceId) {
-      ws.moveWindowToWorkspace(existing.id, options.workspaceId);
+    if (existing.workspaceId !== targetWs) {
+      ws.moveWindowToWorkspace(existing.id, targetWs);
     }
+    consolidateBrowserWindows(existing.id, targetWs);
     if (focus) ws.focusWindow(existing.id);
     return existing.id;
   }
 
-  const idle = ws.windows.find((w) => {
-    if (w.type !== 'browser') return false;
-    const m = w.metadata || {};
-    return !m.daemonTabId
-      && !m.pendingUrl
-      && !m.browserStreamUrl
-      && !m.browserSubagentId
-      && !m.subagentId;
-  });
-  if (idle) {
-    ws.updateWindow(idle.id, {
-      title,
-      metadata: { ...(idle.metadata || {}), ...metadata },
-    });
-    if (options.workspaceId && idle.workspaceId !== options.workspaceId) {
-      ws.moveWindowToWorkspace(idle.id, options.workspaceId);
-    }
-    if (focus) ws.focusWindow(idle.id);
-    return idle.id;
-  }
-
-  return ws.openWindow('browser', {
+  const newId = ws.openWindow('browser', {
     title,
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    workspaceId: targetWs,
     metadata,
   }) as string;
+  consolidateBrowserWindows(newId, targetWs);
+  if (focus) ws.focusWindow(newId);
+  return newId;
 }
 
 /** Find the window ID for a subagent browser tab */
@@ -1965,6 +1990,9 @@ export const useComputerStore = create<ComputerStore>()(
             // ── Reconcile daemon tabs ↔ browser windows ──────────────────
             const wStore = useWindowStore.getState();
             const browserWindows = wStore.windows.filter(w => w.type === 'browser');
+            const hasUnifiedAgentBrowser = browserWindows.some(
+              (w) => w.metadata?.browserAppWindow,
+            );
 
             // Build sets for reconciliation
             const daemonTabIds = new Set(tabs.map(t => t.id));
@@ -2027,21 +2055,16 @@ export const useComputerStore = create<ComputerStore>()(
                   if (windowPendingUrl && (!tab.url || tab.url === 'about:blank' || tab.url === '')) {
                     browserWS.sendAction({ action: 'navigateTab', tabId: tab.id, url: windowPendingUrl });
                   }
-                } else {
-                  // Create a new window for this daemon tab
+                } else if (!hasUnifiedAgentBrowser) {
+                  // Create a new window for this daemon tab (legacy per-tab mode only)
                   const title = tab.title || (() => {
                     try { return tab.url ? new URL(tab.url).hostname : 'New Tab'; } catch { return 'New Tab'; }
                   })();
-                  // Determine the correct workspace for this browser window:
-                  // 1. Subagent tabs: use the delegation workspace from tab.workspaceId
-                  // 2. Non-subagent tabs: use pendingBrowserSessionKey to resolve workspace
-                  // 3. Default: 'main' (desktop workspace), NEVER activeWorkspaceId
                   let browserWsId = tab.workspaceId;
                   if (!browserWsId && browserState.pendingBrowserSessionKey) {
                     browserWsId = useWindowStore.getState().resolveWorkspaceForSession(
                       browserState.pendingBrowserSessionKey,
                     );
-                    // Clear the pending hint after use (one-shot)
                     set(s => ({
                       browserState: { ...s.browserState, pendingBrowserSessionKey: undefined },
                     }));
@@ -2741,6 +2764,18 @@ export const useComputerStore = create<ComputerStore>()(
               }
               case 'browser:tab_update': {
                 useBrowserTabStore.getState().updateTabFromEvent(payload);
+                const tabToolCallId = payload.toolCallId as string | undefined;
+                const tabPayload = payload.payload as Record<string, unknown> | undefined;
+                const tabStatus = payload.status as string | undefined;
+                const tabTool = (payload.tool as string) || 'web_fetch';
+                if (tabToolCallId && tabStatus === 'complete' && tabPayload) {
+                  const preview = buildWebPreviewFromTabPayload(tabTool, tabPayload);
+                  if (preview) {
+                    const withPreview = attachWebPreviewToActivity(history, tabToolCallId, preview);
+                    history.length = 0;
+                    history.push(...withPreview);
+                  }
+                }
                 break;
               }
               default:
@@ -2806,7 +2841,22 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
 
-        const compactedHistory = compactIncidentNotices(history);
+        let historyWithRuns = history;
+        try {
+          const runsRes = await api.listBrowserRuns(30);
+          if (runsRes.success && runsRes.data?.runs) {
+            get().hydrateBrowserRuns(runsRes.data.runs);
+            historyWithRuns = appendBrowserRunHistorySummaries(
+              history,
+              runsRes.data.runs,
+              requestedSessionKey,
+            );
+          }
+        } catch {
+          /* non-fatal — chat history still loads */
+        }
+
+        const compactedHistory = compactIncidentNotices(historyWithRuns);
         set({ chatMessages: compactedHistory });
         sessionMessageCache.set(requestedSessionKey, compactedHistory);
         logger.info(`Loaded ${compactedHistory.length} messages from chat history`);
@@ -3872,23 +3922,15 @@ export const useComputerStore = create<ComputerStore>()(
       const title = url ? (() => { try { return new URL(url).hostname; } catch { return url; } })() : 'Browser';
 
       if (browserWS.isConnected()) {
-        // Legacy container mode: ask the daemon to open a tab and reconcile it
-        // when the tabs broadcast arrives.
         browserWS.sendAction({ action: 'newTab', ...(url ? { url } : {}) });
       }
 
-      // Serverless mode: Browser Use live previews arrive through agent events
-      // and /api/browser polling, not the disabled browser WebSocket.
-      const windowId = useWindowStore.getState().openWindow('browser', {
+      return getOrCreateBrowserAppWindow({
         title,
         metadata: {
-          daemonTabId: null,
-          pendingUrl: url || null,
-          browserAppWindow: !browserWS.isConnected(),
-          browserPageUrl: url || undefined,
+          ...(url ? { pendingUrl: url, browserPageUrl: url } : {}),
         },
       });
-      return windowId;
     },
 
     closeBrowserWindow: (windowId) => {
@@ -4161,13 +4203,10 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
-      const patchToolActivityFailureInChat = (opts: {
-        toolCallId?: string;
-        tool?: string;
-        params?: Record<string, unknown>;
-        exitCode?: number;
-        error?: string;
-      }) => {
+      const patchToolActivityInChat = (
+        patcher: (messages: ChatMessage[], opts: { toolCallId?: string; tool?: string }) => ChatMessage[],
+        opts: { toolCallId?: string; tool?: string },
+      ) => {
         set(state => {
           const updates: Partial<typeof state> = {};
           if (shouldUpdateVisibleDesktopAgent) {
@@ -4177,15 +4216,76 @@ export const useComputerStore = create<ComputerStore>()(
               ...state.platformAgents,
               [eventPlatform]: {
                 ...pa,
-                chatMessages: patchToolActivityFailure(existing, opts),
+                chatMessages: patcher(existing, opts),
               },
             };
           }
           if (isActiveSession) {
-            updates.chatMessages = patchToolActivityFailure(state.chatMessages, opts);
+            updates.chatMessages = patcher(state.chatMessages, opts);
           } else if (eventSessionKey && eventSessionKey !== 'default') {
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, patchToolActivityFailure(cached, opts));
+            sessionMessageCache.set(eventSessionKey, patcher(cached, opts));
+          }
+          return Object.keys(updates).length > 0 ? updates : state;
+        });
+      };
+
+      const patchToolActivityFailureInChat = (opts: {
+        toolCallId?: string;
+        tool?: string;
+        params?: Record<string, unknown>;
+        exitCode?: number;
+        error?: string;
+      }) => {
+        patchToolActivityInChat(
+          (msgs) => patchToolActivityFailure(msgs, opts),
+          { toolCallId: opts.toolCallId, tool: opts.tool },
+        );
+      };
+
+      const patchToolActivitySuccessInChat = (opts: {
+        toolCallId?: string;
+        tool?: string;
+      }) => {
+        patchToolActivityInChat(patchToolActivitySuccess, opts);
+      };
+
+      const patchBrowserFailureInChat = (error: string) => {
+        set(state => {
+          const updates: Partial<typeof state> = {};
+          const patch = (msgs: ChatMessage[]) => {
+            const patched = patchTrailingBrowserActivitiesFailed(msgs, error);
+            if (patched.length === msgs.length) return patched;
+            return patched;
+          };
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            const existing = pa.chatMessages || [];
+            updates.platformAgents = {
+              ...state.platformAgents,
+              [eventPlatform]: {
+                ...pa,
+                chatMessages: patch(existing),
+              },
+            };
+          }
+          if (isActiveSession) {
+            let next = patch(state.chatMessages);
+            if (next.length === state.chatMessages.length) {
+              next = appendMessage(next, {
+                role: 'activity',
+                content: `Browser failed · ${error.slice(0, 120)}`,
+                timestamp: new Date(),
+                tool: 'browser',
+                activityType: 'web',
+                activityStatus: 'failed',
+                isError: true,
+              });
+            }
+            updates.chatMessages = next;
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, patch(cached));
           }
           return updates;
         });
@@ -4767,10 +4867,15 @@ export const useComputerStore = create<ComputerStore>()(
               || tool === 'respond_directly' || tool === 'respond_to_user'
               || tool === 'spawn_agent' || tool === 'wait_for_agents' || tool === 'check_agent_status'
               || tool === 'cancel_agent' || tool === 'list_active_agents'
-              || tool === 'ask_user'
-              || tool === 'browser' || tool === 'remote_browser' || tool === 'remote_browser_session') { // browser:start/ask_user events handle their own UI
+              || tool === 'ask_user') {
             break;
           }
+          // Skip open/task browser tool_call — browser:start/progress handle rich UI.
+          if (tool === 'browser') {
+            const intent = params?.intent as string | undefined;
+            if (!intent || intent === 'open' || intent === 'task') break;
+          }
+          if (tool === 'remote_browser' || tool === 'remote_browser_session') break;
           // Skip tools with empty descriptions (e.g. respond_directly fallback)
           if (!activityText) {
             break;
@@ -4886,11 +4991,19 @@ export const useComputerStore = create<ComputerStore>()(
           const resultSubagentId = event.data?.subagentId as string | undefined;
 
           if (!resultSubagentId && success === false) {
-            patchToolActivityFailureInChat({
-              toolCallId,
-              tool,
-              error,
-            });
+            if (tool === 'browser' || tool === 'remote_browser') {
+              patchBrowserFailureInChat(error || 'Browser tool failed');
+            } else {
+              patchToolActivityFailureInChat({
+                toolCallId,
+                tool,
+                error,
+              });
+            }
+          }
+
+          if (!resultSubagentId && success !== false) {
+            patchToolActivitySuccessInChat({ toolCallId, tool });
           }
 
           // Refresh file windows after successful file tool completion
@@ -6539,6 +6652,18 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'browser:tab_update': {
           useBrowserTabStore.getState().updateTabFromEvent(event.data || {});
+          const tabToolCallId = event.data?.toolCallId as string | undefined;
+          const tabPayload = event.data?.payload as Record<string, unknown> | undefined;
+          const tabStatus = event.data?.status as string | undefined;
+          const tabTool = (event.data?.tool as string) || 'web_fetch';
+          if (tabToolCallId && tabStatus === 'complete' && tabPayload && isActiveSession) {
+            const preview = buildWebPreviewFromTabPayload(tabTool, tabPayload);
+            if (preview) {
+              set((state) => ({
+                chatMessages: attachWebPreviewToActivity(state.chatMessages, tabToolCallId, preview),
+              }));
+            }
+          }
           break;
         }
 
@@ -6627,6 +6752,11 @@ export const useComputerStore = create<ComputerStore>()(
                 timestamp: new Date(),
                 tool: 'browser',
                 activityType: 'web',
+                activityStatus: 'running',
+                browserAction: {
+                  actionType: 'open',
+                  ...(url ? { url } : {}),
+                },
               }),
             } : {}),
             agentActivity: { ...state.agentActivity, browser: true },
@@ -6857,12 +6987,17 @@ export const useComputerStore = create<ComputerStore>()(
             else if (typeof p.wait === 'number') waitMs = p.wait;
           }
 
+          const screenshotUrl = typeof event.data?.screenshotUrl === 'string'
+            ? event.data.screenshotUrl as string
+            : undefined;
+
           const browserAction: BrowserActionMeta = {
             actionType,
             ...(url ? { url } : {}),
             ...(typeof waitMs === 'number' ? { waitMs } : {}),
             ...(payload !== undefined ? { payload } : {}),
             ...(subActions ? { subActions } : {}),
+            ...(screenshotUrl ? { screenshotUrl } : {}),
           };
 
           const activeSessionId = get().browserState.activeBrowserSessionId;
@@ -6996,6 +7131,11 @@ export const useComputerStore = create<ComputerStore>()(
           if (Object.keys(remainingStreams).length === 0) {
             set({ agentActivity: restActivity });
           }
+          if (tfSubagentId === 'main' && isActiveSession) {
+            set((state) => ({
+              chatMessages: patchTrailingBrowserActivitiesCompleted(state.chatMessages),
+            }));
+          }
           useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
           break;
         }
@@ -7072,6 +7212,9 @@ export const useComputerStore = create<ComputerStore>()(
               } : bs.browserSessions,
             },
           });
+          if (tfSubagentId === 'main' && isActiveSession) {
+            patchBrowserFailureInChat(errText);
+          }
           useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
           break;
         }

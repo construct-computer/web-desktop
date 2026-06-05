@@ -172,6 +172,9 @@ export const STORAGE_KEYS = {
   trackerDismissedGoals: 'construct:tracker:dismissedGoals',
   trackerOperations: 'construct:tracker:operations',
 
+  // Browser emulated tabs the user closed (survives refresh / history replay)
+  browserDismissedTabs: 'construct:browser:dismissedTabs',
+
   // Session storage (not localStorage)
   authConnectCards: 'construct_auth_connect_cards',
   setupWizardProgress: 'setup_wizard_progress',

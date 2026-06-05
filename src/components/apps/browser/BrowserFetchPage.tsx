@@ -1,35 +1,65 @@
 import { memo, useEffect, useState } from 'react';
-import { AlertTriangle, Globe, Loader2, Calendar, BookOpen, AlertCircle } from 'lucide-react';
-import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
+import { AlertTriangle, Globe, Loader2, Calendar, BookOpen, ExternalLink } from 'lucide-react';
+import { ReaderMarkdown } from './ReaderMarkdown';
 import type { BrowserTab } from '@/stores/browserTabStore';
+import { useBrowserTabStore } from '@/stores/browserTabStore';
 import { STORAGE_KEYS } from '@/lib/constants';
+
+function hostFromUrl(raw: string | undefined): string {
+  if (!raw) return '';
+  try {
+    return new URL(raw).hostname.replace(/^www\./, '');
+  } catch {
+    return raw;
+  }
+}
+
+type PreviewErrorKind = 'bot-blocked' | 'too-large' | 'unsupported-type' | 'generic';
+
+function parsePreviewError(status: number, header: string | null, body: string): PreviewErrorKind {
+  if (header === 'bot-blocked') return 'bot-blocked';
+  if (header === 'too-large' || status === 413) return 'too-large';
+  if (header === 'unsupported-type' || status === 415) return 'unsupported-type';
+  if (/bot|cloudflare|incapsula|challenge/i.test(body)) return 'bot-blocked';
+  return 'generic';
+}
 
 function FetchSkeleton() {
   return (
     <div className="max-w-3xl mx-auto px-8 py-12 space-y-6 select-none">
       <div className="space-y-3">
-        <div className="h-7 w-5/6 rounded bg-white/[0.05] animate-pulse" />
-        <div className="h-4 w-1/3 rounded bg-white/[0.03] animate-pulse" />
+        <div className="h-7 w-5/6 rounded bg-black/[0.05] animate-pulse" />
+        <div className="h-4 w-1/3 rounded bg-black/[0.04] animate-pulse" />
       </div>
-      <div className="h-px bg-white/[0.06] w-full" />
+      <div className="h-px bg-black/[0.08] w-full" />
       <div className="space-y-4 pt-4">
-        <div className="h-4 w-full rounded bg-white/[0.03] animate-pulse" />
-        <div className="h-4 w-full rounded bg-white/[0.03] animate-pulse" />
-        <div className="h-4 w-11/12 rounded bg-white/[0.03] animate-pulse" />
-        <div className="h-4 w-10/12 rounded bg-white/[0.03] animate-pulse" />
+        <div className="h-4 w-full rounded bg-black/[0.04] animate-pulse" />
+        <div className="h-4 w-full rounded bg-black/[0.04] animate-pulse" />
+        <div className="h-4 w-11/12 rounded bg-black/[0.04] animate-pulse" />
+        <div className="h-4 w-10/12 rounded bg-black/[0.04] animate-pulse" />
       </div>
       <div className="space-y-4 pt-2">
-        <div className="h-4 w-full rounded bg-white/[0.03] animate-pulse" />
-        <div className="h-4 w-5/6 rounded bg-white/[0.03] animate-pulse" />
-        <div className="h-4 w-4/5 rounded bg-white/[0.03] animate-pulse" />
+        <div className="h-4 w-full rounded bg-black/[0.04] animate-pulse" />
+        <div className="h-4 w-5/6 rounded bg-black/[0.04] animate-pulse" />
+        <div className="h-4 w-4/5 rounded bg-black/[0.04] animate-pulse" />
       </div>
     </div>
   );
 }
 
-function SitePreview({ proxyUrl }: { proxyUrl: string }) {
+function SitePreview({
+  proxyUrl,
+  tabId,
+  hasReaderContent,
+}: {
+  proxyUrl: string;
+  tabId: string;
+  hasReaderContent: boolean;
+}) {
+  const setFetchView = useBrowserTabStore((s) => s.setFetchView);
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [errorKind, setErrorKind] = useState<PreviewErrorKind>('generic');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,7 +73,11 @@ function SitePreview({ proxyUrl }: { proxyUrl: string }) {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          const kind = parsePreviewError(res.status, res.headers.get('X-Preview-Error'), body);
+          throw Object.assign(new Error(body || `HTTP ${res.status}`), { kind });
+        }
         return res.text();
       })
       .then((body) => {
@@ -52,9 +86,10 @@ function SitePreview({ proxyUrl }: { proxyUrl: string }) {
           setLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err: Error & { kind?: PreviewErrorKind }) => {
         if (!cancelled) {
           setFailed(true);
+          setErrorKind(err.kind || 'generic');
           setLoading(false);
         }
       });
@@ -73,12 +108,32 @@ function SitePreview({ proxyUrl }: { proxyUrl: string }) {
 
   if (failed || !html) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center bg-[var(--color-surface)] select-none">
+      <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center bg-[var(--color-surface)] select-none max-w-md mx-auto">
         <Globe className="w-10 h-10 opacity-20 text-[var(--color-text-subtle)]" />
         <p className="text-sm font-semibold text-[var(--color-text-muted)]">Site preview unavailable</p>
-        <p className="text-xs text-[var(--color-text-subtle)] max-w-xs leading-relaxed">
-          The page content could not be proxied securely. Switch to <strong>Reader View</strong> for the extracted text.
+        <p className="text-xs text-[var(--color-text-subtle)] leading-relaxed">
+          {errorKind === 'bot-blocked'
+            ? 'This page blocks automated previews. Reader view or the interactive browser may still work.'
+            : errorKind === 'too-large'
+              ? 'The page is too large to preview in Site view.'
+              : 'The page could not be proxied securely.'}
         </p>
+        <div className="flex flex-col gap-2 w-full mt-2">
+          {hasReaderContent && (
+            <button
+              type="button"
+              onClick={() => setFetchView(tabId, 'reader')}
+              className="w-full px-4 py-2 rounded-lg text-xs font-medium bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/25 hover:bg-[var(--color-accent)]/25 transition-colors"
+            >
+              Open in Reader view
+            </button>
+          )}
+          {errorKind === 'bot-blocked' && (
+            <p className="text-[10px] text-amber-400/80 leading-relaxed">
+              Ask Construct to use the <strong>interactive browser</strong> for full page rendering.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -131,55 +186,66 @@ export const BrowserFetchPage = memo(function BrowserFetchPage({
   }
 
   if (fetchView === 'site' && tab.proxyUrl) {
-    return <SitePreview proxyUrl={tab.proxyUrl} />;
+    return (
+      <SitePreview
+        proxyUrl={tab.proxyUrl}
+        tabId={tab.id}
+        hasReaderContent={!!tab.readerContent}
+      />
+    );
   }
 
+  const showShellTitle = tab.pageTitle && !tab.readerDedupeTitle;
+  const host = hostFromUrl(tab.url);
+
   return (
-    <div className="h-full overflow-y-auto bg-[var(--color-surface)] text-[var(--color-text)]">
-      <article className="max-w-3xl mx-auto px-8 py-10">
-        {tab.pageTitle && (
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text)] mb-3 leading-snug">
+    <div className="h-full overflow-y-auto browser-read-pane">
+      <article className="reader-article mx-auto px-6 sm:px-8 py-10">
+        {showShellTitle && (
+          <h1 className="reader-article-title text-[var(--color-text)] mb-3 leading-snug">
             {tab.pageTitle}
           </h1>
         )}
-        
-        {(tab.publishedTime || tab.url) && (
-          <div className="flex flex-wrap items-center gap-4 text-[11px] text-[var(--color-text-subtle)] mb-8 select-none border-b border-white/[0.06] pb-4">
+
+        {(tab.publishedTime || host) && (
+          <div className="flex flex-wrap items-center gap-4 text-[11px] text-[var(--color-text-subtle)] mb-6 select-none border-b border-black/[0.08] pb-4">
             {tab.publishedTime && (
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
                 {tab.publishedTime}
               </span>
             )}
-            {tab.url && (
-              <span className="flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5" />
-                <a href={tab.url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-[var(--color-accent)] truncate max-w-sm">
-                  {tab.url}
-                </a>
-              </span>
+            {host && tab.url && (
+              <a
+                href={tab.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 hover:text-[var(--color-accent)] transition-colors"
+                title={tab.url}
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span>{host}</span>
+                <ExternalLink className="w-3 h-3 opacity-50" />
+              </a>
             )}
           </div>
         )}
 
-        {tab.readerTruncated && (
-          <div className="mb-6 px-4 py-3 rounded-xl bg-[var(--color-warning-muted)] border border-[var(--color-warning)]/20 text-[11px] text-[var(--color-warning)]/90 flex items-start gap-2.5 shadow-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <p className="leading-relaxed">
-              <strong>Extracted content was truncated.</strong> Ask Construct to fetch a specific section of the page if you need to read more.
-            </p>
-          </div>
+        {typeof tab.readerChromeStripped === 'number' && tab.readerChromeStripped > 0 && (
+          <p className="reader-nav-removed mb-4">
+            Site navigation removed for readability
+          </p>
         )}
 
-        <div className="prose prose-invert max-w-none text-sm leading-relaxed antialiased font-sans select-text">
-          {tab.readerContent ? (
-            <MarkdownRenderer content={tab.readerContent} />
-          ) : (
-            <p className="text-sm text-[var(--color-text-muted)] italic">No readable text content could be extracted from this page.</p>
-          )}
-        </div>
+        <ReaderMarkdown
+          content={tab.readerContent || ''}
+          fullContent={tab.readerContentFull}
+          truncated={tab.readerTruncated}
+          remainingSections={tab.readerRemainingSections}
+          pageTitle={tab.pageTitle}
+          dedupeTitle={tab.readerDedupeTitle}
+        />
       </article>
     </div>
   );
 });
-

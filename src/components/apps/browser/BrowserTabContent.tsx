@@ -3,10 +3,20 @@ import { BrowserLivePreview } from './BrowserLivePreview';
 import { BrowserSearchPage } from './BrowserSearchPage';
 import { BrowserFetchPage } from './BrowserFetchPage';
 import { BrowserArxivPage } from './BrowserArxivPage';
-import { BrowserYouTubePage } from './BrowserYouTubePage';
 import { BrowserDomainPage } from './BrowserDomainPage';
 import type { BrowserSessionRecord } from '@/stores/agentStore';
 import type { BrowserTab } from '@/stores/browserTabStore';
+
+function LegacyTabFallback({ tab }: { tab: BrowserTab }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-6 text-center browser-read-pane select-none">
+      <p className="text-sm font-medium text-[var(--color-text)] mb-2">{tab.title}</p>
+      <p className="text-xs text-[var(--color-text-muted)] max-w-sm leading-relaxed">
+        This tool is no longer available.
+      </p>
+    </div>
+  );
+}
 
 export const BrowserTabContent = memo(function BrowserTabContent({
   tab,
@@ -34,8 +44,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
       return <BrowserFetchPage tab={tab} fetchView={fetchView} />;
     case 'arxiv':
       return <BrowserArxivPage tab={tab} />;
-    case 'youtube':
-      return <BrowserYouTubePage tab={tab} />;
     case 'domain':
       return <BrowserDomainPage tab={tab} />;
     case 'live':
@@ -58,6 +66,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
         />
       );
     default:
-      return null;
+      return <LegacyTabFallback tab={tab} />;
   }
 });

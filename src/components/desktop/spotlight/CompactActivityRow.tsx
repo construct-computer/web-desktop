@@ -1,3 +1,4 @@
+import { Loader2, Check } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatActivityLine } from './formatActivityLine';
@@ -10,6 +11,7 @@ export function CompactActivityRow({
   iconUrl,
   failed,
   duration,
+  activityStatus,
   dense,
   className = '',
 }: {
@@ -20,6 +22,7 @@ export function CompactActivityRow({
   iconUrl?: string;
   failed?: boolean;
   duration?: string;
+  activityStatus?: ChatMessage['activityStatus'];
   dense?: boolean;
   className?: string;
 }) {
@@ -48,6 +51,12 @@ export function CompactActivityRow({
       >
         {line}
       </span>
+      {activityStatus === 'running' && !failed && (
+        <Loader2 className="w-3 h-3 shrink-0 animate-spin text-[var(--color-accent)]/60" />
+      )}
+      {activityStatus === 'completed' && !failed && (
+        <Check className="w-3 h-3 shrink-0 text-emerald-400/50" />
+      )}
       {duration && (
         <span className="shrink-0 text-[10px] tabular-nums text-white/40">{duration}</span>
       )}

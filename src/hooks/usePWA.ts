@@ -1,14 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+  prompt(): Promise<void>;
+}
 
 declare global {
   interface Window {
-    deferredPWAInstallPrompt?: any;
+    deferredPWAInstallPrompt?: BeforeInstallPromptEvent;
   }
+
+  interface Navigator {
+    getInstalledRelatedApps?: () => Promise<Array<{ platform: string; url?: string }>>;
+  }
+}
+
+async function detectInstalledPWA(): Promise<boolean> {
+  if (localStorage.getItem('pwa-installed') === 'true') {
+    return true;
+  }
+
+  if (typeof navigator.getInstalledRelatedApps === 'function') {
+    try {
+      const relatedApps = await navigator.getInstalledRelatedApps();
+      if (relatedApps.length > 0) {
+        localStorage.setItem('pwa-installed', 'true');
+        return true;
+      }
+    } catch {
+      // Ignore — API may be unavailable or blocked.
+    }
+  }
+
+  return false;
 }
 
 export function usePWA() {
   const [isStandalone, setIsStandalone] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
@@ -32,8 +62,8 @@ export function usePWA() {
 
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
-      window.deferredPWAInstallPrompt = e;
-      setDeferredPrompt(e);
+      window.deferredPWAInstallPrompt = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
       // If we get this prompt, it's definitely not installed yet
       setIsInstalled(false);
       localStorage.removeItem('pwa-installed');
@@ -48,10 +78,9 @@ export function usePWA() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    // Initial installed state check
-    if (localStorage.getItem('pwa-installed') === 'true') {
-      setIsInstalled(true);
-    }
+    void detectInstalledPWA().then((installed) => {
+      if (installed) setIsInstalled(true);
+    });
 
     return () => {
       mq.removeEventListener('change', handleMq);
@@ -71,5 +100,9 @@ export function usePWA() {
     }
   };
 
-  return { isStandalone, deferredPrompt, isInstalled, installPWA };
+  const openInstalledApp = useCallback(() => {
+    window.open(window.location.origin, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  return { isStandalone, deferredPrompt, isInstalled, installPWA, openInstalledApp };
 }
