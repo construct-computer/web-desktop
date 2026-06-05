@@ -48,6 +48,11 @@ import {
   patchToolActivityFailure,
 } from './agentStoreUtils';
 import { isTextFile, isDocumentFile, openAuthRedirect } from '../lib/utils';
+import {
+  routeToolToWindow,
+  desktopActionToWindowType,
+  type ToolWindowRoute,
+} from '../lib/toolWindowRouting';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
 import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
@@ -216,7 +221,7 @@ export interface ChatMessage {
   /** Structured local-app component mentions selected from App Builder or edit mode. */
   componentMentions?: ComponentMention[];
   /** Source platform for external messages (used to render platform-specific UI). */
-  source?: 'telegram' | 'slack' | 'email';
+  source?: 'telegram' | 'slack' | 'email' | 'scheduled';
   /** Structured source details for external-platform messages. */
   sourceMeta?: ExternalSourceMeta;
   /** Access role/grant that allowed this external-platform message. */
@@ -338,70 +343,66 @@ function closeAllAutoOpened(delayMs = 2000) {
 }
 
 // Map tool names to the window type they should open on the desktop.
-// Every tool that produces user-visible activity should map here.
+// Thin wrapper over the canonical router (lib/toolWindowRouting) kept for the
+// call sites that only need the resolved window type (e.g. tool_result
+// auto-close scheduling).
 function toolToWindowType(tool: string, params?: Record<string, unknown>): WindowType | null {
-  // ── Browser ──────────────────────────────────────────────────────
-  if (tool === 'browser' || tool.startsWith('browser_')) return 'browser';
-  // remote_browser opens browser via browser:start event, not here
-
-  // ── Terminal / Sandbox ───────────────────────────────────────────
-  if (tool === 'exec' || tool === 'terminal') return 'terminal';
-  // sandbox file ops are silent (prep steps — terminal is already open from terminal command)
-  // save_to_workspace / load_from_workspace are transfer ops (silent)
-
-  // ── Files / Workspace ────────────────────────────────────────────
-  // Only open files window for browsing/reading — writes and deletes happen silently
-  if (tool === 'read_file') return 'files';
-  if (tool === 'list_directory') return 'files';
-  if (tool === 'read' || tool === 'write' || tool === 'edit' || tool === 'list') {
-    const path = params?.path as string | undefined;
-    if (path && isDocumentFile(path)) return 'document-viewer';
-    if (path && !isTextFile(path)) return 'files';
-    return 'editor';
-  }
-  if (tool === 'file_read' || tool === 'file_write' || tool === 'file_edit') {
-    const path = params?.path as string | undefined;
-    if (path && isDocumentFile(path)) return 'document-viewer';
-    if (path && !isTextFile(path)) return 'files';
-    return 'editor';
-  }
-
-  // ── Google Drive ─────────────────────────────────────────────────
-  if (tool === 'google_drive' || tool === 'drive_list' || tool === 'drive_download'
-      || tool === 'drive_upload' || tool === 'drive_search') return 'files';
-
-  // ── Calendar ─────────────────────────────────────────────────────
-  if (tool === 'agent_calendar' || tool === 'calendar' || tool === 'google_calendar'
-      || tool === 'create_calendar_event' || tool === 'update_calendar_event'
-      || tool === 'delete_calendar_event' || tool === 'list_calendar_events') return 'calendar';
-
-  // ── Email ────────────────────────────────────────────────────────
-  if (tool === 'email' || tool === 'send_email' || tool === 'read_email') return 'email';
-
-  // ── No window (silent tools) ──────────────────────────────────────
-  // memory, sandbox_write/read_file, save/load_from_workspace, write_file,
-  // edit_file, delete_file, search_files, move_file, view_image, document_guide,
-  // desktop, ask_user, notify, slack, telegram, spawn_agent, schedule_task,
-  // task_*, composio, tool_search, read_agent_output, web_search, web_scrape
-  return null;
+  return routeToolToWindow(tool, params)?.type ?? null;
 }
 
-// Map desktop actions to window types
-function desktopActionToWindowType(action: string): WindowType | null {
-  switch (action) {
-    case 'open_browser': return 'browser';
-    case 'open_terminal': return 'terminal';
-    case 'open_file':
-    case 'open_editor': return 'editor';
-    case 'open_settings': return 'settings';
-    case 'open_calendar': return 'calendar';
-    case 'open_email': return 'email';
-    case 'open_files': return 'files';
-    case 'open_memory': return 'memory';
-    case 'open_auditlogs': return 'auditlogs';
-    case 'open_about': return 'about';
-    default: return null;
+/**
+ * Apply a resolved tool→window route: open/focus the matching desktop app,
+ * loading file content through the editor / document viewer stores when the
+ * route targets a concrete file. Tracks agent-opened windows so they can be
+ * auto-closed once the tool finishes (editors are intentionally never tracked).
+ */
+function applyToolWindowRoute(
+  route: ToolWindowRoute,
+  workspaceId: string,
+  opts?: { track?: boolean; subagentMeta?: Record<string, unknown> },
+): void {
+  const wStore = useWindowStore.getState();
+  const track = opts?.track ?? true;
+  cancelAutoClose(route.type);
+
+  // File routes load content via the editor / document viewer stores.
+  if (route.openMode === 'file') {
+    const filePath = route.metadata?.filePath as string | undefined;
+    if (filePath) {
+      if (route.type === 'document-viewer') {
+        const existed = wStore.windows.some(
+          (w) => w.type === 'document-viewer' && w.metadata?.filePath === filePath,
+        );
+        const winId = openDocumentViewer(filePath, workspaceId);
+        if (track && !existed && route.autoClose !== false) autoOpenedWindowIds.add(winId);
+      } else {
+        // Editor: open or refresh the file. Never auto-closed (user may edit).
+        useEditorStore.getState().openOrRefreshFile(filePath, workspaceId);
+      }
+      return;
+    }
+    // Missing path — fall back to the Files app.
+    const filesId = wStore.ensureWindowOpen('files', workspaceId);
+    if (track && filesId) autoOpenedWindowIds.add(filesId);
+    return;
   }
+
+  // Dynamic installed/local app — needs an appId.
+  if (route.openMode === 'app') {
+    const appId = route.metadata?.appId as string | undefined;
+    if (!appId) return;
+    const winId = wStore.ensureWindowOpen('app', workspaceId, { appId, ...(opts?.subagentMeta || {}) });
+    if (track && winId && route.autoClose !== false) autoOpenedWindowIds.add(winId);
+    return;
+  }
+
+  const meta = { ...(route.metadata || {}), ...(opts?.subagentMeta || {}) };
+  const newWinId = wStore.ensureWindowOpen(
+    route.type,
+    workspaceId,
+    Object.keys(meta).length > 0 ? meta : undefined,
+  );
+  if (track && newWinId && route.autoClose !== false) autoOpenedWindowIds.add(newWinId);
 }
 
 export interface BrowserTab {
@@ -4719,19 +4720,20 @@ export const useComputerStore = create<ComputerStore>()(
             // Auto-open the relevant window even for subagent tool calls
             // (e.g. open the browser window when a subagent navigates).
             // Skip browser — its windows are created by the tabs reconciler.
-            const subagentWindowType = toolToWindowType(tool, params);
-            if (subagentWindowType && subagentWindowType !== 'browser' && subagentWindowType !== 'editor') {
+            const subRoute = routeToolToWindow(tool, params);
+            if (subRoute && subRoute.type !== 'browser') {
               // For terminal windows, use the terminalSession assigned by the agent
               // (from child:spawned event) so sequential children reuse the same
               // terminal window instead of opening a new one each time.
               let subMeta: Record<string, unknown> | undefined;
-              if (subagentWindowType === 'terminal' && toolSubagentId) {
+              if (subRoute.type === 'terminal' && toolSubagentId) {
                 const trackerState = useAgentTrackerStore.getState();
                 // Look up the child's assigned terminal session from the tracker
                 const termSession = trackerState.getSubAgentTerminalSession?.(toolSubagentId);
                 subMeta = { terminalId: termSession || `term_${toolSubagentId}` };
               }
-              useWindowStore.getState().ensureWindowOpen(subagentWindowType, toolWorkspaceId, subMeta);
+              // Subagent windows are transient — never tracked for auto-close here.
+              applyToolWindowRoute(subRoute, toolWorkspaceId || 'main', { track: false, subagentMeta: subMeta });
             }
             break;
           }
@@ -4763,13 +4765,13 @@ export const useComputerStore = create<ComputerStore>()(
             'main';
           const isNonDesktopPlatform = toolPlatform && toolPlatform !== 'desktop';
 
-          const windowType = toolToWindowType(tool, params);
-          if (windowType && windowType !== 'browser' && windowType !== 'editor') {
-            // Cancel any pending auto-close for this window type (agent is still using it)
-            cancelAutoClose(windowType);
-            // Open window and track as auto-opened
-            const newWinId = useWindowStore.getState().ensureWindowOpen(windowType, targetWsId);
-            if (newWinId) autoOpenedWindowIds.add(newWinId);
+          const route = routeToolToWindow(tool, params);
+          const windowType = route?.type ?? null;
+          if (route && route.type !== 'browser') {
+            // Open/focus the matching desktop app (loads file content for file
+            // routes; opens the dynamic app for app routes) and track it so it
+            // auto-closes once the tool finishes.
+            applyToolWindowRoute(route, targetWsId, { track: true });
           }
 
           // Browser: focus existing window in THIS session's workspace, kick reconciler
@@ -5835,6 +5837,33 @@ export const useComputerStore = create<ComputerStore>()(
           // Agent sent/replied/forwarded an email — trigger EmailWindow refresh
           // so the sent email appears immediately in the email app.
           window.dispatchEvent(new CustomEvent('agent-email-refresh'));
+          break;
+        }
+
+        case 'calendar:updated': {
+          // A scheduled task finished — refresh the calendar app immediately so
+          // the occurrence flips to done without waiting for the 10s poll.
+          window.dispatchEvent(new CustomEvent('agent-calendar-refresh'));
+          break;
+        }
+
+        case 'session_created': {
+          // A backend-created session (e.g. a scheduled-task run) — surface it in
+          // the session switcher without yanking the user's active session.
+          const newKey = event.data?.sessionKey as string | undefined;
+          if (newKey) {
+            set(state => {
+              if (state.chatSessions.some(s => s.key === newKey)) return {};
+              const now = Date.now();
+              const session: SessionInfo = {
+                key: newKey,
+                title: (event.data?.title as string) || 'Scheduled task',
+                created: now,
+                lastActivity: now,
+              };
+              return { chatSessions: [session, ...state.chatSessions] };
+            });
+          }
           break;
         }
 

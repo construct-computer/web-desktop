@@ -153,26 +153,28 @@ function expandRecurrence(
     // Check if this occurrence overlaps the visible range
     if (occEnd >= rangeStart) {
       if (freq === 'WEEKLY' && byDay && byDay.length > 0) {
-        // For BYDAY weekly rules, check each day of the current week
-        // `current` is advanced by `interval` weeks; check each byDay within it
+        // Mirror the backend RRULE engine (services/schedules computeNextFromRRule):
+        // each BYDAY instance is the UTC Sunday of the current week (carrying the
+        // seed's UTC time-of-day) offset by the weekday index. Computing entirely
+        // in UTC — instead of the old local setHours/setDate — keeps the produced
+        // instant identical to the stored intended_fire_time so completed
+        // occurrences match and render as done.
+        const weekStart = new Date(current.getTime());
+        weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay());
         for (const dayStr of byDay) {
           const targetDay = RRULE_DAY_MAP[dayStr];
           if (targetDay === undefined) continue;
-          const dayDate = new Date(current);
-          const diff = targetDay - dayDate.getDay();
-          dayDate.setDate(dayDate.getDate() + (diff < 0 ? diff + 7 : diff));
-          // Only if within the same week-window and within range
-          if (dayDate >= rangeStart && dayDate <= rangeEnd) {
-            if (until && dayDate > until) continue;
-            const oStart = new Date(dayDate);
-            oStart.setHours(eventStart.getHours(), eventStart.getMinutes(), eventStart.getSeconds());
-            const oEnd = new Date(oStart.getTime() + duration);
-            occurrences.push({
-              ...event,
-              start: oStart.toISOString(),
-              end: oEnd.toISOString(),
-            });
-          }
+          const oStart = new Date(weekStart.getTime());
+          oStart.setUTCDate(weekStart.getUTCDate() + targetDay);
+          if (oStart < eventStart) continue;
+          if (oStart < rangeStart || oStart > rangeEnd) continue;
+          if (until && oStart > until) continue;
+          const oEnd = new Date(oStart.getTime() + duration);
+          occurrences.push({
+            ...event,
+            start: oStart.toISOString(),
+            end: oEnd.toISOString(),
+          });
         }
       } else {
         occurrences.push({
@@ -187,24 +189,27 @@ function expandRecurrence(
 
     // Advance to next occurrence
     switch (freq) {
+      // Step in UTC to match the backend RRULE engine (services/schedules
+      // addInterval uses setUTC*). Local stepping drifted by the DST offset and
+      // caused completed recurring instances to miss their stored instant.
       case 'HOURLY':
         current = new Date(current.getTime() + interval * 60 * 60 * 1000);
         break;
       case 'DAILY':
-        current = new Date(current);
-        current.setDate(current.getDate() + interval);
+        current = new Date(current.getTime());
+        current.setUTCDate(current.getUTCDate() + interval);
         break;
       case 'WEEKLY':
-        current = new Date(current);
-        current.setDate(current.getDate() + 7 * interval);
+        current = new Date(current.getTime());
+        current.setUTCDate(current.getUTCDate() + 7 * interval);
         break;
       case 'MONTHLY':
-        current = new Date(current);
-        current.setMonth(current.getMonth() + interval);
+        current = new Date(current.getTime());
+        current.setUTCMonth(current.getUTCMonth() + interval);
         break;
       case 'YEARLY':
-        current = new Date(current);
-        current.setFullYear(current.getFullYear() + interval);
+        current = new Date(current.getTime());
+        current.setUTCFullYear(current.getUTCFullYear() + interval);
         break;
       default:
         return occurrences.length > 0 ? occurrences : [event];
@@ -510,6 +515,14 @@ export function CalendarWindow(props: CalendarWindowProps) {
     })();
     return () => { cancelled = true; };
   }, [refreshNow, currentMonth]);
+
+  // Live refresh when the agent finishes a scheduled task (calendar:updated WS
+  // event → agent-calendar-refresh), mirroring the email app's refresh hook.
+  useEffect(() => {
+    const handler = () => { void refreshNow({ force: true }); };
+    window.addEventListener('agent-calendar-refresh', handler);
+    return () => { window.removeEventListener('agent-calendar-refresh', handler); };
+  }, [refreshNow]);
 
   const handlePrevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));

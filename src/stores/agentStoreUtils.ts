@@ -7,7 +7,7 @@
 
 import type { ChatMessage } from './agentStoreTypes';
 import type { WindowType } from '@/types';
-import { isTextFile, isDocumentFile } from '../lib/utils';
+import { routeToolToWindow } from '../lib/toolWindowRouting';
 import { useWindowStore } from './windowStore';
 
 // ── Auth card persistence ──────────────────────────────────────────────────
@@ -704,38 +704,14 @@ export function titleCaseToolkit(name: string): string {
 }
 
 // ── Tool-to-window mapping ─────────────────────────────────────────────────
+// Canonical routing lives in lib/toolWindowRouting. These thin wrappers are
+// re-exported for backward compatibility so callers stay in sync.
 
 export function toolToWindowType(tool: string, params?: Record<string, unknown>): WindowType | null {
-  if (tool === 'browser' || tool.startsWith('browser_')) return 'browser';
-  if (tool === 'exec') return 'terminal';
-  if (tool === 'read' || tool === 'write' || tool === 'edit' || tool === 'list') {
-    const path = params?.path as string | undefined;
-    if (path && isDocumentFile(path)) return 'document-viewer';
-    if (path && !isTextFile(path)) return 'files';
-    return 'editor';
-  }
-  if (tool === 'file_read' || tool === 'file_write' || tool === 'file_edit') {
-    const path = params?.path as string | undefined;
-    if (path && isDocumentFile(path)) return 'document-viewer';
-    if (path && !isTextFile(path)) return 'files';
-    return 'editor';
-  }
-  if (tool === 'google_drive') return 'files';
-  if (tool === 'agent_calendar' || tool === 'calendar' || tool === 'google_calendar') return 'calendar';
-  if (tool === 'email') return 'email';
-  return null;
+  return routeToolToWindow(tool, params)?.type ?? null;
 }
 
-export function desktopActionToWindowType(action: string): WindowType | null {
-  switch (action) {
-    case 'open_browser': return 'browser';
-    case 'open_terminal': return 'terminal';
-    case 'open_file':
-    case 'open_editor': return 'editor';
-    case 'open_settings': return 'settings';
-    default: return null;
-  }
-}
+export { desktopActionToWindowType } from '../lib/toolWindowRouting';
 
 export function describeToolFailure(
   tool: string,

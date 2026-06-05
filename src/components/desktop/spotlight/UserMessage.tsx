@@ -81,6 +81,7 @@ const PLATFORM_ICONS: Record<string, typeof Send> = {
   Slack: Hash,
   Email: Mail,
   App: Blocks,
+  'Scheduled task': Clock,
 };
 
 /** Parse reply prefix: (Replying to ...: "quoted text")\n\nactual message */
@@ -152,8 +153,12 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     [activeSessionKey, interruptSession, play, isMobile],
   );
 
-  // Only parse as platform message when the backend confirms the source
-  const parsed = msg.source ? parsePlatformContent(msg.source, msg.content) : null;
+  // Only parse as platform message when the backend confirms a parseable
+  // text-prefixed source. Scheduled-task cards carry structured sourceMeta and
+  // a clean body, so they skip the bracket parser.
+  const parsed = msg.source === 'telegram' || msg.source === 'slack' || msg.source === 'email'
+    ? parsePlatformContent(msg.source, msg.content)
+    : null;
   const externalPlatform = msg.sourceMeta?.platform || msg.source;
 
   // Look up app icon for App platform messages

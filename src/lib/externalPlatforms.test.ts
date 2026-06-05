@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXTERNAL_PLATFORM_META,
   coerceExternalAccess,
   coerceExternalSource,
   inferExternalPlatform,
@@ -29,5 +30,28 @@ describe('external platform helpers', () => {
     expect(sourceLabel(source)).toBe('Alice Example');
     expect(sourceContext(source)).toBe('Contract update');
     expect(coerceExternalAccess({ role: 'ONE_OFF', grant: { type: 'one_off', approvalId: 'apr_1' } })?.role).toBe('ONE_OFF');
+  });
+
+  it('renders scheduled-task source as a platform card', () => {
+    expect(EXTERNAL_PLATFORM_META.scheduled.label).toBe('Scheduled task');
+
+    const source = coerceExternalSource({
+      platform: 'scheduled',
+      senderName: 'Morning inbox sweep',
+      scheduledAt: '2026-06-05T09:00:00.000Z',
+      recurrence: 'daily',
+      deliveryChannel: 'email',
+    });
+
+    expect(source?.platform).toBe('scheduled');
+    expect(sourceLabel(source)).toBe('Morning inbox sweep');
+    const ctx = sourceContext(source);
+    expect(ctx).toContain('daily');
+    expect(ctx).toContain('deliver: email');
+  });
+
+  it('keeps scheduled out of session-key platform inference (stays interactive)', () => {
+    expect(inferExternalPlatform('sched_sch_1_occ_1')).toBeNull();
+    expect(isExternalSessionKey('sched_sch_1_occ_1')).toBe(false);
   });
 });
