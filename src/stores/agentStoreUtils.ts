@@ -9,6 +9,7 @@ import type { ChatMessage } from './agentStoreTypes';
 import type { WindowType } from '@/types';
 import { routeToolToWindow } from '../lib/toolWindowRouting';
 import { readerMarkdownSnippet } from '../lib/readerMarkdownNormalize';
+import { detectStructuredContent } from '../lib/structuredData';
 import { useWindowStore } from './windowStore';
 
 // ── Auth card persistence ──────────────────────────────────────────────────
@@ -953,7 +954,7 @@ export function patchTrailingBrowserActivitiesCompleted<T extends {
 export function buildWebPreviewFromTabPayload(
   tool: string,
   payload: Record<string, unknown>,
-): { kind: 'search' | 'fetch'; query?: string; url?: string; pageTitle?: string; snippet?: string; resultCount?: number; results?: Array<{ title: string; url: string; snippet: string }>; truncated?: boolean } | undefined {
+): { kind: 'search' | 'fetch'; query?: string; url?: string; pageTitle?: string; snippet?: string; structuredSummary?: string; contentFormat?: 'json' | 'markdown'; resultCount?: number; results?: Array<{ title: string; url: string; snippet: string }>; truncated?: boolean } | undefined {
   if (tool === 'web_search' || Array.isArray(payload.results)) {
     const results = (payload.results as Array<Record<string, unknown>> || []).slice(0, 3).map((r) => ({
       title: String(r.title ?? ''),
@@ -971,6 +972,17 @@ export function buildWebPreviewFromTabPayload(
     const content = String(payload.content ?? '');
     const pageTitle = typeof payload.title === 'string' ? payload.title : undefined;
     const url = typeof payload.url === 'string' ? payload.url : undefined;
+    const structured = detectStructuredContent(content, url);
+    if (structured.format === 'json') {
+      return {
+        kind: 'fetch',
+        url,
+        pageTitle,
+        contentFormat: 'json',
+        structuredSummary: structured.summary,
+        truncated: payload.truncated === true,
+      };
+    }
     return {
       kind: 'fetch',
       url,

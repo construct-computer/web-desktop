@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import { normalizeReaderMarkdown, splitReaderPreviewAtSections } from '@/lib/readerMarkdownNormalize';
+import { detectStructuredContent } from '@/lib/structuredData';
 
 const MAX_DISMISSED_TABS = 300;
 
@@ -88,8 +89,14 @@ export interface BrowserTab {
   readerTruncated?: boolean;
   readerRemainingSections?: number;
   publishedTime?: string;
+  pageDescription?: string;
   fetchView?: 'site' | 'reader';
   proxyUrl?: string;
+
+  contentFormat?: 'markdown' | 'json';
+  structuredRaw?: string;
+  structuredSummary?: string;
+  dataView?: 'visual' | 'json';
 
   streamUrl?: string;
   runId?: string;
@@ -199,6 +206,34 @@ function applyFetchPayload(tab: BrowserTab, payload: Record<string, unknown>): B
   const rawFull = typeof payload.fullContent === 'string'
     ? payload.fullContent
     : (typeof payload.content === 'string' ? payload.content : tab.readerContent);
+  const displayTitle = pageTitle
+    ? shortTabTitle(pageTitle)
+    : (url ? hostFromUrl(url) : tab.title);
+
+  const structured = typeof rawFull === 'string'
+    ? detectStructuredContent(rawFull, url)
+    : null;
+
+  if (structured?.format === 'json') {
+    return {
+      ...tab,
+      url,
+      pageTitle,
+      title: displayTitle || tab.title,
+      contentFormat: 'json',
+      structuredRaw: structured.raw,
+      structuredSummary: structured.summary,
+      dataView: tab.dataView ?? 'visual',
+      proxyUrl: url ? proxyUrlFor(url) : tab.proxyUrl,
+      readerContent: undefined,
+      readerContentFull: undefined,
+      readerTruncated: payload.truncated === true,
+      publishedTime: typeof payload.publishedTime === 'string' ? payload.publishedTime : tab.publishedTime,
+      pageDescription: typeof payload.description === 'string' ? payload.description : tab.pageDescription,
+      status: 'complete',
+    };
+  }
+
   const normalizeOpts = { pageTitle, url };
   const normalizedFull = typeof rawFull === 'string'
     ? normalizeReaderMarkdown(rawFull, normalizeOpts)
@@ -207,14 +242,14 @@ function applyFetchPayload(tab: BrowserTab, payload: Record<string, unknown>): B
   const split = fullMarkdown
     ? splitReaderPreviewAtSections(fullMarkdown)
     : { preview: '', full: '', hasMore: false, remainingSectionCount: 0 };
-  const displayTitle = pageTitle
-    ? shortTabTitle(pageTitle)
-    : (url ? hostFromUrl(url) : tab.title);
   return {
     ...tab,
     url,
     pageTitle,
     title: displayTitle || tab.title,
+    contentFormat: 'markdown',
+    structuredRaw: undefined,
+    structuredSummary: undefined,
     readerContent: split.preview,
     readerContentFull: split.hasMore ? split.full : undefined,
     readerRemainingSections: split.remainingSectionCount,
@@ -222,6 +257,7 @@ function applyFetchPayload(tab: BrowserTab, payload: Record<string, unknown>): B
     readerDedupeTitle: normalizedFull?.dedupeTitle,
     readerTruncated: payload.truncated === true || split.hasMore,
     publishedTime: typeof payload.publishedTime === 'string' ? payload.publishedTime : tab.publishedTime,
+    pageDescription: typeof payload.description === 'string' ? payload.description : tab.pageDescription,
     proxyUrl: url ? proxyUrlFor(url) : tab.proxyUrl,
     fetchView: tab.fetchView ?? 'reader',
     status: 'complete',
@@ -338,6 +374,7 @@ interface BrowserTabStore {
   failTab: (toolCallId: string | undefined, error: string) => void;
   setActiveTab: (tabId: string) => void;
   setFetchView: (tabId: string, view: 'site' | 'reader') => void;
+  setDataView: (tabId: string, view: 'visual' | 'json') => void;
   updateLiveTab: (tabId: string, patch: Partial<BrowserTab>) => void;
   findTabByToolCallId: (toolCallId: string) => BrowserTab | undefined;
   ensureLiveTab: (sessionId: string, data: { goal?: string; url?: string; title?: string }) => string;
@@ -465,6 +502,14 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId ? { ...tab, fetchView: view } : tab,
+      ),
+    }));
+  },
+
+  setDataView: (tabId, view) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId ? { ...tab, dataView: view } : tab,
       ),
     }));
   },

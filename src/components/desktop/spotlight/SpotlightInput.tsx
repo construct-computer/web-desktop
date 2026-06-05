@@ -19,7 +19,7 @@ import { useSlashCommands } from './hooks';
 import { providerCopy, TONE_HEX } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
-import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
+import { fileNameFromWorkspacePath, normalizeWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath, decodeDisplayName } from '@/lib/workspacePaths';
 import {
   componentMentionKeysInText,
   componentMentionKey,
@@ -531,7 +531,7 @@ export function SpotlightInput() {
         .map(e => {
           const isDir = e.type === 'directory';
           const baseName = dirSuffix ? `${dirSuffix.slice(1)}/${e.name}` : e.name;
-          return { kind: 'file' as const, id: normalizeWorkspacePath(baseName), display: isDir ? `${baseName}/` : baseName, isDir };
+          return { kind: 'file' as const, id: normalizeWorkspacePath(baseName), display: isDir ? `${decodeDisplayName(baseName)}/` : decodeDisplayName(baseName), isDir };
         })
         .sort((a, b) => {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;

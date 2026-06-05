@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isTerminalLogJsonl, parseTerminalLogJsonl } from '@/lib/terminalLog';
 
 export type TerminalStream = 'stdout' | 'stderr';
 export type TerminalRunStatus = 'running' | 'completed' | 'failed';
@@ -386,27 +387,38 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       const existing = state.runs[toolCallId];
       if (!existing || existing.hydratedFull) return state;
 
-      const sequence = existing.chunks.length + 1;
-      const chunk: TerminalChunk = {
-        id: `${toolCallId}:hydrated:${sequence}`,
-        runId: toolCallId,
-        data: output,
-        stream: 'stdout',
-        timestamp: existing.endedAt || Date.now(),
-        sequence,
-      };
-      const searchText = appendSearchText('', output);
+      let chunks: TerminalChunk[];
+      if (isTerminalLogJsonl(output)) {
+        chunks = parseTerminalLogJsonl(output, toolCallId, existing.startedAt);
+      } else {
+        chunks = [{
+          id: `${toolCallId}:hydrated:1`,
+          runId: toolCallId,
+          data: output,
+          stream: 'stdout',
+          timestamp: existing.endedAt || Date.now(),
+          sequence: 1,
+        }];
+      }
+
+      const searchText = chunks.reduce(
+        (acc, chunk) => appendSearchText(acc.text, chunk.data),
+        { text: '', truncated: false },
+      );
 
       return {
         runs: {
           ...state.runs,
           [toolCallId]: {
             ...existing,
-            chunks: [chunk],
+            chunks,
             outputText: searchText.text,
             outputTruncated: searchText.truncated,
             hydratedFull: true,
             preview: undefined,
+            stdoutBytes: chunks.filter((c) => c.stream === 'stdout').reduce((n, c) => n + c.data.length, 0),
+            stderrBytes: chunks.filter((c) => c.stream === 'stderr').reduce((n, c) => n + c.data.length, 0),
+            outputBytes: chunks.reduce((n, c) => n + c.data.length, 0),
           },
         },
       };

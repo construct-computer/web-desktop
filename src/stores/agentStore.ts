@@ -301,6 +301,8 @@ export interface WebPreviewData {
   url?: string;
   pageTitle?: string;
   snippet?: string;
+  structuredSummary?: string;
+  contentFormat?: 'json' | 'markdown';
   resultCount?: number;
   results?: Array<{ title: string; url: string; snippet: string }>;
   truncated?: boolean;

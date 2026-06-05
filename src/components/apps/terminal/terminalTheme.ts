@@ -1,5 +1,10 @@
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { TerminalChunk, TerminalRun } from '@/stores/terminalStore';
+import {
+  appendStdoutWithJsonColor,
+  clearStdoutJsonColorBuffer,
+  flushStdoutJsonColorBuffer,
+} from '@/lib/terminalStructuredOutput';
 
 export const TERMINAL_THEME = {
   background: 'transparent',
@@ -79,9 +84,19 @@ export function writeCommandPrompt(xterm: XTerm, run: TerminalRun): void {
 export function writeChunk(xterm: XTerm, chunk: TerminalChunk): void {
   if (chunk.stream === 'stderr') {
     xterm.write(`${A.red}${chunk.data}${A.reset}`);
-  } else {
-    xterm.write(chunk.data);
+    return;
   }
+  const colored = appendStdoutWithJsonColor(chunk.runId, chunk.data);
+  if (colored) xterm.write(colored);
+}
+
+export function flushRunStdoutColorBuffer(xterm: XTerm, run: TerminalRun): void {
+  const tail = flushStdoutJsonColorBuffer(run.id);
+  if (tail) xterm.write(tail);
+}
+
+export function clearRunStdoutColorBuffer(runId: string): void {
+  clearStdoutJsonColorBuffer(runId);
 }
 
 export function writePreviewPlaceholder(xterm: XTerm): void {

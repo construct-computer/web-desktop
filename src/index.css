@@ -1667,6 +1667,16 @@ html.dark .md-inline-code {
   color: rgba(255, 255, 255, 0.85);
 }
 
+/* Structured JSON source — reuse markdown code block styling in browser + file viewers */
+.structured-json-source {
+  margin: 0;
+  max-width: 100%;
+}
+
+.browser-read-pane .structured-json-source {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 /* --- Links --- */
 .md-link {
   color: var(--color-accent);
@@ -2012,14 +2022,30 @@ html.dark .md-table-wrap tr:nth-child(even) {
   opacity: 0.55;
 }
 
-.reader-nav-removed {
-  font-size: 0.7rem;
-  color: var(--color-text-subtle);
-  padding: 0.35rem 0.65rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.03);
-  display: inline-block;
+.fetch-reader-header-title-row {
+  align-items: flex-start;
+}
+
+.fetch-reader-header-favicon {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: contain;
+  /* Optical center against bold 1.75rem title cap height */
+  margin-top: 0.15rem;
+}
+
+.fetch-reader-meta-link {
+  color: inherit;
+  max-width: 100%;
+}
+
+.fetch-reader-meta-link:hover {
+  color: var(--color-accent);
+}
+
+.fetch-reader-meta-sep {
+  opacity: 0.45;
+  user-select: none;
 }
 
 .reader-prose ul:has(a[href]) {
@@ -2050,7 +2076,7 @@ html.dark .md-table-wrap tr:nth-child(even) {
 
 .browser-read-pane .search-result-breadcrumb,
 .browser-read-pane .search-result-date,
-.browser-read-pane .reader-nav-removed {
+.browser-read-pane .fetch-reader-meta {
   color: #5f6368;
 }
 
@@ -2076,11 +2102,6 @@ html.dark .md-table-wrap tr:nth-child(even) {
 .browser-read-pane .reader-prose em:only-child,
 .browser-read-pane .reader-prose p:has(+ .reader-figure) + p > em:only-child {
   color: #5f6368;
-}
-
-.browser-read-pane .reader-nav-removed {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.1);
 }
 
 .browser-read-pane .search-result:hover {

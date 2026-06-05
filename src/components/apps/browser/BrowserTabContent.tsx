@@ -21,6 +21,7 @@ function LegacyTabFallback({ tab }: { tab: BrowserTab }) {
 export const BrowserTabContent = memo(function BrowserTabContent({
   tab,
   fetchView,
+  dataView = 'visual',
   session,
   iframeDead,
   reloadKey,
@@ -30,6 +31,7 @@ export const BrowserTabContent = memo(function BrowserTabContent({
 }: {
   tab: BrowserTab;
   fetchView: 'site' | 'reader';
+  dataView?: 'visual' | 'json';
   session?: BrowserSessionRecord;
   iframeDead: boolean;
   reloadKey: number;
@@ -41,7 +43,13 @@ export const BrowserTabContent = memo(function BrowserTabContent({
     case 'search':
       return <BrowserSearchPage tab={tab} />;
     case 'fetch':
-      return <BrowserFetchPage tab={tab} fetchView={fetchView} />;
+      return (
+        <BrowserFetchPage
+          tab={tab}
+          fetchView={fetchView}
+          dataView={dataView}
+        />
+      );
     case 'arxiv':
       return <BrowserArxivPage tab={tab} />;
     case 'domain':

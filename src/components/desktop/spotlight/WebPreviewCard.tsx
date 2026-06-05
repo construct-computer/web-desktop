@@ -60,9 +60,13 @@ export function WebPreviewCard({
       {preview.pageTitle && (
         <div className="font-medium text-[var(--color-text-muted)]/75 truncate">{preview.pageTitle}</div>
       )}
-      {preview.snippet && (
+      {preview.contentFormat === 'json' && preview.structuredSummary ? (
+        <p className="text-[var(--color-text-muted)]/50 mt-0.5 leading-relaxed font-mono text-[10px]">
+          {preview.structuredSummary}
+        </p>
+      ) : preview.snippet ? (
         <p className="text-[var(--color-text-muted)]/50 line-clamp-2 mt-0.5 leading-relaxed">{preview.snippet}</p>
-      )}
+      ) : null}
       {preview.truncated && (
         <p className="text-[10px] text-amber-400/70 mt-1">Preview truncated — open for full reader view.</p>
       )}

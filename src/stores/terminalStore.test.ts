@@ -122,6 +122,35 @@ describe('terminalStore', () => {
     expect(useTerminalStore.getState().runs['call-h'].chunks).toHaveLength(1);
   });
 
+  it('mergeRunOutput parses terminal log jsonl into stream chunks', () => {
+    useTerminalStore.getState().hydrateRuns([{
+      tool_call_id: 'call-j',
+      terminal_id: 'main',
+      command: 'node -e',
+      status: 'completed',
+      started_at: 1000,
+      ended_at: 2000,
+      exit_code: 0,
+      output_ref: 'r2:key',
+      preview: 'preview only',
+    }]);
+
+    const jsonl = [
+      '{"type":"command","command":"node -e","timestamp":"2026-01-01T00:00:00.000Z"}',
+      '{"type":"output","stream":"stderr","data":"err\\n","timestamp":"2026-01-01T00:00:01.000Z"}',
+      '{"type":"output","stream":"stdout","data":"out\\n","timestamp":"2026-01-01T00:00:02.000Z"}',
+      '{"type":"exit","exitCode":0,"timestamp":"2026-01-01T00:00:03.000Z"}',
+    ].join('\n');
+
+    useTerminalStore.getState().mergeRunOutput('call-j', jsonl);
+    const run = useTerminalStore.getState().runs['call-j'];
+    expect(run.chunks).toHaveLength(2);
+    expect(run.chunks[0].stream).toBe('stderr');
+    expect(run.chunks[1].stream).toBe('stdout');
+    expect(run.stderrBytes).toBe(4);
+    expect(run.stdoutBytes).toBe(4);
+  });
+
   it('getSessionTranscript orders runs by startedAt', () => {
     const runs = {
       late: {

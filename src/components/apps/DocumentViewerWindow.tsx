@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, previewContainerFile, writeFile } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
+import { fileNameFromWorkspacePath } from '@/lib/workspacePaths';
 import {
   getLanguageLabel,
   getFileIconKind,
@@ -12,14 +13,13 @@ import {
 import { useEditorStore } from '@/stores/editorStore';
 import { useDocViewerSignalStore } from '@/stores/documentViewerStore';
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
+import { JsonFileViewer } from '@/components/ui/StructuredDataViewer';
 import type { WindowConfig } from '@/types';
 import { FileText, Table, Presentation, Image, File, Download, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Code, Eye, Save, Volume2, Film, Archive, Maximize2, Braces, Search, ArrowUpDown } from 'lucide-react';
 
 import MonacoEditor, { type OnMount } from '@monaco-editor/react';
 import type { editor as monacoEditor } from 'monaco-editor';
 import Papa from 'papaparse';
-import { JsonView } from 'react-json-view-lite';
-import 'react-json-view-lite/dist/index.css';
 import {
   flexRender,
   getCoreRowModel,
@@ -51,25 +51,6 @@ interface ConversionFrame {
   label?: string;
   pageIndex?: number;
 }
-
-const JSON_TREE_STYLES = {
-  container: 'font-mono text-[12px] leading-6 text-[var(--color-text)]',
-  basicChildStyle: 'pl-4',
-  label: 'mr-1 font-semibold text-[var(--color-text)]',
-  clickableLabel: 'mr-1 font-semibold text-[var(--color-text)] hover:text-[var(--color-accent)] cursor-pointer',
-  nullValue: 'text-purple-300',
-  undefinedValue: 'text-purple-300',
-  numberValue: 'text-pink-300',
-  stringValue: 'text-emerald-300',
-  booleanValue: 'text-cyan-300',
-  otherValue: 'text-[var(--color-text)]',
-  punctuation: 'text-[var(--color-text-muted)]',
-  expandIcon: 'inline-flex w-4 cursor-pointer select-none text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
-  collapseIcon: 'inline-flex w-4 cursor-pointer select-none text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
-  collapsedContent: 'text-[var(--color-text-muted)]',
-  childFieldsContainer: 'ml-3 border-l border-white/[0.08] pl-3',
-  quotesForFieldNames: false,
-};
 
 const MONACO_OPTIONS: import('monaco-editor').editor.IStandaloneEditorConstructionOptions = {
   fontSize: 13,
@@ -350,91 +331,6 @@ function MediaViewer({ blobUrl, type, fileName }: { blobUrl: string; type: 'audi
   );
 }
 
-function JsonViewer({ text }: { text: string }) {
-  const parsed = useMemo(() => {
-    try {
-      const trimmed = text.trim();
-      if (!trimmed) return null;
-      if (trimmed.includes('\n') && !trimmed.startsWith('[') && !trimmed.startsWith('{')) {
-        return trimmed.split(/\n+/).map(line => JSON.parse(line));
-      }
-      return JSON.parse(trimmed);
-    } catch {
-      return undefined;
-    }
-  }, [text]);
-
-  const tableRows = useMemo(() => {
-    if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every(item => item && typeof item === 'object' && !Array.isArray(item))) return null;
-    const headers = Array.from(new Set(parsed.flatMap(item => Object.keys(item as Record<string, unknown>)))).slice(0, 50);
-    return {
-      headers,
-      rows: parsed.slice(0, 1000).map(item => headers.map(header => {
-        const value = (item as Record<string, unknown>)[header];
-        return typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
-      })),
-    };
-  }, [parsed]);
-
-  if (tableRows) {
-    return (
-      <div className="w-full h-full flex flex-col">
-        <div className="shrink-0 px-3 py-1.5 border-b border-white/[0.06] text-[11px] text-[var(--color-text-muted)]">
-          Array of {Array.isArray(parsed) ? parsed.length : 0} objects. Showing {tableRows.rows.length} rows and {tableRows.headers.length} columns.
-        </div>
-        <div className="flex-1 min-h-0">
-          <XlsxViewer sheets={[{ name: 'JSON', headers: tableRows.headers, rows: tableRows.rows }]} />
-        </div>
-      </div>
-    );
-  }
-
-  if (parsed === undefined) {
-    return (
-      <div className="w-full h-full flex flex-col">
-        <div className="shrink-0 px-3 py-1.5 border-b border-red-500/20 bg-red-500/10 text-[11px] text-red-300">
-          Invalid JSON. Switch to source to edit the raw content.
-        </div>
-        <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
-          {text}
-        </pre>
-      </div>
-    );
-  }
-
-  const summary = parsed === null
-    ? 'Empty JSON file'
-    : Array.isArray(parsed)
-      ? `Array with ${parsed.length} item${parsed.length === 1 ? '' : 's'}`
-      : typeof parsed === 'object'
-        ? `Object with ${Object.keys(parsed as Record<string, unknown>).length} key${Object.keys(parsed as Record<string, unknown>).length === 1 ? '' : 's'}`
-        : `${typeof parsed} value`;
-
-  return (
-    <div className="w-full h-full flex flex-col">
-      <div className="shrink-0 px-3 py-1.5 border-b border-white/[0.06] text-[11px] text-[var(--color-text-muted)]">
-        {summary}
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto p-4 text-xs">
-        {parsed && typeof parsed === 'object' ? (
-          <div className="min-w-max rounded-md border border-white/[0.08] bg-black/[0.14] px-3 py-2">
-            <JsonView
-              data={parsed as Record<string, unknown> | unknown[]}
-              style={JSON_TREE_STYLES}
-              shouldExpandNode={(level) => level < 2}
-              clickToExpandNode
-            />
-          </div>
-        ) : (
-          <pre className="font-mono text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">
-            {JSON.stringify(parsed, null, 2)}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function DiagramViewer({ text, fileName }: { text: string; fileName: string }) {
   const ext = fileName.split('.').pop()?.toLowerCase();
   return (
@@ -457,7 +353,7 @@ function ExcalidrawViewer({ text }: { text: string }) {
   }, [text]);
 
   const elements: Array<Record<string, unknown>> = scene?.elements?.filter(el => !el.isDeleted) || [];
-  if (!scene) return <JsonViewer text={text} />;
+  if (!scene) return <JsonFileViewer text={text} />;
   if (elements.length === 0) return <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)]">Empty Excalidraw scene</div>;
 
   const bounds = elements.reduce<{ minX: number; minY: number; maxX: number; maxY: number }>((acc, el) => {
@@ -787,7 +683,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const driveFileId = config.metadata?.driveFileId as string | undefined;
   const fileSize = config.metadata?.fileSize as number | undefined;
   const fileModified = config.metadata?.fileModified as string | undefined;
-  const fileName = filePath?.split('/').pop() ?? 'Document';
+  const fileName = filePath ? fileNameFromWorkspacePath(filePath) : 'Document';
   const docType = useMemo(() => resolveDocType(filePath), [filePath]);
 
   // ── Text/code editing via editorStore ──
@@ -1317,7 +1213,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
                 title={fileName}
               />
             )}
-            {docType === 'json' && rawText !== null && <JsonViewer text={rawText} />}
+            {docType === 'json' && rawText !== null && <JsonFileViewer text={rawText} />}
             {docType === 'diagram' && rawText !== null && <DiagramViewer text={rawText} fileName={fileName} />}
             {docType === 'excalidraw' && rawText !== null && <ExcalidrawViewer text={rawText} />}
             {docType === 'archive' && <ArchiveViewer fileName={fileName} fileSize={fileSize} fileModified={fileModified} onDownload={handleDownload} />}

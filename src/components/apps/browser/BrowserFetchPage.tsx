@@ -1,18 +1,11 @@
 import { memo, useEffect, useState } from 'react';
-import { AlertTriangle, Globe, Loader2, Calendar, BookOpen, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Globe, Loader2 } from 'lucide-react';
 import { ReaderMarkdown } from './ReaderMarkdown';
+import { FetchReaderHeader } from './FetchReaderHeader';
+import { StructuredDataViewer } from '@/components/ui/StructuredDataViewer';
 import type { BrowserTab } from '@/stores/browserTabStore';
 import { useBrowserTabStore } from '@/stores/browserTabStore';
 import { STORAGE_KEYS } from '@/lib/constants';
-
-function hostFromUrl(raw: string | undefined): string {
-  if (!raw) return '';
-  try {
-    return new URL(raw).hostname.replace(/^www\./, '');
-  } catch {
-    return raw;
-  }
-}
 
 type PreviewErrorKind = 'bot-blocked' | 'too-large' | 'unsupported-type' | 'generic';
 
@@ -151,9 +144,11 @@ function SitePreview({
 export const BrowserFetchPage = memo(function BrowserFetchPage({
   tab,
   fetchView,
+  dataView = 'visual',
 }: {
   tab: BrowserTab;
   fetchView: 'site' | 'reader';
+  dataView?: 'visual' | 'json';
 }) {
   if (tab.status === 'error') {
     const botHint = tab.error?.toLowerCase().includes('bot');
@@ -185,6 +180,23 @@ export const BrowserFetchPage = memo(function BrowserFetchPage({
     );
   }
 
+  if (tab.contentFormat === 'json' && tab.structuredRaw) {
+    return (
+      <div className="h-full overflow-y-auto browser-read-pane">
+        <div className="max-w-3xl mx-auto px-6 sm:px-8 py-10">
+          <FetchReaderHeader tab={tab} />
+          <div className="rounded-xl border border-white/[0.08] bg-black/[0.08] overflow-hidden min-h-[240px]">
+            <StructuredDataViewer
+              text={tab.structuredRaw}
+              dataView={dataView}
+              showSummary={false}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (fetchView === 'site' && tab.proxyUrl) {
     return (
       <SitePreview
@@ -195,47 +207,10 @@ export const BrowserFetchPage = memo(function BrowserFetchPage({
     );
   }
 
-  const showShellTitle = tab.pageTitle && !tab.readerDedupeTitle;
-  const host = hostFromUrl(tab.url);
-
   return (
     <div className="h-full overflow-y-auto browser-read-pane">
       <article className="reader-article mx-auto px-6 sm:px-8 py-10">
-        {showShellTitle && (
-          <h1 className="reader-article-title text-[var(--color-text)] mb-3 leading-snug">
-            {tab.pageTitle}
-          </h1>
-        )}
-
-        {(tab.publishedTime || host) && (
-          <div className="flex flex-wrap items-center gap-4 text-[11px] text-[var(--color-text-subtle)] mb-6 select-none border-b border-black/[0.08] pb-4">
-            {tab.publishedTime && (
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5" />
-                {tab.publishedTime}
-              </span>
-            )}
-            {host && tab.url && (
-              <a
-                href={tab.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 hover:text-[var(--color-accent)] transition-colors"
-                title={tab.url}
-              >
-                <BookOpen className="w-3.5 h-3.5 shrink-0" />
-                <span>{host}</span>
-                <ExternalLink className="w-3 h-3 opacity-50" />
-              </a>
-            )}
-          </div>
-        )}
-
-        {typeof tab.readerChromeStripped === 'number' && tab.readerChromeStripped > 0 && (
-          <p className="reader-nav-removed mb-4">
-            Site navigation removed for readability
-          </p>
-        )}
+        <FetchReaderHeader tab={tab} />
 
         <ReaderMarkdown
           content={tab.readerContent || ''}

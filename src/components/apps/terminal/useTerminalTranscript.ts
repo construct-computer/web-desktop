@@ -12,6 +12,7 @@ import {
   writeCommandPrompt,
   writeExit,
   writePreviewPlaceholder,
+  flushRunStdoutColorBuffer,
 } from './terminalTheme';
 
 export interface UseTerminalTranscriptOptions {
@@ -67,6 +68,7 @@ function appendExitIfNeeded(xterm: XTerm, cached: CachedTerminal, run: TerminalR
   if (state.exitRenderedRunIds.has(run.id)) return;
   if (!state.promptRenderedRunIds.has(run.id)) return;
 
+  flushRunStdoutColorBuffer(xterm, run);
   const foldedBytes = state.foldedBytesByRun.get(run.id) ?? 0;
   writeExit(xterm, run, foldedBytes);
   state.exitRenderedRunIds.add(run.id);

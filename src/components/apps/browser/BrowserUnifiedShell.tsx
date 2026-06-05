@@ -27,6 +27,7 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
   const activeTabId = useBrowserTabStore((s) => s.activeTabId);
   const setActiveTab = useBrowserTabStore((s) => s.setActiveTab);
   const setFetchView = useBrowserTabStore((s) => s.setFetchView);
+  const setDataView = useBrowserTabStore((s) => s.setDataView);
   const closeTab = useBrowserTabStore((s) => s.closeTab);
   const pruneInactiveLiveTabs = useBrowserTabStore((s) => s.pruneInactiveLiveTabs);
 
@@ -49,6 +50,7 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
   );
 
   const fetchView = activeTab?.fetchView ?? 'reader';
+  const dataView = activeTab?.dataView ?? 'visual';
 
   const [iframeDead, setIframeDead] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -182,6 +184,8 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
           tab={activeTab}
           fetchView={fetchView}
           onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
+          dataView={dataView}
+          onDataViewChange={(view) => activeTab && setDataView(activeTab.id, view)}
           onStopLive={activeTab?.mode === 'live' ? onStopLive : undefined}
           stoppingLive={stoppingLive}
         />
@@ -201,6 +205,7 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
               <BrowserTabContent
                 tab={activeTab}
                 fetchView={fetchView}
+                dataView={dataView}
                 session={activeSession}
                 iframeDead={iframeDead}
                 reloadKey={reloadKey}

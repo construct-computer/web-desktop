@@ -31,19 +31,48 @@ function ModeIcon({ tab }: { tab: BrowserTab }) {
   }
 }
 
+const TOGGLE_BTN = 'px-3 py-1 rounded transition-colors duration-150 font-sans';
+const TOGGLE_ACTIVE = 'bg-white/10 text-[var(--color-text)] shadow-sm';
+const TOGGLE_IDLE = 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]';
+
 const CHROME_BAR_CLASS =
   'shrink-0 flex items-center gap-2 px-4 py-2 min-h-[44px] surface-toolbar border-b border-[var(--color-border)] select-none';
+
+function TogglePill({
+  options,
+}: {
+  options: Array<{ id: string; label: string; active: boolean; onClick: () => void }>;
+}) {
+  return (
+    <div className="flex p-0.5 rounded-md bg-white/[0.02] border border-white/[0.06] text-[10px]">
+      {options.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          onClick={opt.onClick}
+          className={`${TOGGLE_BTN} ${opt.active ? TOGGLE_ACTIVE : TOGGLE_IDLE}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export const BrowserChromeBar = memo(function BrowserChromeBar({
   tab,
   fetchView,
   onFetchViewChange,
+  dataView = 'visual',
+  onDataViewChange,
   onStopLive,
   stoppingLive,
 }: {
   tab: BrowserTab | null;
   fetchView: 'site' | 'reader';
   onFetchViewChange: (view: 'site' | 'reader') => void;
+  dataView?: 'visual' | 'json';
+  onDataViewChange?: (view: 'visual' | 'json') => void;
   onStopLive?: () => void;
   stoppingLive?: boolean;
 }) {
@@ -70,7 +99,8 @@ export const BrowserChromeBar = memo(function BrowserChromeBar({
 
   const label = displayUrl(tab);
   const hasUrl = !!(tab.url || tab.pageUrl);
-  const showFetchToggle = tab.mode === 'fetch' && tab.status === 'complete';
+  const isJsonTab = tab.mode === 'fetch' && tab.status === 'complete' && tab.contentFormat === 'json';
+  const showFetchToggle = tab.mode === 'fetch' && tab.status === 'complete' && !isJsonTab;
   const showStopLive = tab.mode === 'live' && onStopLive && tab.runPhase === 'live';
 
   return (
@@ -92,32 +122,23 @@ export const BrowserChromeBar = memo(function BrowserChromeBar({
         </button>
       )}
 
-      <div className="shrink-0 flex items-center min-w-[148px] justify-end">
-        {showFetchToggle ? (
-          <div className="flex p-0.5 rounded-md bg-white/[0.02] border border-white/[0.06] text-[10px]">
-            <button
-              type="button"
-              onClick={() => onFetchViewChange('site')}
-              className={`px-3 py-1 rounded transition-colors duration-150 font-sans ${
-                fetchView === 'site'
-                  ? 'bg-white/10 text-[var(--color-text)] shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-              }`}
-            >
-              Site View
-            </button>
-            <button
-              type="button"
-              onClick={() => onFetchViewChange('reader')}
-              className={`px-3 py-1 rounded transition-colors duration-150 font-sans ${
-                fetchView === 'reader'
-                  ? 'bg-white/10 text-[var(--color-text)] shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-              }`}
-            >
-              Reader View
-            </button>
-          </div>
+      <div className="shrink-0 flex items-center gap-2 min-w-[148px] justify-end">
+        {isJsonTab && onDataViewChange ? (
+          <>
+            <TogglePill
+              options={[
+                { id: 'visual', label: 'Visual', active: dataView === 'visual', onClick: () => onDataViewChange('visual') },
+                { id: 'json', label: 'JSON', active: dataView === 'json', onClick: () => onDataViewChange('json') },
+              ]}
+            />
+          </>
+        ) : showFetchToggle ? (
+          <TogglePill
+            options={[
+              { id: 'site', label: 'Site View', active: fetchView === 'site', onClick: () => onFetchViewChange('site') },
+              { id: 'reader', label: 'Reader View', active: fetchView === 'reader', onClick: () => onFetchViewChange('reader') },
+            ]}
+          />
         ) : showStopLive ? (
           <button
             type="button"

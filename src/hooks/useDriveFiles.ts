@@ -5,6 +5,7 @@ import {
   deleteDriveFile,
   type DriveFileEntry,
 } from '@/services/api'
+import { decodeDisplayName } from '@/lib/workspacePaths'
 
 const POLL_INTERVAL = 15_000
 
@@ -102,7 +103,7 @@ export function useDriveFiles(active = false) {
 
   const navigateInto = useCallback(async (file: DriveFileEntry) => {
     if (file.type === 'directory') {
-      setFolderStack(prev => [...prev, { id: file.id, name: file.name }])
+      setFolderStack(prev => [...prev, { id: file.id, name: decodeDisplayName(file.name) }])
       setSelectedFile(null)
       setFileContent('')
       await openFolder(file.id)

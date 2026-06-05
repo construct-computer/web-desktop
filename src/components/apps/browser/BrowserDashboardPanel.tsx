@@ -7,6 +7,7 @@ import { stopAllBrowserForUser } from '@/services/api';
 import { BrowserRunHistory } from '../BrowserRunHistory';
 import { BrowserScreenshotGallery } from '../BrowserScreenshotGallery';
 import { formatBytes } from '@/lib/format';
+import { decodeDisplayName } from '@/lib/workspacePaths';
 
 type BrowserDashboardTab = 'sessions' | 'runs' | 'shots' | 'files';
 
@@ -289,7 +290,7 @@ function BrowserFilesPanel({
                 <FileText className="w-4 h-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-[var(--color-text)] truncate">{file.name || file.workspacePath}</p>
+                <p className="text-xs font-semibold text-[var(--color-text)] truncate">{decodeDisplayName(file.name || file.workspacePath)}</p>
                 <p className="text-[10px] text-[var(--color-text-subtle)] font-mono truncate mt-0.5">{file.workspacePath}</p>
                 {file.size != null && (
                   <p className="text-[9px] text-[var(--color-text-subtle)] opacity-70 font-mono mt-0.5">{formatBytes(file.size)}</p>

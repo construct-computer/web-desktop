@@ -5,7 +5,11 @@ function modeLabel(tab: BrowserTab | null, fetchView: 'site' | 'reader'): string
   if (!tab) return null;
   switch (tab.mode) {
     case 'search': return 'Search';
-    case 'fetch': return fetchView === 'site' ? 'Preview' : 'Reading';
+    case 'fetch':
+      if (tab.contentFormat === 'json') {
+        return tab.dataView === 'json' ? 'JSON' : 'Data';
+      }
+      return fetchView === 'site' ? 'Preview' : 'Reading';
     case 'live': return 'Live Use';
     case 'arxiv': return 'arXiv';
     case 'domain': return 'Domain';

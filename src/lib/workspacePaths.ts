@@ -1,3 +1,22 @@
+const ENCODED_SEGMENT = /%(?:[0-9A-Fa-f]{2})+/;
+
+/** Decode URL-encoded file/folder segment for display (e.g. Scheduled%20Tasks → Scheduled Tasks). */
+export function decodeDisplaySegment(segment: string): string {
+  if (!segment || !ENCODED_SEGMENT.test(segment)) return segment;
+  try {
+    return decodeURIComponent(segment.replace(/\+/g, ' '));
+  } catch {
+    return segment;
+  }
+}
+
+/** Decode a file or folder name, including nested paths shown in mentions. */
+export function decodeDisplayName(name: string): string {
+  if (!name) return name;
+  if (!name.includes('/')) return decodeDisplaySegment(name);
+  return name.split('/').map(decodeDisplaySegment).join('/');
+}
+
 export function normalizeWorkspacePath(path: string | undefined | null): string {
   const raw = String(path || '')
     .replace(/\\/g, '/')
@@ -15,12 +34,14 @@ export function normalizeWorkspacePath(path: string | undefined | null): string 
 
 export function workspaceDisplayPath(path: string | undefined | null): string {
   const normalized = normalizeWorkspacePath(path);
-  return normalized ? `/${normalized}` : '/';
+  if (!normalized) return '/';
+  return `/${normalized.split('/').map(decodeDisplaySegment).join('/')}`;
 }
 
 export function fileNameFromWorkspacePath(path: string | undefined | null): string {
   const normalized = normalizeWorkspacePath(path);
-  return normalized.split('/').filter(Boolean).pop() || String(path || 'file');
+  const last = normalized.split('/').filter(Boolean).pop() || String(path || 'file');
+  return decodeDisplaySegment(last);
 }
 
 export function isImageWorkspacePath(path: string | undefined | null): boolean {

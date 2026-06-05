@@ -52,6 +52,7 @@ import { formatBytes } from '@/lib/format';
 import { isWallpaperWorkspacePath } from '@/lib/wallpapers';
 import { notifyWallpaperFilesChanged } from '@/stores/wallpaperStore';
 import { getFileIconKind, getFileType } from '@/lib/fileTypes';
+import { decodeDisplayName } from '@/lib/workspacePaths';
 
 const logger = log('Files');
 
@@ -1155,7 +1156,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                     className="cursor-pointer hover:text-[var(--color-accent)]"
                     onClick={() => navigateTo(fullPath)}
                   >
-                    {part}
+                    {decodeDisplayName(part)}
                   </span>
                 </span>
               );
@@ -1166,7 +1167,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             {driveFiles.folderStack.map((folder, i) => (
               <span key={folder.id} className="flex items-center gap-0.5 whitespace-nowrap flex-shrink-0">
                 {i > 0 && <ChevronRight className="w-3 h-3 text-[var(--color-text-muted)]" />}
-                <span className="cursor-default">{folder.name}</span>
+                <span className="cursor-default">{decodeDisplayName(folder.name)}</span>
               </span>
             ))}
             {driveFiles.folderStack.length === 0 && <span>Cloud</span>}
@@ -1406,7 +1407,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                                 onCancel={() => setRenamingName(null)}
                               />
                             ) : (
-                              <span className={FILE_ROW_TEXT_CLASS}>{entry.name}</span>
+                              <span className={FILE_ROW_TEXT_CLASS}>{decodeDisplayName(entry.name)}</span>
                             )}
                           </div>
                           {!isMobile && (
@@ -1518,7 +1519,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                                   : 'text-[var(--color-text-muted)]'
                             }`}
                           />
-                          <span className={FILE_ROW_TEXT_CLASS}>{file.name}</span>
+                          <span className={FILE_ROW_TEXT_CLASS}>{decodeDisplayName(file.name)}</span>
                         </div>
                         {!isMobile && (
                           <>
@@ -1551,7 +1552,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
               <div className={`${isMobile ? 'flex-1' : 'w-1/2'} flex flex-col surface-app overflow-hidden`}>
                 {/* Preview header */}
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-border)] surface-card">
-                  <span className="text-xs truncate text-[var(--color-text-muted)]">{previewFile.name}</span>
+                  <span className="text-xs truncate text-[var(--color-text-muted)]">{decodeDisplayName(previewFile.name)}</span>
                   <button
                     onClick={closePreview}
                     className="p-0.5 rounded hover:bg-[var(--color-border)] flex-shrink-0"
@@ -1572,7 +1573,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                       {previewFile.category === 'image' && (
                         <img
                           src={previewBlobUrl}
-                          alt={previewFile.name}
+                          alt={decodeDisplayName(previewFile.name)}
                           className="max-w-full max-h-full object-contain rounded"
                           draggable={false}
                         />
@@ -1580,7 +1581,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                       {previewFile.category === 'audio' && (
                         <div className="flex flex-col items-center gap-4 w-full max-w-xs">
                           <FileAudio className="w-16 h-16 text-[var(--color-text-muted)]" />
-                          <span className="text-xs text-[var(--color-text-muted)] truncate max-w-full">{previewFile.name}</span>
+                          <span className="text-xs text-[var(--color-text-muted)] truncate max-w-full">{decodeDisplayName(previewFile.name)}</span>
                           <audio
                             src={previewBlobUrl}
                             controls
@@ -1600,7 +1601,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                       {previewFile.category === 'pdf' && (
                         <iframe
                           src={previewBlobUrl}
-                          title={previewFile.name}
+                          title={decodeDisplayName(previewFile.name)}
                           className="w-full h-full border-0 rounded"
                         />
                       )}
@@ -1632,10 +1633,10 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                   )}
                   <span className="text-[11px] truncate flex-1 text-[var(--color-text-muted)]">
                     {t.status === 'active'
-                      ? `${t.direction === 'upload' ? 'Uploading' : 'Downloading'} ${t.name}...`
+                      ? `${t.direction === 'upload' ? 'Uploading' : 'Downloading'} ${decodeDisplayName(t.name)}...`
                       : t.status === 'done'
-                        ? `${t.name} — ${t.direction === 'upload' ? 'uploaded' : 'downloaded'}`
-                        : `${t.name} — failed`}
+                        ? `${decodeDisplayName(t.name)} — ${t.direction === 'upload' ? 'uploaded' : 'downloaded'}`
+                        : `${decodeDisplayName(t.name)} — failed`}
                   </span>
                   {t.status === 'active' && (
                     <div className="w-24 h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden flex-shrink-0">
