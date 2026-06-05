@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAgentTrackerStore, type TrackedOperation } from '@/stores/agentTrackerStore';
 
 const TOOL_LABELS: Record<string, string> = {
@@ -55,7 +55,7 @@ function isRunningOp(op: TrackedOperation): boolean {
 
 function pickPrimaryRunningSessionKey(
   runningSessions: Set<string>,
-  activeSessions: Record<string, { sessionKey: string; status?: string; lastToolName?: string; progressReason?: string }>,
+  activeSessions: Record<string, ActiveSessionStatus>,
   activeSessionKey: string,
 ): string | undefined {
   if (runningSessions.has(activeSessionKey)) return activeSessionKey;
