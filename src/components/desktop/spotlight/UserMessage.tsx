@@ -218,7 +218,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
                 {context}
               </div>
             )}
-            <div className="px-4 py-2 text-right text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
+            <div className="px-4 py-2 text-left text-[15px] leading-relaxed text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]">
               <p className="whitespace-pre-wrap">{body}</p>
             </div>
           </div>
@@ -240,7 +240,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
           className={[
             'w-fit max-w-full self-end rounded-[18px] rounded-br-md',
             'text-white selection:!bg-white/90 selection:!text-[var(--color-accent)]',
-            'shadow-sm px-4 py-2.5 text-right text-[15px] leading-relaxed',
+            'shadow-sm px-4 py-2.5 text-left text-[15px] leading-relaxed',
             'bg-[var(--color-accent)]',
             'transition-[opacity,filter] duration-300 ease-out',
             showPending
@@ -276,7 +276,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
             );
           })()}
           {msg.attachments && msg.attachments.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-1 mt-1.5">
+            <div className="flex flex-wrap justify-start gap-1 mt-1.5">
               {msg.attachments.map((filePath, i) => (
                 <span
                   key={i}
