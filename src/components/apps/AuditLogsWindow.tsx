@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Loader2,
@@ -12,8 +12,9 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { Button, FreshnessText, RefreshButton, StatusBanner, AnimatedListItem, AnimatedListContainer } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { listAuditLogs, type AuditLogEvent } from '@/services/api';
 import type { WindowConfig } from '@/types';
 
@@ -170,6 +171,9 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
   const [entries, setEntries] = useState<AuditLogEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [listPending, setListPending] = useState(false);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('');
@@ -185,7 +189,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
 
   const PAGE_SIZE = 50;
 
-  const fetchEntries = useCallback(async (append = false) => {
+  const fetchEntries = useCallback(async (append = false, opts?: { silent?: boolean }) => {
     try {
       if (!append) setError(null);
       const bounds = getDateRangeBounds(dateRange);
@@ -208,10 +212,12 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load audit logs');
+    } finally {
+      if (!append && !opts?.silent) setListPending(false);
     }
   }, [category, dateRange, searchQuery, entries.length]);
 
-  const freshness = useFreshness(() => fetchEntries(false), {
+  const freshness = useFreshness(() => fetchEntries(false, { silent: true }), {
     intervalMs: 10_000,
     staleMs: 30_000,
     refreshOnFocus: true,
@@ -222,13 +228,28 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      await fetchEntries(false);
-      if (!cancelled) setLoading(false);
+      const hasEntries = entriesRef.current.length > 0;
+      if (hasEntries) {
+        setListPending(true);
+      } else {
+        setLoading(true);
+      }
+      await fetchEntries(false, { silent: hasEntries });
+      if (!cancelled) {
+        setLoading(false);
+        setListPending(false);
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, dateRange, searchQuery]);
+
+  const animatedEntries = useAnimatedList(entries, (entry) => entry.id);
+  const entryPhaseMap = useMemo(
+    () => new Map(animatedEntries.map((entry) => [entry.key, entry.phase])),
+    [animatedEntries],
+  );
+  const showBlockingLoader = loading && entries.length === 0;
 
   // Close category dropdown on outside click
   useEffect(() => {
@@ -379,11 +400,11 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
       )}
 
       {/* Content */}
-      {loading ? (
+      {showBlockingLoader ? (
         <div className="flex-1 flex items-center justify-center bg-[var(--color-background)]">
           <Loader2 className="w-6 h-6 animate-spin text-[var(--color-accent)]" />
         </div>
-      ) : entries.length === 0 ? (
+      ) : entries.length === 0 && !listPending ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-[var(--color-text-muted)] bg-[var(--color-background)]">
           <div className="w-16 h-16 rounded-2xl bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2 border border-[var(--color-border)]/50">
             <FileText className="w-8 h-8 opacity-40" />
@@ -407,7 +428,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
           )}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto min-h-0 bg-[var(--color-background)]">
+        <AnimatedListContainer pending={listPending} className="flex-1 overflow-y-auto min-h-0 bg-[var(--color-background)]">
           {Array.from(grouped).map(([dateLabel, dayEntries]) => (
             <div key={dateLabel} className="mb-4 last:mb-0">
               <div className="px-4 py-2 text-[11px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider surface-toolbar sticky top-0 z-10 border-y border-[var(--color-border)]/50">
@@ -421,7 +442,8 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                   const isExpanded = expandedId === entry.id;
 
                   return (
-                    <div key={entry.id} className="group border-b border-[var(--color-border)]/50 last:border-0 relative">
+                    <AnimatedListItem key={entry.id} phase={entryPhaseMap.get(entry.id) ?? 'stable'}>
+                    <div className="group border-b border-[var(--color-border)]/50 last:border-0 relative">
                       {/* Highlight bar on hover */}
                       <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-transparent group-hover:bg-[var(--color-accent)] transition-colors" />
                       
@@ -539,6 +561,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
                         </div>
                       )}
                     </div>
+                    </AnimatedListItem>
                   );
                 })}
               </div>
@@ -554,7 +577,7 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
               </Button>
             </div>
           )}
-        </div>
+        </AnimatedListContainer>
       )}
     </div>
   );

@@ -8,8 +8,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { MEMORY_CHANGED_EVENT, type MemoryChangedDetail } from '@/lib/agentUiEvents';
 import { getMemories, deleteMemory, type MemoryRecord, type MemoryRelation } from '@/services/api';
 import type { WindowConfig } from '@/types';
@@ -478,9 +479,10 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
   }, [freshness]);
 
   const handleRefresh = async () => {
-    setLoading(true);
+    const silent = memories.length > 0;
+    if (!silent) setLoading(true);
     await freshness.refreshNow();
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const switchView = (nextView: ViewMode) => {
@@ -492,6 +494,9 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
   const searchedMemories = searchQuery
     ? memories.filter(m => m.memory.toLowerCase().includes(searchQuery.toLowerCase()))
     : memories;
+
+  const animatedMemories = useAnimatedList(searchedMemories, (memory) => memory.id);
+  const showBlockingLoader = loading && memories.length === 0;
 
   // Graph node selection is local to the Connections sidebar and never affects List view.
   const nodeMemories = selectedNode
@@ -575,7 +580,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
       )}
 
       {/* Content */}
-      {loading ? (
+      {showBlockingLoader ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
         </div>
@@ -669,10 +674,11 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
             </div>
           ) : (
             <div className="divide-y divide-[var(--color-border)]/50">
-              {searchedMemories.map(memory => {
+              {animatedMemories.map(({ key, item: memory, phase }) => {
                 const isExpanded = expandedId === memory.id;
                 return (
-                  <div key={memory.id}>
+                  <AnimatedListItem key={key} phase={phase}>
+                  <div>
                     <button
                       className="w-full flex items-start gap-2.5 px-3 py-2.5 hover:bg-[var(--color-accent-muted)] transition-colors text-left"
                       onClick={() => setExpandedId(isExpanded ? null : memory.id)}
@@ -721,6 +727,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
                       </div>
                     )}
                   </div>
+                  </AnimatedListItem>
                 );
               })}
             </div>

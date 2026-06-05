@@ -45,7 +45,8 @@ import type { FileEntry, DriveFileEntry } from '@/services/api';
 import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
 import { useFreshness } from '@/hooks/useFreshness';
-import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
+import { FreshnessText, InfoHint, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
 import { isWallpaperWorkspacePath } from '@/lib/wallpapers';
@@ -527,6 +528,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         return sortDirection === 'asc' ? value : -value;
       });
   }, [rawEntries, showHidden, sortDirection, sortKey]);
+
+  const animatedEntries = useAnimatedList(entries, (entry) => entry.name);
+  const animatedDriveFiles = useAnimatedList(driveFiles.files, (file) => file.id);
 
   const toggleSort = useCallback((key: SortKey) => {
     setSortKey((current) => {
@@ -1350,7 +1354,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                         This folder is empty
                       </div>
                     )}
-                    {entries.map((entry) => {
+                    {animatedEntries.map(({ key, item: entry, phase }) => {
                       const isSelected = selectedName === entry.name;
                       const isRenaming = renamingName === entry.name;
                       const Icon = getFileIcon(entry);
@@ -1362,8 +1366,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                         : undefined;
 
                       return (
+                        <AnimatedListItem key={key} phase={phase}>
                         <div
-                          key={entry.name}
                           data-file-entry
                           className={`${FILE_ROW_CLASS} ${
                             isSelected
@@ -1424,6 +1428,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                             </>
                           )}
                         </div>
+                        </AnimatedListItem>
                       );
                     })}
 
@@ -1479,13 +1484,13 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                     No files in this folder
                   </div>
                 ) : (
-                  driveFiles.files.map((file) => {
+                  animatedDriveFiles.map(({ key, item: file, phase }) => {
                     const isSelected = driveFiles.selectedFile?.id === file.id;
                     const Icon = file.type === 'directory' ? Folder
                       : getFileIcon({ name: file.name, type: 'file', size: file.size, modified: file.modified || '' });
                     return (
+                      <AnimatedListItem key={key} phase={phase}>
                       <div
-                        key={file.id}
                         className={`${FILE_ROW_CLASS} ${
                           isSelected
                             ? 'bg-[var(--color-accent)] text-white'
@@ -1534,6 +1539,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
                           </>
                         )}
                       </div>
+                      </AnimatedListItem>
                     );
                   })
                 )}

@@ -290,6 +290,11 @@ export function useAppDiscovery() {
   const [userPlan, setUserPlan] = useState<string>('free');
 
   const [loading, setLoading] = useState(true);
+  const hasDataRef = useRef(false);
+  hasDataRef.current = registryApps.length > 0
+    || curatedApps.length > 0
+    || installedApps.length > 0
+    || localApps.length > 0;
 
   const fetchInstalled = useCallback(async () => {
     try {
@@ -428,9 +433,11 @@ export function useAppDiscovery() {
     })
   : [];
 
-  const handleRefresh = () => {
-    setLoading(true);
-    return Promise.all([fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected()]).finally(() => setLoading(false));
+  const handleRefresh = (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent) || hasDataRef.current;
+    if (!silent) setLoading(true);
+    return Promise.all([fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected()])
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
   return {

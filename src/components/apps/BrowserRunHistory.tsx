@@ -9,6 +9,8 @@
  */
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { AnimatedListItem } from '@/components/ui';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import {
   Clock, AlertTriangle, CheckCircle2, Loader2, RefreshCw, Search, X, ChevronDown, ChevronRight,
   StopCircle, ExternalLink,
@@ -84,15 +86,18 @@ export function BrowserRunHistory() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef(0);
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
 
   const refresh = useCallback(async () => {
     if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop;
-    setLoading(true);
+    const silent = runsRef.current.length > 0;
+    if (!silent) setLoading(true);
     setError(null);
     const res = await listBrowserRuns(HISTORY_LIMIT);
     if (res.success && res.data) hydrateBrowserRuns(res.data.runs);
     else setError((!res.success && res.error) || 'Failed to load history');
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [hydrateBrowserRuns]);
 
   useEffect(() => {
@@ -205,6 +210,13 @@ export function BrowserRunHistory() {
     return out;
   }, [filtered]);
 
+  const animatedRuns = useAnimatedList(filtered, (run) => run.run_id);
+  const runPhaseMap = useMemo(
+    () => new Map(animatedRuns.map((entry) => [entry.key, entry.phase])),
+    [animatedRuns],
+  );
+  const showBlockingLoader = loading && runs.length === 0;
+
   if (tab === 'shots') {
     return (
       <div className="w-full h-full flex flex-col">
@@ -276,10 +288,10 @@ export function BrowserRunHistory() {
 
       {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
 
-      {!loading && runs.length === 0 && !error && (
+      {!showBlockingLoader && runs.length === 0 && !error && (
         <p className="text-xs text-[var(--color-text-subtle)] opacity-50">No browser runs yet.</p>
       )}
-      {!loading && runs.length > 0 && filtered.length === 0 && (
+      {!showBlockingLoader && runs.length > 0 && filtered.length === 0 && (
         <p className="text-xs text-[var(--color-text-subtle)] opacity-50">
           No runs match{query ? ` "${query}"` : ''}{statusFilter !== 'all' ? ` (${statusFilter})` : ''}.
         </p>
@@ -301,7 +313,8 @@ export function BrowserRunHistory() {
                 const isStopping = !!stoppingIds[r.run_id];
                 const isOpening = !!openingIds[r.run_id];
                 return (
-                  <div key={r.run_id} className="rounded hover:bg-white/[0.03] transition-colors group/row">
+                  <AnimatedListItem key={r.run_id} phase={runPhaseMap.get(r.run_id) ?? 'stable'}>
+                  <div className="rounded hover:bg-white/[0.03] transition-colors group/row">
                     <div className="w-full flex items-start gap-1 px-2 py-2">
                       <button
                         type="button"
@@ -371,6 +384,7 @@ export function BrowserRunHistory() {
                       </div>
                     )}
                   </div>
+                  </AnimatedListItem>
                 );
               })}
             </div>

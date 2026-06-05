@@ -29,6 +29,9 @@ function toErrorMessage(error: unknown): string {
 /**
  * Keeps async views current without duplicating interval/focus/online wiring.
  * Concurrent refreshes are coalesced so slow requests cannot pile up.
+ *
+ * Refresh callbacks used for polling should keep existing data visible (pass `{ silent: true }`
+ * internally) and rely on `isRefreshing` for subtle toolbar indicators.
  */
 export function useFreshness(
   refresh: () => Promise<void> | void,

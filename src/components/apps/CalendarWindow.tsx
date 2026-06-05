@@ -19,8 +19,9 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, ConfirmDialog, FreshnessText, Input, Label, RefreshButton, Select, StatusBanner } from '@/components/ui';
+import { Button, ConfirmDialog, FreshnessText, Input, Label, RefreshButton, Select, StatusBanner, AnimatedListItem, AnimatedListContainer } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { useDelayUnmount } from '@/hooks/useDelayUnmount';
 import {
   listAgentCalendarEvents,
@@ -274,12 +275,19 @@ interface CalendarWindowProps {
   config: WindowConfig;
 }
 
+function eventListKey(event: AgentCalendarEvent): string {
+  return `${event.id}:${event.start}`;
+}
+
 export function CalendarWindow(props: CalendarWindowProps) {
   void props;
   const isMobile = useIsMobile();
   const [events, setEvents] = useState<AgentCalendarEvent[]>([]);
   const rawEventsRef = useRef<AgentCalendarEvent[]>([]); // unexpanded originals
   const [loading, setLoading] = useState(true);
+  const [monthPending, setMonthPending] = useState(false);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
   const [error, setError] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -341,12 +349,21 @@ export function CalendarWindow(props: CalendarWindowProps) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setLoading(true);
+      if (eventsRef.current.length === 0) {
+        setLoading(true);
+      } else {
+        setMonthPending(true);
+      }
       await refreshNow({ force: true });
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setMonthPending(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [refreshNow, currentMonth]);
+
+  const showBlockingLoader = loading && events.length === 0;
 
   // Live refresh when calendar data changes (scheduled task completion, local edits).
   useEffect(() => {
@@ -645,12 +662,12 @@ export function CalendarWindow(props: CalendarWindowProps) {
         </StatusBanner>
       )}
 
-      {loading ? (
+      {showBlockingLoader ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
         </div>
       ) : view === 'month' ? (
-        <div className={`flex ${isMobile ? 'flex-col' : ''} flex-1 overflow-hidden`}>
+        <AnimatedListContainer pending={monthPending} className={`flex ${isMobile ? 'flex-col' : ''} flex-1 overflow-hidden`}>
           {/* Month grid */}
           <div className={`calendar-month-pane flex-1 flex flex-col min-w-0 min-h-0 ${isMobile ? 'max-h-[60%]' : ''} overflow-y-auto`}>
             <MonthGrid
@@ -672,9 +689,10 @@ export function CalendarWindow(props: CalendarWindowProps) {
             deleting={deleting}
             completing={completing}
           />
-        </div>
+        </AnimatedListContainer>
       ) : (
         /* List view */
+        <AnimatedListContainer pending={monthPending} className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <EventListView
           events={events}
           onEdit={handleEditEvent}
@@ -683,6 +701,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
           deleting={deleting}
           completing={completing}
         />
+        </AnimatedListContainer>
       )}
 
       {/* Create/Edit Dialog */}
@@ -887,6 +906,7 @@ function DayEventsSidebar({
   deleting: string | null;
   completing: string | null;
 }) {
+  const animatedEvents = useAnimatedList(events, eventListKey);
   const isToday = isSameDay(selectedDate, new Date());
   const eventLabel = events.length === 1 ? '1 event' : `${events.length} events`;
 
@@ -928,17 +948,18 @@ function DayEventsSidebar({
             </p>
           </div>
         ) : (
-          events.map((event) => (
-            <DayEventCard
-              key={`${event.id}:${event.start}`}
-              event={event}
-              isMobile={isMobile}
-              onEdit={() => onEdit(event)}
-              onDelete={() => onDelete(event)}
-              onToggleComplete={() => onToggleComplete(event)}
-              isDeleting={deleting === eventActionKey(event)}
-              isCompleting={completing === eventActionKey(event)}
-            />
+          animatedEvents.map(({ key, item: event, phase }) => (
+            <AnimatedListItem key={key} phase={phase}>
+              <DayEventCard
+                event={event}
+                isMobile={isMobile}
+                onEdit={() => onEdit(event)}
+                onDelete={() => onDelete(event)}
+                onToggleComplete={() => onToggleComplete(event)}
+                isDeleting={deleting === eventActionKey(event)}
+                isCompleting={completing === eventActionKey(event)}
+              />
+            </AnimatedListItem>
           ))
         )}
       </div>
@@ -1061,6 +1082,100 @@ function DayEventCard({
 
 // ── Event List View ──
 
+// ── Event List View ──
+
+function EventDayRows({
+  dayEvents,
+  onEdit,
+  onDelete,
+  onToggleComplete,
+  deleting,
+  completing,
+}: {
+  dayEvents: AgentCalendarEvent[];
+  onEdit: (e: AgentCalendarEvent) => void;
+  onDelete: (e: AgentCalendarEvent) => void;
+  onToggleComplete: (e: AgentCalendarEvent) => void;
+  deleting: string | null;
+  completing: string | null;
+}) {
+  const animatedEvents = useAnimatedList(dayEvents, eventListKey);
+  return (
+    <>
+      {animatedEvents.map(({ key, item: event, phase }) => {
+        const isCompleted = isOccurrenceCompleted(event);
+        return (
+          <AnimatedListItem key={key} phase={phase}>
+            <div className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--color-accent-muted)] transition-colors group">
+              <div
+                className={cn('calendar-event-accent-rail', getEventToneClass(event, isCompleted))}
+              />
+              <div className="flex-1 min-w-0">
+                <div className={cn('text-sm font-medium truncate flex items-center gap-1.5', isCompleted && 'text-[var(--color-text-muted)]')}>
+                  {isCompleted && <Check className="w-3.5 h-3.5 shrink-0" />}
+                  <span className={cn(isCompleted && 'line-through')}>{event.summary}</span>
+                </div>
+                <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-2 flex-wrap">
+                  <span className="tabular-nums">{formatEventSidebarTime(event)}</span>
+                  {formatRecurrenceLabel(event.recurrence) && (
+                    <span className="flex items-center gap-0.5">
+                      <Repeat className="w-2.5 h-2.5" />
+                      {formatRecurrenceLabel(event.recurrence)}
+                    </span>
+                  )}
+                  {(() => {
+                    const source = formatSource(event);
+                    if (!source) return null;
+                    const { label, Icon } = source;
+                    return (
+                      <span className="flex items-center gap-0.5 opacity-70">
+                        <Icon className="w-2.5 h-2.5" /> {label}
+                      </span>
+                    );
+                  })()}
+                  {isCompleted && (
+                    <span className="flex items-center gap-0.5 text-[var(--color-text-muted)]">
+                      <Check className="w-2.5 h-2.5" /> Done
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onToggleComplete(event)}
+                  disabled={completing === eventActionKey(event) || deleting === eventActionKey(event)}
+                  className={cn(isCompleted && 'text-[var(--color-accent)]')}
+                  aria-label={isCompleted ? 'Mark as not done' : 'Mark as done'}
+                >
+                  {completing === eventActionKey(event)
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Check className="w-3.5 h-3.5" />}
+                </Button>
+                <Button variant="ghost" size="icon-sm" onClick={() => onEdit(event)}>
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onDelete(event)}
+                  disabled={deleting === eventActionKey(event)}
+                  className="text-red-500 hover:text-red-600"
+                >
+                  {deleting === eventActionKey(event)
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Trash2 className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
+            </div>
+          </AnimatedListItem>
+        );
+      })}
+    </>
+  );
+}
+
 function EventListView({
   events,
   onEdit,
@@ -1109,77 +1224,14 @@ function EventListView({
                 {dateLabel}
               </div>
               <div className="divide-y divide-[var(--color-border)]/50">
-                {dayEvents.map((event) => {
-                  const isCompleted = isOccurrenceCompleted(event);
-                  return (
-                  <div
-                    key={`${event.id}:${event.start}`}
-                    className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--color-accent-muted)] transition-colors group"
-                  >
-                    <div
-                      className={cn('calendar-event-accent-rail', getEventToneClass(event, isCompleted))}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className={cn('text-sm font-medium truncate flex items-center gap-1.5', isCompleted && 'text-[var(--color-text-muted)]')}>
-                        {isCompleted && <Check className="w-3.5 h-3.5 shrink-0" />}
-                        <span className={cn(isCompleted && 'line-through')}>{event.summary}</span>
-                      </div>
-                      <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-2 flex-wrap">
-                        <span className="tabular-nums">{formatEventSidebarTime(event)}</span>
-                        {formatRecurrenceLabel(event.recurrence) && (
-                          <span className="flex items-center gap-0.5">
-                            <Repeat className="w-2.5 h-2.5" />
-                            {formatRecurrenceLabel(event.recurrence)}
-                          </span>
-                        )}
-                        {(() => {
-                          const source = formatSource(event);
-                          if (!source) return null;
-                          const { label, Icon } = source;
-                          return (
-                            <span className="flex items-center gap-0.5 opacity-70">
-                              <Icon className="w-2.5 h-2.5" /> {label}
-                            </span>
-                          );
-                        })()}
-                        {isCompleted && (
-                          <span className="flex items-center gap-0.5 text-[var(--color-text-muted)]">
-                            <Check className="w-2.5 h-2.5" /> Done
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => onToggleComplete(event)}
-                        disabled={completing === eventActionKey(event) || deleting === eventActionKey(event)}
-                        className={cn(isCompleted && 'text-[var(--color-accent)]')}
-                        aria-label={isCompleted ? 'Mark as not done' : 'Mark as done'}
-                      >
-                        {completing === eventActionKey(event)
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          : <Check className="w-3.5 h-3.5" />}
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" onClick={() => onEdit(event)}>
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => onDelete(event)}
-                        disabled={deleting === eventActionKey(event)}
-                        className="text-red-500 hover:text-red-600"
-                      >
-                        {deleting === eventActionKey(event)
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          : <Trash2 className="w-3.5 h-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
-                  );
-                })}
+                <EventDayRows
+                  dayEvents={dayEvents}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onToggleComplete={onToggleComplete}
+                  deleting={deleting}
+                  completing={completing}
+                />
               </div>
             </div>
           ))}

@@ -25,8 +25,9 @@ import {
   type AutonomyRiskLevel,
 } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
-import { FreshnessText, RefreshButton, Select, StatusBanner, InfoHint } from '@/components/ui';
+import { FreshnessText, RefreshButton, Select, StatusBanner, InfoHint, AnimatedListItem } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { PanelError } from './AppShared';
 
 type Tab = 'queue' | 'list' | 'settings';
@@ -215,6 +216,8 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
 function ApprovalQueueTab({ queue, onRefresh }: { queue: ApprovalQueueEntry[]; onRefresh: () => void }) {
   const pending = queue.filter(r => r.status === 'pending');
   const resolved = queue.filter(r => r.status !== 'pending').slice(0, 30);
+  const animatedPending = useAnimatedList(pending, (req) => req.id);
+  const animatedResolved = useAnimatedList(resolved, (req) => req.id);
 
   if (pending.length === 0 && resolved.length === 0) {
     return (
@@ -230,16 +233,20 @@ function ApprovalQueueTab({ queue, onRefresh }: { queue: ApprovalQueueEntry[]; o
       {pending.length > 0 && (
         <>
           <h3 className="text-xs font-medium text-[var(--color-text-muted)] px-1">Pending</h3>
-          {pending.map(req => (
-            <ApprovalCard key={req.id} request={req} onRefresh={onRefresh} />
+          {animatedPending.map(({ key, item: req, phase }) => (
+            <AnimatedListItem key={key} phase={phase}>
+              <ApprovalCard request={req} onRefresh={onRefresh} />
+            </AnimatedListItem>
           ))}
         </>
       )}
       {resolved.length > 0 && (
         <>
           <h3 className="text-xs font-medium text-[var(--color-text-muted)] px-1 mt-3">History</h3>
-          {resolved.map(req => (
-            <ApprovalCard key={req.id} request={req} onRefresh={onRefresh} />
+          {animatedResolved.map(({ key, item: req, phase }) => (
+            <AnimatedListItem key={key} phase={phase}>
+              <ApprovalCard request={req} onRefresh={onRefresh} />
+            </AnimatedListItem>
           ))}
         </>
       )}
@@ -395,6 +402,7 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
   const [addStatus, setAddStatus] = useState<'trusted' | 'blocked'>('trusted');
 
   const filtered = filter === 'all' ? entries : entries.filter(e => e.platform === filter);
+  const animatedFiltered = useAnimatedList(filtered, (entry) => entry.id);
 
   const handleAdd = async () => {
     if (!addSenderId) return;
@@ -486,8 +494,9 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
           No people yet
         </div>
       ) : (
-        filtered.map(entry => (
-          <div key={entry.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5">
+        animatedFiltered.map(({ key, item: entry, phase }) => (
+          <AnimatedListItem key={key} phase={phase}>
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5">
             <PlatformBadge platform={entry.platform} />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium truncate">{entry.senderName || entry.senderId}</div>
@@ -508,6 +517,7 @@ function AccessListTab({ entries, onRefresh }: { entries: AccessListEntry[]; onR
               <Trash2 size={12} />
             </button>
           </div>
+          </AnimatedListItem>
         ))
       )}
     </div>

@@ -47,8 +47,9 @@ import { EmailSetupPane } from './EmailSetupPane';
 import { EmailHtmlBody } from './email/EmailHtmlBody';
 import { formatRelativeTimeShort } from '@/lib/format';
 import { getEmailAvatarClass, getEmailInitial } from '@/services/emailUi';
-import { FreshnessText, RefreshButton, StatusBanner } from '@/components/ui';
+import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem, AnimatedListContainer } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 
 function formatFullDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString('en-US', {
@@ -138,7 +139,10 @@ export function EmailWindow(props: { config: WindowConfig }) {
   const [items, setItems] = useState<MailboxItem[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  const [listPending, setListPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -182,9 +186,18 @@ export function EmailWindow(props: { config: WindowConfig }) {
     setSelection(next);
   }, [allVisibleSelected, visibleThreadIds]);
 
-  const loadMailbox = useCallback(async (reset = true) => {
-    if (reset) setListLoading(true);
-    else setLoadingMore(true);
+  const loadMailbox = useCallback(async (reset = true, opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    const hasItems = itemsRef.current.length > 0;
+    if (reset) {
+      if (silent || hasItems) {
+        if (!silent && hasItems) setListPending(true);
+      } else {
+        setListLoading(true);
+      }
+    } else {
+      setLoadingMore(true);
+    }
 
     const result = await listMailbox({
       folder,
@@ -202,6 +215,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
     }
 
     setListLoading(false);
+    setListPending(false);
     setLoadingMore(false);
   }, [folder, nextPageToken, searchQuery]);
 
@@ -226,7 +240,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
   }, []);
 
   const mailboxFreshness = useFreshness(
-    () => loadMailbox(true),
+    () => loadMailbox(true, { silent: true }),
     {
       enabled: !loading && !notConfigured && !initError,
       intervalMs: 30_000,
@@ -243,8 +257,8 @@ export function EmailWindow(props: { config: WindowConfig }) {
 
   useEffect(() => {
     if (loading || notConfigured || initError) return;
-    void loadMailbox(true);
-  }, [loading, notConfigured, initError, searchQuery, loadMailbox]);
+    void loadMailbox(true, { silent: itemsRef.current.length > 0 });
+  }, [loading, notConfigured, initError, searchQuery, folder, loadMailbox]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), 250);
@@ -331,7 +345,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
       setItems(previousItems);
     }
 
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
     setPendingAction(null);
   }, [items, selectedIds, selectedThread, loadMailbox]);
 
@@ -376,14 +390,14 @@ export function EmailWindow(props: { config: WindowConfig }) {
       setItems(previousItems);
     }
 
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
     setPendingAction(null);
   }, [items, selectedIds, selectedThread, loadMailbox]);
 
   const handleThreadDelete = useCallback(async (threadId: string) => {
     await deleteThread(threadId);
     setSelectedThread(null);
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
   }, [loadMailbox]);
 
   const handleDraftSend = useCallback(async (draftId: string) => {
@@ -392,7 +406,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
     const result = await sendDraft(draftId);
     if (!result.success && result.error) setActionError(result.error);
     setSelectedDraft(null);
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
     setPendingDraftAction(null);
   }, [loadMailbox]);
 
@@ -402,7 +416,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
     const result = await deleteDraft(draftId);
     if (!result.success && result.error) setActionError(result.error);
     setSelectedDraft(null);
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
     setPendingDraftAction(null);
   }, [loadMailbox]);
 
@@ -411,7 +425,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
       ? { addLabels: ['read'], removeLabels: ['UNREAD', 'unread'] }
       : { addLabels: ['unread'], removeLabels: ['read'] });
     if (!result.success && result.error) setActionError(result.error);
-    await loadMailbox(true);
+    await loadMailbox(true, { silent: true });
     if (selectedThread) {
       const detail = await getThread(selectedThread.threadId);
       if (detail.success && detail.data) setSelectedThread(detail.data);
@@ -429,6 +443,9 @@ export function EmailWindow(props: { config: WindowConfig }) {
       setActionError(attachment.error);
     }
   }, []);
+
+  const animatedItems = useAnimatedList(items, getMailboxItemId);
+  const showBlockingLoader = listLoading && items.length === 0;
 
   if (loading) {
     return (
@@ -623,18 +640,18 @@ export function EmailWindow(props: { config: WindowConfig }) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {listLoading ? (
+          {showBlockingLoader ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 size={20} className="animate-spin text-[var(--color-text-muted)]" />
             </div>
-          ) : items.length === 0 ? (
+          ) : items.length === 0 && !listPending ? (
             <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-muted)] gap-2">
               <Mail size={24} className="opacity-40" />
               <p className="text-xs">{searchQuery ? 'No matching results' : 'No mail yet'}</p>
             </div>
           ) : (
-            <>
-              {items.map((item) => {
+            <AnimatedListContainer pending={listPending}>
+              {animatedItems.map(({ key, item, phase }) => {
                 if (isDraftItem(item)) {
                   const id = getMailboxItemId(item);
                   const title = item.subject || '(no subject)';
@@ -647,29 +664,30 @@ export function EmailWindow(props: { config: WindowConfig }) {
                         ? 'Sending'
                         : 'Draft';
                   return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => { setSelectedThread(null); setSelectedDraft(item); }}
-                      className="block w-full text-left border-b border-[var(--color-border)] px-3 py-2.5 hover:bg-white/5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[var(--color-text-muted)] shrink-0">
-                          <Mail size={14} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-medium text-[var(--color-text)] truncate flex-1">{title}</span>
-                            <span className={`text-[10px] shrink-0 ${item.sendStatus === 'failed' ? 'text-red-300' : 'text-[var(--color-text-muted)]'}`}>
-                              {status}
-                            </span>
+                    <AnimatedListItem key={key} phase={phase}>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedThread(null); setSelectedDraft(item); }}
+                        className="block w-full text-left border-b border-[var(--color-border)] px-3 py-2.5 hover:bg-white/5"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[var(--color-text-muted)] shrink-0">
+                            <Mail size={14} />
                           </div>
-                          <p className="text-[10px] text-[var(--color-text-muted)] truncate">To: {recipients}</p>
-                          {item.preview && <p className="text-[10px] text-[var(--color-text-muted)] truncate">{item.preview}</p>}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-medium text-[var(--color-text)] truncate flex-1">{title}</span>
+                              <span className={`text-[10px] shrink-0 ${item.sendStatus === 'failed' ? 'text-red-300' : 'text-[var(--color-text-muted)]'}`}>
+                                {status}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[var(--color-text-muted)] truncate">To: {recipients}</p>
+                            {item.preview && <p className="text-[10px] text-[var(--color-text-muted)] truncate">{item.preview}</p>}
+                          </div>
+                          {(item.attachments || []).length > 0 && <Paperclip size={11} className="text-[var(--color-text-muted)] shrink-0" />}
                         </div>
-                        {(item.attachments || []).length > 0 && <Paperclip size={11} className="text-[var(--color-text-muted)] shrink-0" />}
-                      </div>
-                    </button>
+                      </button>
+                    </AnimatedListItem>
                   );
                 }
                 if (!isThreadItem(item)) return null;
@@ -681,60 +699,61 @@ export function EmailWindow(props: { config: WindowConfig }) {
                 const hasAttachment = (item.attachments || []).length > 0;
 
                 return (
-                  <div
-                    key={id}
-                    className={`relative border-b border-[var(--color-border)] ${
-                      unread
-                        ? 'bg-[var(--color-accent)]/5 hover:bg-[var(--color-accent)]/10'
-                        : 'hover:bg-white/5'
-                    }`}
-                  >
-                    {unread && (
-                      <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-[var(--color-accent)]" />
-                    )}
-                    <div className="flex items-start gap-2.5 px-3 py-2.5">
-                      <div className="pt-1">
-                        <Checkbox
-                          checked={checked}
-                          onChange={(next) => setSelection((current) => ({ ...current, [id]: next }))}
-                          ariaLabel={`Select thread ${title}`}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void openThread(item)}
-                        className="flex-1 text-left min-w-0"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="relative shrink-0">
-                            <div className={`w-8 h-8 rounded-full ${getEmailAvatarClass(sender)} flex items-center justify-center text-white text-[11px] font-semibold`}>
-                              {getEmailInitial(sender)}
-                            </div>
-                            {unread && (
-                              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-surface)]" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                              <span className={`text-xs truncate flex-1 ${unread ? 'font-semibold text-[var(--color-text)]' : 'font-medium text-[var(--color-text)]/90'}`}>
-                                {sender}
-                              </span>
-                              <span className={`text-[10px] shrink-0 ${unread ? 'text-[var(--color-accent)] font-medium' : 'text-[var(--color-text-muted)]'}`}>
-                                {formatRelativeTimeShort(item.updatedAt)}
-                              </span>
-                            </div>
-                            <p className={`text-[11px] truncate ${unread ? 'font-medium text-[var(--color-text)]' : 'text-[var(--color-text)]/80'}`}>{title}</p>
-                            {item.preview && (
-                              <p className="text-[10px] text-[var(--color-text-muted)] truncate">
-                                {item.preview}
-                              </p>
-                            )}
-                          </div>
-                          {hasAttachment && <Paperclip size={11} className="text-[var(--color-text-muted)] shrink-0 mt-1" />}
+                  <AnimatedListItem key={key} phase={phase}>
+                    <div
+                      className={`relative border-b border-[var(--color-border)] ${
+                        unread
+                          ? 'bg-[var(--color-accent)]/5 hover:bg-[var(--color-accent)]/10'
+                          : 'hover:bg-white/5'
+                      }`}
+                    >
+                      {unread && (
+                        <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-[var(--color-accent)]" />
+                      )}
+                      <div className="flex items-start gap-2.5 px-3 py-2.5">
+                        <div className="pt-1">
+                          <Checkbox
+                            checked={checked}
+                            onChange={(next) => setSelection((current) => ({ ...current, [id]: next }))}
+                            ariaLabel={`Select thread ${title}`}
+                          />
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => void openThread(item)}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="relative shrink-0">
+                              <div className={`w-8 h-8 rounded-full ${getEmailAvatarClass(sender)} flex items-center justify-center text-white text-[11px] font-semibold`}>
+                                {getEmailInitial(sender)}
+                              </div>
+                              {unread && (
+                                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-surface)]" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1">
+                                <span className={`text-xs truncate flex-1 ${unread ? 'font-semibold text-[var(--color-text)]' : 'font-medium text-[var(--color-text)]/90'}`}>
+                                  {sender}
+                                </span>
+                                <span className={`text-[10px] shrink-0 ${unread ? 'text-[var(--color-accent)] font-medium' : 'text-[var(--color-text-muted)]'}`}>
+                                  {formatRelativeTimeShort(item.updatedAt)}
+                                </span>
+                              </div>
+                              <p className={`text-[11px] truncate ${unread ? 'font-medium text-[var(--color-text)]' : 'text-[var(--color-text)]/80'}`}>{title}</p>
+                              {item.preview && (
+                                <p className="text-[10px] text-[var(--color-text-muted)] truncate">
+                                  {item.preview}
+                                </p>
+                              )}
+                            </div>
+                            {hasAttachment && <Paperclip size={11} className="text-[var(--color-text-muted)] shrink-0 mt-1" />}
+                          </div>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </AnimatedListItem>
                 );
               })}
 
@@ -751,7 +770,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
                   </button>
                 </div>
               )}
-            </>
+            </AnimatedListContainer>
           )}
         </div>
       </div>

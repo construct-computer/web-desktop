@@ -814,6 +814,10 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [saving, setSaving] = useState(false);
   const [conversionFrames, setConversionFrames] = useState<ConversionFrame[] | null>(null);
 
+  const hasDocumentContent = Boolean(
+    blobUrl || docxHtml || xlsxSheets || pptxSlides || markdownText || htmlContent || rawText || conversionFrames,
+  );
+  const showBlockingLoader = loading && !hasDocumentContent;
   const hasRawToggle = fileHasRawToggle(fileName);
   const canEdit = (hasRawToggle || isTextMode) && !driveFileId && !!instanceId && !!filePath;
   const isDirtyDoc = editedText !== null && editedText !== rawText;
@@ -895,7 +899,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   }, [isTextMode, editorFile?.loading]);
 
   // ── Document loading (non-text files) ──
-  const loadFile = useCallback(async () => {
+  const loadFile = useCallback(async (opts?: { silent?: boolean }) => {
     if (isTextMode) return; // text files use editorStore
     if (!driveFileId && (!instanceId || !filePath)) {
       setError('No file path specified');
@@ -903,7 +907,18 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
       return;
     }
 
-    setLoading(true);
+    const hasContent = Boolean(
+      blobUrlRef.current
+      || docxHtml
+      || xlsxSheets
+      || pptxSlides
+      || markdownText
+      || htmlContent
+      || rawText
+      || conversionFrames,
+    );
+    const silent = Boolean(opts?.silent) || hasContent;
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
@@ -1030,9 +1045,9 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load document');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [isTextMode, instanceId, filePath, driveFileId, docType]);
+  }, [isTextMode, instanceId, filePath, driveFileId, docType, docxHtml, xlsxSheets, pptxSlides, markdownText, htmlContent, rawText, conversionFrames, blobUrl]);
 
   // Load document on mount
   useEffect(() => { if (!isTextMode) loadFile(); }, [loadFile, isTextMode]);
@@ -1048,7 +1063,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
         const blob = await response.blob();
         if (blob.size !== lastModRef.current) {
           lastModRef.current = blob.size;
-          loadFile();
+          loadFile({ silent: true });
         }
       } catch { /* ignore */ }
     }, 5000);
@@ -1059,9 +1074,9 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const reloadSignal = useDocViewerSignalStore(s => filePath ? s.reloadSignals[filePath] : 0);
   useEffect(() => {
     if (!isTextMode && reloadSignal && reloadSignal > 0) {
-      loadFile();
+      loadFile({ silent: hasDocumentContent });
     }
-  }, [reloadSignal, isTextMode, loadFile]);
+  }, [reloadSignal, isTextMode, loadFile, hasDocumentContent]);
 
   // ── Save handler for markdown/CSV raw editing ──
   const handleSaveDoc = useCallback(async () => {
@@ -1232,7 +1247,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
           </button>
         )}
-        <button onClick={loadFile} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Reload">
+        <button onClick={() => void loadFile({ silent: hasDocumentContent })} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Reload">
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
         <button onClick={handleDownload} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Download">
@@ -1242,7 +1257,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {loading && (
+        {showBlockingLoader && (
           <div className="w-full h-full flex items-center justify-center">
             <div className="flex items-center gap-3 text-[var(--color-text-muted)]">
               <RefreshCw className="w-5 h-5 animate-spin" />
@@ -1254,11 +1269,11 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
         {error && (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3">
             <div className="text-red-400 text-sm">{error}</div>
-            <button onClick={loadFile} className="px-3 py-1.5 text-xs rounded bg-white/10 hover:bg-white/20 text-[var(--color-text)]">Retry</button>
+            <button onClick={() => void loadFile()} className="px-3 py-1.5 text-xs rounded bg-white/10 hover:bg-white/20 text-[var(--color-text)]">Retry</button>
           </div>
         )}
 
-        {!loading && !error && (<>
+        {!showBlockingLoader && !error && (<>
           {/* Raw/source mode with Monaco editor */}
           {rawMode && rawText !== null ? (
             <div className="w-full h-full relative">

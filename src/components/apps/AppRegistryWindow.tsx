@@ -19,8 +19,9 @@ import { ComposioAuthPanel } from './ComposioAuthPanel';
 import {
   AppHeroHeader, HeaderIconButton, InfoCard, ToolsList
 } from './AppShared';
-import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
+import { FreshnessText, InfoHint, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
+import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hooks/useAppDiscovery';
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 
@@ -41,7 +42,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected
   } = useAppDiscovery();
   const freshness = useFreshness(async () => {
-    await handleRefresh();
+    await handleRefresh({ silent: true });
   }, {
     intervalMs: 60_000,
     staleMs: 90_000,
@@ -63,6 +64,12 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
       handleSearch(meta.search || meta.composioSlug || '');
     }
   }, [config.metadata, handleSearch, setCategory, setTab]);
+
+  const hasDiscoverContent = yourApps.length > 0
+    || registryList.length > 0
+    || suggestedByCategory.length > 0
+    || searchResults.length > 0;
+  const showBlockingLoader = loading && !hasDiscoverContent;
 
   const [error, setError] = useState<string | null>(null);
 
@@ -823,7 +830,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           </div>
         )}
 
-        {loading ? (
+        {showBlockingLoader ? (
           <div className="flex flex-col items-center justify-center py-16 text-[var(--color-text-muted)]">
             <Loader2 className="w-5 h-5 animate-spin mb-2" />
             <span className="text-[12px]">Loading apps...</span>
@@ -1024,11 +1031,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                           {label} <span className="opacity-50 font-semibold">{apps.length}</span>
                         </p>
                       )}
-                      <AppGrid>
-                        {apps.map(app => (
-                          <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
-                        ))}
-                      </AppGrid>
+                      <AnimatedAppGrid apps={apps} onClick={openDetail} />
                     </section>
                   ))}
                 </div>
@@ -1044,11 +1047,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             ) : visibleSearchResults.length === 0 ? (
               <EmptyState message={`No results for "${search}"`} />
             ) : (
-              <AppGrid>
-                {visibleSearchResults.map(app => (
-                  <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
-                ))}
-              </AppGrid>
+              <AnimatedAppGrid apps={visibleSearchResults} onClick={openDetail} />
             )}
           </div>
         ) : (
@@ -1056,21 +1055,13 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             {visibleRegistryList.length > 0 && (
               <section>
                 <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">Made for Construct</p>
-                <AppGrid>
-                  {visibleRegistryList.map(app => (
-                    <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
-                  ))}
-                </AppGrid>
+                <AnimatedAppGrid apps={visibleRegistryList} onClick={openDetail} />
               </section>
             )}
             {suggestedByCategory.map(([cat, apps]) => (
               <section key={cat}>
                 <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">{CATEGORY_LABELS[cat] || cat}</p>
-                <AppGrid>
-                  {apps.map(app => (
-                    <UnifiedAppCard key={app.id} app={app} onClick={() => openDetail(app)} />
-                  ))}
-                </AppGrid>
+                <AnimatedAppGrid apps={apps} onClick={openDetail} />
               </section>
             ))}
             {registryList.length === 0 && suggestedByCategory.length === 0 && (
@@ -1080,6 +1071,19 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         )}
       </div>
     </div>
+  );
+}
+
+function AnimatedAppGrid({ apps, onClick }: { apps: UnifiedApp[]; onClick: (app: UnifiedApp) => void }) {
+  const entries = useAnimatedList(apps, (app) => app.id);
+  return (
+    <AppGrid>
+      {entries.map(({ key, item, phase }) => (
+        <AnimatedListItem key={key} phase={phase}>
+          <UnifiedAppCard app={item} onClick={() => onClick(item)} />
+        </AnimatedListItem>
+      ))}
+    </AppGrid>
   );
 }
 

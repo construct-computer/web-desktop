@@ -1432,6 +1432,66 @@ html.dark .spotlight-glass-window-sync.is-open::before {
   }
 }
 
+/* Animated list items — silent refresh enter/leave */
+@keyframes list-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes list-item-leave {
+  from {
+    opacity: 1;
+    max-height: var(--list-item-height, 72px);
+  }
+
+  to {
+    opacity: 0;
+    max-height: 0;
+    margin: 0;
+    padding-block: 0;
+  }
+}
+
+.list-item-enter {
+  animation: list-item-enter 220ms ease-out;
+}
+
+.list-item-leave {
+  animation: list-item-leave 180ms ease-in forwards;
+  overflow: hidden;
+}
+
+.list-crossfade {
+  transition: opacity 150ms ease;
+}
+
+.list-crossfade-pending {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-item-enter,
+  .list-item-leave {
+    animation: none;
+  }
+
+  .list-crossfade {
+    transition: none;
+  }
+
+  .list-crossfade-pending {
+    opacity: 1;
+  }
+}
+
 /* Subagent shimmer — a subtle gradient sweep across running subagent labels */
 @keyframes shimmer {
   0% {
