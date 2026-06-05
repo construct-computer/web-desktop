@@ -1,3 +1,6 @@
+import { STORAGE_KEYS } from '@/lib/constants';
+import { customWallpaperPath, isCustomWallpaperId } from '@/lib/wallpapers';
+
 const DB_NAME = 'construct-wallpapers';
 const DB_VERSION = 1;
 const STORE_NAME = 'blobs';
@@ -97,6 +100,37 @@ async function listRecordsForUser(userId: string): Promise<CachedWallpaperRecord
   });
 }
 
+export function getSyncCachedBlobUrl(userId: string, workspacePath: string): string | null {
+  if (!userId) return null;
+  return objectUrlCache.get(cacheKey(userId, workspacePath)) ?? null;
+}
+
+/** Preload the active custom wallpaper from IndexedDB into memory before first paint. */
+export function warmWallpaperCacheFromSettings(): void {
+  void (async () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.settings);
+      if (!raw) return;
+
+      const wallpaperId = (JSON.parse(raw) as { state?: { wallpaperId?: string } })?.state?.wallpaperId ?? 'construct';
+      if (!isCustomWallpaperId(wallpaperId)) return;
+
+      const workspacePath = customWallpaperPath(wallpaperId);
+      if (!workspacePath) return;
+
+      const userId = localStorage.getItem(STORAGE_KEYS.userId) || '';
+      if (!userId) return;
+
+      const key = cacheKey(userId, workspacePath);
+      if (objectUrlCache.has(key)) return;
+
+      await getCachedBlobUrl(userId, workspacePath);
+    } catch {
+      // Ignore parse/storage errors — hook falls back to async resolution.
+    }
+  })();
+}
+
 export async function putCachedWallpaper(
   userId: string,
   workspacePath: string,
@@ -106,6 +140,7 @@ export async function putCachedWallpaper(
   const key = cacheKey(userId, workspacePath);
   revokeObjectUrl(key);
   await writeRecord({ key, blob, revision, updatedAt: Date.now() });
+  objectUrlCache.set(key, URL.createObjectURL(blob));
 }
 
 export async function getCachedBlobUrl(

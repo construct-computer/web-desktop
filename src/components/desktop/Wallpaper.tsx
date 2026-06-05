@@ -9,7 +9,7 @@ export function Wallpaper() {
     <div
       className="absolute inset-0"
       style={{
-        backgroundImage: `url(${url})`,
+        backgroundImage: url ? `url(${url})` : undefined,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         zIndex: 0,

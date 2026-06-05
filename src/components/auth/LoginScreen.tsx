@@ -115,7 +115,7 @@ export function LoginScreen() {
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `url(${wallpaperSrc})`,
+          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           filter: 'blur(16px) saturate(1.2)',

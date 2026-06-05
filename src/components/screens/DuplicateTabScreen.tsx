@@ -24,7 +24,7 @@ export function DuplicateTabScreen() {
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `url(${wallpaperSrc})`,
+          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}

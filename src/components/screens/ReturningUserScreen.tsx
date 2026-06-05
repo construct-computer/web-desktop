@@ -80,7 +80,7 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
       <div
         className="absolute inset-0 transition-all duration-700 ease-out"
         style={{
-          backgroundImage: `url(${wallpaperSrc})`,
+          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           filter: awake ? 'blur(18px) saturate(1.25)' : 'blur(0px) saturate(1)',
