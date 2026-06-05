@@ -153,7 +153,7 @@ function formatSource(event: AgentCalendarEvent): { label: string; Icon: typeof 
 
 // ── Types ──
 
-type RepeatType = 'none' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+type RepeatType = 'none' | 'minutely' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 type RepeatEndType = 'never' | 'after' | 'on';
 
 interface EventFormData {
@@ -210,7 +210,8 @@ function applyRecurrenceToForm(form: EventFormData, recurrence: string[] | strin
   const rule = rules[0].replace(/^RRULE:/i, '');
   const parts = Object.fromEntries(rule.split(';').map(p => { const [k, v] = p.split('='); return [k, v]; }));
   const freq = parts.FREQ?.toLowerCase();
-  if (freq === 'hourly') form.repeatType = 'hourly';
+  if (freq === 'minutely') form.repeatType = 'minutely';
+  else if (freq === 'hourly') form.repeatType = 'hourly';
   else if (freq === 'daily') form.repeatType = 'daily';
   else if (freq === 'monthly') form.repeatType = 'monthly';
   else if (freq === 'yearly') form.repeatType = 'yearly';
@@ -236,6 +237,7 @@ function buildRrule(form: EventFormData): string[] | undefined {
   if (form.repeatType === 'none') return undefined;
 
   const freqMap: Record<string, string> = {
+    minutely: 'MINUTELY',
     hourly: 'HOURLY',
     daily: 'DAILY',
     weekly: 'WEEKLY',
@@ -1495,6 +1497,7 @@ function EventDialog({
                       onChange={(v) => update({ repeatType: v as RepeatType })}
                       options={[
                         { value: 'none', label: 'Does not repeat' },
+                        { value: 'minutely', label: 'Every N minutes' },
                         { value: 'hourly', label: 'Hourly' },
                         { value: 'daily', label: 'Daily' },
                         { value: 'weekly', label: 'Weekly' },
@@ -1507,7 +1510,7 @@ function EventDialog({
 
                   {form.repeatType !== 'none' && (
                     <div className="space-y-3 pt-1 border-t border-[var(--color-border)]/60">
-                      {(form.repeatType === 'custom' || form.repeatInterval > 1) && (
+                      {(form.repeatType === 'minutely' || form.repeatType === 'custom' || form.repeatInterval > 1) && (
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs text-[var(--color-text-muted)]">Every</span>
                           <Input
@@ -1519,11 +1522,12 @@ function EventDialog({
                             className="w-16 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                           />
                           <span className="text-xs text-[var(--color-text-muted)]">
-                            {form.repeatType === 'daily' ? 'day(s)'
-                              : form.repeatType === 'monthly' ? 'month(s)'
-                                : form.repeatType === 'yearly' ? 'year(s)'
-                                  : form.repeatType === 'hourly' ? 'hour(s)'
-                                    : 'week(s)'}
+                            {form.repeatType === 'minutely' ? 'minute(s)'
+                              : form.repeatType === 'daily' ? 'day(s)'
+                                : form.repeatType === 'monthly' ? 'month(s)'
+                                  : form.repeatType === 'yearly' ? 'year(s)'
+                                    : form.repeatType === 'hourly' ? 'hour(s)'
+                                      : 'week(s)'}
                           </span>
                         </div>
                       )}

@@ -6,6 +6,7 @@ const RRULE_DAY_MAP: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 
 const SKIP_SAFETY_CAP = 50_000;
 const DEFAULT_RANGE_CAP = 500;
 const HOURLY_RANGE_CAP = 2000;
+const MINUTELY_RANGE_CAP = 200;
 
 /** Parse an RRULE string into its parts. */
 export function parseRrule(rrule: string): Record<string, string> {
@@ -33,6 +34,8 @@ export function parseUntilDate(until: string): Date {
 
 function advanceOccurrence(current: Date, freq: string, interval: number): Date {
   switch (freq) {
+    case 'MINUTELY':
+      return new Date(current.getTime() + interval * 60 * 1000);
     case 'HOURLY':
       return new Date(current.getTime() + interval * 60 * 60 * 1000);
     case 'DAILY': {
@@ -61,6 +64,10 @@ function advanceOccurrence(current: Date, freq: string, interval: number): Date 
 }
 
 function maxOccurrencesInRange(freq: string, rangeStart: Date, rangeEnd: Date): number {
+  if (freq === 'MINUTELY') {
+    const minutes = Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / 60_000) + 1;
+    return Math.min(MINUTELY_RANGE_CAP, Math.max(minutes, 60));
+  }
   if (freq === 'HOURLY') {
     const hours = Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / 3_600_000) + 1;
     return Math.min(HOURLY_RANGE_CAP, Math.max(hours, 24));

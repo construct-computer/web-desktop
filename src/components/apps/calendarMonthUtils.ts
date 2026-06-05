@@ -105,6 +105,11 @@ export function formatRecurrenceLabel(recurrence: string[] | null): string | nul
   if (!rule) return 'Recurring';
   const freqMatch = rule.match(/FREQ=([A-Z]+)/);
   const freq = freqMatch?.[1];
+  if (freq === 'MINUTELY') {
+    const interval = rule.match(/INTERVAL=(\d+)/)?.[1];
+    if (interval && interval !== '1') return `Every ${interval} minutes`;
+    return 'Every minute';
+  }
   if (freq && RECURRENCE_FREQ_LABELS[freq]) return RECURRENCE_FREQ_LABELS[freq];
   return 'Recurring';
 }
