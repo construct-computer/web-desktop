@@ -84,6 +84,10 @@ export function initAnalytics(): void {
 
     // ── Performance ──
     loaded: (ph) => {
+      ph.register({
+        app_version: import.meta.env.VITE_APP_VERSION || 'unknown',
+        environment: import.meta.env.MODE,
+      });
       if (import.meta.env.DEV) {
         ph.debug();
       }

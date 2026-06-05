@@ -9,10 +9,34 @@ import {
   IS_DEV,
 } from '@/lib/config';
 import { log } from '@/lib/logger';
+import { reportWsDisconnect, reportWsReconnect } from '@/lib/observability';
 
 const browserLog = log('BrowserWS');
 const terminalLog = log('TerminalWS');
 const agentLog = log('AgentWS');
+
+type WsClientKind = 'agent' | 'browser' | 'terminal';
+
+function logWsDisconnect(client: WsClientKind, code?: number, reason?: string): void {
+  reportWsDisconnect({ client, code, reason });
+}
+
+function scheduleWsReconnect(
+  client: WsClientKind,
+  reconnectAttempts: number,
+  onFire: () => void,
+): { delayMs: number; attempt: number; timeout: ReturnType<typeof setTimeout> } {
+  const delayMs = Math.min(
+    WS_RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts),
+    WS_RECONNECT_MAX_MS,
+  ) + Math.random() * WS_RECONNECT_JITTER_MS;
+  const attempt = reconnectAttempts + 1;
+  const logFn = client === 'agent' ? agentLog : client === 'terminal' ? terminalLog : browserLog;
+  logFn.warn(`Reconnecting in ${Math.round(delayMs)}ms (attempt ${attempt})`);
+  reportWsReconnect({ client, attempt, delayMs: Math.round(delayMs) });
+  const timeout = setTimeout(onFire, delayMs);
+  return { delayMs, attempt, timeout };
+}
 
 export interface AgentFileAttachment {
   type: string;
@@ -127,9 +151,10 @@ class BrowserWSClient {
         }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         browserLog.info('Disconnected');
         this.connectionHandler?.(false);
+        logWsDisconnect('browser', event.code, event.reason);
         this.scheduleReconnect();
       };
 
@@ -175,14 +200,12 @@ class BrowserWSClient {
 
   private scheduleReconnect() {
     if (this.instanceId && !this.reconnectTimeout) {
-      const delay = Math.min(WS_RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts), WS_RECONNECT_MAX_MS) + Math.random() * WS_RECONNECT_JITTER_MS;
-      this.reconnectAttempts++;
-      this.reconnectTimeout = setTimeout(() => {
+      const scheduled = scheduleWsReconnect('browser', this.reconnectAttempts, () => {
         this.reconnectTimeout = null;
-        if (this.instanceId) {
-          this.connect(this.instanceId);
-        }
-      }, delay);
+        if (this.instanceId) this.connect(this.instanceId);
+      });
+      this.reconnectAttempts = scheduled.attempt;
+      this.reconnectTimeout = scheduled.timeout;
     }
   }
 
@@ -364,9 +387,10 @@ export class TerminalWSClient {
         }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         terminalLog.info('Disconnected');
         this.connectionHandler?.(false);
+        logWsDisconnect('terminal', event.code, event.reason);
         this.scheduleReconnect();
       };
 
@@ -403,12 +427,12 @@ export class TerminalWSClient {
 
   private scheduleReconnect() {
     if (this.instanceId && !this.reconnectTimeout) {
-      const delay = Math.min(WS_RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts), WS_RECONNECT_MAX_MS) + Math.random() * WS_RECONNECT_JITTER_MS;
-      this.reconnectAttempts++;
-      this.reconnectTimeout = setTimeout(() => {
+      const scheduled = scheduleWsReconnect('terminal', this.reconnectAttempts, () => {
         this.reconnectTimeout = null;
         if (this.instanceId) this.connect(this.instanceId, this.terminalId || undefined);
-      }, delay);
+      });
+      this.reconnectAttempts = scheduled.attempt;
+      this.reconnectTimeout = scheduled.timeout;
     }
   }
 
@@ -589,6 +613,7 @@ class AgentWSClient {
         agentLog.info('Disconnected');
         this.connectionHandler?.(false);
         this.stopPresenceHeartbeat();
+        logWsDisconnect('agent', event.code, event.reason);
         if (event.code === 4001) {
           window.dispatchEvent(new CustomEvent('construct:auth-revoked', {
             detail: { reason: event.reason || 'session_revoked' },
@@ -699,14 +724,12 @@ class AgentWSClient {
 
   private scheduleReconnect() {
     if (this.instanceId && !this.reconnectTimeout) {
-      const delay = Math.min(WS_RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts), WS_RECONNECT_MAX_MS) + Math.random() * WS_RECONNECT_JITTER_MS;
-      this.reconnectAttempts++;
-      this.reconnectTimeout = setTimeout(() => {
+      const scheduled = scheduleWsReconnect('agent', this.reconnectAttempts, () => {
         this.reconnectTimeout = null;
-        if (this.instanceId) {
-          this.connect(this.instanceId);
-        }
-      }, delay);
+        if (this.instanceId) this.connect(this.instanceId);
+      });
+      this.reconnectAttempts = scheduled.attempt;
+      this.reconnectTimeout = scheduled.timeout;
     }
   }
 

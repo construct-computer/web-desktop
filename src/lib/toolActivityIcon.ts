@@ -1,51 +1,33 @@
 import {
   AlertCircle,
-  AppWindow,
   AtSign,
   Bell,
   BookOpen,
   Bot,
-  Brain,
-  CalendarDays,
-  Camera,
   ClipboardList,
   Clock,
   Cog,
   Database,
-  Eye,
-  FileText,
-  FolderOpen,
-  Github,
-  Globe,
-  HardDrive,
-  Image as ImageIcon,
   Info,
   Keyboard,
   ListTodo,
-  Mail,
-  MessageSquare,
-  Monitor,
   MousePointerClick,
-  Network,
-  Pencil,
   Plug,
-  Puzzle,
   ScrollText,
   Search,
-  Send,
-  Terminal,
-  Trash2,
   Users,
   Wrench,
-  Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
 import { composioDisplayTool } from '@/stores/agentStoreUtils';
 import { getAppByWindowType, SYSTEM_WINDOW_METADATA } from '@/lib/appRegistry';
+import { routeToolToWindow } from '@/lib/toolWindowRouting';
 import iconMemory from '@/icons/memory.png';
+import iconCalendar from '@/icons/calendar.png';
 import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
+import iconChat from '@/icons/chat.png';
 import { normalizePlatformSlug } from '@/lib/platforms';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
@@ -54,6 +36,32 @@ export type ActivityVisual =
   | { kind: 'image'; src: string; alt: string }
   | { kind: 'platform'; platform: string; logoUrl?: string }
   | { kind: 'lucide'; Icon: LucideIcon };
+
+const NATIVE_CALENDAR_TOOLS = new Set([
+  'agent_schedule',
+  'schedule_task',
+  'agent_calendar',
+  'calendar',
+]);
+
+const WEB_TOOLS = new Set([
+  'web_search',
+  'web_fetch',
+  'web_scrape',
+  'remote_browser',
+  'remote_browser_session',
+  'browser',
+]);
+
+/** Tools with a native app icon that routeToolToWindow does not cover. */
+const DIRECT_TOOL_WINDOW: Record<string, WindowType> = {
+  audit_log: 'auditlogs',
+  knowledge: 'memory',
+  notify: 'settings',
+  notify_user: 'settings',
+  tool_search: 'app-registry',
+  capability: 'app-registry',
+};
 
 const TOOL_PLATFORM_SLUG: Record<string, string> = {
   slack: 'slack',
@@ -67,7 +75,6 @@ const TOOL_PLATFORM_SLUG: Record<string, string> = {
   composio: 'composio',
 };
 
-/** Label prefixes like "Searching:" are activity verbs, not toolkit names. */
 const ACTIVITY_LABEL_VERBS = new Set([
   'searching',
   'browsing',
@@ -105,86 +112,66 @@ const ACTIVITY_LABEL_VERBS = new Set([
 
 const KNOWN_TOOLKIT_SLUGS = new Set(Object.values(TOOL_PLATFORM_SLUG));
 
-function hasAny(value: string, patterns: RegExp[]): boolean {
-  return patterns.some((pattern) => pattern.test(value));
+function isNativeCalendarTool(tool?: string): boolean {
+  return !!tool && NATIVE_CALENDAR_TOOLS.has(tool.toLowerCase());
 }
 
-function lucideIconForTool(
-  type?: ChatMessage['activityType'],
-  tool?: string,
-  label?: string,
-): LucideIcon {
-  const toolId = (tool || '').toLowerCase();
-  const text = `${toolId} ${label || ''}`.toLowerCase();
-
-  if (hasAny(text, [/gmail|email|\bmail\b|inbox|thread/])) return Mail;
-  if (hasAny(text, [/slack/])) return MessageSquare;
-  if (hasAny(text, [/telegram/])) return Send;
-  if (hasAny(text, [/github/])) return Github;
-  if (hasAny(text, [/youtube/])) return Youtube;
-  if (hasAny(text, [/google_calendar|\bcalendar\b|schedule|event/])) return CalendarDays;
-  if (hasAny(text, [/google_drive|\bdrive\b/])) return HardDrive;
-  if (hasAny(text, [/memory|recall|forgetting memory/])) return Brain;
-  if (hasAny(text, [/notify|notification|alert/])) return Bell;
-  if (hasAny(text, [/task_|todo|task #|listing active tasks|listing all tasks|planning|plan/])) return ListTodo;
-  if (hasAny(text, [/composio|integration|registry_app|connecting app|app connection/])) return Plug;
-  if (hasAny(text, [/tool_search|finding tools/])) return Puzzle;
-  if (hasAny(text, [/\bapp\b|app call|app registry|creating app|updating app|deleting app|app state/])) return AppWindow;
-  if (hasAny(text, [/database|stored output|audit log|activity history|activity stats/])) return Database;
-  if (hasAny(text, [/arxiv|domain|web_search|web fetch|web_fetch|fetching|searching|finding tools/])) return Search;
-  if (hasAny(text, [/document_guide|coding guide|local app guide|web design guide|guide/])) return BookOpen;
-  if (hasAny(text, [/image|screenshot/])) return Camera;
-  if (hasAny(text, [/clicking|\bclick\b/])) return MousePointerClick;
-  if (hasAny(text, [/typing|\btype\b/])) return Keyboard;
-  if (hasAny(text, [/scrolling|\bscroll\b/])) return ScrollText;
-  if (hasAny(text, [/reading page|snapshot|rendered page/])) return Eye;
-  if (hasAny(text, [/browser|browsing|web_scrape|remote_browser/])) return Globe;
-  if (hasAny(text, [/exec|terminal|running `|sandbox/])) return Terminal;
-  if (hasAny(text, [/delete_file|deleting .*file|trash/])) return Trash2;
-  if (hasAny(text, [/write_file|writing|edit|editing|saving .*workspace/])) return Pencil;
-  if (hasAny(text, [/list_directory|listing .*files|listing \//])) return FolderOpen;
-  if (hasAny(text, [/read_file|reading .*file|loading .*workspace/])) return FileText;
-  if (hasAny(text, [/view_image/])) return ImageIcon;
-  if (hasAny(text, [/delegate|consult|spawn_agent|spawn_agents|subagent|advisor|agent status/])) return Users;
-  if (hasAny(text, [/background task/])) return Bot;
-  if (hasAny(text, [/wait_for_agents|waiting for \d+ agent/])) return Clock;
-  if (hasAny(text, [/ask_user|asking:/])) return AtSign;
-  if (hasAny(text, [/observation|clipboard/])) return ClipboardList;
-
-  switch (type) {
-    case 'browser': return Globe;
-    case 'web': return Search;
-    case 'terminal': return Terminal;
-    case 'file': return FileText;
-    case 'desktop': return Monitor;
-    case 'calendar': return CalendarDays;
-    case 'delegation': return Network;
-    case 'background': return Cog;
-    case 'delegation-group':
-    case 'consultation-group':
-    case 'orchestration-group': return Users;
-    case 'background-group': return Bot;
-    default: return Wrench;
-  }
-}
-
-function toolToWindowType(tool: string): WindowType | null {
-  const t = tool.toLowerCase();
-  if (t === 'browser' || t.startsWith('browser_')) return 'browser';
-  if (t === 'exec' || t === 'terminal') return 'terminal';
-  if (t === 'read_file' || t === 'list_directory') return 'files';
-  if (t === 'read' || t === 'write' || t === 'edit' || t === 'list' || t.startsWith('file_')) return 'editor';
-  if (t === 'google_drive' || t.startsWith('drive_')) return 'files';
-  if (t.includes('calendar')) return 'calendar';
-  if (t === 'email' || t.startsWith('send_email') || t.startsWith('read_email')) return 'email';
-  if (t === 'memory' || t === 'knowledge') return 'memory';
-  if (t === 'apps' || t === 'tool_search') return 'app-registry';
-  return null;
+function imageVisual(src: string, alt: string): ActivityVisual {
+  return { kind: 'image', src, alt };
 }
 
 function builtinIconForWindowType(windowType: WindowType | null): string | undefined {
   if (!windowType) return undefined;
   return getAppByWindowType(windowType)?.icon ?? SYSTEM_WINDOW_METADATA[windowType]?.icon;
+}
+
+function windowTypeForActivityType(type?: ChatMessage['activityType']): WindowType | null {
+  switch (type) {
+    case 'browser':
+    case 'web':
+      return 'browser';
+    case 'terminal':
+      return 'terminal';
+    case 'file':
+      return 'files';
+    case 'calendar':
+      return 'calendar';
+    case 'desktop':
+      return 'settings';
+    default:
+      return null;
+  }
+}
+
+function resolveWindowTypeForTool(
+  tool?: string,
+  params?: Record<string, unknown>,
+  type?: ChatMessage['activityType'],
+): WindowType | null {
+  const rawTool = tool?.toLowerCase();
+  if (!rawTool) return windowTypeForActivityType(type);
+
+  if (rawTool.startsWith('browser_')) return 'browser';
+  if (WEB_TOOLS.has(rawTool)) return 'browser';
+  if (isNativeCalendarTool(rawTool)) return 'calendar';
+  if (rawTool === 'memory' || rawTool === 'knowledge') return 'memory';
+
+  const direct = DIRECT_TOOL_WINDOW[rawTool];
+  if (direct) return direct;
+
+  const route = routeToolToWindow(rawTool, params);
+  if (route) return route.type;
+
+  return windowTypeForActivityType(type);
+}
+
+function resolveBuiltinIcon(
+  tool?: string,
+  type?: ChatMessage['activityType'],
+  params?: Record<string, unknown>,
+): string | undefined {
+  const windowType = resolveWindowTypeForTool(tool, params, type);
+  return builtinIconForWindowType(windowType);
 }
 
 function connectedToolkitLogo(slug: string): string | undefined {
@@ -197,6 +184,48 @@ function connectedToolkitLogo(slug: string): string | undefined {
 function installedAppIcon(appId: string): string | undefined {
   const app = useAppStore.getState().installedApps.find((a) => a.id === appId);
   return app?.icon_url;
+}
+
+function hasAny(value: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+/** Lucide icons only for tools/labels with no branded PNG available. */
+function lucideIconForTool(
+  type?: ChatMessage['activityType'],
+  tool?: string,
+  label?: string,
+): LucideIcon {
+  const toolId = (tool || '').toLowerCase();
+  const text = `${toolId} ${label || ''}`.toLowerCase();
+
+  if (hasAny(text, [/delegate|consult|spawn_agent|spawn_agents|subagent|advisor|agent status/])) return Users;
+  if (hasAny(text, [/background task/])) return Bot;
+  if (hasAny(text, [/wait_for_agents|waiting for \d+ agent/])) return Clock;
+  if (hasAny(text, [/task_|todo|task #|listing active tasks|listing all tasks|planning|plan/])) return ListTodo;
+  if (hasAny(text, [/composio|integration|registry_app|connecting app|app connection/])) return Plug;
+  if (hasAny(text, [/document_guide|coding guide|local app guide|web design guide|guide/])) return BookOpen;
+  if (hasAny(text, [/arxiv|domain intel/])) return Search;
+  if (hasAny(text, [/database|stored output|activity history|activity stats/])) return Database;
+  if (hasAny(text, [/notify|notification|alert/])) return Bell;
+  if (hasAny(text, [/ask_user|asking:/])) return AtSign;
+  if (hasAny(text, [/observation|clipboard/])) return ClipboardList;
+  if (hasAny(text, [/clicking|\bclick\b/])) return MousePointerClick;
+  if (hasAny(text, [/typing|\btype\b/])) return Keyboard;
+  if (hasAny(text, [/scrolling|\bscroll\b/])) return ScrollText;
+
+  switch (type) {
+    case 'delegation':
+    case 'delegation-group':
+    case 'consultation-group':
+    case 'orchestration-group':
+      return Users;
+    case 'background':
+    case 'background-group':
+      return Bot;
+    default:
+      return Wrench;
+  }
 }
 
 export function parseToolkitFromActivityLabel(label: string): string | null {
@@ -239,23 +268,16 @@ export function resolveActivityIconHints(
     return { iconPlatform: appId, iconUrl: iconUrl || undefined };
   }
 
-  if (rawTool === 'web_search' || rawTool === 'web_fetch' || rawTool === 'web_scrape') {
-    return {};
-  }
-
   const slug = TOOL_PLATFORM_SLUG[rawTool];
   if (slug) {
-    return { iconPlatform: slug, iconUrl: connectedToolkitLogo(slug) };
+    const logo = connectedToolkitLogo(slug);
+    if (logo) return { iconPlatform: slug, iconUrl: logo };
   }
 
-  const windowType = toolToWindowType(rawTool);
+  const windowType = resolveWindowTypeForTool(rawTool, params);
   const builtin = builtinIconForWindowType(windowType);
   if (builtin) {
     return { iconUrl: builtin, iconPlatform: windowType ?? undefined };
-  }
-
-  if (rawTool === 'memory' || rawTool === 'knowledge') {
-    return { iconUrl: iconMemory, iconPlatform: 'memory' };
   }
 
   return {};
@@ -267,22 +289,20 @@ export function resolveActivityVisual(input: {
   label?: string;
   iconPlatform?: string;
   iconUrl?: string;
+  params?: Record<string, unknown>;
 }): ActivityVisual {
-  const { type, tool, label, iconPlatform, iconUrl } = input;
+  const { type, tool, label, iconPlatform, iconUrl, params } = input;
   const rawTool = tool?.toLowerCase();
 
-  if (rawTool === 'web_search' || rawTool === 'web_fetch' || rawTool === 'web_scrape') {
-    return { kind: 'lucide', Icon: Search };
-  }
-
+  // 1. Explicit PNG hints from the event (e.g. installed app icon).
   if (iconUrl && !iconPlatform) {
-    return { kind: 'image', src: iconUrl, alt: tool || label || 'tool' };
+    return imageVisual(iconUrl, tool || label || 'tool');
   }
-
   if (iconUrl && iconPlatform && (iconUrl.startsWith('/') || iconUrl.includes('.png') || iconUrl.includes('.svg'))) {
-    return { kind: 'image', src: iconUrl, alt: iconPlatform };
+    return imageVisual(iconUrl, iconPlatform);
   }
 
+  // 2. Connected integration logos (Composio / toolkit).
   const platform =
     iconPlatform
     || (tool && TOOL_PLATFORM_SLUG[tool.toLowerCase()])
@@ -305,29 +325,19 @@ export function resolveActivityVisual(input: {
     }
   }
 
-  const windowType = tool ? toolToWindowType(tool) : null;
-  const builtin = builtinIconForWindowType(windowType ?? (type === 'terminal' ? 'terminal' : type === 'browser' ? 'browser' : type === 'file' ? 'files' : type === 'calendar' ? 'calendar' : null));
+  // 3. Native Construct app icons (PNG) — preferred over generic Lucide.
+  const builtin = resolveBuiltinIcon(tool, type, params);
   if (builtin) {
-    return { kind: 'image', src: builtin, alt: windowType || type || 'tool' };
+    const windowType = resolveWindowTypeForTool(tool, params, type);
+    return imageVisual(builtin, windowType || type || tool || 'tool');
   }
 
-  if (type === 'file' || type === 'terminal' || type === 'browser' || type === 'calendar') {
-    const byType = builtinIconForWindowType(
-      type === 'file' ? 'files' : type === 'terminal' ? 'terminal' : type === 'browser' ? 'browser' : 'calendar',
-    );
-    if (byType) return { kind: 'image', src: byType, alt: type };
+  if (rawTool === 'ask_user') {
+    return imageVisual(iconChat, 'Chat');
   }
 
-  if (tool === 'apps' || tool === 'tool_search') {
-    return { kind: 'image', src: iconAppStore, alt: 'Apps' };
-  }
-
-  const platformLogo = platform ? connectedToolkitLogo(platform) : undefined;
-  if (platform && platform.length > 1 && platform !== 'tool' && platform !== 'composio' && platformLogo) {
-    return { kind: 'platform', platform, logoUrl: platformLogo };
-  }
-
-  return { kind: 'lucide', Icon: lucideIconForTool(type, tool, label) };
+  // 4. Generic PNG fallback (Construct default app icon).
+  return imageVisual(iconGeneric, tool || label || 'Tool');
 }
 
 export function lucideIconForActivity(

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type ActivityIconFrameVariant = 'default' | 'branded' | 'failed';
+export type ActivityIconFrameVariant = 'default' | 'branded' | 'failed' | 'clippy';
 
 const FRAME_BASE = 'shrink-0 flex items-center justify-center';
 
@@ -9,6 +9,7 @@ const VARIANT_CLASS: Record<ActivityIconFrameVariant, string> = {
   default: 'text-[var(--color-text-muted)]/70',
   branded: 'text-[var(--color-text-muted)]/70',
   failed: 'text-red-300/90',
+  clippy: 'rounded-md bg-white/10 text-white/90',
 };
 
 const SIZE_CLASS = {

@@ -24,7 +24,8 @@ const LEVEL_CONFIG: Record<LogLevel, { label: string; color: string; fn: (...arg
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error']
-const minLevel: LogLevel = 'info'
+const configuredLevel = (import.meta.env.VITE_LOG_LEVEL as LogLevel | undefined)
+const minLevel: LogLevel = configuredLevel && LOG_LEVELS.includes(configuredLevel) ? configuredLevel : 'info'
 const minIdx = LOG_LEVELS.indexOf(minLevel)
 
 function timestamp(): string {

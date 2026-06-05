@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Brain, Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
 import { ActivityIconBadge } from './ActivityIconBadge';
-import { ActivityIconFrame } from './ActivityIconFrame';
+import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
 import type { ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
 
@@ -122,25 +122,29 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     const title = memoryActivityTitle(memoryActivity);
     const summary = memoryActivitySummary(memoryActivity);
     const canExpand = memoryActivity.items.length > 0;
+    const memoryIconHints = resolveActivityIconHints('memory');
 
     return (
-      <div className={compact ? 'flex items-start gap-2 py-[2px]' : 'px-3 sm:px-6 py-[2px]'}>
-        <div className={compact ? 'flex items-start gap-2 min-w-0 w-full' : 'flex items-start gap-2 sm:gap-3 min-w-0 w-full'}>
-          <ActivityIconFrame size={compact ? 'sm' : 'md'} variant="default">
-            <Brain className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-          </ActivityIconFrame>
+      <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+        <div className={compact ? 'flex items-center gap-2.5 min-w-0 w-full' : 'flex items-center gap-2.5 sm:gap-3 min-w-0 w-full'}>
+          <ActivityIconBadge
+            tool="memory"
+            iconPlatform={memoryIconHints.iconPlatform}
+            iconUrl={memoryIconHints.iconUrl}
+            size={compact ? 'sm' : 'md'}
+          />
           <div className="min-w-0 flex-1">
             <button
               type="button"
               disabled={!canExpand}
               onClick={() => canExpand && setExpanded(!expanded)}
-              className="group flex max-w-full items-center gap-1.5 text-left text-[12px] leading-4 text-[var(--color-text-muted)]/55 disabled:cursor-default"
+              className="group flex max-w-full items-center gap-1.5 text-left disabled:cursor-default"
             >
-              <span className="shrink-0 font-medium">{title}</span>
+              <span className="shrink-0 text-[12px] font-medium text-[var(--color-text-muted)]/55">{title}</span>
               {summary && (
                 <>
-                  <span className="shrink-0 text-[var(--color-text-muted)]/22">·</span>
-                  <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
+                  <span className="shrink-0 text-[12px] text-[var(--color-text-muted)]/22">·</span>
+                  <span className="min-w-0 truncate text-[12px] text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
                     {summary}
                   </span>
                 </>

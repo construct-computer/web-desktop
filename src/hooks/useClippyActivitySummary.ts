@@ -65,8 +65,8 @@ export interface ClippyActivitySummary {
   subagents: ClippySubagentItem[];
 }
 
-const MAX_FEED_ITEMS = 3;
-const MAX_FEED_ITEMS_MOBILE = 2;
+const MAX_FEED_ITEMS = 5;
+const MAX_FEED_ITEMS_MOBILE = 3;
 const MAX_SUBAGENTS = 6;
 const THINKING_MAX = 56;
 

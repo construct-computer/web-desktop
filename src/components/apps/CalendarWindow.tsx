@@ -31,10 +31,9 @@ import {
   uncompleteAgentCalendarOccurrence,
   type AgentCalendarEvent,
 } from '@/services/api';
-import {
-  filterCancelledOccurrences,
-  occurrenceArrayIncludes,
-} from '@/lib/calendarOccurrences';
+import { occurrenceArrayIncludes } from '@/lib/calendarOccurrences';
+import { expandAllRecurrences } from '@/lib/calendarRecurrence';
+import { AGENT_CALENDAR_REFRESH_EVENT, dispatchAgentCalendarRefresh } from '@/lib/agentUiEvents';
 import type { WindowConfig } from '@/types';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import {
@@ -88,173 +87,6 @@ function formatDateRange(event: AgentCalendarEvent): string {
     return `${formatTime(event.start)} - ${formatTime(event.end)}`;
   }
   return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatTime(event.start)} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatTime(event.end)}`;
-}
-
-// ── RRULE Expansion ──
-
-const RRULE_DAY_MAP: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
-
-/**
- * Parse an RRULE string into its parts.
- * Handles: FREQ, INTERVAL, BYDAY, COUNT, UNTIL, BYHOUR
- */
-function parseRrule(rrule: string): Record<string, string> {
-  const raw = rrule.replace(/^RRULE:/, '');
-  const parts: Record<string, string> = {};
-  for (const seg of raw.split(';')) {
-    const [key, val] = seg.split('=');
-    if (key && val) parts[key] = val;
-  }
-  return parts;
-}
-
-/**
- * Expand a single recurring event into multiple occurrences within [rangeStart, rangeEnd].
- * Returns the original event (at its original time) plus generated occurrences.
- * Each occurrence is a shallow clone with shifted start/end and a `_recurringParentId` marker.
- */
-function expandRecurrence(
-  event: AgentCalendarEvent,
-  rangeStart: Date,
-  rangeEnd: Date,
-): AgentCalendarEvent[] {
-  if (!event.recurrence || event.recurrence.length === 0) return [event];
-
-  const rule = event.recurrence.find(r => r.startsWith('RRULE:'));
-  if (!rule) return [event];
-
-  const parsed = parseRrule(rule);
-  const freq = parsed.FREQ;
-  if (!freq) return [event];
-
-  const interval = parseInt(parsed.INTERVAL || '1', 10) || 1;
-  const count = parsed.COUNT ? parseInt(parsed.COUNT, 10) : undefined;
-  const until = parsed.UNTIL ? parseUntilDate(parsed.UNTIL) : undefined;
-  const byDay = parsed.BYDAY ? parsed.BYDAY.split(',') : undefined;
-
-  const eventStart = new Date(event.start);
-  const eventEnd = new Date(event.end);
-  const duration = eventEnd.getTime() - eventStart.getTime();
-
-  const occurrences: AgentCalendarEvent[] = [];
-  let current = new Date(eventStart);
-  let generated = 0;
-  const maxOccurrences = 200; // safety cap
-
-  while (generated < maxOccurrences) {
-    // Check UNTIL / COUNT limits
-    if (until && current > until) break;
-    if (count !== undefined && generated >= count) break;
-    // Stop if we're past the visible range
-    if (current > rangeEnd) break;
-
-    const occEnd = new Date(current.getTime() + duration);
-
-    // Check if this occurrence overlaps the visible range
-    if (occEnd >= rangeStart) {
-      if (freq === 'WEEKLY' && byDay && byDay.length > 0) {
-        // Mirror the backend RRULE engine (services/schedules computeNextFromRRule):
-        // each BYDAY instance is the UTC Sunday of the current week (carrying the
-        // seed's UTC time-of-day) offset by the weekday index. Computing entirely
-        // in UTC — instead of the old local setHours/setDate — keeps the produced
-        // instant identical to the stored intended_fire_time so completed
-        // occurrences match and render as done.
-        const weekStart = new Date(current.getTime());
-        weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay());
-        for (const dayStr of byDay) {
-          const targetDay = RRULE_DAY_MAP[dayStr];
-          if (targetDay === undefined) continue;
-          const oStart = new Date(weekStart.getTime());
-          oStart.setUTCDate(weekStart.getUTCDate() + targetDay);
-          if (oStart < eventStart) continue;
-          if (oStart < rangeStart || oStart > rangeEnd) continue;
-          if (until && oStart > until) continue;
-          const oEnd = new Date(oStart.getTime() + duration);
-          occurrences.push({
-            ...event,
-            start: oStart.toISOString(),
-            end: oEnd.toISOString(),
-          });
-        }
-      } else {
-        occurrences.push({
-          ...event,
-          start: current.toISOString(),
-          end: occEnd.toISOString(),
-        });
-      }
-    }
-
-    generated++;
-
-    // Advance to next occurrence
-    switch (freq) {
-      // Step in UTC to match the backend RRULE engine (services/schedules
-      // addInterval uses setUTC*). Local stepping drifted by the DST offset and
-      // caused completed recurring instances to miss their stored instant.
-      case 'HOURLY':
-        current = new Date(current.getTime() + interval * 60 * 60 * 1000);
-        break;
-      case 'DAILY':
-        current = new Date(current.getTime());
-        current.setUTCDate(current.getUTCDate() + interval);
-        break;
-      case 'WEEKLY':
-        current = new Date(current.getTime());
-        current.setUTCDate(current.getUTCDate() + 7 * interval);
-        break;
-      case 'MONTHLY':
-        current = new Date(current.getTime());
-        current.setUTCMonth(current.getUTCMonth() + interval);
-        break;
-      case 'YEARLY':
-        current = new Date(current.getTime());
-        current.setUTCFullYear(current.getUTCFullYear() + interval);
-        break;
-      default:
-        return occurrences.length > 0 ? occurrences : [event];
-    }
-  }
-
-  return occurrences.length > 0 ? occurrences : [event];
-}
-
-function parseUntilDate(until: string): Date {
-  // Format: YYYYMMDD or YYYYMMDDTHHMMSSZ
-  const y = parseInt(until.slice(0, 4), 10);
-  const m = parseInt(until.slice(4, 6), 10) - 1;
-  const d = parseInt(until.slice(6, 8), 10);
-  if (until.length > 8) {
-    const h = parseInt(until.slice(9, 11), 10) || 23;
-    const min = parseInt(until.slice(11, 13), 10) || 59;
-    const s = parseInt(until.slice(13, 15), 10) || 59;
-    return new Date(Date.UTC(y, m, d, h, min, s));
-  }
-  return new Date(y, m, d, 23, 59, 59);
-}
-
-/**
- * Expand all recurring events in a list into their individual occurrences.
- * Non-recurring events are passed through unchanged.
- */
-function expandAllRecurrences(
-  events: AgentCalendarEvent[],
-  rangeStart: Date,
-  rangeEnd: Date,
-): AgentCalendarEvent[] {
-  const result: AgentCalendarEvent[] = [];
-  for (const event of events) {
-    result.push(...expandRecurrence(event, rangeStart, rangeEnd));
-  }
-  // Deduplicate by start+id (BYDAY expansion can create duplicates for the original day)
-  const seen = new Set<string>();
-  const deduped = result.filter(e => {
-    const key = `${e.id}:${e.start}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return filterCancelledOccurrences(deduped);
 }
 
 function eventActionKey(event: Pick<AgentCalendarEvent, 'id' | 'start'>): string {
@@ -516,12 +348,11 @@ export function CalendarWindow(props: CalendarWindowProps) {
     return () => { cancelled = true; };
   }, [refreshNow, currentMonth]);
 
-  // Live refresh when the agent finishes a scheduled task (calendar:updated WS
-  // event → agent-calendar-refresh), mirroring the email app's refresh hook.
+  // Live refresh when calendar data changes (scheduled task completion, local edits).
   useEffect(() => {
     const handler = () => { void refreshNow({ force: true }); };
-    window.addEventListener('agent-calendar-refresh', handler);
-    return () => { window.removeEventListener('agent-calendar-refresh', handler); };
+    window.addEventListener(AGENT_CALENDAR_REFRESH_EVENT, handler);
+    return () => { window.removeEventListener(AGENT_CALENDAR_REFRESH_EVENT, handler); };
   }, [refreshNow]);
 
   const handlePrevMonth = () => {
@@ -661,6 +492,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
       }
       setDialogOpen(false);
       await fetchEvents();
+      dispatchAgentCalendarRefresh();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -695,6 +527,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         if (!result.success) throw new Error(result.error || 'Delete failed');
       }
       await fetchEvents();
+      dispatchAgentCalendarRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -721,6 +554,7 @@ export function CalendarWindow(props: CalendarWindowProps) {
         if (!result.success) throw new Error(result.error || 'Failed to update event');
       }
       await fetchEvents();
+      dispatchAgentCalendarRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed');
     } finally {
@@ -835,7 +669,6 @@ export function CalendarWindow(props: CalendarWindowProps) {
             onEdit={handleEditEvent}
             onDelete={handleDelete}
             onToggleComplete={handleToggleComplete}
-            onNew={() => handleNewEvent()}
             deleting={deleting}
             completing={completing}
           />
@@ -849,7 +682,6 @@ export function CalendarWindow(props: CalendarWindowProps) {
           onToggleComplete={handleToggleComplete}
           deleting={deleting}
           completing={completing}
-          onNew={() => handleNewEvent()}
         />
       )}
 
@@ -1043,7 +875,6 @@ function DayEventsSidebar({
   onEdit,
   onDelete,
   onToggleComplete,
-  onNew,
   deleting,
   completing,
 }: {
@@ -1053,7 +884,6 @@ function DayEventsSidebar({
   onEdit: (e: AgentCalendarEvent) => void;
   onDelete: (e: AgentCalendarEvent) => void;
   onToggleComplete: (e: AgentCalendarEvent) => void;
-  onNew: () => void;
   deleting: string | null;
   completing: string | null;
 }) {
@@ -1094,7 +924,7 @@ function DayEventsSidebar({
             <CalendarDays className="w-8 h-8 text-[var(--color-text-muted)] opacity-50 mb-2" />
             <p className="text-sm font-medium text-[var(--color-text-muted)]">Nothing scheduled</p>
             <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-[200px]">
-              Add an event using the button below.
+              Use <span className="font-medium">New Event</span> above to schedule something.
             </p>
           </div>
         ) : (
@@ -1111,13 +941,6 @@ function DayEventsSidebar({
             />
           ))
         )}
-      </div>
-
-      <div className="p-2 border-t border-[var(--color-border)]">
-        <Button variant="default" size="sm" className="w-full text-xs" onClick={onNew}>
-          <Plus className="w-3.5 h-3.5 mr-1.5" />
-          Add event
-        </Button>
       </div>
     </div>
   );
@@ -1245,7 +1068,6 @@ function EventListView({
   onToggleComplete,
   deleting,
   completing,
-  onNew,
 }: {
   events: AgentCalendarEvent[];
   onEdit: (e: AgentCalendarEvent) => void;
@@ -1253,7 +1075,6 @@ function EventListView({
   onToggleComplete: (e: AgentCalendarEvent) => void;
   deleting: string | null;
   completing: string | null;
-  onNew: () => void;
 }) {
   // Group events by date
   const grouped = new Map<string, AgentCalendarEvent[]>();
@@ -1273,13 +1094,12 @@ function EventListView({
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
       {events.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--color-text-muted)]">
+        <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--color-text-muted)] px-4 text-center">
           <CalendarDays className="w-10 h-10 opacity-40" />
           <p className="text-sm">No events this month</p>
-          <Button variant="primary" size="sm" onClick={onNew} className="text-xs">
-            <Plus className="w-3.5 h-3.5 mr-1" />
-            Create Event
-          </Button>
+          <p className="text-xs max-w-[220px]">
+            Use <span className="font-medium">New Event</span> above to schedule something.
+          </p>
         </div>
       ) : (
         <div className="divide-y divide-[var(--color-border)]">

@@ -149,16 +149,20 @@ export const useEditorStore = create<EditorStore>()(
         if (!files[windowId]) return;
 
         if (result.success) {
-          // Only update if the server content actually changed
-          if (files[windowId].savedContent === result.data.content) return;
+          const prev = files[windowId];
+          const contentChanged = prev.savedContent !== result.data.content;
+          const hadError = Boolean(prev.error);
+          if (!contentChanged && !hadError) return;
 
           set({
             files: {
               ...files,
               [windowId]: {
-                ...files[windowId],
+                ...prev,
                 content: result.data.content,
                 savedContent: result.data.content,
+                loading: false,
+                error: null,
                 revision: result.data.revision,
                 conflict: false,
               },

@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { log } from '@/lib/logger';
 import { isChunkLoadError, recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery';
+import { useErrorStore } from '@/stores/errorStore';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -30,6 +31,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     log(`ErrorBoundary${this.props.label ? `:${this.props.label}` : ''}`).error(error, info.componentStack);
+    useErrorStore.getState().capture({
+      source: 'react',
+      message: error.message,
+      stack: error.stack,
+      context: {
+        componentStack: info.componentStack,
+        label: this.props.label,
+      },
+    });
     void recoverFromChunkLoadError(error);
   }
 

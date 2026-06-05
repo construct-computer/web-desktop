@@ -1,4 +1,5 @@
 export const AGENT_HISTORY_CLEARED_EVENT = 'construct:agent-history-cleared';
+export const AGENT_CALENDAR_REFRESH_EVENT = 'construct:agent-calendar-refresh';
 export const MEMORY_CHANGED_EVENT = 'construct:memory-changed';
 export const WORK_ORDER_UPDATED_EVENT = 'construct:work-order-updated';
 
@@ -36,4 +37,8 @@ export function dispatchMemoryChanged(detail: MemoryChangedDetail): void {
 
 export function dispatchWorkOrderUpdated(detail: WorkOrderUpdatedDetail): void {
   window.dispatchEvent(new CustomEvent<WorkOrderUpdatedDetail>(WORK_ORDER_UPDATED_EVENT, { detail }));
+}
+
+export function dispatchAgentCalendarRefresh(): void {
+  window.dispatchEvent(new CustomEvent(AGENT_CALENDAR_REFRESH_EVENT));
 }

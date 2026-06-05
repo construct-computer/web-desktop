@@ -24,7 +24,7 @@ import {
 import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
-import { dispatchAgentHistoryCleared, dispatchMemoryChanged, dispatchWorkOrderUpdated } from '@/lib/agentUiEvents';
+import { dispatchAgentCalendarRefresh, dispatchAgentHistoryCleared, dispatchMemoryChanged, dispatchWorkOrderUpdated } from '@/lib/agentUiEvents';
 import type { WorkOrderActivityUpdate } from '@/services/api';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
@@ -2149,6 +2149,10 @@ export const useComputerStore = create<ComputerStore>()(
         set({
           agentConnected: connected,
           agentConnecting: !connected && Boolean(get().instanceId),
+        });
+        void import('@/lib/analytics').then(({ analytics }) => {
+          if (connected) analytics.agentConnected();
+          else analytics.agentDisconnected();
         });
         if (connected) {
           import('@/services/api').then(({ getActiveAgentSessions }) => {
@@ -4767,10 +4771,11 @@ export const useComputerStore = create<ComputerStore>()(
 
           const route = routeToolToWindow(tool, params);
           const windowType = route?.type ?? null;
-          if (route && route.type !== 'browser') {
+          if (route && route.type !== 'browser' && tool !== 'write_file') {
             // Open/focus the matching desktop app (loads file content for file
             // routes; opens the dynamic app for app routes) and track it so it
-            // auto-closes once the tool finishes.
+            // auto-closes once the tool finishes. write_file opens on tool_result
+            // so the file exists before we fetch content.
             applyToolWindowRoute(route, targetWsId, { track: true });
           }
 
@@ -4860,6 +4865,26 @@ export const useComputerStore = create<ComputerStore>()(
               tool,
               error,
             });
+          }
+
+          // Refresh file windows after successful file tool completion
+          if (success !== false && !resultSubagentId) {
+            const fileTools = new Set(['write_file', 'read_file', 'save_to_workspace']);
+            if (fileTools.has(tool)) {
+              const args = (event.data?.args ?? event.data?.params) as Record<string, unknown> | undefined;
+              const filePath = (args?.path ?? args?.save_path) as string | undefined;
+              if (filePath) {
+                const route = routeToolToWindow(tool, args);
+                const targetWsId = (event.data?.workspace_id as string | undefined) || 'main';
+                if (route?.openMode === 'file') {
+                  if (route.type === 'document-viewer') {
+                    openDocumentViewer(filePath, targetWsId);
+                  } else {
+                    useEditorStore.getState().openOrRefreshFile(filePath, targetWsId);
+                  }
+                }
+              }
+            }
           }
 
           // Schedule auto-close for windows opened by this tool type
@@ -5843,7 +5868,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'calendar:updated': {
           // A scheduled task finished — refresh the calendar app immediately so
           // the occurrence flips to done without waiting for the 10s poll.
-          window.dispatchEvent(new CustomEvent('agent-calendar-refresh'));
+          dispatchAgentCalendarRefresh();
           break;
         }
 

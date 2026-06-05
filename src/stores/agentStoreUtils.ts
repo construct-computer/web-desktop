@@ -184,6 +184,7 @@ const TOOL_ACTIVITY_VERB: Record<string, string> = {
   tool_search: 'Finding tools',
   read_agent_output: 'Reading stored output',
   schedule_task: 'Scheduling',
+  agent_schedule: 'Scheduling',
   task_create: 'Creating task',
   task_update: 'Updating task',
   task_list: 'Listing tasks',
@@ -468,6 +469,23 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const head = title?.trim() || (prompt ? truncateActivityText(prompt, 48) : 'scheduled run');
     const repeat = p.repeat as string | undefined;
     return { text: repeat ? `Scheduling (repeat): ${truncateActivityText(head, 50)}` : `Scheduling: ${truncateActivityText(head, 50)}`, activityType: 'calendar' };
+  }
+
+  if (tool === 'agent_schedule') {
+    const action = p.action as string | undefined;
+    const title = p.title as string | undefined;
+    const prompt = p.prompt as string | undefined;
+    const head = title?.trim() || (prompt ? truncateActivityText(prompt, 48) : 'scheduled run');
+    switch (action) {
+      case 'list':
+        return { text: 'Checking agent schedule', activityType: 'calendar' };
+      case 'cancel':
+        return { text: `Cancelling schedule${head ? `: ${truncateActivityText(head, 50)}` : ''}`, activityType: 'calendar' };
+      case 'update':
+        return { text: `Updating schedule${head ? `: ${truncateActivityText(head, 50)}` : ''}`, activityType: 'calendar' };
+      default:
+        return { text: head ? `Scheduling: ${truncateActivityText(head, 50)}` : 'Scheduling on agent calendar', activityType: 'calendar' };
+    }
   }
 
   if (tool === 'tool_search') {

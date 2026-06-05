@@ -21,6 +21,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
+import { useUpcomingCalendarEvent } from '@/hooks/useUpcomingCalendarEvent';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { openAuthRedirect } from '@/lib/utils';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
@@ -320,7 +321,7 @@ export function AutopilotPanel() {
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [expiringPolicyId, setExpiringPolicyId] = useState<number | null>(null);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
-  const [nextEvent, setNextEvent] = useState<api.AgentCalendarEvent | null>(null);
+  const nextEvent = useUpcomingCalendarEvent();
 
   async function loadSnapshot(isCancelled?: () => boolean) {
     const [result, pendingResult] = await Promise.all([
@@ -378,25 +379,6 @@ export function AutopilotPanel() {
       window.removeEventListener('online', poll);
     };
   }, [agentRunning]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const result = await api.listAgentCalendarEvents({
-        timeMin: new Date().toISOString(),
-        timeMax: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-        maxResults: 1,
-      });
-      if (cancelled) return;
-      setNextEvent(result.success ? result.data.events[0] ?? null : null);
-    };
-    void load();
-    const interval = setInterval(load, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
 
   useEffect(() => {
     void fetchUsage();

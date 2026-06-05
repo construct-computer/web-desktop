@@ -1,5 +1,4 @@
 import type { ChatMessage } from '@/stores/agentStore';
-import { ActivityIcon } from './ActivityIcon';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatActivityLine } from './formatActivityLine';
 
@@ -12,7 +11,6 @@ export function CompactActivityRow({
   failed,
   duration,
   dense,
-  bare,
   className = '',
 }: {
   content: string;
@@ -23,8 +21,6 @@ export function CompactActivityRow({
   failed?: boolean;
   duration?: string;
   dense?: boolean;
-  /** Icon only — no badge frame (e.g. Clippy bubble on gradient). */
-  bare?: boolean;
   className?: string;
 }) {
   const line = formatActivityLine(content, { activityType });
@@ -32,38 +28,28 @@ export function CompactActivityRow({
 
   return (
     <div
-      className={`flex min-w-0 items-center gap-1.5 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
+      className={`flex min-w-0 items-center gap-2 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
     >
-      {bare ? (
-        <ActivityIcon
-          type={activityType}
-          tool={tool}
-          label={content}
-          iconPlatform={iconPlatform}
-          iconUrl={iconUrl}
-          className={`h-3.5 w-3.5 shrink-0 ${failed ? 'text-red-200' : 'text-white/90'}`}
-        />
-      ) : (
-        <ActivityIconBadge
-          type={activityType}
-          tool={tool}
-          label={content}
-          iconPlatform={iconPlatform}
-          iconUrl={iconUrl}
-          failed={failed}
-          size="sm"
-        />
-      )}
+      <ActivityIconBadge
+        type={activityType}
+        tool={tool}
+        label={content}
+        iconPlatform={iconPlatform}
+        iconUrl={iconUrl}
+        failed={failed}
+        size="sm"
+        surface="clippy"
+      />
       <span
-        className={`min-w-0 flex-1 truncate text-[11px] leading-tight ${
+        className={`min-w-0 flex-1 truncate text-[12px] leading-snug ${
           isTerminal ? 'font-mono' : ''
-        } ${failed ? 'text-red-300/75' : bare ? 'text-white/90' : 'text-white/[0.72]'}`}
+        } ${failed ? 'text-red-200/90' : 'text-white/90'}`}
         title={content}
       >
         {line}
       </span>
       {duration && (
-        <span className="shrink-0 text-[9px] tabular-nums text-white/25">{duration}</span>
+        <span className="shrink-0 text-[10px] tabular-nums text-white/40">{duration}</span>
       )}
     </div>
   );

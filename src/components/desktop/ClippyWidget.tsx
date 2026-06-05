@@ -5,7 +5,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useClippyActivitySummary, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivityRow';
-import { ActivityIcon } from '@/components/desktop/spotlight/ActivityIcon';
+import { ActivityIconBadge } from '@/components/desktop/spotlight/ActivityIconBadge';
 import { Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { DOCK_HEIGHT, MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
@@ -764,7 +764,7 @@ function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, cl
   // Format: top right bottom left
   // More padding on right to avoid tail, left padding for rounded corner
   const contentPadding = isDashboard
-    ? (isMobile ? '13px 39px 17px 29px' : '16px 48px 22px 36px')
+    ? (isMobile ? '12px 36px 16px 28px' : '14px 40px 18px 32px')
     : useLgBubble ? '14px 40px 18px 34px' : '10px 36px 14px 30px';
 
   return (
@@ -802,7 +802,7 @@ function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, cl
       />
       {/* Content overlay */}
       <div
-        className="relative h-full flex flex-col items-center justify-center text-center pointer-events-none"
+        className={`relative h-full flex flex-col pointer-events-none ${isDashboard ? 'items-stretch justify-start text-left' : 'items-center justify-center text-center'}`}
         style={{ padding: contentPadding }}
       >
         {isDashboard && summary ? (
@@ -860,14 +860,14 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
     : '';
 
   return (
-    <div className="flex h-full w-full flex-col text-left text-white">
-      <div className="flex min-w-0 items-start justify-between gap-2">
+    <div className="flex h-full w-full min-h-0 flex-col text-left text-white">
+      <div className="flex min-w-0 shrink-0 items-start justify-between gap-2">
         <div
           className="min-w-0 truncate"
           style={{
-            fontSize: isMobile ? '11px' : '12px',
+            fontSize: isMobile ? '12px' : '14px',
             fontWeight: 700,
-            lineHeight: 1.2,
+            lineHeight: 1.25,
             textShadow: '0 1px 2px rgba(0,0,0,0.25)',
           }}
         >
@@ -875,9 +875,9 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
         </div>
         {helperPill && (
           <span
-            className="shrink-0 rounded-full px-1.5 py-0.5"
+            className="shrink-0 rounded-full px-2 py-0.5"
             style={{
-              fontSize: isMobile ? '8px' : '9px',
+              fontSize: isMobile ? '9px' : '10px',
               fontWeight: 600,
               color: 'rgba(255,255,255,0.75)',
               background: 'rgba(255,255,255,0.12)',
@@ -890,11 +890,11 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
 
       {summary.detail && (
         <div
-          className="mt-1 line-clamp-1"
+          className="mt-1 line-clamp-2 shrink-0"
           style={{
-            color: 'rgba(255,255,255,0.72)',
-            fontSize: isMobile ? '9px' : '10px',
-            lineHeight: 1.3,
+            color: 'rgba(255,255,255,0.78)',
+            fontSize: isMobile ? '10px' : '11px',
+            lineHeight: 1.35,
             textShadow: '0 1px 2px rgba(0,0,0,0.18)',
           }}
         >
@@ -903,7 +903,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
       )}
 
       {visibleFeed.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5">
+        <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto">
           {visibleFeed.map(item => (
             <CompactActivityRow
               key={item.id}
@@ -914,17 +914,16 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
               iconUrl={item.iconUrl}
               failed={item.failed}
               dense
-              bare
             />
           ))}
         </div>
       ) : (
         !summary.detail && (
           <div
-            className="mt-1 line-clamp-2"
+            className="mt-2 line-clamp-2"
             style={{
               color: 'rgba(255,255,255,0.82)',
-              fontSize: isMobile ? '9px' : '10px',
+              fontSize: isMobile ? '10px' : '11px',
               lineHeight: 1.35,
             }}
           >
@@ -934,7 +933,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
       )}
 
       {visibleSubagents.length > 0 && (
-        <div className="mt-1.5 space-y-1">
+        <div className="mt-2 shrink-0 space-y-1">
           {visibleSubagents.map(agent => (
             <HelperChip key={agent.id} agent={agent} compact={isMobile} />
           ))}
@@ -943,13 +942,25 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
               className="text-center"
               style={{
                 color: 'rgba(255,255,255,0.65)',
-                fontSize: isMobile ? '8px' : '9px',
+                fontSize: isMobile ? '9px' : '10px',
                 fontWeight: 600,
               }}
             >
               +{hiddenSubagents} more in Spotlight
             </div>
           )}
+        </div>
+      )}
+
+      {visibleFeed.length > 0 && visibleFeed.length >= (isMobile ? 3 : 5) && (
+        <div
+          className="mt-1 shrink-0 text-center"
+          style={{
+            color: 'rgba(255,255,255,0.55)',
+            fontSize: isMobile ? '9px' : '10px',
+          }}
+        >
+          Open Spotlight for full activity
         </div>
       )}
     </div>
@@ -966,24 +977,26 @@ function HelperChip({ agent, compact }: {
 
   return (
     <div
-      className="flex min-w-0 items-center gap-1.5"
+      className="flex min-w-0 items-center gap-2"
       style={{ padding: compact ? '2px 0' : '3px 0' }}
     >
-      <ActivityIcon
+      <ActivityIconBadge
         type={agent.activityType}
         tool={agent.tool}
         label={line}
-        className={`h-3 w-3 shrink-0 ${isFailed ? 'text-red-200' : 'text-white/85'}`}
+        iconPlatform={agent.iconPlatform}
+        iconUrl={agent.iconUrl}
+        failed={isFailed}
+        size="sm"
+        surface="clippy"
       />
       {isRunning && (
-        <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-sky-200/70 -ml-1" />
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-sky-200/70 -ml-1" />
       )}
       <span
-        className="min-w-0 flex-1 truncate"
+        className="min-w-0 flex-1 truncate text-[11px] leading-snug"
         style={{
-          color: 'rgba(255,255,255,0.88)',
-          fontSize: compact ? '8px' : '9px',
-          lineHeight: 1.2,
+          color: 'rgba(255,255,255,0.9)',
         }}
         title={agent.goal}
       >
@@ -991,7 +1004,7 @@ function HelperChip({ agent, compact }: {
       </span>
       {agent.terminalActive && (
         <span
-          className="shrink-0 text-[8px] font-semibold uppercase tracking-wide"
+          className="shrink-0 text-[9px] font-semibold uppercase tracking-wide"
           style={{ color: 'rgba(255,255,255,0.45)' }}
         >
           term

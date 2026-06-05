@@ -1,0 +1,54 @@
+/**
+ * Sentry client initialization for the Construct frontend.
+ */
+
+import * as Sentry from '@sentry/react';
+
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+const ENVIRONMENT = import.meta.env.VITE_SENTRY_ENVIRONMENT as string | undefined
+  || import.meta.env.MODE
+  || 'development';
+const RELEASE = import.meta.env.VITE_APP_VERSION as string | undefined;
+
+let initialized = false;
+
+export function initSentry(): void {
+  if (initialized || !SENTRY_DSN) return;
+
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: ENVIRONMENT,
+    release: RELEASE,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+    ],
+    tracesSampleRate: import.meta.env.PROD ? 0.5 : 1.0,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+    sendDefaultPii: false,
+  });
+
+  initialized = true;
+}
+
+export function captureClientException(
+  error: unknown,
+  context?: {
+    source?: string;
+    correlationId?: string;
+    errorId?: string;
+    extra?: Record<string, unknown>;
+  },
+): void {
+  if (!initialized) return;
+  Sentry.withScope((scope) => {
+    if (context?.source) scope.setTag('source', context.source);
+    if (context?.correlationId) scope.setTag('correlationId', context.correlationId);
+    if (context?.errorId) scope.setTag('errorId', context.errorId);
+    if (context?.extra) scope.setExtras(context.extra);
+    Sentry.captureException(error);
+  });
+}
+
+export { Sentry };
