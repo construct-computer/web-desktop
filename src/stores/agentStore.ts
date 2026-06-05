@@ -6135,7 +6135,6 @@ export const useComputerStore = create<ComputerStore>()(
         case 'session_created': {
           const newKey = event.data?.sessionKey as string | undefined;
           if (newKey) {
-            try { sessionStorage.setItem(LAST_VIEWED_SESSION_KEY, newKey); } catch { /* */ }
             set(state => {
               if (state.chatSessions.some(s => s.key === newKey)) return {};
               const now = Date.now();
@@ -6147,22 +6146,18 @@ export const useComputerStore = create<ComputerStore>()(
               };
               return { chatSessions: [session, ...state.chatSessions] };
             });
-            const { runningSessions, agentRunning } = get();
-            const isIdle = runningSessions.size === 0 && !agentRunning;
-            if (isIdle) {
-              void get().switchSession(newKey).then(() => {
-                if (!useWindowStore.getState().spotlightOpen) {
-                  useWindowStore.getState().toggleSpotlight();
-                }
-              });
-            }
           }
           break;
         }
 
         case 'session_activated': {
           const activatedKey = event.data?.sessionKey as string | undefined;
-          if (activatedKey && activatedKey !== get().activeSessionKey) {
+          const activationReason = event.data?.reason as string | undefined;
+          if (
+            activatedKey
+            && activatedKey !== get().activeSessionKey
+            && activationReason !== 'scheduled_task'
+          ) {
             const { runningSessions, agentRunning } = get();
             if (runningSessions.size === 0 && !agentRunning) {
               void get().switchSession(activatedKey);
