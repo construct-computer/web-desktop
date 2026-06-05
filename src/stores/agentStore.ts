@@ -13,6 +13,14 @@ import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
 import { isTriggeredSessionKey } from './agentSessionKeys';
+
+function stripScheduleDeliveryBlock(prompt: string): string {
+  const trimmed = (prompt || '').trim();
+  if (!trimmed) return '';
+  const marker = '\n\nDelivery requirement:';
+  const idx = trimmed.indexOf(marker);
+  return idx >= 0 ? trimmed.slice(0, idx).trim() : trimmed;
+}
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { workOrderNotificationPriority, type NotificationPriority } from '@/lib/notificationPolicy';
@@ -1401,7 +1409,8 @@ let chatHistoryLoading = false;
 let pendingHistorySessionKey: string | null = null;
 /** Sessions whose history was successfully hydrated this page load. */
 const historyHydratedKeys = new Set<string>();
-const historyEmptyRetryAttempted = new Set<string>();
+const triggeredHistoryRetryCounts = new Map<string, number>();
+const TRIGGERED_HISTORY_MAX_RETRIES = 5;
 /** Tracks sessions that already received a failure retry. */
 const historyRetryAttempted = new Set<string>();
 const LAST_VIEWED_SESSION_KEY = 'construct:last-viewed-session';
@@ -1804,9 +1813,7 @@ export const useComputerStore = create<ComputerStore>()(
       try {
         preserveActiveKey = sessionStorage.getItem(LAST_VIEWED_SESSION_KEY) || undefined;
       } catch { /* */ }
-      get().loadSessions(false, preserveActiveKey ? { preserveActiveKey } : undefined).then(async () => {
-        await get().loadChatHistory();
-      });
+      void get().loadSessions(false, preserveActiveKey ? { preserveActiveKey } : undefined);
 
       // Fetch desktop state via REST as a fallback sync.
       // The agent WS also sends desktop_state on connect, but the REST call
@@ -2313,15 +2320,17 @@ export const useComputerStore = create<ComputerStore>()(
     loadChatHistory: async () => {
       const { instanceId, activeSessionKey } = get();
       if (!instanceId) return;
+      const requestedSessionKey = activeSessionKey || 'default';
 
       // If /clear was used recently (flag survives refresh), skip loading
       // stale history from the backend — the agent may not have finished
       // persisting the clear yet. The flag is consumed here so the NEXT
       // refresh loads normally (by then the agent will have persisted).
       try {
-        if (localStorage.getItem('construct:history-cleared') === '1') {
+        const clearedKey = localStorage.getItem('construct:history-cleared');
+        if (clearedKey && clearedKey === requestedSessionKey) {
           localStorage.removeItem('construct:history-cleared');
-          logger.info('Skipping chat history load — /clear was used recently');
+          logger.info('Skipping chat history load — /clear was used recently for', requestedSessionKey);
           set({ historyLoading: false });
           return;
         }
@@ -2335,9 +2344,7 @@ export const useComputerStore = create<ComputerStore>()(
       chatHistoryLoading = true;
       set({ historyLoading: true });
 
-      // Capture the session key before the async fetch so we can detect
-      // if the user switched sessions while the request was in flight.
-      const requestedSessionKey = activeSessionKey;
+      let scheduledEmptyRetry = false;
 
       try {
         const result = await api.getAgentHistory(instanceId, requestedSessionKey);
@@ -2374,25 +2381,33 @@ export const useComputerStore = create<ComputerStore>()(
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
         if ((!messages || messages.length === 0) && (!events || events.length === 0)) {
-          if (
-            isTriggeredSessionKey(requestedSessionKey)
-            && !historyEmptyRetryAttempted.has(requestedSessionKey)
-          ) {
-            historyEmptyRetryAttempted.add(requestedSessionKey);
+          const retryCount = triggeredHistoryRetryCounts.get(requestedSessionKey) || 0;
+          if (isTriggeredSessionKey(requestedSessionKey) && retryCount < TRIGGERED_HISTORY_MAX_RETRIES) {
+            scheduledEmptyRetry = true;
+            triggeredHistoryRetryCounts.set(requestedSessionKey, retryCount + 1);
+            set({ historyLoading: true, sessionSwitching: true });
             setTimeout(() => {
               if (get().activeSessionKey === requestedSessionKey) {
                 void get().loadChatHistory();
               }
-            }, 1500);
+            }, 1000 * (retryCount + 1));
             return;
           }
+          triggeredHistoryRetryCounts.delete(requestedSessionKey);
           if (get().activeSessionKey === requestedSessionKey) {
+            const keepLiveMessages = get().chatMessages.length > 0
+              || (sessionMessageCache.get(requestedSessionKey)?.length ?? 0) > 0;
             historyHydratedKeys.add(requestedSessionKey);
-            set({ chatMessages: [], historyLoadError: null });
-            sessionMessageCache.set(requestedSessionKey, []);
+            if (!keepLiveMessages) {
+              set({ chatMessages: [], historyLoadError: null });
+              sessionMessageCache.set(requestedSessionKey, []);
+            } else {
+              set({ historyLoadError: null });
+            }
           }
           return;
         }
+        triggeredHistoryRetryCounts.delete(requestedSessionKey);
 
         // ── Build operation metadata maps from BOTH sources:
         // 1. operation_metadata from the /history response (scans ALL messages,
@@ -2531,6 +2546,8 @@ export const useComputerStore = create<ComputerStore>()(
                     ? scheduledSource.senderName.trim()
                     : '';
                   content = senderName || 'Scheduled task';
+                } else {
+                  content = stripScheduleDeliveryBlock(content);
                 }
                 if (!sourceMeta) {
                   sourceMeta = coerceExternalSource(meta.source) || { platform: 'scheduled', senderName: content };
@@ -2944,7 +2961,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
       } finally {
         chatHistoryLoading = false;
-        if (get().activeSessionKey === requestedSessionKey) {
+        if (!scheduledEmptyRetry && get().activeSessionKey === requestedSessionKey) {
           set({ historyLoading: false, sessionSwitching: false });
         }
         const nextPending = pendingHistorySessionKey;
@@ -3622,7 +3639,7 @@ export const useComputerStore = create<ComputerStore>()(
       dispatchAgentHistoryCleared({ sessionKey: currentKey || 'default' });
       // Set a flag so that if the user refreshes before the agent finishes
       // persisting the clear, loadChatHistory() won't reload stale messages.
-      try { localStorage.setItem('construct:history-cleared', '1'); } catch { /* */ }
+      try { localStorage.setItem('construct:history-cleared', currentKey || 'default'); } catch { /* */ }
     },
 
     // ── Session management ──────────────────────────────────
@@ -3762,19 +3779,6 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Silently refresh from API (updates cache with latest)
           await get().loadChatHistory();
-          if (
-            get().activeSessionKey === key
-            && get().chatMessages.length === 0
-            && isTriggeredSessionKey(key)
-            && !historyEmptyRetryAttempted.has(key)
-          ) {
-            historyEmptyRetryAttempted.add(key);
-            setTimeout(() => {
-              if (get().activeSessionKey === key && get().chatMessages.length === 0) {
-                void get().loadChatHistory();
-              }
-            }, 1500);
-          }
         }
       } catch (err) {
         logger.warn('Error switching session:', err);
@@ -6131,6 +6135,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'session_created': {
           const newKey = event.data?.sessionKey as string | undefined;
           if (newKey) {
+            try { sessionStorage.setItem(LAST_VIEWED_SESSION_KEY, newKey); } catch { /* */ }
             set(state => {
               if (state.chatSessions.some(s => s.key === newKey)) return {};
               const now = Date.now();
