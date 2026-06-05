@@ -459,11 +459,10 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
     const currentTool = pa?.currentTool;
     if (currentTool) {
       const toolLabels: Record<string, string> = {
-        terminal: 'Running command', web_search: 'Searching web', remote_browser: 'Browsing',
-        read_file: 'Reading file', write_file: 'Writing file', email: 'Email',
-        slack: 'Slack', telegram: 'Telegram', memory_recall: 'Recalling', memory_store: 'Remembering',
-        spawn_agent: 'Starting helper', spawn_agents: 'Parallel work', composio: 'Integration', app: 'Using app',
-        view_image: 'Viewing image', agent_calendar: 'Calendar',
+        terminal: 'Running command', files: 'Working with files', web_search: 'Searching web',
+        remote_browser: 'Browsing', email: 'Email', slack: 'Slack', telegram: 'Telegram',
+        memory_recall: 'Recalling', memory_store: 'Remembering', spawn_agent: 'Starting helper',
+        spawn_agents: 'Parallel work', composio: 'Integration', app: 'Using app', agent_calendar: 'Calendar',
       };
       activitySpecs.push({
         id: `__activity_${pSpec.id}__`,

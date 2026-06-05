@@ -7,38 +7,36 @@ describe('routeToolToWindow — built-in tools', () => {
     expect(routeToolToWindow('browser_navigate')?.type).toBe('browser');
   });
 
-  it('routes terminal / sandbox / github to the terminal window', () => {
+  it('routes terminal / github to the terminal window', () => {
     expect(routeToolToWindow('terminal')?.type).toBe('terminal');
     expect(routeToolToWindow('github')?.type).toBe('terminal');
-    expect(routeToolToWindow('sandbox_write_file')?.type).toBe('terminal');
-    expect(routeToolToWindow('save_to_workspace')?.type).toBe('terminal');
   });
 
   it('routes a text file read to the editor with the file path and no auto-close', () => {
-    const route = routeToolToWindow('read_file', { path: 'notes/todo.txt' });
+    const route = routeToolToWindow('files', { action: 'read', path: 'notes/todo.txt' });
     expect(route).toMatchObject({ type: 'editor', openMode: 'file', autoClose: false });
     expect(route?.metadata?.filePath).toBe('notes/todo.txt');
   });
 
   it('routes a document file read to the document viewer', () => {
-    const route = routeToolToWindow('read_file', { path: 'reports/q3.pdf' });
+    const route = routeToolToWindow('files', { action: 'read', path: 'reports/q3.pdf' });
     expect(route).toMatchObject({ type: 'document-viewer', openMode: 'file' });
     expect(route?.metadata?.filePath).toBe('reports/q3.pdf');
   });
 
-  it('routes write_file with a path to a file window', () => {
-    expect(routeToolToWindow('write_file', { path: 'a.ts' })?.type).toBe('editor');
+  it('routes files write with a path to a file window', () => {
+    expect(routeToolToWindow('files', { action: 'write', path: 'a.ts' })?.type).toBe('editor');
   });
 
   it('routes pathless file ops and directory/search to the Files app', () => {
-    expect(routeToolToWindow('read_file')?.type).toBe('files');
-    expect(routeToolToWindow('list_directory', { path: 'docs' })?.type).toBe('files');
-    expect(routeToolToWindow('search_files', { query: 'x' })?.type).toBe('files');
-    expect(routeToolToWindow('delete_file', { path: 'x.txt' })?.type).toBe('files');
+    expect(routeToolToWindow('files', { action: 'read' })?.type).toBe('files');
+    expect(routeToolToWindow('files', { action: 'list', path: 'docs' })?.type).toBe('files');
+    expect(routeToolToWindow('files', { action: 'search', query: 'x' })?.type).toBe('files');
+    expect(routeToolToWindow('files', { action: 'delete', path: 'x.txt' })?.type).toBe('files');
   });
 
-  it('routes view_image to the document viewer', () => {
-    expect(routeToolToWindow('view_image', { path: 'img/a.png' })?.type).toBe('document-viewer');
+  it('routes files read on images to the document viewer', () => {
+    expect(routeToolToWindow('files', { action: 'read', path: 'img/a.png' })?.type).toBe('document-viewer');
   });
 
   it('routes calendar / email / memory tools', () => {

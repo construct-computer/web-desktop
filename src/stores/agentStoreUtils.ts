@@ -288,20 +288,17 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const display = cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd;
     return { text: `Running \`${display}\``, activityType: 'terminal' };
   }
-  if (tool === 'sandbox_write_file') {
-    return { text: `Writing ${p.path || 'file'} to sandbox`, activityType: 'terminal' };
-  }
-  if (tool === 'sandbox_read_file') {
-    return { text: `Reading ${p.path || 'file'} from sandbox`, activityType: 'terminal' };
-  }
-  if (tool === 'save_to_workspace') {
-    return { text: `Saving ${p.workspace_path || 'file'} to workspace`, activityType: 'file' };
-  }
-  if (tool === 'load_from_workspace') {
-    return { text: `Loading ${p.workspace_path || 'file'} into sandbox`, activityType: 'file' };
-  }
-  if (tool === 'view_image') {
-    return { text: `Viewing image ${p.path || ''}`, activityType: 'tool' };
+  if (tool === 'files') {
+    const action = p.action as string | undefined;
+    const path = (p.path as string) || (p.from as string) || 'file';
+    switch (action) {
+      case 'read': return { text: `Reading ${path}`, activityType: 'file' };
+      case 'write': return { text: `Writing ${path}`, activityType: 'file' };
+      case 'list': return { text: `Listing ${path || '/'}`, activityType: 'file' };
+      case 'search': return { text: `Searching for ${p.query || 'files'}`, activityType: 'file' };
+      case 'delete': return { text: `Deleting ${path}`, activityType: 'file' };
+      default: return { text: `Files: ${action || 'operation'}`, activityType: 'file' };
+    }
   }
   if (tool === 'document_guide') {
     return { text: `Loading ${p.format || 'document'} guide`, activityType: 'tool' };
@@ -750,10 +747,11 @@ export function describeToolFailure(
     if (sandboxDetail) return `Failed \`${display}\` · ${sandboxDetail}`;
     return `Failed \`${display}\`${exitSuffix}`;
   }
-  if (tool === 'sandbox_read_file') return `Failed reading ${params?.path || 'file'}${exitSuffix}`;
-  if (tool === 'sandbox_write_file') return `Failed writing ${params?.path || 'file'}${exitSuffix}`;
-  if (tool === 'save_to_workspace') return `Failed saving ${params?.workspace_path || 'file'}${exitSuffix}`;
-  if (tool === 'load_from_workspace') return `Failed loading ${params?.workspace_path || 'file'}${exitSuffix}`;
+  if (tool === 'files') {
+    const action = params?.action as string | undefined;
+    const path = (params?.path as string) || (params?.from as string) || 'file';
+    return `Failed files ${action || 'operation'} on ${path}${exitSuffix}`;
+  }
   if (tool === 'browser' || tool === 'remote_browser' || tool.startsWith('browser_')) {
     const detail = rawError.slice(0, 140);
     return detail ? `Browser failed · ${detail}` : `Browser failed${exitSuffix}`;

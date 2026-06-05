@@ -3078,7 +3078,7 @@ export const useComputerStore = create<ComputerStore>()(
           : normalizedAttachments;
         if (nonImagePaths.length > 0) {
           const attachList = nonImagePaths.map(p => `- ${p}`).join('\n');
-          messageForAgent = `${content}\n\n[Attached workspace files]\n${attachList}\nUse read_file for text/metadata, or /construct/workspace/<path> in terminal after the sandbox mounts.\n[End attached workspace files]`;
+          messageForAgent = `${content}\n\n[Attached workspace files]\n${attachList}\nUse files({ action: "read", path: "<path>" }) for text/metadata, or /mnt/saved/<path> in terminal.\n[End attached workspace files]`;
         }
       }
 
@@ -4949,10 +4949,10 @@ export const useComputerStore = create<ComputerStore>()(
 
           const route = routeToolToWindow(tool, params);
           const windowType = route?.type ?? null;
-          if (route && route.type !== 'browser' && tool !== 'write_file') {
+          if (route && route.type !== 'browser' && !(tool === 'files' && params?.action === 'write')) {
             // Open/focus the matching desktop app (loads file content for file
             // routes; opens the dynamic app for app routes) and track it so it
-            // auto-closes once the tool finishes. write_file opens on tool_result
+            // auto-closes once the tool finishes. files write opens on tool_result
             // so the file exists before we fetch content.
             applyToolWindowRoute(route, targetWsId, { track: true });
           }
@@ -5066,12 +5066,14 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Refresh file windows after successful file tool completion
           if (success !== false && !resultSubagentId) {
-            const fileTools = new Set(['write_file', 'read_file', 'save_to_workspace']);
+            const fileTools = new Set(['files']);
             if (fileTools.has(tool)) {
               const args = (event.data?.args ?? event.data?.params) as Record<string, unknown> | undefined;
-              const filePath = (args?.path ?? args?.save_path) as string | undefined;
-              if (filePath) {
-                const route = routeToolToWindow(tool, args);
+              const action = args?.action as string | undefined;
+              const rawPath = (args?.path ?? args?.save_path) as string | undefined;
+              const filePath = rawPath?.replace(/^\/mnt\/saved\//, '');
+              if (filePath && (action === 'read' || action === 'write')) {
+                const route = routeToolToWindow(tool, { ...args, path: filePath });
                 const targetWsId = (event.data?.workspace_id as string | undefined) || 'main';
                 if (route?.openMode === 'file') {
                   if (route.type === 'document-viewer') {

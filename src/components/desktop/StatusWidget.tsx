@@ -19,13 +19,12 @@ import buyIcon from '@/icons/buy.png';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const TOOL_LABELS: Record<string, string> = {
-  terminal: 'Terminal', sandbox_write_file: 'Write file', sandbox_read_file: 'Read file',
-  save_to_workspace: 'Save', load_from_workspace: 'Load', browser: 'Browser',
-  web_search: 'Search', web_fetch: 'Fetch', remote_browser: 'Browse', read_file: 'Read', write_file: 'Write',
-  list_directory: 'List files', email: 'Email', calendar: 'Calendar',
-  agent_calendar: 'Calendar', slack: 'Slack', telegram: 'Telegram', memory: 'Knowledge',
+  terminal: 'Terminal', files: 'Files', browser: 'Browser',
+  web_search: 'Search', web_fetch: 'Fetch', remote_browser: 'Browse',
+  email: 'Email', calendar: 'Calendar', agent_calendar: 'Calendar',
+  slack: 'Slack', telegram: 'Telegram', memory: 'Knowledge',
   spawn_agent: 'Spawn', composio: 'Integration', desktop: 'Desktop',
-  document_guide: 'Doc guide', view_image: 'View image',
+  document_guide: 'Doc guide',
 };
 
 function formatTool(tool: string): string {

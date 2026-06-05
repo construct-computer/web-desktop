@@ -125,16 +125,22 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
     return { type: 'browser', autoClose: false };
   }
 
-  // ── Terminal / sandbox / github ──────────────────────────────────
-  if (
-    tool === 'terminal' || tool === 'exec' || tool === 'github' ||
-    tool === 'sandbox_write_file' || tool === 'sandbox_read_file' ||
-    tool === 'save_to_workspace' || tool === 'load_from_workspace'
-  ) {
+  // ── Terminal / github ──────────────────────────────────────────
+  if (tool === 'terminal' || tool === 'exec' || tool === 'github') {
     return { type: 'terminal', autoClose: true };
   }
 
-  // ── Workspace files ──────────────────────────────────────────────
+  // ── Unified files tool ───────────────────────────────────────────
+  if (tool === 'files') {
+    const action = str(p.action);
+    const path = filePathParam(p);
+    if (path && (action === 'read' || action === 'write')) {
+      return fileRoute(path.replace(/^\/mnt\/saved\//, ''));
+    }
+    return { type: 'files' };
+  }
+
+  // ── Workspace files (legacy aliases) ─────────────────────────────
   if (tool === 'read_file' || tool === 'write_file' ||
       tool === 'read' || tool === 'write' || tool === 'edit' ||
       tool === 'file_read' || tool === 'file_write' || tool === 'file_edit') {
