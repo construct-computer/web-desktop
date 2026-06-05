@@ -23,6 +23,7 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import { useUpcomingCalendarEvent } from '@/hooks/useUpcomingCalendarEvent';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { openAuthRedirect } from '@/lib/utils';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { InfoHint } from '@/components/ui';
@@ -303,11 +304,7 @@ export function AutopilotPanel() {
   const activeSessionKey = useComputerStore((s) => s.activeSessionKey);
   const chatSessions = useComputerStore((s) => s.chatSessions);
   const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
-  const loadSessions = useComputerStore((s) => s.loadSessions);
-  const switchSession = useComputerStore((s) => s.switchSession);
   const openWindow = useWindowStore((s) => s.openWindow);
-  const spotlightOpen = useWindowStore((s) => s.spotlightOpen);
-  const toggleSpotlight = useWindowStore((s) => s.toggleSpotlight);
   const unreadNotificationCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
   const openNotificationTab = useNotificationStore((s) => s.openDrawerTab);
   const usage = useBillingStore((s) => s.usage);
@@ -588,14 +585,6 @@ export function AutopilotPanel() {
       : loading
         ? 'Checking'
         : 'No blockers';
-
-  const openSpotlightSession = useCallback(async (sessionKey?: string) => {
-    await loadSessions(true);
-    if (sessionKey && sessionKey !== activeSessionKey) {
-      await switchSession(sessionKey);
-    }
-    if (!spotlightOpen) toggleSpotlight();
-  }, [activeSessionKey, loadSessions, spotlightOpen, switchSession, toggleSpotlight]);
 
   const activeSessionForOpen = primaryRun?.sessionKey || currentAction?.sessionKey || currentGoal?.sessionKey || activeSessionKey;
   const showActiveTrace = !attention && hasActiveRun;

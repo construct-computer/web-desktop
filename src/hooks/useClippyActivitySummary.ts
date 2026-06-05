@@ -55,6 +55,7 @@ export interface ClippyActivitySummary {
   detail: string;
   isActive: boolean;
   isIdle: boolean;
+  primaryRunningSessionKey?: string;
   counts: {
     running: number;
     complete: number;
@@ -74,8 +75,9 @@ function isRunningOperation(op: TrackedOperation): boolean {
   return op.status === 'running' || op.status === 'aggregating';
 }
 
-function matchesSession(op: TrackedOperation, activeSessionKey: string): boolean {
-  return !op.sessionKey || op.sessionKey === activeSessionKey;
+function matchesRunningSession(op: TrackedOperation, runningSessions: Set<string>): boolean {
+  if (!op.sessionKey) return runningSessions.size > 0;
+  return runningSessions.has(op.sessionKey);
 }
 
 function coerceActivityType(
@@ -176,16 +178,29 @@ function activityFromMessage(message: ChatMessage, actor: string, idPrefix: stri
 }
 
 export function useClippyActivitySummary(mobile = false): ClippyActivitySummary {
-  const { stateLabel, scrollText, isActive, isIdle } = useAgentStateLabel();
+  const {
+    stateLabel,
+    scrollText,
+    isActive,
+    isIdle,
+    primaryRunningSessionKey,
+  } = useAgentStateLabel();
   const chatMessages = useComputerStore(s => s.chatMessages);
+  const chatSessions = useComputerStore(s => s.chatSessions);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const runningSessions = useComputerStore(s => s.runningSessions);
   const operations = useAgentTrackerStore(s => s.operations);
   const terminalRuns = useTerminalStore(s => s.runs);
 
   return useMemo(() => {
+    const sessionTitle = (key?: string) =>
+      chatSessions.find(s => s.key === key)?.title || (key ? key.slice(0, 12) : 'Main');
+
     const allOps = Object.values(operations);
-    const runningOpsInView = allOps.filter(op => isRunningOperation(op) && matchesSession(op, activeSessionKey));
-    const focusedOps = runningOpsInView;
+    const runningOpsGlobal = allOps.filter(
+      (op) => isRunningOperation(op) && matchesRunningSession(op, runningSessions),
+    );
+    const focusedOps = runningOpsGlobal;
 
     const focusedSubagents = focusedOps
       .flatMap(op => op.subAgents)
@@ -274,14 +289,15 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
 
     for (const run of runs) {
       const belongsToFocusedSubagent = !!run.subagentId && subagentIds.has(run.subagentId);
-      const belongsToActiveSession = run.sessionKey === activeSessionKey || (!run.sessionKey && !run.subagentId);
+      const belongsToRunningSession = !run.sessionKey || runningSessions.has(run.sessionKey);
       if (hasSubagents && belongsToFocusedSubagent) continue;
-      if (!belongsToFocusedSubagent && !belongsToActiveSession) continue;
+      if (!belongsToFocusedSubagent && !belongsToRunningSession) continue;
 
       const agent = run.subagentId
         ? focusedSubagents.find(item => item.id === run.subagentId)
         : undefined;
-      feed.push(terminalActivity(run, agent?.label || 'Terminal'));
+      const actor = agent?.label || sessionTitle(run.sessionKey);
+      feed.push(terminalActivity(run, actor));
     }
 
     const activityFeed = feed
@@ -301,9 +317,23 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
       detail,
       isActive,
       isIdle,
+      primaryRunningSessionKey,
       counts,
       activityFeed,
       subagents,
     };
-  }, [activeSessionKey, chatMessages, isActive, isIdle, mobile, operations, scrollText, stateLabel, terminalRuns]);
+  }, [
+    activeSessionKey,
+    chatMessages,
+    chatSessions,
+    isActive,
+    isIdle,
+    mobile,
+    operations,
+    primaryRunningSessionKey,
+    runningSessions,
+    scrollText,
+    stateLabel,
+    terminalRuns,
+  ]);
 }

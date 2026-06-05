@@ -14,7 +14,8 @@ import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
-import { workOrderNotificationPriority } from '@/lib/notificationPolicy';
+import { workOrderNotificationPriority, type NotificationPriority } from '@/lib/notificationPolicy';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
@@ -633,6 +634,8 @@ interface ComputerStore {
   chatMessages: ChatMessage[];
   /** True while switching sessions — prevents empty state flash in MessageList */
   sessionSwitching: boolean;
+  /** Non-null when the last chat history fetch failed for the active session. */
+  historyLoadError: string | null;
   agentThinking: string | null;
   /** Streaming thinking text from the LLM. null = not thinking, '' = started (no tokens yet). */
   agentThinkingStream: string | null;
@@ -1391,6 +1394,13 @@ function mergeInflightAssistantIntoHistory(
 let agentRunningTimer: ReturnType<typeof setTimeout> | null = null;
 /** Guard: true while loadChatHistory is in-flight (concurrent fetch coalescing). */
 let chatHistoryLoading = false;
+/** Session key queued while a history fetch is in-flight. */
+let pendingHistorySessionKey: string | null = null;
+/** Sessions whose history was successfully hydrated this page load. */
+const historyHydratedKeys = new Set<string>();
+/** Tracks sessions that already received a failure retry. */
+const historyRetryAttempted = new Set<string>();
+const LAST_VIEWED_SESSION_KEY = 'construct:last-viewed-session';
 let sessionsLoading: Promise<void> | null = null;
 let sessionsLoadedAt = 0;
 let sessionsRequestSeq = 0;
@@ -1569,6 +1579,7 @@ export const useComputerStore = create<ComputerStore>()(
     chatMessages: [],
     replyingTo: null as ChatMessage | null,
     sessionSwitching: false,
+    historyLoadError: null,
     agentThinking: null,
     agentThinkingStream: null,
     pendingImageDataBySession: {},
@@ -1784,7 +1795,11 @@ export const useComputerStore = create<ComputerStore>()(
       // while the main pane stayed blank. If a user genuinely wants a fresh
       // chat they can hit "+ New Chat" in the sidebar (which passes
       // `forceNew: true`).
-      get().loadSessions().then(async () => {
+      let preserveActiveKey: string | undefined;
+      try {
+        preserveActiveKey = sessionStorage.getItem(LAST_VIEWED_SESSION_KEY) || undefined;
+      } catch { /* */ }
+      get().loadSessions(false, preserveActiveKey ? { preserveActiveKey } : undefined).then(async () => {
         await get().loadChatHistory();
       });
 
@@ -2306,8 +2321,11 @@ export const useComputerStore = create<ComputerStore>()(
         }
       } catch { /* */ }
 
-      // Prevent concurrent loads from racing (multiple subscribeToComputer calls)
-      if (chatHistoryLoading) return;
+      // Queue a pending load if one is already in-flight for a different session.
+      if (chatHistoryLoading) {
+        pendingHistorySessionKey = activeSessionKey;
+        return;
+      }
       chatHistoryLoading = true;
 
       // Capture the session key before the async fetch so we can detect
@@ -2326,6 +2344,18 @@ export const useComputerStore = create<ComputerStore>()(
 
         if (!result.success) {
           logger.warn('Failed to load chat history:', result.error);
+          const errMsg = result.error || 'Failed to load chat history';
+          if (get().activeSessionKey === requestedSessionKey) {
+            set({ historyLoadError: errMsg });
+          }
+          if (!historyRetryAttempted.has(requestedSessionKey)) {
+            historyRetryAttempted.add(requestedSessionKey);
+            setTimeout(() => {
+              if (get().activeSessionKey === requestedSessionKey) {
+                get().loadChatHistory();
+              }
+            }, 2000);
+          }
           return;
         }
 
@@ -2859,21 +2889,35 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         const compactedHistory = compactIncidentNotices(historyWithRuns);
-        set({ chatMessages: compactedHistory });
+        historyHydratedKeys.add(requestedSessionKey);
+        historyRetryAttempted.delete(requestedSessionKey);
+        set({ chatMessages: compactedHistory, historyLoadError: null });
         sessionMessageCache.set(requestedSessionKey, compactedHistory);
         logger.info(`Loaded ${compactedHistory.length} messages from chat history`);
       } catch (err) {
         logger.warn('Error loading chat history:', err);
+        const errMsg = err instanceof Error ? err.message : 'Failed to load chat history';
+        if (get().activeSessionKey === requestedSessionKey) {
+          set({ historyLoadError: errMsg });
+        }
+        if (!historyRetryAttempted.has(requestedSessionKey)) {
+          historyRetryAttempted.add(requestedSessionKey);
+          setTimeout(() => {
+            if (get().activeSessionKey === requestedSessionKey) {
+              get().loadChatHistory();
+            }
+          }, 2000);
+        }
       } finally {
         chatHistoryLoading = false;
-        // A direct call to `loadChatHistory` while a fetch was in flight returns
-        // early (see guard above). If the user switched sessions during that
-        // request, the new tab never had a turn to run — re-run for whichever
-        // session is now visible.
-        if (get().activeSessionKey !== requestedSessionKey) {
-          const targetKey = get().activeSessionKey;
+        const nextPending = pendingHistorySessionKey;
+        pendingHistorySessionKey = null;
+        // Re-run for whichever session is now visible (switch during fetch or queued request).
+        const targetKey = get().activeSessionKey;
+        if (targetKey !== requestedSessionKey || nextPending) {
+          const keyToLoad = nextPending && nextPending !== requestedSessionKey ? nextPending : targetKey;
           queueMicrotask(() => {
-            if (get().activeSessionKey === targetKey) {
+            if (get().activeSessionKey === keyToLoad || nextPending === get().activeSessionKey) {
               get().loadChatHistory();
             }
           });
@@ -3652,10 +3696,15 @@ export const useComputerStore = create<ComputerStore>()(
       }
 
       try {
+        try {
+          sessionStorage.setItem(LAST_VIEWED_SESSION_KEY, key);
+        } catch { /* */ }
+
         const result = await api.activateAgentSession(instanceId, key);
         if (result.success) {
           const isTargetRunning = get().runningSessions.has(key);
           const cached = sessionMessageCache.get(key);
+          const hasHydratedCache = cached && cached.length > 0;
 
           set(state => ({
             activeSessionKey: key,
@@ -3663,7 +3712,8 @@ export const useComputerStore = create<ComputerStore>()(
             replyingTo: null,
             agentThinking: null,
             agentRunning: isTargetRunning,
-            sessionSwitching: !cached, // only show loading if no cache
+            historyLoadError: null,
+            sessionSwitching: !hasHydratedCache && !historyHydratedKeys.has(key),
             pendingComponentMentions: componentMentionsForSession(state.pendingComponentMentionsBySession, key),
           }));
 
@@ -4436,8 +4486,15 @@ export const useComputerStore = create<ComputerStore>()(
           if (msgRole === 'user' && msgContent && msgContent.startsWith('[System]')) {
             break;
           }
-          if (msgRole === 'user' && msgContent && isActiveSession) {
-            const current = get().chatMessages;
+          if (msgRole === 'user' && msgContent) {
+            const msgSource = event.data?.source as ChatMessage['source'];
+            const isInboundPlatformMsg = msgSource === 'telegram'
+              || msgSource === 'slack'
+              || msgSource === 'email'
+              || msgSource === 'scheduled';
+            if (!isInboundPlatformMsg && !isActiveSession) break;
+
+            const current = isActiveSession ? get().chatMessages : (sessionMessageCache.get(eventSessionKey) || []);
             const displayContent = stripAttachmentInstructionBlocks(msgContent);
             const lastUser = [...current].reverse().find(m => m.role === 'user');
             const incomingClientId = event.data?.clientId as string | undefined;
@@ -4446,7 +4503,6 @@ export const useComputerStore = create<ComputerStore>()(
               : false;
             // Skip if the last user message already matches (optimistic add from desktop input)
             if (!hasSameClientId && (!lastUser || lastUser.content !== displayContent)) {
-              const msgSource = event.data?.source as ChatMessage['source'];
               const sourceMeta = coerceExternalSource(event.data?.sourceMeta);
               const access = coerceExternalAccess(event.data?.access);
               const attachments = normalizeAttachmentPaths(event.data?.attachments as string[] | undefined);
@@ -5886,18 +5942,37 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'notification': {
-          // Agent sent a desktop notification — show it as a toast
           const title = event.data?.title as string || 'Construct notification';
           const body = event.data?.body as string | undefined;
           const source = event.data?.source as string | undefined;
           const variant = event.data?.variant as 'info' | 'success' | 'error' | undefined;
-          // Help requests get a longer toast duration (30s) so the user doesn't miss them
+          const eventKind = event.data?.eventKind as string | undefined;
+          const notifSessionKey = event.data?.sessionKey as string | undefined;
+          const action = event.data?.action as string | undefined;
+          const wsPriority = event.data?.priority as NotificationPriority | undefined;
+
           const isHelpRequest = source === 'Help Request';
-          const toastDuration = isHelpRequest ? 30_000 : undefined;
+          const isWorthwhile = wsPriority === 'important' || !!eventKind;
+          const toastDuration = isHelpRequest ? 30_000 : isWorthwhile ? 12_000 : undefined;
+          const priority: NotificationPriority = wsPriority
+            || (isHelpRequest ? 'critical' : isWorthwhile ? 'important' : 'critical');
+
+          let onClick: (() => void) | undefined;
+          if (action === 'open_spotlight' || (notifSessionKey && !action)) {
+            onClick = () => { void openSpotlightSession(notifSessionKey); };
+          } else if (action === 'open_email') {
+            onClick = () => {
+              useWindowStore.getState().ensureWindowOpen('email');
+              window.dispatchEvent(new CustomEvent('agent-email-refresh'));
+            };
+          } else if (action === 'open_access_control') {
+            onClick = () => { useWindowStore.getState().ensureWindowOpen('access-control'); };
+          }
+
           useNotificationStore.getState().addNotification(
-            { title, body, source, variant },
+            { title, body, source, variant, onClick },
             toastDuration,
-            { priority: 'critical' },
+            { priority, eventKind, sessionKey: notifSessionKey },
           );
           break;
         }
@@ -5996,8 +6071,6 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'session_created': {
-          // A backend-created session (e.g. a scheduled-task run) — surface it in
-          // the session switcher without yanking the user's active session.
           const newKey = event.data?.sessionKey as string | undefined;
           if (newKey) {
             set(state => {
@@ -6011,6 +6084,26 @@ export const useComputerStore = create<ComputerStore>()(
               };
               return { chatSessions: [session, ...state.chatSessions] };
             });
+            const { runningSessions, agentRunning } = get();
+            const isIdle = runningSessions.size === 0 && !agentRunning;
+            if (isIdle) {
+              void get().switchSession(newKey).then(() => {
+                if (!useWindowStore.getState().spotlightOpen) {
+                  useWindowStore.getState().toggleSpotlight();
+                }
+              });
+            }
+          }
+          break;
+        }
+
+        case 'session_activated': {
+          const activatedKey = event.data?.sessionKey as string | undefined;
+          if (activatedKey && activatedKey !== get().activeSessionKey) {
+            const { runningSessions, agentRunning } = get();
+            if (runningSessions.size === 0 && !agentRunning) {
+              void get().switchSession(activatedKey);
+            }
           }
           break;
         }

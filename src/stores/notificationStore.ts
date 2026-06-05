@@ -43,7 +43,7 @@ interface NotificationStore {
   addNotification: (
     n: Omit<Notification, 'id' | 'timestamp' | 'read'>,
     toastDurationMs?: number,
-    options?: { priority?: NotificationPriority },
+    options?: { priority?: NotificationPriority; eventKind?: string; sessionKey?: string },
   ) => string;
   /** Dismiss a toast banner (keeps notification in history). */
   dismissToast: (id: string) => void;
@@ -85,7 +85,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
     // Dedup: skip if an identical notification was added in the last 10s.
     // This prevents duplicates from replayed WebSocket events on reconnect.
-    const fingerprint = `${n.title}|${n.body || ''}|${n.source || ''}`;
+    const fingerprint = options?.eventKind
+      ? `${options.eventKind}|${options.sessionKey || ''}|${n.title}`
+      : `${n.title}|${n.body || ''}|${n.source || ''}`;
     if (recentFingerprints.has(fingerprint)) {
       return ''; // Already shown recently — skip
     }

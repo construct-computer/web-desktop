@@ -233,7 +233,9 @@ export function SpotlightSidebar() {
     openSettingsToSection('billing');
   }, [closeSpotlight]);
 
-  useEffect(() => { loadSessions(); }, [loadSessions]);
+  useEffect(() => {
+    void loadSessions(true, { preserveActiveKey: activeKey });
+  }, [loadSessions, activeKey]);
 
   const refreshAttention = useCallback(async (shouldApply: () => boolean = () => true) => {
     const [statusResult, pendingResult] = await Promise.all([

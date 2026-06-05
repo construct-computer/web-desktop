@@ -8,6 +8,7 @@ import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivi
 import { ActivityIconBadge } from '@/components/desktop/spotlight/ActivityIconBadge';
 import { Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { DOCK_HEIGHT, MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
 import avatarSrc from '@/assets/widget.png';
 import constructGif from '@/assets/construct/loader.gif';
@@ -546,7 +547,7 @@ export function ClippyWidget() {
   // - Errors (disconnected, agent error)
   // Simple "Working..." status is handled by the MenuBar indicator.
   const hasActivityContext = activitySummary.activityFeed.length > 0 || activitySummary.subagents.length > 0;
-  const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext;
+  const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext || isActive;
   const showBubble = isActive && hasUniqueContext && !dismissed;
   const showWelcome = !!welcomeMsg && !showBubble;
 
@@ -663,8 +664,7 @@ export function ClippyWidget() {
            isMobile={isMobile}
            closing={bubbleClosing}
            onClickBubble={() => {
-             // Let any current drag/click settle, then open spotlight
-             setTimeout(toggleSpotlight, 0);
+             void openSpotlightSession(activitySummary.primaryRunningSessionKey);
            }}
          />
       )}

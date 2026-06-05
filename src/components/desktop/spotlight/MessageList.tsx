@@ -243,6 +243,8 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   const sessionRunning = activeKey ? runningSessions.has(activeKey) : false;
   const hasContent = groups.length > 0 || sessionRunning;
   const sessionSwitching = useComputerStore(s => s.sessionSwitching);
+  const historyLoadError = useComputerStore(s => s.historyLoadError);
+  const loadChatHistory = useComputerStore(s => s.loadChatHistory);
 
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
 
@@ -253,6 +255,25 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
         <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-2/3 max-w-sm mx-auto motion-safe:animate-pulse" />
         <div className="h-3 bg-white/[0.08] dark:bg-white/[0.05] rounded-md w-1/2 max-w-xs mx-auto motion-safe:animate-pulse" />
         <p className="text-center text-[12px] text-[var(--color-text-muted)]/50 mt-4">Switching chat…</p>
+      </div>
+    );
+  }
+
+  if (!hasContent && historyLoadError) {
+    return (
+      <div className="flex-1 min-h-0 w-full min-w-0 flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400/60" />
+          <p className="text-[15px] font-light text-[var(--color-text)]/70">Could not load chat history</p>
+          <p className="text-[12px] text-[var(--color-text-muted)]/50 mt-2">{historyLoadError}</p>
+          <button
+            type="button"
+            onClick={() => { void loadChatHistory(); }}
+            className="mt-4 px-4 py-2 rounded-lg text-[12px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

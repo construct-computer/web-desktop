@@ -141,7 +141,9 @@ export function Spotlight() {
   const open = useWindowStore(s => s.spotlightOpen);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
   const userPlan = useAuthStore(s => s.user?.plan);
+  const instanceId = useComputerStore(s => s.instanceId);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const loadChatHistory = useComputerStore(s => s.loadChatHistory);
   const chatSessions = useComputerStore(s => s.chatSessions);
   const sessionTitle = useMemo(
     () => chatSessions.find(s => s.key === activeSessionKey)?.title || 'Chats',
@@ -164,6 +166,13 @@ export function Spotlight() {
     mq.addEventListener('change', update);
     return () => mq.removeEventListener('change', update);
   }, []);
+
+  // Hydrate chat history whenever the active session or instance changes.
+  useEffect(() => {
+    if (instanceId && activeSessionKey) {
+      void loadChatHistory();
+    }
+  }, [instanceId, activeSessionKey, loadChatHistory]);
 
   const scrimTransition = prefersReducedMotion
     ? 'none'
