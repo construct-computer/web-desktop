@@ -650,7 +650,7 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
             {providerCopyData.cta && (
               <button
                 type="button"
-                onClick={() => openSettingsToSection('subscription')}
+                onClick={() => openSettingsToSection('billing')}
                 className={`mt-1.5 text-xs underline underline-offset-2 ${TONE_CLASSES[providerCopyData.tone].text}`}
               >
                 {providerCopyData.cta.label}

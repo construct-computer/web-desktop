@@ -6025,7 +6025,7 @@ export const useComputerStore = create<ComputerStore>()(
               body: copy.toastBody ?? undefined,
               source: 'Usage',
               variant: copy.toastVariant,
-              onClick: copy.cta ? () => openSettingsToSection('subscription') : undefined,
+              onClick: copy.cta ? () => openSettingsToSection('billing') : undefined,
             }, 5000, { priority: copy.toastVariant === 'error' ? 'critical' : 'default' });
           };
 
@@ -6428,7 +6428,7 @@ export const useComputerStore = create<ComputerStore>()(
                 source: 'Usage',
                 variant: copy.toastVariant,
                 onClick: copy.cta
-                  ? () => openSettingsToSection('subscription')
+                  ? () => openSettingsToSection('billing')
                   : undefined,
               }, 8000, { priority: 'critical' });
             }

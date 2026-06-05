@@ -1311,7 +1311,7 @@ export function SpotlightInput() {
           {providerCopyData.cta ? (
             <button
               type="button"
-              onClick={() => openSettingsToSection('subscription')}
+              onClick={() => openSettingsToSection('billing')}
               className="text-[10px] underline-offset-2 hover:underline"
               style={{ color: `${TONE_HEX[providerCopyData.tone]}cc` }}
             >

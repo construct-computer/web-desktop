@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
+import { isCustomWallpaperId } from '@/lib/wallpapers';
 
 // ─── Wallpaper registry ────────────────────────────────────────────────────
 import wpConstruct from '@/assets/wallpapers/wallpaper.jpg';
@@ -24,61 +25,39 @@ export const WALLPAPERS: WallpaperOption[] = [
   { id: 'catgalaxy', name: 'Cat Galaxy', src: wpCatGalaxy },
 ];
 
-/** Look up wallpaper src by ID, falling back to the default */
+const BUILTIN_BY_ID = new Map(WALLPAPERS.map((wp) => [wp.id, wp]));
+
+/** Built-in preset src only (custom IDs must use useWallpaperUrl). */
+export function getBuiltinWallpaperSrc(id: string): string {
+  if (isCustomWallpaperId(id) || id === 'custom') {
+    return wpConstruct;
+  }
+  return BUILTIN_BY_ID.get(id)?.src ?? wpConstruct;
+}
+
+/** @deprecated Use useWallpaperUrl for display. Built-in presets only. */
 export function getWallpaperSrc(id: string): string {
-  if (id === 'custom') {
-    try {
-      return localStorage.getItem('construct:custom-wallpaper') || wpConstruct;
-    } catch { return wpConstruct; }
-  }
-  return WALLPAPERS.find((w) => w.id === id)?.src ?? wpConstruct;
+  return getBuiltinWallpaperSrc(id);
 }
 
-/**
- * Look up the tiny (~2KB) wallpaper variant for blurred backgrounds.
- * Falls back to the full-size wallpaper if no tiny version exists.
- * Used by lock screens, startup screens, and overlays where the wallpaper
- * is always behind a blur filter — the tiny version is visually identical
- * when blurred but loads instantly instead of waiting for a 1MB+ download.
- */
+/** @deprecated Use useWallpaperBlurUrl for display. Built-in presets only. */
 export function getWallpaperBlurSrc(id: string): string {
-  if (id === 'custom') {
-    try {
-      return localStorage.getItem('construct:custom-wallpaper') || wpConstruct;
-    } catch { return wpConstruct; }
+  if (isCustomWallpaperId(id) || id === 'custom') {
+    return wpConstruct;
   }
-  const wp = WALLPAPERS.find((w) => w.id === id);
+  const wp = BUILTIN_BY_ID.get(id);
   return wp?.blurSrc ?? wp?.src ?? wpConstruct;
-}
-
-/** Save a custom wallpaper from a File object. Returns true on success. */
-export function saveCustomWallpaper(file: File): Promise<boolean> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        localStorage.setItem('construct:custom-wallpaper', reader.result as string);
-        resolve(true);
-      } catch {
-        // localStorage quota exceeded
-        resolve(false);
-      }
-    };
-    reader.onerror = () => resolve(false);
-    reader.readAsDataURL(file);
-  });
 }
 
 interface SettingsState {
   soundEnabled: boolean;
   wallpaperId: string;
-  /** Bumped when custom wallpaper data changes, to force re-render even though wallpaperId stays 'custom'. */
+  /** Bumped when custom wallpaper data changes, to force re-render. */
   wallpaperRev: number;
   developerMode: boolean;
   voiceEnabled: boolean;
   voiceAutoSend: boolean;
 
-  // Actions
   setSoundEnabled: (enabled: boolean) => void;
   toggleSound: () => void;
   setWallpaper: (id: string) => void;
@@ -97,7 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
       developerMode: false,
       voiceEnabled: true,
       voiceAutoSend: false,
-      
+
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
 
       toggleSound: () => set((state) => {

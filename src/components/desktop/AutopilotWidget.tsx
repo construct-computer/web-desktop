@@ -796,7 +796,7 @@ export function AutopilotPanel() {
         Icon: Gauge,
         label: 'Usage',
         value: usageHint,
-        onClick: () => openSettingsToSection('usage'),
+        onClick: () => openSettingsToSection('billing', { subsection: 'usage' }),
       });
     }
 

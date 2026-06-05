@@ -48,6 +48,8 @@ import { useFreshness } from '@/hooks/useFreshness';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
+import { isWallpaperWorkspacePath } from '@/lib/wallpapers';
+import { notifyWallpaperFilesChanged } from '@/stores/wallpaperStore';
 import { getFileIconKind, getFileType } from '@/lib/fileTypes';
 
 const logger = log('Files');
@@ -821,6 +823,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       const result = await api.deleteItem(instanceId, fullPath);
       if (result.success) {
         refresh();
+        if (isWallpaperWorkspacePath(fullPath)) {
+          notifyWallpaperFilesChanged();
+        }
       }
     },
     [instanceId, currentPath, refresh],

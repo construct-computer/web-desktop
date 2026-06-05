@@ -1,10 +1,12 @@
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWindowStore } from '@/stores/windowStore';
 import { useWindowAccessoryStore } from '@/stores/windowAccessoryStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
+import { WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
+import { buildTransformOpacityTransition, kickOpenAnimation } from '@/lib/panelAnimation';
 import type { WindowConfig } from '@/types';
 
 interface MobileWindowProps {
@@ -22,16 +24,51 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
   const isFocused = focusedWindowId === config.id;
   const isMinimized = config.state === 'minimized';
 
-  const handleClose = useCallback(() => {
-    play('close');
+  const [animating, setAnimating] = useState(false);
+  /** Opacity fade on close only — open keeps opacity 1 so glass stays visible during slide-in */
+  const [fadedOut, setFadedOut] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const unmountDelayMs = prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS;
+  const panelTransition = buildTransformOpacityTransition(
+    WINDOW_TRANSITION_MS,
+    WINDOW_TRANSITION_EASING,
+    prefersReducedMotion,
+  );
+
+  useEffect(() => {
+    if (!isFocused || isMinimized) {
+      setAnimating(false);
+      if (!isFocused) setFadedOut(true);
+      return;
+    }
+    setFadedOut(false);
+    return kickOpenAnimation(setAnimating, prefersReducedMotion);
+  }, [isFocused, isMinimized, prefersReducedMotion]);
+
+  const finishClose = useCallback(() => {
     if (config.type === 'browser') {
       closeBrowserWindow(config.id);
       return;
     }
     closeWindow(config.id);
-  }, [config.id, config.type, closeBrowserWindow, closeWindow, play]);
+  }, [config.id, config.type, closeBrowserWindow, closeWindow]);
 
-  // If minimized, don't render or hide it completely
+  const handleClose = useCallback(() => {
+    play('close');
+    setAnimating(false);
+    setFadedOut(true);
+    setTimeout(finishClose, unmountDelayMs);
+  }, [play, finishClose, unmountDelayMs]);
+
   if (isMinimized) return null;
 
   return (
@@ -39,43 +76,49 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       data-window-id={config.id}
       data-window-type={config.type}
       className={cn(
-        'absolute inset-0 flex flex-col pointer-events-auto',
-        'glass-window',
-        // Instead of conditionally unmounting, we use z-index and visibility to ensure
-        // unfocused windows don't block interactions or render pointlessly, but keep their state.
-        isFocused ? 'z-[200] visible' : 'z-[100] invisible'
+        'absolute inset-0',
+        isFocused ? 'z-[200] visible' : 'z-[100] invisible pointer-events-none',
       )}
     >
-      {/* Mobile Title Bar */}
-      <div className="flex items-center h-12 px-2 shrink-0 border-b border-black/10 dark:border-white/10 select-none touch-none surface-sidebar">
-        {/* Back / Close button */}
-        <button
-          onClick={handleClose}
-          className="flex items-center justify-center w-11 h-11 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/20 transition-colors"
-          aria-label="Close window"
-        >
-          <ChevronLeft className="w-6 h-6 text-blue-500" />
-        </button>
+      <div
+        className="flex h-full w-full flex-col"
+        style={{
+          transform: animating ? 'translateY(0)' : 'translateY(100%)',
+          opacity: fadedOut ? 0 : 1,
+          transition: panelTransition,
+          pointerEvents: animating ? 'auto' : 'none',
+        }}
+      >
+        <div className="flex h-full w-full flex-col glass-window is-open" style={{ transform: 'translateZ(0)' }}>
+          {/* Mobile Title Bar */}
+          <div className="flex h-12 shrink-0 select-none touch-none items-center border-b border-black/10 px-2 surface-sidebar dark:border-white/10">
+            <button
+              onClick={handleClose}
+              className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 active:bg-black/10 dark:hover:bg-white/10 dark:active:bg-white/20"
+              aria-label="Close window"
+            >
+              <ChevronLeft className="h-6 w-6 text-blue-500" />
+            </button>
 
-        {/* Title */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
-          {config.icon && (
-            <img src={config.icon} alt="" className="w-5 h-5 mr-2 shrink-0" />
-          )}
-          <span className="font-semibold text-base truncate text-black/90 dark:text-white">
-            {config.title}
-          </span>
+            <div className="flex flex-1 items-center justify-center overflow-hidden px-2">
+              {config.icon && (
+                <img src={config.icon} alt="" className="mr-2 h-5 w-5 shrink-0" />
+              )}
+              <span className="truncate text-base font-semibold text-black/90 dark:text-white">
+                {config.title}
+              </span>
+            </div>
+
+            <div className="flex min-w-[44px] items-center justify-end gap-0.5">
+              {titleBarAccessory}
+            </div>
+          </div>
+
+          {/* Content Area */}
+          <div className="relative flex-1 overflow-hidden">
+            {children}
+          </div>
         </div>
-
-        {/* Right Accessory (or placeholder to balance the back button) */}
-        <div className="flex items-center justify-end min-w-[44px] gap-0.5">
-          {titleBarAccessory}
-        </div>
-      </div>
-
-      {/* Content Area */}
-      <div className="flex-1 overflow-hidden relative">
-        {children}
       </div>
     </div>
   );

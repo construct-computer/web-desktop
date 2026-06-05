@@ -196,6 +196,13 @@ export function Launchpad() {
     [play, openWindow, closeLaunchpad],
   );
 
+  const dismissIfGridGap = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.target === e.currentTarget) closeLaunchpad();
+    },
+    [closeLaunchpad],
+  );
+
   if (!shouldRender) return null;
 
   // ── Filter apps by search query ──
@@ -230,7 +237,7 @@ export function Launchpad() {
 
   return createPortal(
     <div
-      className="fixed inset-0"
+      className="fixed inset-0 overflow-hidden outline-none"
       style={{ zIndex: 1100 }}
       onTouchStart={isMobile ? onSwipeStart : undefined}
       onTouchMove={isMobile ? onSwipeMove : undefined}
@@ -240,20 +247,19 @@ export function Launchpad() {
       {/* Backdrop */}
       <div
         className={cn(
-          'absolute inset-0 transition-all duration-300',
-          animIn
-            ? 'launchpad-scrim'
-            : 'bg-black/0 backdrop-blur-0',
+          'absolute inset-0 launchpad-scrim launchpad-scrim-sync',
+          animIn && 'is-open',
         )}
+        style={{ ['--launchpad-scrim-transition' as string]: '300ms ease-out' }}
         onClick={closeLaunchpad}
       />
 
       {/* Content */}
       <div
         className={cn(
-          'relative h-full flex flex-col items-center pt-24 pb-16 px-8',
+          'relative h-full flex flex-col items-center pt-24 pb-16 px-8 outline-none',
           'transition-all duration-300 ease-out',
-          animIn ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.97]',
+          animIn ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.97] pointer-events-none',
         )}
         onClick={(e) => {
           // Close on clicking empty space (not an app or search)
@@ -283,8 +289,11 @@ export function Launchpad() {
         <div data-tour="launchpad-apps" className="w-full max-w-4xl overflow-y-auto flex-1" onClick={(e) => { if (e.target === e.currentTarget) closeLaunchpad(); }}>
           {/* System apps */}
           {systemApps.length > 0 && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
+            <div>
+              <div
+                className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center"
+                onClick={dismissIfGridGap}
+              >
                 {systemApps.map((app, i) => (
                   <AppIcon
                     key={app.id}
@@ -301,7 +310,7 @@ export function Launchpad() {
 
           {/* Installed apps — with divider */}
           {installedApps.length > 0 && (
-            <div onClick={(e) => e.stopPropagation()}>
+            <div>
               <div className="flex items-center gap-3 my-6 px-4">
                 <div className="flex-1 h-px bg-white/10" />
                 <span className="text-[11px] text-white/30 font-medium uppercase tracking-wider">
@@ -309,7 +318,10 @@ export function Launchpad() {
                 </span>
                 <div className="flex-1 h-px bg-white/10" />
               </div>
-              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center">
+              <div
+                className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-x-2 gap-y-4 justify-items-center"
+                onClick={dismissIfGridGap}
+              >
                 {installedApps.map((app, i) => (
                   <AppIcon
                     key={app.id}

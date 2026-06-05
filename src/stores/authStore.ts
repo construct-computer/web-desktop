@@ -4,6 +4,7 @@ import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
+import { clearWallpaperCacheForUser } from '@/lib/wallpaperCache';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
 
@@ -62,9 +63,21 @@ function clearStaleUserData(newUserId: string): void {
 
   // Record the new user
   localStorage.setItem(STORAGE_KEYS.userId, newUserId);
+
+  if (previousUserId) {
+    void clearWallpaperCacheForUser(previousUserId);
+  }
+}
+
+async function clearWallpaperCacheOnSessionEnd(): Promise<void> {
+  try {
+    const userId = localStorage.getItem(STORAGE_KEYS.userId);
+    if (userId) await clearWallpaperCacheForUser(userId);
+  } catch { /* */ }
 }
 
 function clearLocalSessionData(): void {
+  void clearWallpaperCacheOnSessionEnd();
   api.clearToken();
 
   try { sessionStorage.clear(); } catch { /* */ }

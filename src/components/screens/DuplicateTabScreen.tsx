@@ -1,5 +1,6 @@
 import { Monitor } from 'lucide-react';
-import { useSettingsStore, getWallpaperBlurSrc } from '@/stores/settingsStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
 import { takeoverLeadership } from '@/lib/tabSingleton';
 import constructLogo from '@/assets/logo.png';
 
@@ -8,7 +9,8 @@ import constructLogo from '@/assets/logo.png';
  * "Open Here" closes the other tab and opens the desktop in this one.
  */
 export function DuplicateTabScreen() {
-  const wallpaperSrc = getWallpaperBlurSrc(useSettingsStore((s) => s.wallpaperId));
+  const wallpaperId = useSettingsStore((s) => s.wallpaperId);
+  const { url: wallpaperSrc } = useWallpaperBlurUrl(wallpaperId);
 
   const handleOpenHere = async () => {
     await takeoverLeadership();

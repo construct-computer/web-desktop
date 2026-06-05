@@ -10,7 +10,9 @@ import { TitleBar } from './TitleBar';
 import { ResizeHandles } from './ResizeHandles';
 import type { WindowConfig, ResizeHandle } from '@/types';
 import type { MissionControlTarget } from './WindowManager';
-import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH, DOCK_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH, DOCK_HEIGHT, Z_INDEX, WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
+import { buildTransformOpacityTransition, kickOpenAnimation } from '@/lib/panelAnimation';
+import { getDesktopWorkArea, computeVisuallyCenteredPosition } from '@/lib/windowBounds';
 
 interface StageTarget {
   x: number; // delta x from current position
@@ -141,8 +143,21 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const inWorkspaceTransition = workspaceTransition !== null;
 
   const [animVisible, setAnimVisible] = useState(false);
+  /** Opacity fade — only used on close/minimize; open keeps opacity 1 so glass blur stays visible during scale-in */
+  const [fadedOut, setFadedOut] = useState(false);
   const [shouldRender, setShouldRender] = useState(true);
   const [animateBounds, setAnimateBounds] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const unmountDelayMs = prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS;
 
   // Open / minimize / restore animation
   // In MC mode, force-render minimized windows so they appear in the grid.
@@ -151,7 +166,10 @@ export function Window({ config, children, missionControlTarget, missionControlI
     if (inMC || exitingMC) {
       // Force visible in MC mode (or during exit animation), even for minimized windows
       setShouldRender(true);
-      if (inMC) setAnimVisible(true);
+      if (inMC) {
+        setAnimVisible(true);
+        setFadedOut(false);
+      }
       return;
     }
 
@@ -160,24 +178,35 @@ export function Window({ config, children, missionControlTarget, missionControlI
     if (inWorkspaceTransition && !isMinimized) {
       setShouldRender(true);
       setAnimVisible(true);
+      setFadedOut(false);
       return;
     }
 
     if (isMinimized) {
       setAnimVisible(false);
-      const t = setTimeout(() => setShouldRender(false), 200);
+      setFadedOut(true);
+      const t = setTimeout(() => setShouldRender(false), unmountDelayMs);
       return () => clearTimeout(t);
     } else {
       setShouldRender(true);
-      let cancelled = false;
-      requestAnimationFrame(() => {
-        if (!cancelled) requestAnimationFrame(() => {
-          if (!cancelled) setAnimVisible(true);
-        });
-      });
-      return () => { cancelled = true; };
+      setFadedOut(false);
+      return kickOpenAnimation(setAnimVisible, prefersReducedMotion);
     }
-  }, [isMinimized, inMC, exitingMC, inWorkspaceTransition]);
+  }, [isMinimized, inMC, exitingMC, inWorkspaceTransition, unmountDelayMs, prefersReducedMotion]);
+
+  // Re-trigger zoom-in when promoted from stage strip to center
+  const prevStageTargetRef = useRef<StageTarget | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevStageTargetRef.current;
+    prevStageTargetRef.current = stageTarget ?? null;
+    if (prev === undefined) return;
+
+    if (prev !== null && stageTarget === null && !isMinimized && !inMC && !exitingMC) {
+      setFadedOut(false);
+      setAnimVisible(false);
+      return kickOpenAnimation(setAnimVisible, prefersReducedMotion);
+    }
+  }, [stageTarget, isMinimized, inMC, exitingMC, prefersReducedMotion]);
 
   // Stage settled — delay popover until strip animation completes (400ms)
   useEffect(() => {
@@ -393,10 +422,14 @@ export function Window({ config, children, missionControlTarget, missionControlI
         if (targetWsId && targetWsId !== windowWsId) {
           const store = useWindowStore.getState();
           const cfg = configRef.current;
-          const screenW = window.innerWidth;
-          const screenH = window.innerHeight - MENUBAR_HEIGHT;
-          const centerX = Math.max(0, Math.round((screenW - cfg.width) / 2));
-          const centerY = Math.max(0, Math.round((screenH - cfg.height) / 2));
+          const workArea = getDesktopWorkArea({
+            stageManagerActive: store.stageManagerActive,
+            mobile: false,
+          });
+          const { x: centerX, y: centerY } = computeVisuallyCenteredPosition(workArea, {
+            width: cfg.width,
+            height: cfg.height,
+          });
           store.moveWindow(id, centerX, centerY);
           if (targetWsId === '__new__') {
             // Create a new workspace and move window into it
@@ -489,14 +522,15 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const handleClose = useCallback(() => {
     play('close');
     setAnimVisible(false);
+    setFadedOut(true);
     setTimeout(() => {
       if (config.type === 'browser') {
         closeBrowserWindow(config.id);
         return;
       }
       closeWindow(config.id);
-    }, 200);
-  }, [config.id, config.type, closeBrowserWindow, closeWindow, play]);
+    }, unmountDelayMs);
+  }, [config.id, config.type, closeBrowserWindow, closeWindow, play, unmountDelayMs]);
   
   const handleMinimize = useCallback(() => {
     play('minimize');
@@ -623,11 +657,16 @@ export function Window({ config, children, missionControlTarget, missionControlI
         const targetWsId = wsEl?.getAttribute('data-mc-workspace-id');
         if (targetWsId && targetWsId !== config.workspaceId) {
           // Center window on screen before moving to target workspace
-          const screenW = window.innerWidth;
-          const screenH = window.innerHeight - MENUBAR_HEIGHT;
-          const centerX = Math.max(0, Math.round((screenW - config.width) / 2));
-          const centerY = Math.max(0, Math.round((screenH - config.height) / 2));
-          useWindowStore.getState().moveWindow(config.id, centerX, centerY);
+          const store = useWindowStore.getState();
+          const workArea = getDesktopWorkArea({
+            stageManagerActive: store.stageManagerActive,
+            mobile: false,
+          });
+          const { x: centerX, y: centerY } = computeVisuallyCenteredPosition(workArea, {
+            width: config.width,
+            height: config.height,
+          });
+          store.moveWindow(config.id, centerX, centerY);
           if (targetWsId === '__new__') {
             // Create a new workspace and move window into it
             const store = useWindowStore.getState();
@@ -711,90 +750,85 @@ export function Window({ config, children, missionControlTarget, missionControlI
 
   // ── Compute styles ──────────────────────────────────────────────
 
-  // Normal transitions
-  const baseTransition = 'opacity 200ms ease-out, transform 200ms ease-out, box-shadow 200ms ease-out';
+  const normalAnimTransition = buildTransformOpacityTransition(
+    WINDOW_TRANSITION_MS,
+    WINDOW_TRANSITION_EASING,
+    prefersReducedMotion,
+  );
+
+  const isNormalAnim =
+    !inMC && !exitingMC && !stageTarget && !inWorkspaceTransition && !mcDragDelta;
+
   const boundsTransition = 'left 300ms ease-in-out, top 300ms ease-in-out, width 300ms ease-in-out, height 300ms ease-in-out';
 
   // MC transition (spring curve) — used when entering or exiting MC
   const stagger = missionControlIndex * 15; // ms delay per window for stagger
-  const mcTransition = `transform ${MC_DURATION}ms ${MC_SPRING} ${stagger}ms, opacity 300ms ease-out ${stagger}ms, box-shadow 300ms ease-out`;
+  const mcTransition = `transform ${MC_DURATION}ms ${MC_SPRING} ${stagger}ms, opacity 300ms ease-out ${stagger}ms`;
 
   // Stage manager transition (smooth move to center or strip)
-  const stageTransition = `transform 400ms cubic-bezier(0.32, 0.72, 0, 1), left 400ms cubic-bezier(0.32, 0.72, 0, 1), top 400ms cubic-bezier(0.32, 0.72, 0, 1), opacity 250ms ease-out, box-shadow 200ms ease-out`;
+  const stageTransition = `transform 400ms cubic-bezier(0.32, 0.72, 0, 1), left 400ms cubic-bezier(0.32, 0.72, 0, 1), top 400ms cubic-bezier(0.32, 0.72, 0, 1), opacity 250ms ease-out`;
 
-  // Determine which transition to use
-  let transition: string;
+  // Position shell transition (bounds, MC, stage — not normal open/close)
+  let shellTransition: string;
   if (inWorkspaceTransition) {
-    // No per-window transitions during workspace slide — the parent container handles it
-    transition = 'none';
+    shellTransition = 'none';
   } else if (mcDragDelta && mcDropTarget) {
-    // Snapping to drop target — smooth transition into the thumbnail
-    transition = 'transform 200ms ease-out, opacity 200ms ease-out';
+    shellTransition = 'transform 200ms ease-out, opacity 200ms ease-out';
   } else if (mcDragDelta) {
-    // During MC drag — no transition so window follows cursor immediately
-    transition = 'opacity 100ms ease-out';
+    shellTransition = 'opacity 100ms ease-out';
   } else if (inMC || exitingMC) {
-    transition = mcTransition;
+    shellTransition = mcTransition;
   } else if (stageTarget) {
-    // Stage Manager strip window: animate into strip position
-    transition = stageTransition;
+    shellTransition = stageTransition;
   } else if (isStageActive) {
-    // Stage Manager active window: only animate transform (for swap animation),
-    // NOT left/top (would make dragging laggy with 400ms delay on every move)
-    transition = `transform 400ms cubic-bezier(0.32, 0.72, 0, 1), ${baseTransition}`;
+    shellTransition = `transform 400ms cubic-bezier(0.32, 0.72, 0, 1), left 400ms cubic-bezier(0.32, 0.72, 0, 1), top 400ms cubic-bezier(0.32, 0.72, 0, 1), width 400ms cubic-bezier(0.32, 0.72, 0, 1), height 400ms cubic-bezier(0.32, 0.72, 0, 1)`;
   } else if (animateBounds) {
-    transition = `${boundsTransition}, ${baseTransition}`;
+    shellTransition = boundsTransition;
   } else {
-    transition = baseTransition;
+    shellTransition = 'none';
   }
 
-  // Compute transform
-  let transform: string;
-  let opacity: number;
+  // Position shell transform/opacity (MC / stage)
+  let shellTransform: string;
+  let shellOpacity: number;
 
   if (inMC && missionControlTarget) {
-    // Mission Control: transform to grid position with scale
     const { x: targetX, y: targetY, scale } = missionControlTarget;
     const fromDesktop = mcDragFromDesktopRef.current;
 
     if (mcDropTarget) {
-      // Snap window to fit inside the workspace thumbnail preview
       const padding = 6;
       const innerW = mcDropTarget.thumbW - padding * 2;
       const innerH = mcDropTarget.thumbH - padding * 2;
       const fitScale = Math.min(innerW / config.width, innerH / config.height);
       const dx = mcDropTarget.thumbCenterX - mcDropTarget.parentOffsetX - config.x - (config.width * fitScale) / 2;
       const dy = mcDropTarget.thumbCenterY - mcDropTarget.parentOffsetY - config.y - (config.height * fitScale) / 2;
-      transform = `translate(${dx}px, ${dy}px) scale(${fitScale})`;
-      opacity = 0.9;
+      shellTransform = `translate(${dx}px, ${dy}px) scale(${fitScale})`;
+      shellOpacity = 0.9;
     } else if (fromDesktop && mcDragDelta) {
-      // Drag from desktop via menubar: keep the window under the cursor.
-      // The grab offset tells us where the cursor was relative to the window.
-      // After scaling, adjust translate so the cursor stays at the same screen position.
       const renderScale = scale * 1.08;
       const dx = fromDesktop.grabOffsetX * (1 - renderScale) + mcDragDelta.x;
       const dy = fromDesktop.grabOffsetY * (1 - renderScale) + mcDragDelta.y;
-      transform = `translate(${dx}px, ${dy}px) scale(${renderScale})`;
-      opacity = 0.8;
+      shellTransform = `translate(${dx}px, ${dy}px) scale(${renderScale})`;
+      shellOpacity = 0.8;
     } else {
-      // Normal MC positioning / drag within MC
       const dx = targetX - config.x + (mcDragDelta?.x ?? 0);
       const dy = targetY - config.y + (mcDragDelta?.y ?? 0);
       const dragScale = mcDragDelta ? scale * 1.08 : scale;
-      transform = `translate(${dx}px, ${dy}px) scale(${dragScale})`;
-      opacity = mcDragDelta ? 0.8 : (isMinimized ? 0.5 : 1);
+      shellTransform = `translate(${dx}px, ${dy}px) scale(${dragScale})`;
+      shellOpacity = mcDragDelta ? 0.8 : (isMinimized ? 0.5 : 1);
     }
   } else if (stageTarget) {
-    // Stage Manager strip: move to strip position, scale down
-    transform = `translate(${stageTarget.x}px, ${stageTarget.y}px) scale(${stageTarget.scale})`;
-    opacity = 1;
-  } else if (animVisible) {
-    transform = 'translateY(0)';
-    opacity = 1;
+    shellTransform = `translate(${stageTarget.x}px, ${stageTarget.y}px) scale(${stageTarget.scale})`;
+    shellOpacity = 1;
   } else {
-    transform = ' translateY(8px)';
-    opacity = 0;
+    shellTransform = 'none';
+    shellOpacity = 1;
   }
+
+  const animTransform = isNormalAnim ? (animVisible ? 'scale(1)' : 'scale(0.1)') : undefined;
+  const animOpacity = isNormalAnim ? (fadedOut ? 0 : 1) : 1;
+  const animTransition = isNormalAnim ? normalAnimTransition : 'none';
   
   return (
     <div
@@ -802,17 +836,10 @@ export function Window({ config, children, missionControlTarget, missionControlI
       data-window-id={config.id}
       data-window-type={config.type}
       className={cn(
-        'absolute flex flex-col glass-window',
-        'rounded-lg',
-        'border border-black/10 dark:border-white/10',
-        // Shadows
-        isFocused
-          ? 'shadow-[var(--shadow-window-focus)]'
-          : 'shadow-[var(--shadow-window)]',
-        // MC / Stage strip: overflow visible for labels/popovers, and prevent text selection
-        inMC ? (mcDragDelta ? 'cursor-grabbing overflow-visible select-none' : 'cursor-pointer overflow-visible select-none')
-          : stageTarget ? 'cursor-pointer overflow-visible select-none'
-          : 'overflow-hidden',
+        'absolute',
+        inMC ? (mcDragDelta ? 'cursor-grabbing select-none' : 'cursor-pointer select-none')
+          : stageTarget ? 'cursor-pointer select-none'
+          : undefined,
       )}
       style={{
         left: config.x + slideXOffset,
@@ -820,13 +847,11 @@ export function Window({ config, children, missionControlTarget, missionControlI
         width: config.width,
         height: config.height,
         zIndex: stageTarget ? 95 : mcDragDelta ? Z_INDEX.missionControlBar + 1 : config.zIndex,
-        opacity,
-        transform,
+        opacity: shellOpacity,
+        transform: shellTransform,
         transformOrigin: '0 0',
-        transition,
-        // Ensure windows always receive pointer events (since parent container is pointer-events-none)
+        transition: shellTransition,
         pointerEvents: 'auto',
-        // In MC or stage strip, cursor is pointer for click-to-select
         cursor: stageTarget ? 'pointer' : undefined,
       }}
       onPointerDown={stageTarget
@@ -846,6 +871,64 @@ export function Window({ config, children, missionControlTarget, missionControlI
         setMcHovered(false);
       }}
     >
+      <div
+        className="flex h-full w-full flex-col"
+        style={{
+          transform: animTransform,
+          opacity: animOpacity,
+          transformOrigin: 'center center',
+          transition: animTransition,
+          pointerEvents: isNormalAnim && !animVisible ? 'none' : 'auto',
+        }}
+      >
+        <div
+          className={cn(
+            'relative flex h-full w-full flex-col glass-window is-open rounded-lg',
+            'border border-black/10 dark:border-white/10',
+            isFocused
+              ? 'shadow-[var(--shadow-window-focus)]'
+              : 'shadow-[var(--shadow-window)]',
+            inMC ? 'overflow-visible rounded-xl' : stageTarget ? 'overflow-visible' : 'overflow-hidden',
+          )}
+          style={{ transform: 'translateZ(0)' }}
+        >
+          {/* Window chrome — clip overflow so content doesn't escape rounded corners */}
+          <div className={cn(
+            'flex h-full w-full flex-col',
+            inMC ? 'overflow-hidden rounded-xl' : 'overflow-hidden',
+          )}>
+            <TitleBar
+              title={config.title}
+              icon={config.icon}
+              isFocused={isFocused}
+              isMobile={false}
+              state={config.state}
+              onMinimize={inMC ? undefined : handleMinimize}
+              onMaximize={inMC ? undefined : handleMaximize}
+              onClose={inMC ? undefined : handleClose}
+              onDoubleClick={inMC ? undefined : handleMaximize}
+              onPointerDown={inMC ? undefined : handleDragStart}
+              onContextMenu={inMC ? undefined : handleContextMenu}
+              rightAccessory={inMC ? undefined : titleBarAccessory}
+            />
+            
+            <div className="relative flex-1 overflow-hidden">
+              {children}
+              {/* Invisible overlay blocks all interaction with app content during MC and Stage strip */}
+              {(inMC || stageTarget) && <div className="absolute inset-0 z-50 pointer-events-auto" />}
+            </div>
+          </div>
+
+          {/* Resize handles — hidden in MC mode */}
+          {!inMC && !stageTarget && (
+            <ResizeHandles
+              onResizeStart={handleResizeStart}
+              disabled={isMaximized}
+            />
+          )}
+        </div>
+      </div>
+
       {/* Stage Manager: name popover on hover — only after animation settles */}
       {stageTarget && stageSettled && stageHovered && (
         <div
@@ -861,41 +944,6 @@ export function Window({ config, children, missionControlTarget, missionControlI
             {config.title}
           </div>
         </div>
-      )}
-
-      {/* Window chrome — clip overflow so content doesn't escape rounded corners */}
-      <div className={cn(
-        'flex flex-col w-full h-full',
-        inMC ? 'overflow-hidden rounded-xl' : 'overflow-hidden',
-      )}>
-        <TitleBar
-          title={config.title}
-          icon={config.icon}
-          isFocused={isFocused}
-          isMobile={false}
-          state={config.state}
-          onMinimize={inMC ? undefined : handleMinimize}
-          onMaximize={inMC ? undefined : handleMaximize}
-          onClose={inMC ? undefined : handleClose}
-          onDoubleClick={inMC ? undefined : handleMaximize}
-          onPointerDown={inMC ? undefined : handleDragStart}
-          onContextMenu={inMC ? undefined : handleContextMenu}
-          rightAccessory={inMC ? undefined : titleBarAccessory}
-        />
-        
-        <div className="flex-1 overflow-hidden relative">
-          {children}
-          {/* Invisible overlay blocks all interaction with app content during MC and Stage strip */}
-          {(inMC || stageTarget) && <div className="absolute inset-0 z-50 pointer-events-auto" />}
-        </div>
-      </div>
-      
-      {/* Resize handles — hidden in MC mode */}
-      {!inMC && !stageTarget && (
-        <ResizeHandles
-          onResizeStart={handleResizeStart}
-          disabled={isMaximized}
-        />
       )}
 
       {/* ── MC overlay elements (rendered outside overflow:hidden) ── */}

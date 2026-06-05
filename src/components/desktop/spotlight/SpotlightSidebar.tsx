@@ -230,7 +230,7 @@ export function SpotlightSidebar() {
 
   const handleUpgradeClick = useCallback(() => {
     closeSpotlight();
-    openSettingsToSection('subscription');
+    openSettingsToSection('billing');
   }, [closeSpotlight]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);

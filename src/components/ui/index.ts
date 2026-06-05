@@ -3,6 +3,7 @@ export { Input, type InputProps } from './input';
 export { Label, type LabelProps } from './label';
 export { Checkbox, type CheckboxProps } from './checkbox';
 export { Dialog, DialogHeader, DialogContent, DialogFooter } from './dialog';
+export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
 export { Separator } from './separator';
 export { Tooltip } from './tooltip';
 export { ScrollArea } from './scroll-area';

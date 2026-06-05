@@ -1,14 +1,17 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, AlertCircle, Info, Trash2, Activity } from 'lucide-react';
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
 import { TrackerWindow } from '@/components/apps/TrackerWindow';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { cn } from '@/lib/utils';
 import {
   MENUBAR_HEIGHT,
   MOBILE_MENUBAR_HEIGHT,
   MOBILE_APP_BAR_HEIGHT,
   NOTIFICATION_DRAWER_WIDTH,
+  NOTIFICATION_DRAWER_TRANSITION_MS,
+  NOTIFICATION_DRAWER_EASING,
   Z_INDEX,
 } from '@/lib/constants';
 import { useWorkOrders } from '@/hooks/useWorkOrders';
@@ -126,6 +129,20 @@ export function NotificationCenter() {
   const drawerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const { blockedCount, activeCount } = useWorkOrders();
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const drawerTransitionMs = prefersReducedMotion ? 0 : NOTIFICATION_DRAWER_TRANSITION_MS;
+  const drawerTransition = prefersReducedMotion
+    ? 'none'
+    : `${drawerTransitionMs}ms ${NOTIFICATION_DRAWER_EASING}`;
 
   // Close on Escape
   useEffect(() => {
@@ -169,13 +186,16 @@ export function NotificationCenter() {
     <>
       {/* Backdrop overlay */}
       <div
-        className="fixed inset-0 soft-scrim transition-opacity duration-300 ease-out"
+        className={cn(
+          'fixed inset-0 soft-scrim notification-drawer-scrim',
+          drawerOpen && 'is-open',
+        )}
         style={{
           top: topOffset,
           bottom: bottomOffset,
           zIndex: Z_INDEX.notification - 1,
-          opacity: drawerOpen ? 1 : 0,
           pointerEvents: drawerOpen ? 'auto' : 'none',
+          ['--notification-drawer-transition' as string]: drawerTransition,
         }}
         onClick={() => setDrawerOpen(false)}
       />
@@ -187,14 +207,16 @@ export function NotificationCenter() {
         className="fixed flex flex-col
                    glass-window notification-glass-window
                    border-l border-black/8 dark:border-white/8
-                   shadow-2xl shadow-black/12 dark:shadow-black/30
-                   transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                   shadow-2xl shadow-black/12 dark:shadow-black/30"
         style={{
           top: topOffset,
           bottom: bottomOffset,
           right: 0,
           width: drawerWidth,
           zIndex: Z_INDEX.notification,
+          transition: prefersReducedMotion
+            ? 'none'
+            : `transform ${drawerTransitionMs}ms ${NOTIFICATION_DRAWER_EASING}`,
           transform: drawerOpen ? 'translateX(0)' : translateHidden,
         }}
       >

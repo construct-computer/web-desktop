@@ -773,6 +773,25 @@ html.dark .spotlight-glass-window::before {
   background-color: rgba(0, 0, 0, 0.65);
 }
 
+.launchpad-scrim.launchpad-scrim-sync::before {
+  transition:
+    -webkit-backdrop-filter var(--launchpad-scrim-transition),
+    backdrop-filter var(--launchpad-scrim-transition),
+    background-color var(--launchpad-scrim-transition);
+}
+
+.launchpad-scrim-sync:not(.is-open)::before {
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  backdrop-filter: blur(0px) saturate(1);
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.launchpad-scrim-sync.is-open::before {
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  background-color: rgba(0, 0, 0, 0.65);
+}
+
 .soft-scrim {
   --glass-filter: blur(8px) saturate(1.12);
   border: none !important;
@@ -813,6 +832,33 @@ html.dark .spotlight-glass-window::before {
 html.dark .notification-glass-window::before {
   background-color: rgba(10, 12, 18, 0.50);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-popover.menubar-menu-popover {
+  --glass-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  background-color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  isolation: isolate;
+}
+
+/* Fixed portaled popover — blur on the element; ::before z-index:-1 does not sample the desktop */
+.glass-popover.menubar-menu-popover::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: transparent;
+  border: none;
+}
+
+html.dark .glass-popover.menubar-menu-popover {
+  background-color: rgba(10, 12, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .glass-popover.menubar-menu-popover::before {
+  background-color: transparent;
+  border: none;
 }
 
 .soft-popover {
@@ -908,6 +954,90 @@ html.dark .soft-popover::before {
 .soft-scrim.closing::before,
 .glass-scrim.closing::before {
   animation: scrim-fade-out 0.2s ease-in forwards;
+}
+
+/* Notification Center drawer — blur/dim transitions in sync with panel slide */
+.soft-scrim.notification-drawer-scrim::before {
+  animation: none;
+  transition:
+    -webkit-backdrop-filter var(--notification-drawer-transition),
+    backdrop-filter var(--notification-drawer-transition),
+    background-color var(--notification-drawer-transition);
+}
+
+.notification-drawer-scrim:not(.is-open)::before {
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  backdrop-filter: blur(0px) saturate(1);
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.notification-drawer-scrim.is-open::before {
+  -webkit-backdrop-filter: blur(8px) saturate(1.12);
+  backdrop-filter: blur(8px) saturate(1.12);
+  background-color: rgba(0, 0, 0, 0.18);
+}
+
+/* Spotlight — blur/dim transitions in sync with panel open/close */
+.spotlight-scrim.spotlight-scrim-sync::before {
+  animation: none;
+  transition:
+    -webkit-backdrop-filter var(--spotlight-scrim-transition),
+    backdrop-filter var(--spotlight-scrim-transition),
+    background-color var(--spotlight-scrim-transition);
+}
+
+.spotlight-scrim-sync:not(.is-open)::before {
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  backdrop-filter: blur(0px) saturate(1);
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.spotlight-scrim-sync.is-open::before {
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  background-color: rgba(0, 0, 0, 0.26);
+}
+
+/* Spotlight panel glass — static frost when open; blur on element for stable compositing during scale */
+.spotlight-glass-window.spotlight-glass-window-sync.is-open {
+  -webkit-backdrop-filter: blur(24px) saturate(1.25);
+  backdrop-filter: blur(24px) saturate(1.25);
+  isolation: isolate;
+}
+
+.spotlight-glass-window.spotlight-glass-window-sync::before {
+  transition:
+    background-color var(--spotlight-scrim-transition),
+    border-color var(--spotlight-scrim-transition);
+}
+
+.spotlight-glass-window-sync.is-open::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.spotlight-glass-window-sync:not(.is-open)::before {
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  backdrop-filter: blur(0px) saturate(1);
+  background-color: rgba(255, 255, 255, 0);
+  border-color: rgba(0, 0, 0, 0);
+}
+
+.spotlight-glass-window-sync.is-open::before {
+  -webkit-backdrop-filter: blur(24px) saturate(1.25);
+  backdrop-filter: blur(24px) saturate(1.25);
+  background-color: rgba(255, 255, 255, 0.62);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+html.dark .spotlight-glass-window-sync:not(.is-open)::before {
+  background-color: rgba(8, 10, 16, 0);
+  border-color: rgba(255, 255, 255, 0);
+}
+
+html.dark .spotlight-glass-window-sync.is-open::before {
+  background-color: rgba(8, 10, 16, 0.64);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .glass-popover {

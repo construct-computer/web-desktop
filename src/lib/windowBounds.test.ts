@@ -3,6 +3,7 @@ import {
   clampBoundsToWorkArea,
   computeDefaultOpenBounds,
   computeOpenMinSize,
+  computeVisuallyCenteredPosition,
   getDefaultOpenCenterOffsetX,
   getDesktopWorkArea,
 } from './windowBounds';
@@ -59,6 +60,26 @@ describe('windowBounds', () => {
     expect(bounds.y).toBe(area.y + Math.floor((area.height - height) / 2));
     expect(bounds.width).toBeLessThan(area.width);
     expect(bounds.height).toBeLessThan(area.height);
+  });
+
+  it('computeVisuallyCenteredPosition matches default open bounds x/y', () => {
+    const area = getDesktopWorkArea({ mobile: false, stageManagerActive: true });
+    const bounds = computeDefaultOpenBounds(area);
+    const centered = computeVisuallyCenteredPosition(area, {
+      width: bounds.width,
+      height: bounds.height,
+    });
+    expect(centered.x).toBe(bounds.x);
+    expect(centered.y).toBe(bounds.y);
+  });
+
+  it('visual center sits above legacy viewport-center Y', () => {
+    const area = getDesktopWorkArea({ mobile: false });
+    const bounds = computeDefaultOpenBounds(area);
+    const legacyViewportY = Math.round(
+      (900 - MENUBAR_HEIGHT - bounds.height) / 2,
+    );
+    expect(bounds.y).toBeLessThan(legacyViewportY);
   });
 
   it('shifts further left when stage strip narrows the work area', () => {

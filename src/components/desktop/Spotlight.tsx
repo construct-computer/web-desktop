@@ -23,6 +23,8 @@ import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { hasAgentAccess } from '@/lib/plans';
+import { WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
+import { buildTransformOpacityTransition } from '@/lib/panelAnimation';
 import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
 import { SpotlightInput } from './spotlight/SpotlightInput';
 import { MessageList } from './spotlight/MessageList';
@@ -149,8 +151,29 @@ export function Spotlight() {
   const isMobile = useIsMobile();
 
   const [animating, setAnimating] = useState(false);
+  /** Opacity fade on close only — open keeps opacity 1 so glass blur stays visible during scale/slide-in */
+  const [fadedOut, setFadedOut] = useState(false);
   const [show, setShow] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setPrefersReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const scrimTransition = prefersReducedMotion
+    ? 'none'
+    : `${WINDOW_TRANSITION_MS}ms ${WINDOW_TRANSITION_EASING}`;
+
+  const panelTransition = buildTransformOpacityTransition(
+    WINDOW_TRANSITION_MS,
+    WINDOW_TRANSITION_EASING,
+    prefersReducedMotion,
+  );
 
   /** Sheet vertical pull from handle (px), 0 = resting — mobile bottom sheet only */
   const [sheetDragPx, setSheetDragPx] = useState(0);
@@ -205,16 +228,24 @@ export function Spotlight() {
       setSheetDragLive(false);
       closeAfterSlideRef.current = false;
       setShow(true);
-      requestAnimationFrame(() => requestAnimationFrame(() => setAnimating(true)));
+      setFadedOut(false);
+      if (prefersReducedMotion) {
+        setAnimating(true);
+      } else {
+        setAnimating(false);
+        requestAnimationFrame(() => requestAnimationFrame(() => setAnimating(true)));
+      }
     } else {
       setAnimating(false);
+      setFadedOut(true);
       setSheetDragPx(0);
       setSheetDragLive(false);
       closeAfterSlideRef.current = false;
-      const t = setTimeout(() => setShow(false), 200);
+      const unmountMs = prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS;
+      const t = setTimeout(() => setShow(false), unmountMs);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, prefersReducedMotion]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const onSheetDragY = useCallback((dy: number) => {
@@ -254,7 +285,7 @@ export function Spotlight() {
 
   const closeAndOpenSubscription = useCallback(() => {
     requestClose();
-    queueMicrotask(() => openSettingsToSection('subscription'));
+    queueMicrotask(() => openSettingsToSection('billing'));
   }, [requestClose]);
 
   const onDesktopResizePointerDown = useCallback(
@@ -397,7 +428,14 @@ export function Spotlight() {
 
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 spotlight-scrim transition-opacity duration-200 ease-out ${animating ? 'opacity-100' : 'opacity-0'}`}
+        className={cn(
+          'absolute inset-0 spotlight-scrim spotlight-scrim-sync',
+          animating && 'is-open',
+        )}
+        style={{
+          ['--spotlight-scrim-transition' as string]: scrimTransition,
+          pointerEvents: open ? 'auto' : 'none',
+        }}
         onClick={requestClose}
       />
 
@@ -413,20 +451,27 @@ export function Spotlight() {
         ref={panelRef}
         onKeyDown={onPanelKeyDown}
         className={cn(
-          "pointer-events-auto flex flex-col overflow-hidden transition-all duration-300 ease-out",
+          'flex flex-col overflow-hidden',
+          animating ? 'pointer-events-auto' : 'pointer-events-none',
           isMobile
               ? "w-full rounded-t-lg"
             : "rounded-2xl max-w-[min(1200px,calc(100vw-48px))]",
-          animating 
-            ? (isMobile ? "translate-y-0 opacity-100" : "opacity-100 scale-100")
-            : (isMobile ? "translate-y-full opacity-100" : "opacity-0 scale-[0.97]")
         )}
         style={
           isMobile
-            ? { height: 'calc(100dvh - 10px)' }
+            ? {
+                height: 'calc(100dvh - 10px)',
+                transition: panelTransition,
+                transform: animating ? 'translateY(0)' : 'translateY(100%)',
+                opacity: fadedOut ? 0 : 1,
+              }
             : {
                 width: wClampedDesktop,
                 minHeight: 400,
+                transition: panelTransition,
+                transformOrigin: 'center center',
+                transform: animating ? 'scale(1)' : 'scale(0.1)',
+                opacity: fadedOut ? 0 : 1,
                 ...(panelH == null
                   ? { height: '70vh', maxHeight: 720 }
                   : { height: panelH, maxHeight: 'min(92vh, 900px)' }),
@@ -450,11 +495,15 @@ export function Spotlight() {
           onDragLeave={onPanelDragLeave}
           onDrop={onPanelDrop}
           className={cn(
-            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window spotlight-glass-window ring-1 ring-black/5 dark:ring-white/8',
+            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window spotlight-glass-window spotlight-glass-window-sync is-open ring-1 ring-black/5 dark:ring-white/8',
             isMobile
               ? 'rounded-t-lg rounded-b-none border border-b-0 border-white/30 shadow-none dark:border-white/[0.1]'
               : 'rounded-2xl border border-white/30 shadow-[0_24px_80px_rgba(0,0,0,0.22),0_12px_24px_rgba(0,0,0,0.12)] dark:border-white/[0.1]',
           )}
+          style={{
+            ['--spotlight-scrim-transition' as string]: scrimTransition,
+            transform: 'translateZ(0)',
+          }}
         >
           {isMobile && (
             <SpotlightDragHandle

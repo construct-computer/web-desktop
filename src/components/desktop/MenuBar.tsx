@@ -110,7 +110,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
     return () => clearInterval(interval);
   }, []);
 
-  // Close menu on outside click
+  // Close menu on outside click or Escape
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -122,9 +122,16 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         setMenu({ open: null });
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu({ open: null });
+    };
     if (menu.open) {
       document.addEventListener('mousedown', handleClick);
-      return () => document.removeEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('mousedown', handleClick);
+        document.removeEventListener('keydown', handleKeyDown);
+      };
     }
   }, [menu.open]);
 
@@ -225,7 +232,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             {/* Mobile-only workspace switcher (desktop has it inline in the bar) */}
             {isMobile && workspaces.length > 1 && (
               <>
-                <div className="px-3 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-black/40 dark:text-white/40">Workspaces</div>
+                <div className="px-3 py-1 text-xs font-medium text-[var(--color-text-muted)]">Workspaces</div>
                 {workspaces.map((ws, i) => {
                   const isActive = ws.id === activeWorkspaceId;
                   const PlatformIcon = ws.platform === 'slack' ? MessageCircle
@@ -328,7 +335,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         {/* Billing issue / Upgrade Pill */}
         {!isMobile && hasBillingIssue && (
           <button
-            onClick={() => openSettingsToSection('subscription')}
+            onClick={() => openSettingsToSection('billing')}
             className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-red-500/35 surface-control pl-1.5 pr-1.5 text-red-600 transition-all duration-150 hover:border-red-500/50 hover:bg-red-500/10 active:scale-95 dark:border-red-400/30 dark:text-red-400 dark:hover:border-red-400/45 dark:hover:bg-red-500/15 xl:pr-2.5"
             title="Payment issue - open subscription settings"
             aria-label="Payment issue - open subscription settings"
@@ -345,7 +352,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         )}
         {!isMobile && !hasBillingIssue && (!userPlan || userPlan === 'free') && (
           <button
-            onClick={() => openSettingsToSection('subscription')}
+            onClick={() => openSettingsToSection('billing')}
             className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-1.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09] xl:pr-2.5"
             title="Upgrade Plan"
             aria-label="Upgrade plan"
@@ -617,11 +624,7 @@ function MenuDropdownPortal({ children, position, isMobile }: { children: React.
   return createPortal(
     <div
       id="menu-dropdown-portal"
-      className={`fixed py-1.5
-                 glass-popover
-                 border border-black/10 dark:border-white/15 rounded-xl
-                 shadow-2xl shadow-black/20 dark:shadow-black/40
-                 ${isMobile ? 'min-w-[260px] max-w-[calc(100vw-24px)]' : 'min-w-[220px]'}`}
+      className={`fixed overflow-hidden rounded-xl py-1.5 glass-popover menubar-menu-popover shadow-[var(--shadow-menu)] ${isMobile ? 'min-w-[260px] max-w-[calc(100vw-24px)]' : 'min-w-[220px]'}`}
       style={{ zIndex: Z_INDEX.menu, top: position.top, left: isMobile ? 12 : position.left }}
     >
       {children}
@@ -641,9 +644,9 @@ function MenuItem({ label, icon, shortcut, onClick, disabled, className, isMobil
 }) {
   return (
     <button
-      className={`w-full flex items-center gap-2 text-left transition
-                  ${isMobile ? 'px-4 py-2.5 text-base' : 'px-3 py-1.5 text-sm'}
-                  ${disabled ? 'text-black/25 dark:text-white/30 cursor-default' : 'text-black/90 dark:text-white/90 hover:bg-[#0063E1] hover:text-white'}
+      className={`group mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 rounded-md text-left transition
+                  ${isMobile ? 'px-3 py-2.5 text-base' : 'px-3 py-1.5 text-sm'}
+                  ${disabled ? 'text-[var(--color-text-muted)] opacity-50 cursor-default' : 'text-[var(--color-text)] hover:bg-[var(--color-accent)] hover:text-white'}
                   ${className || ''}`}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
@@ -654,13 +657,13 @@ function MenuItem({ label, icon, shortcut, onClick, disabled, className, isMobil
         </span>
       )}
       <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-xs text-black/25 dark:text-white/30 ml-4">{shortcut}</span>}
+      {shortcut && <span className="text-xs text-[var(--color-text-muted)] ml-4 group-hover:text-white/70">{shortcut}</span>}
     </button>
   );
 }
 
 function MenuDivider() {
-  return <div className="mx-2 my-1 border-t border-black/10 dark:border-white/10" />;
+  return <div className="mx-2 my-1 h-px bg-[var(--color-border)]" />;
 }
 
 // --- Latency popover ---

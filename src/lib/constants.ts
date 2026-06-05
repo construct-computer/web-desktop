@@ -16,7 +16,7 @@ export const DEFAULT_WINDOW_HEIGHT = 600;
 export const DEFAULT_OPEN_PADDING = 24;
 /** Default open size as a fraction of the usable desktop (centered). */
 export const DEFAULT_OPEN_WIDTH_SCALE = 0.65;
-export const DEFAULT_OPEN_HEIGHT_SCALE = 0.72;
+export const DEFAULT_OPEN_HEIGHT_SCALE = 0.82;
 /**
  * Horizontal shift applied when centering new windows (fraction of screen width).
  * Dock is viewport-centered; a left nudge aligns the window frame with the dock
@@ -33,6 +33,15 @@ export const MOBILE_APP_BAR_HEIGHT = 80; // bottom app bar on mobile
 /** Notification / Work Status drawer — wider on desktop for list-first task UI */
 export const NOTIFICATION_DRAWER_WIDTH = 420;
 export const NOTIFICATION_DRAWER_WIDTH_MOBILE = '100dvw';
+export const NOTIFICATION_DRAWER_TRANSITION_MS = 300;
+export const NOTIFICATION_DRAWER_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
+export const WINDOW_TRANSITION_MS = 300;
+/** Slight spring — matches stage manager / MC curve */
+export const WINDOW_TRANSITION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+/** @deprecated Use WINDOW_TRANSITION_MS — kept for Spotlight imports during migration */
+export const SPOTLIGHT_TRANSITION_MS = WINDOW_TRANSITION_MS;
+/** @deprecated Use WINDOW_TRANSITION_EASING */
+export const SPOTLIGHT_TRANSITION_EASING = WINDOW_TRANSITION_EASING;
 
 // Z-index layers
 export const Z_INDEX = {

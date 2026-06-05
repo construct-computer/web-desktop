@@ -69,6 +69,22 @@ export function getDefaultOpenCenterOffsetX(
   return perceptual + stageCorrection;
 }
 
+/** Dock-aware visual center for a window of the given size inside the work area. */
+export function computeVisuallyCenteredPosition(
+  area: DesktopWorkArea,
+  size: { width: number; height: number },
+  opts?: { mobile?: boolean },
+): Pick<WindowBounds, 'x' | 'y'> {
+  const { width, height } = size;
+  const centerOffsetX = getDefaultOpenCenterOffsetX(area, opts?.mobile);
+  const centeredX = area.x + Math.floor((area.width - width) / 2) + centerOffsetX;
+  const maxX = area.x + area.width - width;
+  return {
+    x: Math.max(area.x, Math.min(centeredX, maxX)),
+    y: area.y + Math.floor((area.height - height) / 2),
+  };
+}
+
 export function computeDefaultOpenBounds(
   workArea?: DesktopWorkArea,
   opts?: { mobile?: boolean },
@@ -82,15 +98,8 @@ export function computeDefaultOpenBounds(
     area.height,
     Math.max(MIN_WINDOW_HEIGHT, Math.floor(area.height * DEFAULT_OPEN_HEIGHT_SCALE)),
   );
-  const centerOffsetX = getDefaultOpenCenterOffsetX(area, opts?.mobile);
-  const centeredX = area.x + Math.floor((area.width - width) / 2) + centerOffsetX;
-  const maxX = area.x + area.width - width;
-  return {
-    x: Math.max(area.x, Math.min(centeredX, maxX)),
-    y: area.y + Math.floor((area.height - height) / 2),
-    width,
-    height,
-  };
+  const { x, y } = computeVisuallyCenteredPosition(area, { width, height }, opts);
+  return { x, y, width, height };
 }
 
 export function clampBoundsToWorkArea(

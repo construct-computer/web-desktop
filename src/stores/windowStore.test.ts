@@ -4,8 +4,10 @@ import { useAuthStore } from './authStore';
 import { STORAGE_KEYS } from '@/lib/config';
 import {
   computeDefaultOpenBounds,
+  computeVisuallyCenteredPosition,
   getDesktopWorkArea,
 } from '@/lib/windowBounds';
+import { MENUBAR_HEIGHT } from '@/lib/constants';
 
 describe('app-builder singleton metadata switching', () => {
   beforeAll(() => {
@@ -126,5 +128,132 @@ describe('openWindow large defaults', () => {
     expect(w1.height).toBe(expected.height);
     expect(w2.width).toBe(expected.width);
     expect(w2.height).toBe(expected.height);
+  });
+});
+
+function legacyViewportCenterY(height: number, innerHeight: number): number {
+  const areaH = innerHeight - MENUBAR_HEIGHT;
+  return Math.max(0, Math.round((areaH - height) / 2));
+}
+
+async function flushAnimationFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+describe('minimize restore visual centering', () => {
+  beforeAll(() => {
+    useAuthStore.setState({ user: { plan: 'pro' } as never });
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('innerWidth', 1440);
+    vi.stubGlobal('innerHeight', 900);
+    vi.stubGlobal('localStorage', mockLocalStorage());
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    useWindowStore.setState({
+      windows: [],
+      focusedWindowId: null,
+      nextZIndex: 100,
+      activeWorkspaceId: 'main',
+      stageManagerActive: false,
+      stageManagerActiveIds: {},
+      stageManagerOrder: {},
+    });
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('focusWindow recenters after minimize restore', () => {
+    const store = useWindowStore.getState();
+    const id = store.openWindow('settings');
+    const opened = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: false });
+    const expected = computeVisuallyCenteredPosition(workArea, {
+      width: opened.width,
+      height: opened.height,
+    });
+
+    useWindowStore.setState({
+      windows: useWindowStore.getState().windows.map((w) =>
+        w.id === id
+          ? { ...w, y: legacyViewportCenterY(w.height, 900) }
+          : w,
+      ),
+    });
+
+    store.minimizeWindow(id);
+    useWindowStore.getState().focusWindow(id);
+
+    const restored = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    expect(restored.state).toBe('normal');
+    expect(restored.x).toBe(expected.x);
+    expect(restored.y).toBe(expected.y);
+    expect(restored.y).not.toBe(legacyViewportCenterY(restored.height, 900));
+  });
+
+  it('stage manager minimize restore keeps dock-aware visual center', async () => {
+    useWindowStore.setState({ stageManagerActive: true });
+
+    const store = useWindowStore.getState();
+    const id = store.openWindow('files');
+    const opened = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: true });
+    const expected = computeVisuallyCenteredPosition(workArea, {
+      width: opened.width,
+      height: opened.height,
+    });
+
+    useWindowStore.setState({
+      stageManagerActiveIds: { main: [id] },
+      stageManagerOrder: { main: [] },
+      windows: useWindowStore.getState().windows.map((w) =>
+        w.id === id
+          ? {
+              ...w,
+              x: Math.round((1440 - w.width) / 2),
+              y: legacyViewportCenterY(w.height, 900),
+            }
+          : w,
+      ),
+    });
+
+    store.minimizeWindow(id);
+    useWindowStore.getState().focusWindow(id);
+    await flushAnimationFrame();
+
+    const restored = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    expect(restored.state).toBe('normal');
+    expect(restored.x).toBe(expected.x);
+    expect(restored.y).toBe(expected.y);
+  });
+
+  it('minimize from maximized collapses to previous bounds', () => {
+    const store = useWindowStore.getState();
+    const id = store.openWindow('about');
+    const opened = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    const previousBounds = {
+      x: opened.x,
+      y: opened.y,
+      width: opened.width,
+      height: opened.height,
+    };
+
+    store.maximizeWindow(id);
+    store.minimizeWindow(id);
+
+    const minimized = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    expect(minimized.state).toBe('minimized');
+    expect(minimized.width).toBe(previousBounds.width);
+    expect(minimized.height).toBe(previousBounds.height);
+    expect(minimized.x).toBe(previousBounds.x);
+    expect(minimized.y).toBe(previousBounds.y);
   });
 });

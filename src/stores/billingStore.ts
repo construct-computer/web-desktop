@@ -166,7 +166,7 @@ function maybeNotifyBillingStatus(previous: SubscriptionInfo | null, next: Subsc
     body: notice.body,
     source: 'Billing',
     variant: notice.variant,
-    onClick: () => openSettingsToSection('subscription'),
+    onClick: () => openSettingsToSection('billing'),
   }, 15_000);
 }
 

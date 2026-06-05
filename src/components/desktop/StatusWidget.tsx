@@ -173,7 +173,7 @@ export function StatusWidget() {
 
   const openCtaTarget = () => {
     if (!copy.cta) return;
-    openSettingsToSection('subscription');
+    openSettingsToSection('billing');
   };
 
   return (

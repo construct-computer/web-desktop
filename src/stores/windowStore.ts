@@ -25,6 +25,7 @@ import {
 import {
   getDesktopWorkArea,
   computeDefaultOpenBounds,
+  computeVisuallyCenteredPosition,
   clampBoundsToWorkArea,
   computeOpenMinSize,
 } from '@/lib/windowBounds';
@@ -681,17 +682,36 @@ export const useWindowStore = create<WindowStore>()(
 
       const wasMinimized = window.state === 'minimized';
       const newState = wasMinimized ? 'normal' : window.state;
-      
+
+      const sm = get();
+      let restorePosition: { x: number; y: number } | undefined;
+      if (wasMinimized && newState === 'normal') {
+        const workArea = getDesktopWorkArea({
+          stageManagerActive: sm.stageManagerActive,
+          mobile: isMobileViewport(),
+        });
+        restorePosition = computeVisuallyCenteredPosition(workArea, {
+          width: window.width,
+          height: window.height,
+        });
+      }
+
       set({
         windows: windows.map((w) =>
-          w.id === id ? { ...w, zIndex: nextZIndex, state: newState } : w
+          w.id === id
+            ? {
+                ...w,
+                zIndex: nextZIndex,
+                state: newState,
+                ...(restorePosition ?? {}),
+              }
+            : w
         ),
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
 
       // Stage Manager: promote focused window as active, move previous active to strip
-      const sm = get();
       if (sm.stageManagerActive) {
         const wsTarget = window.workspaceId;
         const actives = sm.stageManagerActiveIds[wsTarget] || [];
@@ -722,11 +742,29 @@ export const useWindowStore = create<WindowStore>()(
     },
     
     minimizeWindow: (id) => {
-      const { windows, focusedWindowId } = get();
-      
+      const { windows, focusedWindowId, stageManagerActive } = get();
+      const target = windows.find((w) => w.id === id);
+      if (!target) return;
+
+      const mobile = isMobileViewport();
+      const collapseFromMaximized = target.state === 'maximized';
+      let collapsedBounds: Partial<WindowBounds> | undefined;
+      if (collapseFromMaximized) {
+        const workArea = getDesktopWorkArea({ stageManagerActive, mobile });
+        collapsedBounds = target.previousBounds
+          ? clampBoundsToWorkArea(target.previousBounds, workArea)
+          : computeDefaultOpenBounds(workArea, { mobile });
+      }
+
       set({
         windows: windows.map((w) =>
-          w.id === id ? { ...w, state: 'minimized' } : w
+          w.id === id
+            ? {
+                ...w,
+                state: 'minimized',
+                ...(collapsedBounds ?? {}),
+              }
+            : w
         ),
         focusedWindowId: focusedWindowId === id ? null : focusedWindowId,
       });
@@ -1260,12 +1298,13 @@ function centerStageActiveWindow(wsId: string): void {
   const win = windows.find(w => w.id === actives[0]);
   if (!win) return;
 
-  const areaW = globalThis.innerWidth;
-  const areaH = globalThis.innerHeight - MENUBAR_HEIGHT;
-  const cx = Math.max(0, Math.round((areaW - win.width) / 2));
-  const cy = Math.max(0, Math.round((areaH - win.height) / 2));
+  const workArea = getDesktopWorkArea({ stageManagerActive: true, mobile: false });
+  const { x, y } = computeVisuallyCenteredPosition(workArea, {
+    width: win.width,
+    height: win.height,
+  });
 
-  useWindowStore.getState().setBounds(actives[0], { x: cx, y: cy });
+  useWindowStore.getState().setBounds(actives[0], { x, y });
 }
 
 // Workspace sync to agent removed — workspaces are client-side only.
