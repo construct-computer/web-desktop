@@ -58,8 +58,8 @@ describe('hydration loop prevention contract', () => {
   });
 
   it('session_created and session_history_ready mark pending and prefetch', () => {
-    expect(agentStoreSource).toMatch(/case 'session_created':[\s\S]*pendingHistoryKeys\.add\(newKey\)/);
-    expect(agentStoreSource).not.toMatch(/case 'session_created':[\s\S]*invalidateHistoryHydration\(newKey\)/);
+    expect(agentStoreSource).toMatch(/case 'session_created':[\s\S]*pendingHistoryKeys\.add\(session\.key\)/);
+    expect(agentStoreSource).not.toMatch(/case 'session_created':[\s\S]*invalidateHistoryHydration\(/);
     expect(agentStoreSource).toMatch(/case 'session_history_ready':[\s\S]*pendingHistoryKeys\.add\(readyKey\)/);
     expect(agentStoreSource).toMatch(/prefetchSessionHistory\(readyKey\)/);
   });

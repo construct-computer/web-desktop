@@ -42,8 +42,9 @@ describe('chatTurnSync', () => {
 
   it('preserves optimistic user rows missing from server history', () => {
     const history = [user('schedule water'), agent('scheduled')];
-    const live = [...history, user('ok', 'client-ok')];
-    expect(liveUserMessagesAheadOfHistory(live, history)).toEqual([user('ok', 'client-ok')]);
+    const optimistic = user('ok', 'client-ok');
+    const live = [...history, optimistic];
+    expect(liveUserMessagesAheadOfHistory(live, history)).toEqual([optimistic]);
     expect(mergeLiveTailIntoHistory(history, live)).toHaveLength(3);
   });
 
