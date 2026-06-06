@@ -2480,7 +2480,8 @@ export const useComputerStore = create<ComputerStore>()(
       const { instanceId, activeSessionKey } = get();
       if (!instanceId) return;
       const prefetchTarget = loadHistoryTarget;
-      const requestedSessionKey = prefetchTarget?.key ?? ongoingPrefetchKey ?? activeSessionKey || 'default';
+      const requestedSessionKey =
+        (prefetchTarget?.key ?? ongoingPrefetchKey ?? activeSessionKey) || 'default';
       const cacheOnly = prefetchTarget?.cacheOnly ?? ongoingPrefetchKey === requestedSessionKey;
 
       // If /clear was used recently (flag survives refresh), skip loading
