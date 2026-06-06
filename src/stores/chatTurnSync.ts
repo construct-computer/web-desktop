@@ -62,6 +62,9 @@ export function liveUserMessagesAheadOfHistory(live: ChatMessage[], history: Cha
 }
 
 export function mergeLiveTailIntoHistory(history: ChatMessage[], live: ChatMessage[]): ChatMessage[] {
+  if (live.length === 0) return history;
+  // Server snapshot can briefly be empty while the UI still holds the full thread.
+  if (history.length === 0) return live;
   const tail = liveUserMessagesAheadOfHistory(live, history);
   if (tail.length === 0) return history;
   return [...history, ...tail];
@@ -72,7 +75,7 @@ export function applyAgentTextDelta(
   text: string,
   attachIterationLimit: (message: ChatMessage) => ChatMessage,
 ): ChatMessage[] {
-  if (!text.trim()) return messages;
+  if (text.length === 0) return messages;
   const last = messages[messages.length - 1];
   if (shouldAppendAgentTextDelta(messages) && last?.role === 'agent' && !last.isError) {
     const updated = [...messages];

@@ -1417,7 +1417,9 @@ function mergeInflightAssistantIntoHistory(
     pa?.sessionKey === requestedSessionKey && Array.isArray(pa?.chatMessages) && pa.chatMessages.length
       ? pa.chatMessages
       : null;
-  const fromSingleton = fromPlatform ?? currentMessages;
+  const fromSingleton = fromPlatform && fromPlatform.length > currentMessages.length
+    ? fromPlatform
+    : currentMessages;
 
   let lastLiveAgent: ChatMessage | undefined;
   for (let i = fromSingleton.length - 1; i >= 0; i--) {
@@ -3157,7 +3159,20 @@ export const useComputerStore = create<ComputerStore>()(
         historyRetryAttempted.delete(requestedSessionKey);
         sessionMessageCache.set(requestedSessionKey, compactedHistory);
         if (!cacheOnly && get().activeSessionKey === requestedSessionKey) {
-          set({ chatMessages: compactedHistory, historyLoadError: null });
+          set((state) => {
+            const desktop = state.platformAgents.desktop;
+            const syncDesktop = desktop && (desktop.sessionKey === requestedSessionKey || !desktop.sessionKey);
+            return {
+              chatMessages: compactedHistory,
+              historyLoadError: null,
+              ...(syncDesktop ? {
+                platformAgents: {
+                  ...state.platformAgents,
+                  desktop: { ...desktop, chatMessages: compactedHistory, sessionKey: requestedSessionKey },
+                },
+              } : {}),
+            };
+          });
         }
         logger.info(`Loaded ${compactedHistory.length} messages from chat history`);
       } catch (err) {
@@ -3299,10 +3314,7 @@ export const useComputerStore = create<ComputerStore>()(
       set(state => {
         const pa = state.platformAgents.desktop;
         const nextChatMessages = appendUserMessageForNewTurn(state.chatMessages, userMsg);
-        const nextDesktopMessages = appendUserMessageForNewTurn(
-          pa?.chatMessages?.length ? pa.chatMessages : state.chatMessages,
-          userMsg,
-        );
+        const nextDesktopMessages = nextChatMessages;
         const nextRunning = new Set(state.runningSessions);
         nextRunning.add(activeSessionKey);
         return {

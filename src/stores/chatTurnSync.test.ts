@@ -48,6 +48,20 @@ describe('chatTurnSync', () => {
     expect(mergeLiveTailIntoHistory(history, live)).toHaveLength(3);
   });
 
+  it('keeps the full live thread when the server history snapshot is still empty', () => {
+    const live = [user('hello'), agent('hi there'), user('again')];
+    expect(mergeLiveTailIntoHistory([], live)).toEqual(live);
+  });
+
+  it('preserves whitespace-only streaming deltas', () => {
+    const messages = [user('hello')];
+    const withDelta = applyAgentTextDelta(messages, ' ', (m) => m);
+    expect(withDelta).toHaveLength(2);
+    expect(withDelta[1]?.content).toBe(' ');
+    const withWord = applyAgentTextDelta(withDelta, 'world', (m) => m);
+    expect(withWord[1]?.content).toBe(' world');
+  });
+
   it('does not stitch a new reply onto a prior turn once a turn break is present', () => {
     const messages = appendUserMessageForNewTurn(
       [user('first'), agent('first reply')],
