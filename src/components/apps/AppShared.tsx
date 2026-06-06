@@ -228,14 +228,29 @@ export function InfoRow({
   );
 }
 
+export function AppStatsStrip({ items }: { items: string[] }) {
+  const visible = items.filter(Boolean);
+  if (visible.length === 0) return null;
+  return (
+    <p className="text-[11px] text-[var(--color-text-muted)] px-0.5 -mt-2 mb-1">
+      {visible.join(' · ')}
+    </p>
+  );
+}
+
 export interface DisplayTool { slug: string; name: string; description?: string }
+
+const TOOLS_COLLAPSE_THRESHOLD = 8;
 
 export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emptyConnected?: boolean }) {
   const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const q = query.trim().toLowerCase();
   const filtered = q
     ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
     : tools;
+  const showCollapse = !q && tools.length > TOOLS_COLLAPSE_THRESHOLD;
+  const visibleTools = showCollapse && !expanded ? filtered.slice(0, TOOLS_COLLAPSE_THRESHOLD) : filtered;
 
   if (tools.length === 0) {
     if (emptyConnected) {
@@ -273,9 +288,9 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
           />
         </div>
       )}
-      <div className="space-y-1">
-        {filtered.map((tool) => (
-          <ToolCard key={tool.slug} tool={tool} />
+      <div className="rounded-[10px] surface-card border border-black/[0.06] dark:border-white/[0.06] divide-y divide-black/[0.06] dark:divide-white/[0.06] overflow-hidden">
+        {visibleTools.map((tool) => (
+          <ToolCard key={tool.slug} tool={tool} compact />
         ))}
         {filtered.length === 0 && (
           <div className="text-center py-4">
@@ -283,11 +298,29 @@ export function ToolsList({ tools, emptyConnected }: { tools: DisplayTool[]; emp
           </div>
         )}
       </div>
+      {showCollapse && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-2 w-full text-center text-[11px] font-medium text-[var(--color-accent)] hover:underline py-1"
+        >
+          Show all {tools.length} actions
+        </button>
+      )}
+      {showCollapse && expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="mt-2 w-full text-center text-[11px] font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] py-1"
+        >
+          Show fewer
+        </button>
+      )}
     </div>
   );
 }
 
-export function ToolCard({ tool }: { tool: DisplayTool }) {
+export function ToolCard({ tool, compact }: { tool: DisplayTool; compact?: boolean }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(tool.slug).then(() => {
@@ -296,10 +329,12 @@ export function ToolCard({ tool }: { tool: DisplayTool }) {
     }).catch(() => {});
   };
   return (
-    <div className="group flex items-start gap-2.5 px-3 py-2 rounded-[8px] surface-card border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors">
-      <div className="w-[22px] h-[22px] rounded-[5px] surface-control flex items-center justify-center flex-shrink-0 mt-px">
-        <Wrench className="w-3 h-3 opacity-50" />
-      </div>
+    <div className={`group flex items-start gap-2 px-3 ${compact ? 'py-1.5' : 'py-2'} hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors`}>
+      {!compact && (
+        <div className="w-[22px] h-[22px] rounded-[5px] surface-control flex items-center justify-center flex-shrink-0 mt-px">
+          <Wrench className="w-3 h-3 opacity-50" />
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] font-semibold truncate">{tool.name}</span>
@@ -308,10 +343,11 @@ export function ToolCard({ tool }: { tool: DisplayTool }) {
           )}
         </div>
         {tool.description && (
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed line-clamp-2">{tool.description}</p>
+          <p className={`text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}>{tool.description}</p>
         )}
       </div>
       <button
+        type="button"
         onClick={handleCopy}
         className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-opacity flex-shrink-0"
         title="Copy action name"

@@ -1,188 +1,50 @@
 /**
  * ComposioAuthPanel — multi-scheme auth UI for a Composio toolkit.
- *
- * Renders one card per supported auth scheme. OAuth is prioritized if
- * Composio has managed credentials for it; otherwise it's shown disabled
- * and the user can pick API key / bearer / basic instead.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
-  Loader2, Check, AlertCircle, ExternalLink, KeyRound, ShieldAlert, X,
+  Loader2, Check, ExternalLink, KeyRound, ShieldAlert,
 } from 'lucide-react';
-import * as api from '@/services/api';
-import { openAuthPopup } from '@/lib/utils';
-
-type Scheme = 'OAUTH2' | 'OAUTH1' | 'API_KEY' | 'BEARER_TOKEN' | 'BASIC' | 'NO_AUTH' | string;
-
-interface Field {
-  name: string;
-  displayName: string;
-  description?: string;
-  required: boolean;
-}
+import { useComposioAuth } from '@/hooks/useComposioAuth';
+import { Badge } from './AppShared';
+import { CredentialField, ComposioAuthErrorBanner } from './composioAuthFields';
+import {
+  getFieldsForScheme,
+  prettyAuthSchemeLabel,
+} from './composioAuthUtils';
+import type { AuthField, AuthScheme } from './composioAuthUtils';
 
 export interface ComposioAuthPanelProps {
   slug: string;
-  /** Called after a successful connection so the parent can refresh status. */
   onConnected?: () => void;
   className?: string;
+  compact?: boolean;
 }
 
-export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuthPanelProps) {
-  const [detail, setDetail] = useState<{
-    auth_schemes: string[];
-    auth_config?: Array<{ mode: string; fields: Field[] }>;
-    composio_managed_schemes?: string[];
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [expandedScheme, setExpandedScheme] = useState<Scheme | null>(null);
-  const [credentials, setCredentials] = useState<Record<string, string>>({});
-  const [busyScheme, setBusyScheme] = useState<Scheme | null>(null);
-  const popupTimerRef = useRef<number | null>(null);
-  const oauthConnIdRef = useRef<string | null>(null);
-  const onConnectedRef = useRef(onConnected);
-  useEffect(() => { onConnectedRef.current = onConnected; }, [onConnected]);
+export function ComposioAuthPanel({ slug, onConnected, className, compact = false }: ComposioAuthPanelProps) {
+  const auth = useComposioAuth(slug, onConnected);
+  const [expandedScheme, setExpandedScheme] = useState<AuthScheme | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getComposioToolkitDetail(slug);
-      if (res.success && res.data) {
-        setDetail({
-          auth_schemes: normalize(res.data.auth_schemes),
-          auth_config: res.data.auth_config,
-          composio_managed_schemes: normalize(res.data.composio_managed_schemes),
-        });
-      } else {
-        setError(!res.success ? res.error : 'Could not load authentication info.');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load authentication info.');
-    }
-    setLoading(false);
-  }, [slug]);
+  const schemes = auth.schemes;
+  const managed = auth.managed;
+  const ordered = auth.orderedSchemes;
+  const hasManagedOAuth = auth.hasManagedOAuth;
 
-  useEffect(() => { refresh(); }, [refresh]);
-
-  useEffect(() => () => {
-    if (popupTimerRef.current !== null) window.clearInterval(popupTimerRef.current);
-  }, []);
-
-  // Listen for the OAuth popup's postMessage so we can finalize + refresh.
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'composio:connected') {
-        const connId = (typeof e.data.connectedAccountId === 'string' && e.data.connectedAccountId)
-          || oauthConnIdRef.current
-          || undefined;
-        api.composioFinalize(connId).finally(() => {
-          oauthConnIdRef.current = null;
-          setBusyScheme(null);
-          onConnectedRef.current?.();
-        });
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  const schemes = detail?.auth_schemes ?? [];
-  const managed = new Set(detail?.composio_managed_schemes ?? []);
-
-  const startOAuth = async (scheme: Scheme) => {
-    setError(null);
-    setBusyScheme(scheme);
-    try {
-      const r = await api.composioConnect(slug, scheme, {});
-      if (!r.success) {
-        setError(r.error || 'Could not start OAuth flow.');
-        setBusyScheme(null);
-        return;
-      }
-      const url = r.data.url;
-      if (!url) {
-        setError(r.data.error || 'OAuth is not available for this toolkit right now.');
-        setBusyScheme(null);
-        return;
-      }
-      oauthConnIdRef.current = r.data.connected_account_id || null;
-      const popup = openAuthPopup(url, 520, 640, 'composio-oauth');
-      if (!popup) {
-        setError('Your browser blocked the popup. Allow popups for this site and try again.');
-        setBusyScheme(null);
-        return;
-      }
-      if (popupTimerRef.current !== null) window.clearInterval(popupTimerRef.current);
-      popupTimerRef.current = window.setInterval(async () => {
-        if (popup.closed) {
-          if (popupTimerRef.current !== null) window.clearInterval(popupTimerRef.current);
-          popupTimerRef.current = null;
-          const connId = oauthConnIdRef.current || undefined;
-          try { await api.composioFinalize(connId); } catch { /* ignore */ }
-          oauthConnIdRef.current = null;
-          setBusyScheme(null);
-          onConnectedRef.current?.();
-        }
-      }, 800) as unknown as number;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'OAuth flow failed.');
-      setBusyScheme(null);
-    }
-  };
-
-  const submitCredentials = async (scheme: Scheme) => {
-    setError(null);
-    setBusyScheme(scheme);
-    try {
-      const r = await api.composioConnect(slug, scheme, credentials);
-      if (r.success && r.data?.ok) {
-        setCredentials({});
-        setExpandedScheme(null);
-        onConnectedRef.current?.();
-      } else {
-        const raw = (r.success && r.data?.error) || (!r.success && r.error) || '';
-        setError(prettify(slug, raw));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save credentials.');
-    }
-    setBusyScheme(null);
-  };
-
-  const connectNoAuth = async () => {
-    setError(null);
-    setBusyScheme('NO_AUTH');
-    try {
-      const r = await api.composioConnect(slug, 'NO_AUTH', {});
-      if (r.success && r.data?.ok) {
-        onConnectedRef.current?.();
-      } else {
-        const raw = (r.success && r.data?.error) || (!r.success && r.error) || '';
-        setError(prettify(slug, raw));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not connect.');
-    }
-    setBusyScheme(null);
-  };
-
-  const toggleExpand = (scheme: Scheme, fields: Field[]) => {
+  const toggleExpand = (scheme: AuthScheme, fields: AuthField[]) => {
     if (expandedScheme === scheme) {
       setExpandedScheme(null);
-      setCredentials({});
+      auth.resetCredentials();
       return;
     }
     const init: Record<string, string> = {};
     fields.forEach((f) => { init[f.name] = ''; });
-    setCredentials(init);
+    for (const [k, v] of Object.entries(init)) auth.setCredential(k, v);
     setExpandedScheme(scheme);
-    setError(null);
+    auth.clearError();
   };
 
-  if (loading && !detail) {
+  if (auth.loading && !auth.detail) {
     return (
       <div className={className}>
         <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
@@ -192,10 +54,10 @@ export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuth
     );
   }
 
-  if (!detail) {
+  if (!auth.detail) {
     return (
       <div className={className}>
-        <ErrorBanner message={error ?? 'Authentication info unavailable.'} onDismiss={() => setError(null)} />
+        <ComposioAuthErrorBanner message={auth.error ?? 'Authentication info unavailable.'} onDismiss={auth.clearError} />
       </div>
     );
   }
@@ -204,31 +66,28 @@ export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuth
     return (
       <div className={className}>
         <div className="text-[11px] text-amber-500/90 bg-amber-500/[0.08] border border-amber-500/20 rounded-[8px] px-3 py-2 flex items-start gap-2">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
           <span>This integration declares no supported auth schemes.</span>
         </div>
       </div>
     );
   }
 
-  // Order: OAuth first (if managed), other credential schemes, unsupported last.
-  const ordered = [...schemes].sort((a, b) => rank(a, managed) - rank(b, managed));
-  const hasManagedOAuth = schemes.some((s) => (s === 'OAUTH2' || s === 'OAUTH1') && managed.has(s));
+  const useCompactLayout = compact && schemes.length <= 2;
 
   return (
     <div className={className}>
-      {error && <div className="mb-2"><ErrorBanner message={error} onDismiss={() => setError(null)} /></div>}
-      {schemes.length > 1 && (
+      {auth.error && <div className="mb-2"><ComposioAuthErrorBanner message={auth.error} onDismiss={auth.clearError} /></div>}
+      {schemes.length > 1 && !useCompactLayout && (
         <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
           Choose how you&apos;d like to sign in.
         </p>
       )}
-      <div className="space-y-2">
+      <div className={useCompactLayout ? 'grid grid-cols-1 sm:grid-cols-2 gap-2' : 'space-y-2'}>
         {ordered.map((scheme) => {
           const isOAuth = scheme === 'OAUTH2' || scheme === 'OAUTH1';
           const isNoAuth = scheme === 'NO_AUTH';
-          const schemeConfig = detail.auth_config?.find((a) => (a.mode || '').toUpperCase() === scheme);
-          const fields = schemeConfig?.fields?.length ? schemeConfig.fields : defaultFields(scheme);
+          const fields = getFieldsForScheme(auth.detail, scheme);
           const available = isOAuth ? managed.has(scheme) : true;
           const recommended = isOAuth && available && hasManagedOAuth;
           const unavailableReason = isOAuth && !available
@@ -245,19 +104,20 @@ export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuth
               recommended={recommended}
               unavailableReason={unavailableReason}
               fields={fields}
+              compact={useCompactLayout}
               isExpanded={expandedScheme === scheme}
-              credentials={credentials}
-              busy={busyScheme === scheme}
-              anyBusy={busyScheme !== null}
+              credentials={auth.credentials}
+              busy={auth.busyScheme === scheme}
+              anyBusy={auth.anyBusy}
               onClick={() => {
                 if (!available) return;
-                if (isOAuth) { startOAuth(scheme); return; }
-                if (isNoAuth) { connectNoAuth(); return; }
+                if (isOAuth) { void auth.startOAuth(scheme); return; }
+                if (isNoAuth) { void auth.connectNoAuth(); return; }
                 toggleExpand(scheme, fields);
               }}
-              onChangeCredential={(name, value) => setCredentials((prev) => ({ ...prev, [name]: value }))}
-              onSubmit={() => submitCredentials(scheme)}
-              onCancel={() => { setExpandedScheme(null); setCredentials({}); setError(null); }}
+              onChangeCredential={auth.setCredential}
+              onSubmit={() => void auth.submitCredentials(scheme)}
+              onCancel={() => { setExpandedScheme(null); auth.resetCredentials(); auth.clearError(); }}
             />
           );
         })}
@@ -266,11 +126,9 @@ export function ComposioAuthPanel({ slug, onConnected, className }: ComposioAuth
   );
 }
 
-// ── Subcomponents ──
-
 function SchemeCard({
   scheme, isOAuth, isNoAuth, available, recommended, unavailableReason, fields,
-  isExpanded, credentials, busy, anyBusy,
+  compact, isExpanded, credentials, busy, anyBusy,
   onClick, onChangeCredential, onSubmit, onCancel,
 }: {
   scheme: string;
@@ -279,7 +137,8 @@ function SchemeCard({
   available: boolean;
   recommended: boolean;
   unavailableReason?: string;
-  fields: Field[];
+  fields: AuthField[];
+  compact?: boolean;
   isExpanded: boolean;
   credentials: Record<string, string>;
   busy: boolean;
@@ -290,26 +149,99 @@ function SchemeCard({
   onCancel: () => void;
 }) {
   const canSubmit = fields.every((f) => !f.required || (credentials[f.name] || '').length > 0);
+  const label = prettyAuthSchemeLabel(scheme);
+
+  if (compact) {
+    return (
+      <div className="rounded-[10px] border border-black/[0.06] dark:border-white/[0.06] surface-card p-3 flex flex-col gap-2 h-full">
+        <div className="flex items-start gap-2 min-w-0">
+          {isOAuth
+            ? <ExternalLink className="w-4 h-4 text-[var(--color-accent)] shrink-0 mt-0.5" />
+            : <KeyRound className="w-4 h-4 text-[var(--color-accent)] shrink-0 mt-0.5" />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[13px] font-semibold">{label}</span>
+              {recommended && <Badge>Recommended</Badge>}
+            </div>
+            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug">
+              {isOAuth
+                ? 'Sign in with your account in a secure popup.'
+                : isNoAuth
+                  ? 'No credentials required.'
+                  : `Enter your ${label.toLowerCase()} to connect.`}
+            </p>
+          </div>
+        </div>
+        {!available && unavailableReason && (
+          <p className="text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1">
+            <ShieldAlert className="w-3 h-3 shrink-0 mt-px" />
+            {unavailableReason}
+          </p>
+        )}
+        {isExpanded && !isOAuth && !isNoAuth && fields.length > 0 && (
+          <div className="space-y-2 pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+            {fields.map((f) => (
+              <CredentialField
+                key={f.name}
+                field={f}
+                value={credentials[f.name] || ''}
+                onChange={(v) => onChangeCredential(f.name, v)}
+              />
+            ))}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onSubmit}
+                disabled={busy || !canSubmit}
+                className="flex-1 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40"
+              >
+                {busy ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : 'Save & connect'}
+              </button>
+              <button
+                onClick={onCancel}
+                className="px-3 py-1.5 rounded-[8px] text-[11px] font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {(!isExpanded || isOAuth || isNoAuth) && (
+          <button
+            onClick={onClick}
+            disabled={anyBusy || !available}
+            className="mt-auto w-full px-3 py-2 rounded-[8px] text-[12px] font-semibold bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            {busy
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
+              : !available
+                ? 'Unavailable'
+                : isOAuth
+                  ? 'Sign in with OAuth'
+                  : isNoAuth
+                    ? 'Connect'
+                    : isExpanded ? 'Hide form' : 'Enter credentials'}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-[8px] border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
+    <div className="rounded-[8px] border border-black/[0.06] dark:border-white/[0.06] surface-card overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
         <div className="flex items-center gap-2 min-w-0">
           {isOAuth
             ? <ExternalLink className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
             : <KeyRound className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[12px] font-medium truncate">{prettyLabel(scheme)}</span>
+              <span className="text-[12px] font-medium truncate">{label}</span>
               {!available && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wide">
                   unavailable
                 </span>
               )}
-              {recommended && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide">
-                  recommended
-                </span>
-              )}
+              {recommended && <Badge>Recommended</Badge>}
             </div>
             <div className="text-[10px] text-[var(--color-text-muted)] truncate">
               {isOAuth
@@ -378,127 +310,5 @@ function SchemeCard({
   );
 }
 
-function CredentialField({
-  field, value, onChange,
-}: {
-  field: Field;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const [reveal, setReveal] = useState(false);
-  const isSecret = /key|secret|token|password|api/i.test(field.name);
-  return (
-    <div>
-      <label className="block text-[11px] font-medium mb-1">
-        {field.displayName}
-        {field.required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      <div className="relative">
-        <input
-          type={isSecret && !reveal ? 'password' : 'text'}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-          className={`w-full ${isSecret ? 'pr-9' : ''} px-2.5 py-1.5 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-[12px] font-mono outline-none transition-colors`}
-          placeholder={`Enter ${field.displayName.toLowerCase()}`}
-        />
-        {isSecret && (
-          <button
-            type="button"
-            onClick={() => setReveal((r) => !r)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-1.5 py-1 rounded-[4px] text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-            tabIndex={-1}
-          >
-            {reveal ? 'Hide' : 'Show'}
-          </button>
-        )}
-      </div>
-      {field.description && (
-        <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">{field.description}</p>
-      )}
-    </div>
-  );
-}
-
-function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  return (
-    <div className="flex items-start gap-2 text-[11px] text-red-500 bg-red-500/[0.08] border border-red-500/20 rounded-[8px] px-2.5 py-1.5">
-      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
-      <span className="flex-1">{message}</span>
-      <button
-        onClick={onDismiss}
-        className="shrink-0 p-0.5 rounded hover:bg-red-500/10 transition-colors"
-        aria-label="Dismiss"
-      >
-        <X className="w-3 h-3" />
-      </button>
-    </div>
-  );
-}
-
-// ── Helpers ──
-
-/** Composio sometimes returns auth_schemes as string[], sometimes as object[] with `.mode`. */
-function normalize(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
-  for (const item of raw) {
-    if (typeof item === 'string') out.push(item.toUpperCase());
-    else if (item && typeof item === 'object') {
-      const mode = (item as { mode?: unknown; type?: unknown; auth_scheme?: unknown }).mode
-        ?? (item as { type?: unknown }).type
-        ?? (item as { auth_scheme?: unknown }).auth_scheme;
-      if (typeof mode === 'string' && mode) out.push(mode.toUpperCase());
-    }
-  }
-  return out;
-}
-
-function rank(scheme: string, managed: Set<string>): number {
-  if ((scheme === 'OAUTH2' || scheme === 'OAUTH1') && managed.has(scheme)) return 0;
-  if (scheme === 'API_KEY') return 1;
-  if (scheme === 'BEARER_TOKEN') return 2;
-  if (scheme === 'BASIC') return 3;
-  if (scheme === 'NO_AUTH') return 4;
-  if (scheme === 'OAUTH2' || scheme === 'OAUTH1') return 5; // unmanaged OAuth last
-  return 6;
-}
-
-function prettyLabel(scheme: string): string {
-  switch (scheme) {
-    case 'OAUTH2':
-    case 'OAUTH1': return 'OAuth';
-    case 'API_KEY': return 'API key';
-    case 'BEARER_TOKEN': return 'Bearer token';
-    case 'BASIC': return 'Username & password';
-    case 'NO_AUTH': return 'No auth';
-    default: return scheme;
-  }
-}
-
-function defaultFields(scheme: string): Field[] {
-  switch (scheme) {
-    case 'API_KEY':
-      return [{ name: 'generic_api_key', displayName: 'API Key', required: true }];
-    case 'BEARER_TOKEN':
-      return [{ name: 'token', displayName: 'Bearer Token', required: true }];
-    case 'BASIC':
-      return [
-        { name: 'username', displayName: 'Username', required: true },
-        { name: 'password', displayName: 'Password', required: true },
-      ];
-    default:
-      return [];
-  }
-}
-
-function prettify(slug: string, raw: string): string {
-  const txt = raw || '';
-  if (/DefaultAuthConfigNotFound|does not have managed credentials/i.test(txt)) {
-    return `${slug} doesn't support one-click connect with this method. Try another sign-in option.`;
-  }
-  const match = txt.match(/"message":"([^"]+)"/);
-  if (match) return match[1];
-  return txt || `Failed to connect ${slug}`;
-}
+// Re-export for backward compatibility
+export { prettyAuthSchemeLabel as prettyLabel } from './composioAuthUtils';

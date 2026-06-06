@@ -1,6 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '@/services/api';
 import type { InstalledApp, LocalApp } from '@/services/api';
+import {
+  MAX_HOME_CATEGORY_SECTIONS,
+  POPULAR_PER_CATEGORY,
+  deduplicateComposioApps,
+  filterBrowsableCatalog,
+  groupAppsByCategory,
+  isComposioConnectable,
+  slicePopularApps,
+  sortAppsByQuality,
+  sortCategoryGroupsBySize,
+} from './appDiscoveryCatalog';
+import { POPULAR_INTEGRATION_GROUPS } from './popularIntegrations';
+import {
+  buildBrowseCategoryNav,
+  categoryDisplayName,
+  categoryMeetsBrowseThreshold,
+  mapLegacyCategoryToComposio,
+  resolvePrimaryComposioCategoryId,
+} from './composioCategories';
+export type { BrowseCategoryNavItem } from './composioCategories';
 
 export type { InstalledApp, LocalApp };
 
@@ -21,26 +41,36 @@ export interface CuratedDef {
 
 // ── Unified App Model ──
 
-export type Category =
-  | 'all'
-  | 'productivity'
-  | 'communication'
-  | 'dev-tools'
-  | 'data'
-  | 'search'
-  | 'utilities'
-  | 'shopping'
-  | 'finance'
-  | 'media'
-  | 'ai-tools'
-  | 'integrations'
-  | 'games';
+/** Browse filter id — `all` or a Composio category slug (e.g. `developer-tools`). */
+export type Category = string;
+
+export interface ComposioCatalogItem {
+  slug: string;
+  name: string;
+  description: string;
+  logo?: string;
+  auth_schemes?: string[];
+  no_auth?: boolean;
+  tools_count?: number;
+  categories?: Array<{ name: string; slug: string }>;
+  requiresUpgrade?: boolean;
+  available?: boolean;
+  connectable?: boolean;
+}
+
+export type CategorySection = {
+  categoryId: string;
+  apps: UnifiedApp[];
+  totalCount: number;
+  isExpanded: boolean;
+};
 
 export interface UnifiedApp {
   id: string; name: string; description: string;
   icon?: string; category: string; tags: string[];
   source: 'registry' | 'composio' | 'installed' | 'local';
   tools: Array<{ name: string; description?: string | null }>;
+  toolCount?: number;
   hasUi: boolean;
   status: 'available' | 'installed' | 'connected';
   featured?: boolean; verified?: boolean;
@@ -50,11 +80,15 @@ export interface UnifiedApp {
   installedApp?: InstalledApp;
   localApp?: LocalApp;
   composioSlug?: string; composioLogo?: string;
+  composioDocumentation?: string;
+  composioCategories?: Array<{ slug: string; name: string }>;
   authSchemes?: string[];
   authConfig?: Array<{ mode: string; fields: Array<{ name: string; displayName: string; description?: string; required: boolean }> }>;
   composioManaged?: boolean;
+  composioManagedSchemes?: string[];
   requiresUpgrade?: boolean;
   available?: boolean;
+  connectable?: boolean;
 }
 
 // ── Constants ──
@@ -128,6 +162,16 @@ export function inferCategory(slug: string, name: string, desc: string, curated?
   return 'productivity';
 }
 
+export function resolveComposioAppCategory(
+  t: ComposioCatalogItem,
+  curated?: CuratedDef[],
+): string {
+  const known = (curated || FALLBACK_CURATED).find((f) => f.slug === t.slug.toLowerCase());
+  if (known) return mapLegacyCategoryToComposio(known.category);
+  return resolvePrimaryComposioCategoryId(t.categories)
+    || mapLegacyCategoryToComposio(inferCategory(t.slug, t.name, t.description || '', curated));
+}
+
 export function mapRegistryCategory(cat?: string): Category {
   if (!cat) return 'productivity';
   const l = cat.toLowerCase();
@@ -150,25 +194,33 @@ export function getHostname(url: string): string {
 }
 
 export function deduplicateApps(apps: UnifiedApp[]): UnifiedApp[] {
+  const composio = apps.filter((a) => a.source === 'composio');
+  const other = apps.filter((a) => a.source !== 'composio');
+  const dedupedComposio = deduplicateComposioApps(composio);
+
   const normalize = (name: string): string =>
     name.toLowerCase().replace(/[^a-z0-9]/g, '')
       .replace(/(mcp|server|integration|tool|api|bot|app|plugin)$/g, '');
   const seen = new Map<string, { app: UnifiedApp; idx: number }>();
-  const result: UnifiedApp[] = [];
-  for (const app of apps) {
-    const key = normalize(app.name);
-    if (!key) { result.push(app); continue; }
+  const result: UnifiedApp[] = [...dedupedComposio, ...other];
+  const merged: UnifiedApp[] = [];
+  for (const app of result) {
+    const key = `${app.source}:${normalize(app.name)}`;
+    if (!normalize(app.name)) { merged.push(app); continue; }
     const existing = seen.get(key);
     if (existing) {
       const ePri = SOURCE_PRIORITY[existing.app.source] ?? 9;
       const nPri = SOURCE_PRIORITY[app.source] ?? 9;
-      if (nPri < ePri) { result[existing.idx] = app; seen.set(key, { app, idx: existing.idx }); }
+      if (nPri < ePri) {
+        merged[existing.idx] = app;
+        seen.set(key, { app, idx: existing.idx });
+      }
     } else {
-      seen.set(key, { app, idx: result.length });
-      result.push(app);
+      seen.set(key, { app, idx: merged.length });
+      merged.push(app);
     }
   }
-  return result;
+  return merged;
 }
 
 // ── Normalizers ──
@@ -176,7 +228,7 @@ export function deduplicateApps(apps: UnifiedApp[]): UnifiedApp[] {
 export function registryToUnified(app: RegistryApp, installed: boolean): UnifiedApp {
   return {
     id: `registry-${app.id}`, name: app.name, description: app.description,
-    icon: app.icon_url, category: mapRegistryCategory(app.category),
+    icon: app.icon_url, category: mapLegacyCategoryToComposio(mapRegistryCategory(app.category)),
     tags: app.tags || [], source: 'registry', tools: app.tools || [],
     hasUi: app.has_ui, status: installed ? 'installed' : 'available',
     featured: app.featured, verified: app.verified ?? app.featured,
@@ -189,7 +241,7 @@ export function registryToUnified(app: RegistryApp, installed: boolean): Unified
 export function composioToUnified(def: CuratedDef, connected: boolean, _plan: string = 'free'): UnifiedApp {
   return {
     id: `composio-${def.slug}`, name: def.name, description: def.description,
-    icon: composioIconUrl(def.slug), category: def.category,
+    icon: composioIconUrl(def.slug), category: mapLegacyCategoryToComposio(def.category),
     tags: ['integration'], source: 'composio', tools: [], hasUi: false,
     status: connected ? 'connected' : 'available', composioSlug: def.slug,
     verified: true, sourceUrl: `https://composio.dev/toolkits/${def.slug}`,
@@ -198,26 +250,49 @@ export function composioToUnified(def: CuratedDef, connected: boolean, _plan: st
   };
 }
 
-export function composioSearchToUnified(t: { 
-  slug: string; 
-  name: string; 
-  description: string; 
-  logo?: string; 
-  auth_schemes?: string[];
-  requiresUpgrade?: boolean;
-  available?: boolean;
-}, connected: boolean, curated?: CuratedDef[]): UnifiedApp {
+export function composioCatalogToUnified(
+  t: ComposioCatalogItem,
+  connected: boolean,
+  curated?: CuratedDef[],
+  featuredSlugs?: Set<string>,
+): UnifiedApp {
+  const category = resolveComposioAppCategory(t, curated);
   return {
-    id: `composio-${t.slug}`, name: t.name, description: t.description || t.slug,
+    id: `composio-${t.slug}`,
+    name: t.name,
+    description: t.description || t.slug,
     icon: composioIconUrl(t.slug, t.logo),
-    category: inferCategory(t.slug, t.name, t.description || '', curated),
-    tags: ['integration'], source: 'composio', tools: [], hasUi: false,
+    category,
+    tags: [
+      'integration',
+      ...(t.categories?.map((c) => c.name).filter(Boolean) || []),
+    ],
+    source: 'composio',
+    tools: [],
+    toolCount: t.tools_count,
+    hasUi: false,
     status: connected ? 'connected' : 'available',
-    composioSlug: t.slug, composioLogo: t.logo, verified: true,
-    authSchemes: Array.isArray(t.auth_schemes) ? t.auth_schemes.map((s: any) => typeof s === 'string' ? s : s?.mode || 'unknown') : [],
+    composioSlug: t.slug,
+    composioLogo: t.logo,
+    verified: true,
+    featured: featuredSlugs?.has(t.slug.toLowerCase()),
+    authSchemes: Array.isArray(t.auth_schemes)
+      ? t.auth_schemes.map((s) => (typeof s === 'string' ? s : 'unknown'))
+      : [],
     requiresUpgrade: t.requiresUpgrade,
     available: t.available,
+    connectable: t.connectable ?? isComposioConnectable(t),
+    sourceUrl: `https://composio.dev/toolkits/${t.slug}`,
   };
+}
+
+export function composioSearchToUnified(
+  t: ComposioCatalogItem,
+  connected: boolean,
+  curated?: CuratedDef[],
+  featuredSlugs?: Set<string>,
+): UnifiedApp {
+  return composioCatalogToUnified(t, connected, curated, featuredSlugs);
 }
 
 export function installedToUnified(app: InstalledApp): UnifiedApp {
@@ -238,7 +313,9 @@ export function localToUnified(app: LocalApp): UnifiedApp {
     name: manifest.name || app.id,
     description: manifest.description || '',
     icon: app.icon_url || manifest.icon,
-    category: inferCategory(app.id, manifest.name || app.id, manifest.description || ''),
+    category: mapLegacyCategoryToComposio(
+      inferCategory(app.id, manifest.name || app.id, manifest.description || ''),
+    ),
     tags: ['local', 'agent-created'],
     source: 'local',
     tools: manifest.tools || [],
@@ -280,18 +357,25 @@ export function useAppDiscovery() {
   const searchRunIdRef = useRef(0);
 
   const [curatedApps, setCuratedApps] = useState<CuratedDef[]>(FALLBACK_CURATED);
+  const [composioCatalog, setComposioCatalog] = useState<ComposioCatalogItem[]>([]);
+  const [composioCatalogTotal, setComposioCatalogTotal] = useState(0);
+  const [catalogComplete, setCatalogComplete] = useState(true);
+  const [catalogFetchFailed, setCatalogFetchFailed] = useState(false);
+  const [composioSearchFallback, setComposioSearchFallback] = useState<ComposioCatalogItem[]>([]);
+  const [composioCategoryLabels, setComposioCategoryLabels] = useState<Record<string, string>>({});
   const [registryApps, setRegistryApps] = useState<RegistryApp[]>([]);
-  const [composioResults, setComposioResults] = useState<Array<any>>([]);
 
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [localApps, setLocalApps] = useState<LocalApp[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [connectedToolkits, setConnectedToolkits] = useState<Set<string>>(new Set());
   const [userPlan, setUserPlan] = useState<string>('free');
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
   hasDataRef.current = registryApps.length > 0
+    || composioCatalog.length > 0
     || curatedApps.length > 0
     || installedApps.length > 0
     || localApps.length > 0;
@@ -334,6 +418,35 @@ export function useAppDiscovery() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchComposioCatalog = useCallback(async (opts?: { refresh?: boolean }) => {
+    try {
+      const data = await api.listComposioCatalog(opts);
+      if (data?.success && data.data?.toolkits) {
+        setComposioCatalog(data.data.toolkits);
+        setComposioCatalogTotal(data.data.total_items || data.data.toolkits.length);
+        setCatalogComplete(data.data.catalog_complete !== false);
+        setCatalogFetchFailed(false);
+      } else {
+        setCatalogFetchFailed(true);
+      }
+    } catch {
+      setCatalogFetchFailed(true);
+    }
+  }, []);
+
+  const fetchComposioCategories = useCallback(async (opts?: { refresh?: boolean }) => {
+    try {
+      const data = await api.listComposioCategories(opts);
+      if (data?.success && data.data?.categories) {
+        const labels: Record<string, string> = {};
+        for (const cat of data.data.categories) {
+          if (cat.id) labels[cat.id] = cat.name || cat.id;
+        }
+        setComposioCategoryLabels(labels);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const fetchRegistry = useCallback(async () => {
     try {
       const data = await api.searchRegistry();
@@ -349,46 +462,126 @@ export function useAppDiscovery() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchCurated(), fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected(), fetchSubscription()])
-      .finally(() => setLoading(false));
-  }, [fetchCurated, fetchRegistry, fetchInstalled, fetchLocal, fetchConnected, fetchSubscription]);
+    Promise.all([
+      fetchCurated(),
+      fetchComposioCatalog(),
+      fetchComposioCategories(),
+      fetchRegistry(),
+      fetchInstalled(),
+      fetchLocal(),
+      fetchConnected(),
+      fetchSubscription(),
+    ]).finally(() => setLoading(false));
+  }, [fetchCurated, fetchComposioCatalog, fetchComposioCategories, fetchRegistry, fetchInstalled, fetchLocal, fetchConnected, fetchSubscription]);
+
+  useEffect(() => {
+    if (!composioCatalog.length) return;
+    setComposioCategoryLabels((prev) => {
+      const next = { ...prev };
+      for (const toolkit of composioCatalog) {
+        for (const cat of toolkit.categories || []) {
+          if (cat.slug && cat.name && cat.name !== cat.slug) {
+            next[cat.slug] = cat.name;
+          }
+        }
+      }
+      return next;
+    });
+  }, [composioCatalog]);
 
   const executeSearch = useCallback(async (query: string) => {
     const runId = ++searchRunIdRef.current;
-    if (query.length < 2) {
-      setComposioResults([]);
-      setSearching(false); return;
+    if (query.length < 2 || composioCatalog.length > 0) {
+      setComposioSearchFallback([]);
+      setSearching(false);
+      return;
     }
     setSearching(true);
-    const [composio] = await Promise.allSettled([
-      api.searchComposioToolkits(query),
-    ]);
+    const res = await api.searchComposioToolkits(query);
     if (runId !== searchRunIdRef.current) return;
-    if (composio.status === 'fulfilled' && composio.value?.success && composio.value.data) setComposioResults(composio.value.data.toolkits || []);
+    if (res?.success && res.data?.toolkits) setComposioSearchFallback(res.data.toolkits);
+    else setComposioSearchFallback([]);
     setSearching(false);
-  }, []);
+  }, [composioCatalog.length]);
 
   const handleSearch = useCallback((query: string) => {
     setSearch(query);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (query.length < 2) {
       searchRunIdRef.current += 1;
-      setComposioResults([]);
-      setSearching(false); return;
+      setComposioSearchFallback([]);
+      setSearching(false);
+      return;
     }
-    searchTimerRef.current = setTimeout(() => executeSearch(query), 400);
-  }, [executeSearch]);
+    if (composioCatalog.length > 0) {
+      setSearching(false);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => void executeSearch(query), 400);
+  }, [composioCatalog.length, executeSearch]);
 
   const isSearching = search.length >= 2;
+  const featuredSlugs = new Set(curatedApps.map((a) => a.slug.toLowerCase()));
 
-  const suggested: UnifiedApp[] = curatedApps
-    .filter(f => category === 'all' || f.category === category)
-    .map(f => composioToUnified(f, connectedToolkits.has(f.slug), userPlan));
+  const composioBrowseSource: ComposioCatalogItem[] = composioCatalog.length > 0
+    ? filterBrowsableCatalog(composioCatalog)
+    : [];
+
+  const allSuggested: UnifiedApp[] = deduplicateComposioApps(
+    composioBrowseSource
+      .filter((t) => !HIDDEN_SLUGS.has(t.slug.toLowerCase()))
+      .map((t) => composioCatalogToUnified(
+        t,
+        connectedToolkits.has(t.slug),
+        curatedApps,
+        featuredSlugs,
+      )),
+  );
+
+  const allRegistryList: UnifiedApp[] = registryApps
+    .map(a => registryToUnified(a, installedIds.has(a.id)));
+
+  const suggested: UnifiedApp[] = sortAppsByQuality(
+    allSuggested.filter((f) => category === 'all' || f.category === category),
+  );
+
+  const unifiedBySlug = new Map<string, UnifiedApp>();
+  for (const app of allSuggested) {
+    const slug = app.composioSlug?.toLowerCase();
+    if (slug) unifiedBySlug.set(slug, app);
+  }
+
+  const popularByGroup: Array<{ id: string; label: string; apps: UnifiedApp[] }> = [];
+  const popularSlugSet = new Set<string>();
+  for (const group of POPULAR_INTEGRATION_GROUPS) {
+    const apps: UnifiedApp[] = [];
+    for (const slug of group.slugs) {
+      const key = slug.toLowerCase();
+      const app = unifiedBySlug.get(key);
+      if (app && app.connectable !== false) {
+        apps.push(app);
+        popularSlugSet.add(key);
+      }
+    }
+    if (apps.length > 0) {
+      popularByGroup.push({ id: group.id, label: group.label, apps });
+    }
+  }
+
+  const catalogReady = composioCatalog.length > 0 && !catalogFetchFailed;
 
   const yourApps: UnifiedApp[] = [
     ...[...connectedToolkits].map(slug => {
-      const known = curatedApps.find(f => f.slug === slug);
-      if (known) return composioToUnified(known, true, userPlan);
+      const catalogItem = composioCatalog.find((f) => f.slug === slug);
+      const curatedItem = curatedApps.find((f) => f.slug === slug);
+      if (catalogItem || curatedItem) {
+        const item: ComposioCatalogItem = catalogItem || {
+          slug: curatedItem!.slug,
+          name: curatedItem!.name,
+          description: curatedItem!.description,
+        };
+        return composioCatalogToUnified(item, true, curatedApps, featuredSlugs);
+      }
       return { id: `composio-${slug}`, name: slug.charAt(0).toUpperCase() + slug.slice(1),
         description: 'Connected integration', icon: composioIconUrl(slug),
         category: 'productivity' as const, tags: ['integration'],
@@ -400,27 +593,67 @@ export function useAppDiscovery() {
     ...installedApps.map(installedToUnified),
   ].filter(a => category === 'all' || a.category === category);
 
-  const suggestedByCategory = (() => {
-    const order = ['productivity', 'communication', 'dev-tools', 'data', 'search', 'utilities', 'shopping', 'finance', 'media', 'ai-tools', 'integrations', 'games'];
-    const groups = new Map<string, UnifiedApp[]>();
-    for (const app of suggested) {
-      const cat = app.category as string;
-      if (!groups.has(cat)) groups.set(cat, []);
-      groups.get(cat)!.push(app);
-    }
-    return order.filter(c => groups.has(c)).map(c => [c, groups.get(c)!] as const);
-  })();
+  const browseCategories = buildBrowseCategoryNav(allSuggested, composioCategoryLabels);
+
+  const groupedSuggested = groupAppsByCategory(suggested)
+    .filter(([, apps]) => categoryMeetsBrowseThreshold(apps.length));
+
+  const suggestedByCategory: CategorySection[] = groupedSuggested.map(([categoryId, apps]) => {
+    const isExpanded = expandedCategories.has(categoryId);
+    const visible = isExpanded ? apps : slicePopularApps(apps, POPULAR_PER_CATEGORY);
+    return {
+      categoryId,
+      apps: visible,
+      totalCount: apps.length,
+      isExpanded,
+    };
+  });
+
+  const homeGrouped = sortCategoryGroupsBySize(
+    groupAppsByCategory(allSuggested).filter(([, apps]) => categoryMeetsBrowseThreshold(apps.length)),
+  ).slice(0, MAX_HOME_CATEGORY_SECTIONS);
+
+  const homeCategorySections: CategorySection[] = homeGrouped.map(([categoryId, apps]) => {
+    const filtered = apps.filter((a) => !popularSlugSet.has(a.composioSlug?.toLowerCase() || ''));
+    const isExpanded = expandedCategories.has(categoryId);
+    const visible = isExpanded ? filtered : slicePopularApps(filtered, POPULAR_PER_CATEGORY);
+    return {
+      categoryId,
+      apps: visible,
+      totalCount: filtered.length,
+      isExpanded,
+    };
+  }).filter((section) => section.totalCount > 0);
+
+  const expandCategory = useCallback((categoryId: string) => {
+    setExpandedCategories((prev) => new Set(prev).add(categoryId));
+  }, []);
+
+  const setCategoryFilter = useCallback((next: Category) => {
+    setExpandedCategories(new Set());
+    setCategory(next);
+  }, []);
 
   const registryList: UnifiedApp[] = registryApps
     .filter(a => {
       if (search) { const q = search.toLowerCase(); return a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q); }
       return true;
     })
-    .filter(a => category === 'all' || mapRegistryCategory(a.category) === category)
+    .filter(a => category === 'all' || mapLegacyCategoryToComposio(mapRegistryCategory(a.category)) === category)
     .map(a => registryToUnified(a, installedIds.has(a.id)));
 
+  const composioSearchPool = composioCatalog.length > 0 ? composioCatalog : composioSearchFallback;
+  const catalogSearchMatches = isSearching
+    ? composioSearchPool.filter((t) => {
+      const q = search.toLowerCase().trim();
+      return t.name.toLowerCase().includes(q)
+        || t.slug.toLowerCase().includes(q)
+        || (t.description || '').toLowerCase().includes(q);
+    })
+    : [];
+
   const searchResults: UnifiedApp[] = isSearching ? deduplicateApps([
-    ...composioResults.filter(t => !HIDDEN_SLUGS.has(t.slug.toLowerCase())).map(t => composioSearchToUnified(t, connectedToolkits.has(t.slug), curatedApps)),
+    ...catalogSearchMatches.map((t) => composioSearchToUnified(t, connectedToolkits.has(t.slug), curatedApps, featuredSlugs)),
     ...registryList,
   ]).filter(a => category === 'all' || a.category === category)
     .sort((a, b) => {
@@ -436,13 +669,28 @@ export function useAppDiscovery() {
   const handleRefresh = (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent) || hasDataRef.current;
     if (!silent) setLoading(true);
-    return Promise.all([fetchRegistry(), fetchInstalled(), fetchLocal(), fetchConnected()])
-      .finally(() => { if (!silent) setLoading(false); });
+    return Promise.all([
+      fetchComposioCatalog({ refresh: true }),
+      fetchComposioCategories({ refresh: true }),
+      fetchRegistry(),
+      fetchInstalled(),
+      fetchLocal(),
+      fetchConnected(),
+    ]).finally(() => { if (!silent) setLoading(false); });
   };
 
   return {
-    tab, setTab, category, setCategory, search, handleSearch, searching,
-    loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
-    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected, userPlan
+    tab, setTab, category, setCategory: setCategoryFilter, search, handleSearch, searching,
+    loading, yourApps, suggestedByCategory, homeCategorySections, popularByGroup,
+    catalogReady, catalogComplete, registryList, searchResults, isSearching,
+    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected, userPlan,
+    composioCatalogTotal, expandCategory, browseCategories, composioCategoryLabels,
   };
+}
+
+export function getCategoryLabel(
+  categoryId: string,
+  labels: Record<string, string> = CATEGORY_LABELS,
+): string {
+  return categoryDisplayName(categoryId, labels);
 }

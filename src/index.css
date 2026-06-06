@@ -529,6 +529,122 @@ html.dark {
   }
 }
 
+/* App Store — container-query layout (pane width, not viewport) */
+.app-store-window {
+  container-type: inline-size;
+  min-height: 0;
+}
+
+.app-store-chrome {
+  flex-shrink: 0;
+}
+
+.app-store-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.app-store-sidebar {
+  display: none;
+  width: 196px;
+  flex: 0 0 196px;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.app-store-sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-store-pills {
+  display: flex;
+}
+
+.app-store-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.app-store-tile-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.app-store-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-store-detail-primary,
+.app-store-detail-secondary {
+  min-width: 0;
+}
+
+@container (min-width: 400px) {
+  .app-store-tile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 520px) {
+  .app-store-sidebar {
+    display: flex;
+  }
+
+  .app-store-pills {
+    display: none;
+  }
+}
+
+.app-store-detail-content {
+  container-type: inline-size;
+  container-name: app-store-detail;
+  width: 100%;
+  max-width: none;
+}
+
+@container app-store-detail (min-width: 900px) {
+  .app-store-detail-body {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 24px;
+  }
+
+  .app-store-detail-primary {
+    flex: 1 1 42%;
+    min-width: 0;
+  }
+
+  .app-store-detail-secondary {
+    flex: 1 1 58%;
+    min-width: 0;
+  }
+}
+
+@container app-store-detail (max-width: 899px) {
+  .app-store-detail-body {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+@container (min-width: 720px) {
+  .app-store-tile-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @container (max-width: 520px) {
   .settings-section {
     padding: 20px 16px;

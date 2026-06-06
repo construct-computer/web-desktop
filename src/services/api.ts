@@ -1794,17 +1794,49 @@ export async function disconnectComposio(toolkit: string): Promise<ApiResult<{ s
   return request(`/composio/${encodeURIComponent(toolkit)}/disconnect`, { method: 'DELETE' });
 }
 
+export interface ComposioToolkitSummary {
+  slug: string;
+  name: string;
+  description: string;
+  logo?: string;
+  auth_schemes?: string[];
+  no_auth?: boolean;
+  tools_count?: number;
+  categories?: Array<{ name: string; slug: string }>;
+  requiresUpgrade?: boolean;
+  available?: boolean;
+  connectable?: boolean;
+}
+
+export interface ComposioCategorySummary {
+  id: string;
+  name: string;
+}
+
+export async function listComposioCategories(opts?: { refresh?: boolean }): Promise<ApiResult<{
+  categories: ComposioCategorySummary[];
+  total_items: number;
+  cached?: boolean;
+  degraded?: boolean;
+}>> {
+  const params = opts?.refresh ? '?refresh=1' : '';
+  return request(`/composio/categories${params}`);
+}
+
+export async function listComposioCatalog(opts?: { refresh?: boolean }): Promise<ApiResult<{
+  toolkits: ComposioToolkitSummary[];
+  total_items: number;
+  catalog_complete?: boolean;
+  pages_fetched?: number;
+  cached?: boolean;
+  degraded?: boolean;
+}>> {
+  const params = opts?.refresh ? '?refresh=1' : '';
+  return request(`/composio/catalog${params}`);
+}
+
 export async function searchComposioToolkits(query: string): Promise<ApiResult<{ 
-  toolkits: Array<{ 
-    slug: string; 
-    name: string; 
-    description: string; 
-    logo?: string; 
-    auth_schemes?: string[]; 
-    no_auth?: boolean;
-    requiresUpgrade?: boolean;
-    available?: boolean;
-  }>;
+  toolkits: ComposioToolkitSummary[];
   plan?: string;
 }>> {
   return request(`/composio/search?q=${encodeURIComponent(query)}`);
@@ -1835,8 +1867,10 @@ export async function getComposioToolkitDetail(toolkit: string): Promise<ApiResu
   name: string;
   description: string;
   logo: string;
+  documentation?: string;
   categories: Array<{ name: string; slug: string }>;
   tools_count: number;
+  no_auth?: boolean;
   auth_schemes: string[];
   auth_config?: Array<{
     mode: string;

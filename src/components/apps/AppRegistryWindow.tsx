@@ -15,15 +15,35 @@ import * as api from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
-import { ComposioAuthPanel } from './ComposioAuthPanel';
 import {
-  AppHeroHeader, HeaderIconButton, InfoCard, ToolsList
+  AppHeroHeader, AppStatsStrip, HeaderIconButton, InfoCard, InfoRow, ToolsList
 } from './AppShared';
-import { FreshnessText, InfoHint, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
+import {
+  AppStoreCategoryPills,
+  AppStoreCategorySidebar,
+  AppStoreFeaturedStrip,
+  AppStoreGrid,
+  AppStoreList,
+  AppStorePopularSections,
+  AppStoreBrowseSkeleton,
+  AppStoreDetailBodySkeleton,
+  AppStoreHeroSkeleton,
+  AppStoreListSkeleton,
+  AppStoreSection,
+  formatToolCount,
+  sourceLabel as appSourceLabel,
+} from './app-store';
+import { ComposioIntegrationDetail } from './app-store/ComposioIntegrationDetail';
+import {
+  ComposioConnectHeaderSlot,
+  ComposioConnectModalSlot,
+  ComposioConnectProvider,
+} from './app-store/ComposioConnectProvider';
+import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
-import { useAnimatedList } from '@/hooks/useAnimatedList';
-import { useAppDiscovery, CATEGORY_LABELS, CATEGORIES, getHostname } from '@/hooks/useAppDiscovery';
+import { useAppDiscovery, getCategoryLabel, getHostname, prettyAuthLabel } from '@/hooks/useAppDiscovery';
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
+import type { RegistryAppDetail } from '@/services/api';
 
 const PUBLISH_URL = 'https://registry.construct.computer/publish';
 
@@ -38,8 +58,10 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   // Use the unified app discovery hook
   const {
     tab, setTab, category, setCategory, search, handleSearch, searching,
-    loading, yourApps, suggestedByCategory, registryList, searchResults, isSearching,
-    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected
+    loading, yourApps, suggestedByCategory, homeCategorySections, popularByGroup,
+    registryList, searchResults, isSearching, catalogReady, catalogComplete,
+    installedIds, connectedToolkits, handleRefresh, fetchInstalled, fetchConnected,
+    composioCatalogTotal, expandCategory, browseCategories, composioCategoryLabels,
   } = useAppDiscovery();
   const freshness = useFreshness(async () => {
     await handleRefresh({ silent: true });
@@ -67,9 +89,10 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
   const hasDiscoverContent = yourApps.length > 0
     || registryList.length > 0
-    || suggestedByCategory.length > 0
+    || (catalogReady && (homeCategorySections.length > 0 || popularByGroup.length > 0))
     || searchResults.length > 0;
-  const showBlockingLoader = loading && !hasDiscoverContent;
+  const showCatalogSkeleton = !isSearching && !catalogReady;
+  const showBlockingLoader = loading && !hasDiscoverContent && !showCatalogSkeleton;
 
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +118,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   // Detail view
   const [detail, setDetail] = useState<UnifiedApp | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [registryDetail, setRegistryDetail] = useState<RegistryAppDetail | null>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
 
   // Plan limits
@@ -110,27 +134,56 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   // ── Detail open / close ──
 
   const openDetail = async (app: UnifiedApp) => {
-    setDetail(app);
+    setRegistryDetail(null);
     setError(null);
 
-    if (app.source === 'composio' && app.composioSlug) {
-      setDetailLoading(true);
+    const needsDetailFetch = (app.source === 'registry' && !!app.registryApp?.id)
+      || (app.source === 'composio' && !!app.composioSlug);
+    setDetailLoading(needsDetailFetch);
+    setDetail(app);
+
+    if (app.source === 'registry' && app.registryApp?.id) {
+      const res = await api.getRegistryApp(app.registryApp.id);
+      if (res.success && res.data) {
+        const d = res.data;
+        setRegistryDetail(d);
+        setDetail(prev => prev ? {
+          ...prev,
+          description: d.long_description || d.description || prev.description,
+          icon: d.icon_url || prev.icon,
+          tools: d.tools?.map((t) => ({ name: t.name, description: t.description })) || prev.tools,
+          tags: d.tags || prev.tags,
+          version: d.latest_version || prev.version,
+          popularity: d.install_count,
+          verified: d.verified,
+          hasUi: d.has_ui,
+          author: d.author?.name || prev.author,
+          authorUrl: d.author?.url || prev.authorUrl,
+        } : null);
+      }
+      setDetailLoading(false);
+    } else if (app.source === 'composio' && app.composioSlug) {
       const res = await api.getComposioToolkitDetail(app.composioSlug);
       if (res.success && res.data) {
         const d = res.data;
         setDetail(prev => prev ? {
           ...prev, description: d.description || prev.description,
           icon: d.logo || prev.icon, composioLogo: d.logo || prev.composioLogo,
+          toolCount: d.tools_count || d.tools?.length || prev.toolCount,
           tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
-          tags: d.categories?.map((c: any) => c.name).filter(Boolean) || prev.tags,
-          authSchemes: Array.isArray(d.auth_schemes) ? d.auth_schemes.map((s: any) => typeof s === 'string' ? s : s?.mode || 'unknown') : prev.authSchemes,
-          authConfig: Array.isArray(d.auth_schemes) ? d.auth_schemes.filter((s: any) => typeof s === 'object').map((s: any) => ({
-            mode: s.mode || '', fields: Array.isArray(s.fields) ? s.fields.map((f: any) => ({
-              name: f.name || '', displayName: f.displayName || f.display_name || f.name || '',
-              description: f.description || '', required: f.required !== false,
-            })) : [],
-          })) : prev.authConfig,
+          composioCategories: d.categories?.map((c: any) => ({
+            slug: c.slug || '',
+            name: c.name || c.slug || '',
+          })).filter((c: { slug: string }) => c.slug) || prev.composioCategories,
+          composioDocumentation: d.documentation || prev.composioDocumentation,
+          authSchemes: Array.isArray(d.auth_schemes)
+            ? d.auth_schemes.map((s: any) => (typeof s === 'string' ? s : s?.mode || 'unknown'))
+            : prev.authSchemes,
+          authConfig: d.auth_config || prev.authConfig,
           composioManaged: d.composio_managed ?? prev.composioManaged,
+          composioManagedSchemes: Array.isArray(d.composio_managed_schemes)
+            ? d.composio_managed_schemes.map((s: unknown) => (typeof s === 'string' ? s : '')).filter(Boolean)
+            : prev.composioManagedSchemes,
         } : null);
       }
       setDetailLoading(false);
@@ -139,6 +192,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
 
   const closeDetail = () => {
     setDetail(null);
+    setRegistryDetail(null);
     setDetailLoading(false);
     setError(null);
   };
@@ -414,7 +468,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const installed = isAppInstalled(detail);
     const isPending = !!pendingActions[detail.id] || !!pendingActions[`composio-${detail.composioSlug}`];
     const isComposio = detail.source === 'composio';
-    const toolCount = detail.tools?.length || 0;
+    const toolCount = detail.toolCount ?? detail.tools?.length ?? 0;
 
     const getUninstallTarget = (): string | null => {
       if (detail.installedApp && detail.installedApp.id !== 'app-registry') return detail.installedApp.id;
@@ -424,10 +478,12 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     };
     const uninstallTarget = getUninstallTarget();
 
-    // For Composio apps the connect UI lives in the body (ComposioAuthPanel),
-    // so we don't surface a top-level "Connect" button — the panel's per-scheme
-    // buttons handle OAuth / API key / etc.
     const getAction = detail.registryApp ? () => handleInstallRegistry(detail) : null;
+    const showComposioConnect = isComposio
+      && !installed
+      && !detail.requiresUpgrade
+      && detail.connectable !== false
+      && !!detail.composioSlug;
 
     const isCustomUrlInstall =
       detail.source === 'installed' && detail.installedApp && detail.installedApp.registry_linked === false;
@@ -443,10 +499,185 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           : 'Construct App');
     const sourceBadge = detail.source === 'local' ? 'Local App' : isComposio ? 'Integration' : isCustomUrlInstall ? 'Custom / MCP' : 'App';
 
-    return (
-      <div className="flex flex-col h-full text-[var(--color-text)] select-none surface-app">
+    const authLabel = detail.authSchemes?.length
+      ? prettyAuthLabel(detail.authSchemes[0])
+      : undefined;
+    const statsItems = [
+      toolCount > 0 ? formatToolCount(toolCount) : '',
+      authLabel,
+      appSourceLabel(detail),
+      detail.verified ? 'Verified' : '',
+      detail.hasUi ? 'Has UI' : '',
+    ].filter((item): item is string => Boolean(item));
+
+    const detailPrimary = (
+      <>
+        {error && (
+          <div className="flex items-center gap-2 text-[12px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3 py-2">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+            <button type="button" onClick={() => setError(null)} className="ml-auto"><X className="w-3 h-3" /></button>
+          </div>
+        )}
+
+        {installed && (isComposio || detail.source === 'installed' || detail.source === 'local' || detail.registryApp) && (
+          <InfoCard title="Connection status" subtitle="Construct can use this from chat.">
+            <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
+              <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  {detail.source === 'local' ? 'Local app available' : isComposio ? 'Integration connected' : 'App installed'}
+                </p>
+                <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                  {toolCount > 0
+                    ? `${toolCount} action${toolCount === 1 ? '' : 's'} available. Open the interface or ask Construct to use this app.`
+                    : 'Actions are available to Construct; refresh the action list if this panel looks stale.'}
+                </p>
+              </div>
+            </div>
+          </InfoCard>
+        )}
+
+        {detail.requiresUpgrade && (
+          <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
+            <Lock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">Upgrade to connect</p>
+              <p className="text-[11px] text-amber-500/70 mt-0.5">This integration requires a Starter or Pro plan. Upgrade to unlock access.</p>
+            </div>
+          </div>
+        )}
+
+        {isComposio && detail.connectable === false && (
+          <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06]">
+            <AlertCircle className="w-4 h-4 text-[var(--color-text-muted)] mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-[12px] font-medium text-[var(--color-text)]">Unavailable</p>
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">This integration cannot be connected right now.</p>
+            </div>
+          </div>
+        )}
+
+        {registryDetail && (
+          <InfoCard title="About" subtitle="Publisher and install details">
+            <div className="space-y-1.5">
+              {registryDetail.author?.name && (
+                <InfoRow
+                  icon={<Package className="w-3 h-3" />}
+                  label="Author"
+                  value={registryDetail.author.url ? `${registryDetail.author.name} ↗` : registryDetail.author.name}
+                />
+              )}
+              {registryDetail.latest_version && (
+                <InfoRow icon={<BadgeCheck className="w-3 h-3" />} label="Version" value={`v${registryDetail.latest_version}`} />
+              )}
+              {registryDetail.install_count > 0 && (
+                <InfoRow icon={<Download className="w-3 h-3" />} label="Installs" value={String(registryDetail.install_count)} />
+              )}
+              {registryDetail.rating_count > 0 && (
+                <InfoRow
+                  icon={<Sparkles className="w-3 h-3" />}
+                  label="Rating"
+                  value={`${registryDetail.avg_rating.toFixed(1)} (${registryDetail.rating_count})`}
+                />
+              )}
+              {registryDetail.permissions?.network?.length ? (
+                <InfoRow
+                  icon={<Globe className="w-3 h-3" />}
+                  label="Network"
+                  value={registryDetail.permissions.network.join(', ')}
+                  mono
+                />
+              ) : null}
+            </div>
+          </InfoCard>
+        )}
+
+        {isCustomUrlInstall && (
+          <InfoCard title="About this install" subtitle="MCP connection">
+            <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+              Apps added by URL are not listed in Apps, so Construct cannot show built-in sign-in flows for them.
+              Construct can still use actions if the MCP connection is reachable and does not require stored user credentials.
+            </p>
+          </InfoCard>
+        )}
+
+        {isComposio && detail.composioSlug && (
+          <ComposioIntegrationDetail
+            detail={detail}
+            categoryLabels={composioCategoryLabels}
+          />
+        )}
+
+        {detail.installedApp && (() => {
+          const ia = detail.installedApp;
+          const enabled = ia.enabled !== false;
+          const togglePending = !!pendingActions[`toggle-${ia.id}`];
+          const refreshPending = !!pendingActions[`refresh-${ia.id}`];
+          return (
+            <InfoCard title="Manage app" subtitle={enabled ? 'Active for Construct' : 'Hidden from Construct'}>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
+                    {enabled
+                      ? 'Construct can use this app’s actions. Disable to hide it without uninstalling.'
+                      : 'This app is currently hidden from Construct. Enable to make its actions available again.'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleEnabled(ia.id, !enabled)}
+                    disabled={togglePending}
+                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
+                      enabled
+                        ? 'bg-emerald-500/12 text-emerald-600 hover:bg-emerald-500/20'
+                        : 'bg-black/[0.06] dark:bg-white/[0.08] text-[var(--color-text-muted)] hover:bg-black/[0.1] dark:hover:bg-white/[0.12]'
+                    } disabled:opacity-50`}
+                    title={enabled ? 'Disable app' : 'Enable app'}
+                  >
+                    {togglePending ? <Loader2 className="w-3 h-3 animate-spin" /> : enabled ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    {enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-black/[0.05] dark:border-white/[0.05]">
+                  <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
+                    Re-fetch this app's actions from its MCP connection.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRefreshTools(ia.id)}
+                    disabled={refreshPending}
+                    className="px-3 py-1 rounded-md text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text)] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                    title="Refresh actions"
+                  >
+                    {refreshPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    Refresh actions
+                  </button>
+                </div>
+              </div>
+            </InfoCard>
+          );
+        })()}
+      </>
+    );
+
+    const detailSecondary = !detailLoading && (toolCount > 0 || detail.tools.length > 0) ? (
+      <ToolsList tools={detail.tools.map(t => ({ slug: t.name, name: t.name, description: t.description || undefined }))} />
+    ) : null;
+    const detailBodyLoading = detailLoading;
+
+    const composioOnConnected = () => {
+      fetchConnected();
+      setDetail((prev) => {
+        if (!prev) return prev;
+        return prev.composioSlug === detail.composioSlug
+          ? { ...prev, status: 'connected' }
+          : prev;
+      });
+    };
+
+    const detailShell = (
+      <div className="app-store-window relative flex flex-col h-full text-[var(--color-text)] select-none surface-app">
         {/* Detail header */}
-        <div className="flex-shrink-0 px-5 pt-4 pb-0 border-b border-black/[0.06] dark:border-white/[0.06] surface-toolbar z-10">
+        <div className="flex-shrink-0 px-5 pt-4 pb-0 border-b border-black/[0.06] dark:border-white/[0.06] surface-sidebar z-10">
           <button
             onClick={closeDetail}
             className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors mb-3"
@@ -457,24 +688,24 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             icon={detail.icon}
             fallbackIcon={<Package className="w-7 h-7 opacity-40" />}
             name={detail.name}
-            subtitle={`${sourceLabel} · ${CATEGORY_LABELS[detail.category] || detail.category}`}
-            description={detail.description || 'No description available.'}
+            subtitle={`${sourceLabel} · ${getCategoryLabel(detail.category, composioCategoryLabels)}`}
+            description={detailLoading ? undefined : (detail.description || 'No description available.')}
             status={installed ? { label: detail.source === 'local' ? 'Local' : isComposio ? 'Connected' : 'Added', tone: detail.source === 'local' ? 'blue' : 'emerald' } : undefined}
             badges={[
               sourceBadge,
-              ...(detail.tags || []),
+              ...(isComposio && detail.composioCategories?.length
+                ? detail.composioCategories.map((c) => getCategoryLabel(c.slug, composioCategoryLabels))
+                : detail.tags || []),
               ...(detail.verified ? ['Verified'] : []),
               ...(detail.hasUi ? ['Has UI'] : []),
               ...(detail.version ? [`v${detail.version}`] : [])
             ]}
             actions={
-              <>
-                {detail.sourceUrl && (
-                  <HeaderIconButton href={detail.sourceUrl} title="Source/Website">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </HeaderIconButton>
-                )}
-              </>
+              detail.sourceUrl && !isComposio ? (
+                <HeaderIconButton href={detail.sourceUrl} title="Source/Website">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </HeaderIconButton>
+              ) : undefined
             }
             primaryAction={
               <>
@@ -534,6 +765,8 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   >
                     Upgrade to Starter
                   </button>
+                ) : showComposioConnect ? (
+                  <ComposioConnectHeaderSlot />
                 ) : getAction ? (
                   <button
                     onClick={() => {
@@ -548,140 +781,65 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
               </>
             }
           />
-        </div>
-
-        {/* Detail body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {error && (
-            <div className="flex items-center gap-2 text-[12px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3 py-2">
-              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-              <button onClick={() => setError(null)} className="ml-auto"><X className="w-3 h-3" /></button>
-            </div>
-          )}
-
-          {installed && (isComposio || detail.source === 'installed' || detail.source === 'local' || detail.registryApp) && (
-            <InfoCard title="Connection status" subtitle="Construct can use this from chat.">
-              <div className="flex items-start gap-2.5 rounded-[8px] bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2">
-                <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
-                    {detail.source === 'local' ? 'Local app available' : isComposio ? 'Integration connected' : 'App installed'}
-                  </p>
-                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                    {toolCount > 0
-                      ? `${toolCount} action${toolCount === 1 ? '' : 's'} available. Open the interface or ask Construct to use this app.`
-                      : 'Actions are available to Construct; refresh the action list if this panel looks stale.'}
-                  </p>
-                </div>
-              </div>
-            </InfoCard>
-          )}
-
-          {detail.requiresUpgrade && (
-            <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
-              <Lock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">Upgrade to connect</p>
-                <p className="text-[11px] text-amber-500/70 mt-0.5">This integration requires a Starter or Pro plan. Upgrade to unlock access.</p>
-              </div>
-            </div>
-          )}
-
-          {isCustomUrlInstall && (
-            <InfoCard title="About this install" subtitle="MCP connection">
-              <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                Apps added by URL are not listed in Apps, so Construct cannot show built-in sign-in flows for them.
-                Construct can still use actions if the MCP connection is reachable and does not require stored user credentials.
-              </p>
-            </InfoCard>
-          )}
-
-          {isComposio && detail.composioSlug && !installed && !detail.requiresUpgrade && (
-            <InfoCard title="Connect this integration" subtitle="Choose how you'd like to sign in.">
-              <ComposioAuthPanel
-                slug={detail.composioSlug}
-                onConnected={() => {
-                  fetchConnected();
-                  setDetail(prev => {
-                    if (!prev) return prev;
-                    return prev.composioSlug === detail.composioSlug ? { ...prev, status: 'connected' } : prev;
-                  });
-                }}
-              />
-            </InfoCard>
-          )}
-
-          {detailLoading && toolCount === 0 && (
-            <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] mb-4">
-              <Loader2 className="w-3 h-3 animate-spin" /> Loading details...
-            </div>
-          )}
-
-          {/* Per-app management (installed MCP apps only) */}
-          {detail.installedApp && (() => {
-            const ia = detail.installedApp;
-            const enabled = ia.enabled !== false;
-            const togglePending = !!pendingActions[`toggle-${ia.id}`];
-            const refreshPending = !!pendingActions[`refresh-${ia.id}`];
-            return (
-              <InfoCard title="Manage app" subtitle={enabled ? 'Active for Construct' : 'Hidden from Construct'}>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
-                      {enabled
-                        ? 'Construct can use this app’s actions. Disable to hide it without uninstalling.'
-                        : 'This app is currently hidden from Construct. Enable to make its actions available again.'}
-                    </div>
-                    <button
-                      onClick={() => handleToggleEnabled(ia.id, !enabled)}
-                      disabled={togglePending}
-                      className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
-                        enabled
-                          ? 'bg-emerald-500/12 text-emerald-600 hover:bg-emerald-500/20'
-                          : 'bg-black/[0.06] dark:bg-white/[0.08] text-[var(--color-text-muted)] hover:bg-black/[0.1] dark:hover:bg-white/[0.12]'
-                      } disabled:opacity-50`}
-                      title={enabled ? 'Disable app' : 'Enable app'}
-                    >
-                      {togglePending ? <Loader2 className="w-3 h-3 animate-spin" /> : enabled ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                      {enabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-black/[0.05] dark:border-white/[0.05]">
-                    <div className="text-[11px] text-[var(--color-text-muted)] leading-snug">
-                      Re-fetch this app's actions from its MCP connection.
-                    </div>
-                    <button
-                      onClick={() => handleRefreshTools(ia.id)}
-                      disabled={refreshPending}
-                      className="px-3 py-1 rounded-md text-[11px] font-semibold bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text)] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                      title="Refresh actions"
-                    >
-                      {refreshPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      Refresh actions
-                    </button>
-                  </div>
-                </div>
-              </InfoCard>
-            );
-          })()}
-
-          {toolCount > 0 && (
-            <ToolsList tools={detail.tools.map(t => ({ slug: t.name, name: t.name, description: t.description || undefined }))} />
+          {detailLoading ? (
+            <AppStoreHeroSkeleton />
+          ) : (
+            <AppStatsStrip items={statsItems} />
           )}
         </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0 app-store-detail-content">
+          {detailBodyLoading ? (
+            <AppStoreDetailBodySkeleton
+              isComposio={isComposio}
+              actionsCount={Math.min(toolCount || 6, 8)}
+            />
+          ) : (
+            <div className="app-store-detail-body w-full max-w-none">
+              <div className="app-store-detail-primary space-y-4">
+                {detailPrimary}
+              </div>
+              {detailSecondary && (
+                <div className="app-store-detail-secondary">
+                  {detailSecondary}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <ComposioConnectModalSlot />
       </div>
+    );
+
+    return (
+      <ComposioConnectProvider
+        enabled={showComposioConnect}
+        slug={detail.composioSlug!}
+        name={detail.name}
+        prefetch={{
+          authSchemes: detail.authSchemes,
+          authConfig: detail.authConfig,
+          composioManagedSchemes: detail.composioManagedSchemes,
+        }}
+        onConnected={composioOnConnected}
+      >
+        {detailShell}
+      </ComposioConnectProvider>
     );
   }
 
   // ── List view ──
 
   return (
-    <div className="flex flex-col h-full text-[var(--color-text)] select-none">
-      {/* Header */}
-      <div className="flex-shrink-0 px-5 pt-4 pb-0">
+    <div className="app-store-window flex flex-col h-full min-h-0 text-[var(--color-text)] select-none">
+      {/* Header — same surface as category sidebar (Files-style chrome) */}
+      <div className="app-store-chrome surface-sidebar border-b border-black/[0.06] dark:border-white/[0.06] px-5 pt-4 pb-0">
         <div className="flex items-center justify-between mb-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-lg font-bold">Apps</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold">Apps</h1>
+            </div>
             {sourceFilter === 'integrations' && (
               <button
                 type="button"
@@ -778,7 +936,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           <input
             type="text"
             disabled={tab === 'from_url'}
-            className={`w-full pl-9 ${search ? 'pr-8' : 'pr-4'} py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-sm outline-none transition-colors placeholder:text-black/30 dark:placeholder:text-white/25 disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`w-full pl-9 ${search ? 'pr-8' : 'pr-4'} py-2 rounded-lg surface-control border border-black/[0.06] dark:border-white/[0.06] text-sm outline-none transition-colors placeholder:text-black/30 dark:placeholder:text-white/25 disabled:opacity-40 disabled:cursor-not-allowed`}
             placeholder={
               tab === 'from_url'
                 ? 'Search is on Available / Connected…'
@@ -786,7 +944,9 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   ? 'Filter connected apps...'
                   : sourceFilter === 'integrations'
                     ? 'Search integrations (GitHub, Gmail, Notion...)'
-                    : 'Search all apps, integrations, and MCP apps...'
+                    : composioCatalogTotal > 0
+                      ? `Search ${composioCatalogTotal.toLocaleString()}+ integrations…`
+                      : 'Search integrations…'
             }
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
@@ -801,28 +961,27 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           )}
         </div>
 
-        {/* Categories */}
-        {tab === 'discover' && !isSearching && (
-          <div className="flex gap-1.5 pb-2 overflow-x-auto shrink-0 scrollbar-x-none mb-2">
-            {CATEGORIES.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setCategory(c.id)}
-                className={`px-3 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors ${
-                  category === c.id
-                    ? 'bg-[var(--color-accent)] text-white'
-                    : 'bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-5">
+      <div className="app-store-body flex-1 min-h-0">
+        {tab === 'discover' && !isSearching && (
+          <AppStoreCategorySidebar
+            category={category}
+            categories={browseCategories}
+            onSelect={setCategory}
+          />
+        )}
+
+        <div className="app-store-main flex-1 overflow-y-auto px-5 pb-5">
+        {tab === 'discover' && !isSearching && (
+          <AppStoreCategoryPills
+            category={category}
+            categories={browseCategories}
+            onSelect={setCategory}
+          />
+        )}
+
+        <div className="space-y-5 pt-1">
         {error && (
           <div className="flex items-center gap-2 text-[12px] text-red-500 bg-red-500/8 border border-red-500/15 rounded-[10px] px-3 py-2 mb-3">
             <AlertCircle className="w-4 h-4 shrink-0" /> {error}
@@ -831,10 +990,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         )}
 
         {showBlockingLoader ? (
-          <div className="flex flex-col items-center justify-center py-16 text-[var(--color-text-muted)]">
-            <Loader2 className="w-5 h-5 animate-spin mb-2" />
-            <span className="text-[12px]">Loading apps...</span>
-          </div>
+          <AppStoreBrowseSkeleton />
         ) : tab === 'from_url' ? (
           <div className="space-y-3">
             {lastInstalledName && (
@@ -1026,12 +1182,13 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                 <div className="space-y-4">
                   {groups.map(([label, apps]) => (
                     <section key={label}>
-                      {showHeaders && (
-                        <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">
-                          {label} <span className="opacity-50 font-semibold">{apps.length}</span>
-                        </p>
+                      {showHeaders ? (
+                        <AppStoreSection title={label} count={apps.length}>
+                          <AppStoreGrid apps={apps} onClick={openDetail} />
+                        </AppStoreSection>
+                      ) : (
+                        <AppStoreGrid apps={apps} onClick={openDetail} />
                       )}
-                      <AnimatedAppGrid apps={apps} onClick={openDetail} />
                     </section>
                   ))}
                 </div>
@@ -1041,56 +1198,65 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         ) : isSearching ? (
           <div className="space-y-3">
             {searching ? (
-              <div className="flex items-center justify-center gap-2 py-12 opacity-30">
-                <Loader2 className="w-4 h-4 animate-spin" /> <span className="text-[12px]">Searching...</span>
-              </div>
+              <AppStoreListSkeleton />
             ) : visibleSearchResults.length === 0 ? (
               <EmptyState message={`No results for "${search}"`} />
             ) : (
-              <AnimatedAppGrid apps={visibleSearchResults} onClick={openDetail} />
+              <AppStoreList apps={visibleSearchResults} onClick={openDetail} />
             )}
           </div>
         ) : (
           <>
-            {visibleRegistryList.length > 0 && (
-              <section>
-                <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">Made for Construct</p>
-                <AnimatedAppGrid apps={visibleRegistryList} onClick={openDetail} />
-              </section>
+            <AppStoreFeaturedStrip apps={visibleRegistryList} onClick={openDetail} />
+            {!catalogComplete && catalogReady && (
+              <StatusBanner tone="warning" className="mb-3">
+                Integration catalog may be incomplete. Try refreshing if something is missing.
+              </StatusBanner>
             )}
-            {suggestedByCategory.map(([cat, apps]) => (
-              <section key={cat}>
-                <p className="text-[13px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide mb-2 px-1">{CATEGORY_LABELS[cat] || cat}</p>
-                <AnimatedAppGrid apps={apps} onClick={openDetail} />
-              </section>
-            ))}
-            {registryList.length === 0 && suggestedByCategory.length === 0 && (
+            {showCatalogSkeleton ? (
+              <AppStoreBrowseSkeleton />
+            ) : category === 'all' ? (
+              <>
+                <AppStorePopularSections groups={popularByGroup} onClick={openDetail} />
+                {homeCategorySections.map((section) => (
+                  <AppStoreSection
+                    key={section.categoryId}
+                    title={getCategoryLabel(section.categoryId, composioCategoryLabels)}
+                    visibleCount={section.apps.length}
+                    totalCount={section.totalCount}
+                    isExpanded={section.isExpanded}
+                    onShowAll={() => expandCategory(section.categoryId)}
+                  >
+                    <AppStoreGrid apps={section.apps} onClick={openDetail} />
+                  </AppStoreSection>
+                ))}
+              </>
+            ) : (
+              suggestedByCategory.map((section) => (
+                <AppStoreSection
+                  key={section.categoryId}
+                  title={getCategoryLabel(section.categoryId, composioCategoryLabels)}
+                  visibleCount={section.apps.length}
+                  totalCount={section.totalCount}
+                  isExpanded={section.isExpanded}
+                  onShowAll={() => expandCategory(section.categoryId)}
+                >
+                  <AppStoreGrid apps={section.apps} onClick={openDetail} />
+                </AppStoreSection>
+              ))
+            )}
+            {registryList.length === 0
+              && !showCatalogSkeleton
+              && popularByGroup.length === 0
+              && homeCategorySections.length === 0
+              && suggestedByCategory.length === 0 && (
               <EmptyState message="No apps found." />
             )}
           </>
         )}
+        </div>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function AnimatedAppGrid({ apps, onClick }: { apps: UnifiedApp[]; onClick: (app: UnifiedApp) => void }) {
-  const entries = useAnimatedList(apps, (app) => app.id);
-  return (
-    <AppGrid>
-      {entries.map(({ key, item, phase }) => (
-        <AnimatedListItem key={key} phase={phase}>
-          <UnifiedAppCard app={item} onClick={() => onClick(item)} />
-        </AnimatedListItem>
-      ))}
-    </AppGrid>
-  );
-}
-
-function AppGrid({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-      {children}
     </div>
   );
 }
@@ -1161,45 +1327,3 @@ function formatEndpointPreview(rawUrl: string, rawPath: string): string {
   }
 }
 
-function UnifiedAppCard({ app, onClick }: { app: UnifiedApp; onClick: () => void }) {
-  const isInstalled = app.status !== 'available';
-  const isComposio = app.source === 'composio';
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-start gap-3 px-3 py-3 rounded-[10px] bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/[0.06] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors text-left"
-    >
-      <div className="w-[36px] h-[36px] rounded-[8px] bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0 overflow-hidden">
-        {app.icon ? (
-          <img src={app.icon} alt={app.name} className="w-[28px] h-[28px] object-contain" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-        ) : (
-          <Package className="w-4 h-4 text-[var(--color-text-muted)]" />
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-semibold truncate text-[var(--color-text)]">{app.name}</span>
-          {(isComposio || app.verified) && (
-            <Check className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-          )}
-        </div>
-        <p className="text-[11px] text-[var(--color-text-muted)] line-clamp-2 mt-0.5 leading-snug">
-          {app.description}
-        </p>
-        <div className="mt-2 flex items-center gap-1.5">
-          {isInstalled ? (
-            <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-1.5 rounded-full">{app.source === 'local' ? 'Local' : isComposio ? 'Connected' : 'Added'}</span>
-          ) : app.requiresUpgrade ? (
-            <span className="text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 rounded-full flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" /> Upgrade</span>
-          ) : (
-            <span className="text-[10px] font-semibold text-[var(--color-text-muted)]">Available</span>
-          )}
-          {app.tags?.includes('from-url') && (
-            <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 rounded-full">Custom / MCP</span>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
