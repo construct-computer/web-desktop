@@ -6,12 +6,12 @@ import { useWindowStore } from '@/stores/windowStore';
  * Shared by Autopilot, Clippy, and worthwhile-event notifications.
  */
 export async function openSpotlightSession(sessionKey?: string): Promise<void> {
-  const { loadSessions, switchSession, activeSessionKey } = useComputerStore.getState();
+  const { loadSessions, switchSession } = useComputerStore.getState();
   const { spotlightOpen, toggleSpotlight } = useWindowStore.getState();
 
   await loadSessions(true, sessionKey ? { preserveActiveKey: sessionKey } : undefined);
-  if (sessionKey && sessionKey !== activeSessionKey) {
-    await switchSession(sessionKey);
+  if (sessionKey) {
+    await switchSession(sessionKey, { force: true });
   }
   if (!spotlightOpen) toggleSpotlight();
 }

@@ -235,7 +235,8 @@ export function SpotlightSidebar() {
 
   useEffect(() => {
     void loadSessions(true, { preserveActiveKey: activeKey });
-  }, [loadSessions, activeKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh session list on mount only; switchSession handles per-switch hydration
+  }, [loadSessions]);
 
   const refreshAttention = useCallback(async (shouldApply: () => boolean = () => true) => {
     const [statusResult, pendingResult] = await Promise.all([
@@ -356,7 +357,7 @@ export function SpotlightSidebar() {
                 canManage
                 canRename={!hasAttention}
                 onSwitch={async () => {
-                  await switchSession(session.key);
+                  await switchSession(session.key, { force: true });
                 }}
                 onRename={(title) => renameSession(session.key, title)}
                 onDelete={() => { void handleDeleteSession(session.key); }}

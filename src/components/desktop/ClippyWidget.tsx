@@ -550,13 +550,16 @@ export function ClippyWidget() {
   const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext || isActive;
   const showBubble = isActive && hasUniqueContext && !dismissed;
   const showWelcome = !!welcomeMsg && !showBubble;
+  const bubbleDetail = hasActivityContext
+    ? (activitySummary.detail || scrollText)
+    : scrollText;
 
   // Determine what to show in the unified comic bubble
   const bubbleContent = useMemo(() => {
     if (showBubble) {
       return {
         title: stateLabel,
-        detail: scrollText,
+        detail: bubbleDetail,
         variant: hasActivityContext ? 'status-dashboard' as const : 'status' as const,
         summary: activitySummary,
       };
@@ -565,7 +568,7 @@ export function ClippyWidget() {
       return { title: welcomeMsg!, detail: '', variant: 'welcome' as const, summary: undefined };
     }
     return null;
-  }, [activitySummary, hasActivityContext, scrollText, showBubble, showWelcome, stateLabel, welcomeMsg]);
+  }, [activitySummary, bubbleDetail, hasActivityContext, showBubble, showWelcome, stateLabel, welcomeMsg]);
 
   // Keep bubble mounted during exit animation
   const [visibleBubble, setVisibleBubble] = useState(bubbleContent);
@@ -913,6 +916,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
               iconPlatform={item.iconPlatform}
               iconUrl={item.iconUrl}
               failed={item.failed}
+              kind={item.kind}
               dense
             />
           ))}

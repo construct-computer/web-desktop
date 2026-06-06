@@ -12,7 +12,6 @@ import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
-import { isTriggeredSessionKey } from './agentSessionKeys';
 
 function stripScheduleDeliveryBlock(prompt: string): string {
   const trimmed = (prompt || '').trim();
@@ -34,7 +33,15 @@ import {
 import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
-import { dispatchAgentCalendarRefresh, dispatchAgentHistoryCleared, dispatchMemoryChanged, dispatchWorkOrderUpdated } from '@/lib/agentUiEvents';
+import {
+  dispatchAgentCalendarRefresh,
+  dispatchAgentEmailRefresh,
+  dispatchAgentHistoryCleared,
+  dispatchMemoryChanged,
+  dispatchWorkOrderUpdated,
+  requestAgentEmailRefresh,
+} from '@/lib/agentUiEvents';
+import { isAgentFilesInlinePreviewPath, syncAgentFilesFromToolArgs, syncAgentFilesLocation } from '@/lib/agentFilesSync';
 import type { WorkOrderActivityUpdate } from '@/services/api';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
@@ -278,6 +285,38 @@ export interface ChatMessage {
   codePreview?: CodePreviewData;
 }
 
+/** Ephemeral Clippy widget status from stripped CLIPPY: lines (not in chat history). */
+export interface ClippyStatusEntry {
+  id: string;
+  text: string;
+  timestamp: number;
+  subagentId?: string;
+}
+
+const MAX_CLIPPY_STATUS_PER_SESSION = 20;
+
+function appendClippyStatusEntry(
+  bySession: Record<string, ClippyStatusEntry[]>,
+  sessionKey: string,
+  entry: ClippyStatusEntry,
+): Record<string, ClippyStatusEntry[]> {
+  const prev = bySession[sessionKey] || [];
+  return {
+    ...bySession,
+    [sessionKey]: [...prev, entry].slice(-MAX_CLIPPY_STATUS_PER_SESSION),
+  };
+}
+
+function clearClippyStatusForSession(
+  bySession: Record<string, ClippyStatusEntry[]>,
+  sessionKey: string,
+): Record<string, ClippyStatusEntry[]> {
+  if (!bySession[sessionKey]?.length) return bySession;
+  const next = { ...bySession };
+  delete next[sessionKey];
+  return next;
+}
+
 export interface ComponentMention {
   appId: string;
   appName?: string;
@@ -360,6 +399,12 @@ function cancelAutoClose(windowType: string) {
     clearTimeout(timer);
     autoCloseTimers.delete(windowType);
   }
+}
+
+/** Keep an agent-opened window open after the user interacts with it. */
+export function retainAgentOpenedWindow(windowId: string, windowType = 'document-viewer'): void {
+  autoOpenedWindowIds.delete(windowId);
+  cancelAutoClose(windowType);
 }
 
 function closeAllAutoOpened(delayMs = 2000) {
@@ -712,6 +757,8 @@ interface ComputerStore {
   terminalOutputSeq: number;
   /** Latest backend execution status per tool call. */
   toolStatuses: Record<string, { tool: string; status: string; updatedAt: number; sessionKey?: string }>;
+  /** Per-session Clippy status lines from clippy_status events (ephemeral). */
+  clippyStatusBySession: Record<string, ClippyStatusEntry[]>;
 
   // Chat sessions
   chatSessions: SessionInfo[];
@@ -728,6 +775,8 @@ interface ComputerStore {
 
   // Chat
   loadChatHistory: () => Promise<void>;
+  /** Invalidate hydration cache for the active session and reload from /history. */
+  refreshActiveChatHistory: () => Promise<void>;
   sendChatMessage: (content: string, attachments?: string[], opts?: { componentMentions?: ComponentMention[] }) => void;
   addComponentMention: (mention: ComponentMention) => void;
   removeComponentMention: (appId: string, componentId: string) => void;
@@ -777,7 +826,7 @@ interface ComputerStore {
   // Sessions
   loadSessions: (force?: boolean, options?: { preserveActiveKey?: string }) => Promise<void>;
   createSession: (title?: string, options?: { forceNew?: boolean }) => Promise<void>;
-  switchSession: (key: string) => Promise<void>;
+  switchSession: (key: string, options?: { force?: boolean }) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
   renameSession: (key: string, title: string) => Promise<void>;
 
@@ -1409,10 +1458,32 @@ let chatHistoryLoading = false;
 let pendingHistorySessionKey: string | null = null;
 /** Sessions whose history was successfully hydrated this page load. */
 const historyHydratedKeys = new Set<string>();
-const triggeredHistoryRetryCounts = new Map<string, number>();
-const TRIGGERED_HISTORY_MAX_RETRIES = 5;
+const emptyHistoryRetryCounts = new Map<string, number>();
+const EMPTY_HISTORY_MAX_RETRIES = 5;
+const EMPTY_HISTORY_FALLBACK_RELOAD_MS = 12_000;
 /** Tracks sessions that already received a failure retry. */
 const historyRetryAttempted = new Set<string>();
+
+function hasPersistedUserOrAssistantContent(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.role === 'user' || m.role === 'agent');
+}
+
+function invalidateHistoryHydration(sessionKey: string): void {
+  historyHydratedKeys.delete(sessionKey);
+  emptyHistoryRetryCounts.delete(sessionKey);
+}
+
+function scheduleHistoryFallbackReload(
+  sessionKey: string,
+  loadChatHistory: () => Promise<void>,
+  getActiveSessionKey: () => string,
+): void {
+  setTimeout(() => {
+    if (getActiveSessionKey() !== sessionKey) return;
+    invalidateHistoryHydration(sessionKey);
+    void loadChatHistory();
+  }, EMPTY_HISTORY_FALLBACK_RELOAD_MS);
+}
 const LAST_VIEWED_SESSION_KEY = 'construct:last-viewed-session';
 let sessionsLoading: Promise<void> | null = null;
 let sessionsLoadedAt = 0;
@@ -1618,6 +1689,7 @@ export const useComputerStore = create<ComputerStore>()(
     pendingApprovalCount: 0,
     terminalOutputSeq: 0,
     toolStatuses: {},
+    clippyStatusBySession: {},
     chatSessions: [],
     activeSessionKey: 'default',
     browserRuns: [],
@@ -2317,6 +2389,13 @@ export const useComputerStore = create<ComputerStore>()(
       });
     },
 
+    refreshActiveChatHistory: async () => {
+      const { instanceId, activeSessionKey } = get();
+      if (!instanceId || !activeSessionKey) return;
+      invalidateHistoryHydration(activeSessionKey);
+      await get().loadChatHistory();
+    },
+
     loadChatHistory: async () => {
       const { instanceId, activeSessionKey } = get();
       if (!instanceId) return;
@@ -2344,7 +2423,7 @@ export const useComputerStore = create<ComputerStore>()(
       chatHistoryLoading = true;
       set({ historyLoading: true });
 
-      let scheduledEmptyRetry = false;
+      let emptyHistoryRetry = false;
 
       try {
         const result = await api.getAgentHistory(instanceId, requestedSessionKey);
@@ -2381,10 +2460,10 @@ export const useComputerStore = create<ComputerStore>()(
         // clear any stale in-memory view from a previous session (otherwise
         // the user thinks an empty tab has another chat’s messages).
         if ((!messages || messages.length === 0) && (!events || events.length === 0)) {
-          const retryCount = triggeredHistoryRetryCounts.get(requestedSessionKey) || 0;
-          if (isTriggeredSessionKey(requestedSessionKey) && retryCount < TRIGGERED_HISTORY_MAX_RETRIES) {
-            scheduledEmptyRetry = true;
-            triggeredHistoryRetryCounts.set(requestedSessionKey, retryCount + 1);
+          const retryCount = emptyHistoryRetryCounts.get(requestedSessionKey) || 0;
+          if (retryCount < EMPTY_HISTORY_MAX_RETRIES) {
+            emptyHistoryRetry = true;
+            emptyHistoryRetryCounts.set(requestedSessionKey, retryCount + 1);
             set({ historyLoading: true, sessionSwitching: true });
             setTimeout(() => {
               if (get().activeSessionKey === requestedSessionKey) {
@@ -2393,11 +2472,22 @@ export const useComputerStore = create<ComputerStore>()(
             }, 1000 * (retryCount + 1));
             return;
           }
-          triggeredHistoryRetryCounts.delete(requestedSessionKey);
+          emptyHistoryRetryCounts.delete(requestedSessionKey);
           if (get().activeSessionKey === requestedSessionKey) {
-            const keepLiveMessages = get().chatMessages.length > 0
-              || (sessionMessageCache.get(requestedSessionKey)?.length ?? 0) > 0;
-            historyHydratedKeys.add(requestedSessionKey);
+            const liveMessages = get().chatMessages;
+            const cachedMessages = sessionMessageCache.get(requestedSessionKey) || [];
+            const keepLiveMessages = liveMessages.length > 0 || cachedMessages.length > 0;
+            const hasUserOrAgentContent = hasPersistedUserOrAssistantContent(liveMessages)
+              || hasPersistedUserOrAssistantContent(cachedMessages);
+            if (hasUserOrAgentContent) {
+              historyHydratedKeys.add(requestedSessionKey);
+            } else {
+              scheduleHistoryFallbackReload(
+                requestedSessionKey,
+                () => get().loadChatHistory(),
+                () => get().activeSessionKey,
+              );
+            }
             if (!keepLiveMessages) {
               set({ chatMessages: [], historyLoadError: null });
               sessionMessageCache.set(requestedSessionKey, []);
@@ -2407,7 +2497,7 @@ export const useComputerStore = create<ComputerStore>()(
           }
           return;
         }
-        triggeredHistoryRetryCounts.delete(requestedSessionKey);
+        emptyHistoryRetryCounts.delete(requestedSessionKey);
 
         // ── Build operation metadata maps from BOTH sources:
         // 1. operation_metadata from the /history response (scans ALL messages,
@@ -2961,7 +3051,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
       } finally {
         chatHistoryLoading = false;
-        if (!scheduledEmptyRetry && get().activeSessionKey === requestedSessionKey) {
+        if (!emptyHistoryRetry && get().activeSessionKey === requestedSessionKey) {
           set({ historyLoading: false, sessionSwitching: false });
         }
         const nextPending = pendingHistorySessionKey;
@@ -3658,23 +3748,40 @@ export const useComputerStore = create<ComputerStore>()(
         const result = await api.getAgentSessions(instanceId);
         if (requestSeq !== sessionsRequestSeq) return;
         if (result.success) {
+          const previousActiveKey = get().activeSessionKey;
           const { sessions, activeKey } = resolveLoadedSessions(
             result.data.sessions,
             result.data.active_key,
             preserveActiveKey,
           );
-          set(state => ({
-            chatSessions: sessions,
-            activeSessionKey: activeKey,
-            pendingComponentMentions: componentMentionsForSession(
-              state.pendingComponentMentionsBySession,
-              activeKey,
-            ),
-          }));
+          const activeKeyChanged = previousActiveKey !== activeKey;
+          set(state => {
+            const updates: Partial<typeof state> = {
+              chatSessions: sessions,
+              activeSessionKey: activeKey,
+              pendingComponentMentions: componentMentionsForSession(
+                state.pendingComponentMentionsBySession,
+                activeKey,
+              ),
+            };
+            if (activeKeyChanged) {
+              if (state.activeSessionKey && state.chatMessages.length > 0) {
+                sessionMessageCache.set(state.activeSessionKey, state.chatMessages);
+              }
+              invalidateHistoryHydration(activeKey);
+              const cached = sessionMessageCache.get(activeKey);
+              updates.chatMessages = cached || [];
+              updates.historyLoadError = null;
+              updates.sessionSwitching = !(cached && cached.length > 0)
+                && !historyHydratedKeys.has(activeKey);
+            }
+            return updates;
+          });
           sessionsLoadedAt = Date.now();
-          const needsHistory = activeKey
-            && !historyHydratedKeys.has(activeKey)
-            && get().chatMessages.length === 0;
+          const needsHistory = activeKey && (
+            activeKeyChanged
+            || (!historyHydratedKeys.has(activeKey) && get().chatMessages.length === 0)
+          );
           if (needsHistory) {
             await get().loadChatHistory();
           }
@@ -3745,13 +3852,15 @@ export const useComputerStore = create<ComputerStore>()(
       }
     },
 
-    switchSession: async (key: string) => {
+    switchSession: async (key: string, options?: { force?: boolean }) => {
       if (key === 'overseer') return;
       const { instanceId, activeSessionKey, chatMessages } = get();
-      if (!instanceId || key === activeSessionKey) return;
+      if (!instanceId) return;
+      const isRefresh = key === activeSessionKey;
+      if (isRefresh && !options?.force) return;
 
       // Cache current session's messages before switching
-      if (activeSessionKey && chatMessages.length > 0) {
+      if (!isRefresh && activeSessionKey && chatMessages.length > 0) {
         sessionMessageCache.set(activeSessionKey, chatMessages);
       }
 
@@ -3760,22 +3869,33 @@ export const useComputerStore = create<ComputerStore>()(
           sessionStorage.setItem(LAST_VIEWED_SESSION_KEY, key);
         } catch { /* */ }
 
+        if (isRefresh && options?.force) {
+          invalidateHistoryHydration(key);
+        }
+
         const result = await api.activateAgentSession(instanceId, key);
         if (result.success) {
           const isTargetRunning = get().runningSessions.has(key);
           const cached = sessionMessageCache.get(key);
           const hasHydratedCache = cached && cached.length > 0;
 
-          set(state => ({
-            activeSessionKey: key,
-            chatMessages: cached || [],
-            replyingTo: null,
-            agentThinking: null,
-            agentRunning: isTargetRunning,
-            historyLoadError: null,
-            sessionSwitching: !hasHydratedCache && !historyHydratedKeys.has(key),
-            pendingComponentMentions: componentMentionsForSession(state.pendingComponentMentionsBySession, key),
-          }));
+          if (!isRefresh) {
+            set(state => ({
+              activeSessionKey: key,
+              chatMessages: cached || [],
+              replyingTo: null,
+              agentThinking: null,
+              agentRunning: isTargetRunning,
+              historyLoadError: null,
+              sessionSwitching: !hasHydratedCache && !historyHydratedKeys.has(key),
+              pendingComponentMentions: componentMentionsForSession(state.pendingComponentMentionsBySession, key),
+            }));
+          } else {
+            set({
+              historyLoadError: null,
+              sessionSwitching: !hasHydratedCache && !historyHydratedKeys.has(key),
+            });
+          }
 
           // Silently refresh from API (updates cache with latest)
           await get().loadChatHistory();
@@ -4801,6 +4921,30 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'clippy_status': {
+          const text = typeof event.data?.text === 'string'
+            ? event.data.text.trim().slice(0, 90)
+            : '';
+          if (!text) break;
+          const subagentId = typeof event.data?.subagentId === 'string'
+            ? event.data.subagentId
+            : undefined;
+          const at = typeof event.data?.at === 'number' ? event.data.at : Date.now();
+          set(state => ({
+            clippyStatusBySession: appendClippyStatusEntry(
+              state.clippyStatusBySession,
+              eventSessionKey,
+              {
+                id: `clippy:${eventSessionKey}:${at}:${text.slice(0, 24)}`,
+                text,
+                timestamp: at,
+                ...(subagentId ? { subagentId } : {}),
+              },
+            ),
+          }));
+          break;
+        }
+
         case 'agent_progress': {
           const text = typeof event.data?.text === 'string'
             ? event.data.text.trim().slice(0, 180)
@@ -5017,6 +5161,10 @@ export const useComputerStore = create<ComputerStore>()(
             applyToolWindowRoute(route, targetWsId, { track: true });
           }
 
+          if (tool === 'files' && params?.action === 'read') {
+            syncAgentFilesFromToolArgs(params as Record<string, unknown>, targetWsId);
+          }
+
           // Browser: focus existing window in THIS session's workspace, kick reconciler
           if (windowType === 'browser') {
             getOrCreateBrowserAppWindow({
@@ -5126,15 +5274,16 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Refresh file windows after successful file tool completion
           if (success !== false && !resultSubagentId) {
-            const fileTools = new Set(['files']);
-            if (fileTools.has(tool)) {
-              const args = (event.data?.args ?? event.data?.params) as Record<string, unknown> | undefined;
+            const args = (event.data?.args ?? event.data?.params) as Record<string, unknown> | undefined;
+            const targetWsId = (event.data?.workspace_id as string | undefined) || 'main';
+
+            if (tool === 'files') {
               const action = args?.action as string | undefined;
               const rawPath = (args?.path ?? args?.save_path) as string | undefined;
               const filePath = rawPath?.replace(/^\/mnt\/saved\//, '');
               if (filePath && (action === 'read' || action === 'write')) {
+                syncAgentFilesFromToolArgs(args, targetWsId);
                 const route = routeToolToWindow(tool, { ...args, path: filePath });
-                const targetWsId = (event.data?.workspace_id as string | undefined) || 'main';
                 if (route?.openMode === 'file') {
                   if (route.type === 'document-viewer') {
                     openDocumentViewer(filePath, targetWsId);
@@ -5144,12 +5293,30 @@ export const useComputerStore = create<ComputerStore>()(
                 }
               }
             }
+
+            if (tool === 'email') {
+              const action = args?.action as string | undefined;
+              if (action === 'send' || action === 'reply' || action === 'reply_all' || action === 'forward') {
+                requestAgentEmailRefresh();
+              }
+            }
           }
 
           // Schedule auto-close for windows opened by this tool type
-          if (!resultSubagentId) {
-            const windowType = toolToWindowType(tool);
-            if (windowType) scheduleAutoClose(windowType);
+          if (!resultSubagentId && success !== false) {
+            const args = (event.data?.args ?? event.data?.params) as Record<string, unknown> | undefined;
+            if (tool === 'files') {
+              const action = args?.action as string | undefined;
+              const rawPath = (args?.path ?? args?.save_path) as string | undefined;
+              const filePath = rawPath?.replace(/^\/mnt\/saved\//, '');
+              if (action === 'write' && filePath) {
+                const route = routeToolToWindow(tool, { ...args, path: filePath });
+                if (route?.type === 'document-viewer') scheduleAutoClose('document-viewer');
+              }
+            } else {
+              const windowType = toolToWindowType(tool, args);
+              if (windowType && windowType !== 'files') scheduleAutoClose(windowType);
+            }
           }
 
           // Clear currentTool using the defensive helper
@@ -5298,6 +5465,12 @@ export const useComputerStore = create<ComputerStore>()(
           let nextRunning = new Set(get().runningSessions);
           if (status === 'idle') {
             nextRunning.delete(eventSessionKey);
+            set(state => ({
+              clippyStatusBySession: clearClippyStatusForSession(
+                state.clippyStatusBySession,
+                eventSessionKey,
+              ),
+            }));
           } else {
             nextRunning.add(eventSessionKey);
           }
@@ -5485,6 +5658,16 @@ export const useComputerStore = create<ComputerStore>()(
           const notice = incidentNoticeFromPayload(event.data || {}, Date.now());
           if (notice) {
             appendToAgentChat(notice);
+            const messages = isActiveSession
+              ? get().chatMessages
+              : (sessionMessageCache.get(eventSessionKey) || []);
+            const hasUserCard = messages.some((m) => m.role === 'user');
+            if (!hasUserCard) {
+              invalidateHistoryHydration(eventSessionKey);
+              if (isActiveSession) {
+                void get().loadChatHistory();
+              }
+            }
             if (notice.isError) {
               useNotificationStore.getState().addNotification({
                 title: 'Construct issue',
@@ -6025,7 +6208,7 @@ export const useComputerStore = create<ComputerStore>()(
           } else if (action === 'open_email') {
             onClick = () => {
               useWindowStore.getState().ensureWindowOpen('email');
-              window.dispatchEvent(new CustomEvent('agent-email-refresh'));
+              dispatchAgentEmailRefresh();
             };
           } else if (action === 'open_access_control') {
             onClick = () => { useWindowStore.getState().ensureWindowOpen('access-control'); };
@@ -6113,15 +6296,13 @@ export const useComputerStore = create<ComputerStore>()(
           // The notification toast is handled separately by the 'notification'
           // event emitted alongside this one from the agent.
           set(state => ({ emailUnreadCount: state.emailUnreadCount + 1 }));
-          // Trigger EmailWindow refresh so new received emails appear immediately
-          window.dispatchEvent(new CustomEvent('agent-email-refresh'));
+          requestAgentEmailRefresh();
           break;
         }
 
         case 'email:sent': {
-          // Agent sent/replied/forwarded an email — trigger EmailWindow refresh
-          // so the sent email appears immediately in the email app.
-          window.dispatchEvent(new CustomEvent('agent-email-refresh'));
+          // Agent sent/replied/forwarded an email — refresh Email app if open.
+          requestAgentEmailRefresh();
           break;
         }
 
@@ -6135,6 +6316,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'session_created': {
           const newKey = event.data?.sessionKey as string | undefined;
           if (newKey) {
+            invalidateHistoryHydration(newKey);
             set(state => {
               if (state.chatSessions.some(s => s.key === newKey)) return {};
               const now = Date.now();
@@ -6146,6 +6328,20 @@ export const useComputerStore = create<ComputerStore>()(
               };
               return { chatSessions: [session, ...state.chatSessions] };
             });
+            const { runningSessions, agentRunning } = get();
+            if (runningSessions.size === 0 && !agentRunning) {
+              void get().switchSession(newKey, { force: true });
+            }
+          }
+          break;
+        }
+
+        case 'session_history_ready': {
+          const readyKey = event.data?.sessionKey as string | undefined;
+          if (!readyKey) break;
+          invalidateHistoryHydration(readyKey);
+          if (readyKey === get().activeSessionKey) {
+            void get().loadChatHistory();
           }
           break;
         }
@@ -7393,6 +7589,9 @@ export const useComputerStore = create<ComputerStore>()(
           const path = event.data?.path as string;
           if (path) {
             const fsWsId = 'main';
+            syncAgentFilesLocation(path, fsWsId, {
+              openPreview: isAgentFilesInlinePreviewPath(path),
+            });
             if (isDocumentFile(path)) {
               openDocumentViewer(path, fsWsId);
             } else if (isTextFile(path)) {

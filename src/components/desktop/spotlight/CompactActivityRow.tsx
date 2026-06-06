@@ -1,5 +1,6 @@
 import { Loader2, Check } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
+import type { ClippyActivityKind } from '@/hooks/useClippyActivitySummary';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatActivityLine } from './formatActivityLine';
 
@@ -12,6 +13,7 @@ export function CompactActivityRow({
   failed,
   duration,
   activityStatus,
+  kind,
   dense,
   className = '',
 }: {
@@ -23,11 +25,13 @@ export function CompactActivityRow({
   failed?: boolean;
   duration?: string;
   activityStatus?: ChatMessage['activityStatus'];
+  kind?: ClippyActivityKind;
   dense?: boolean;
   className?: string;
 }) {
   const line = formatActivityLine(content, { activityType });
   const isTerminal = activityType === 'terminal';
+  const isAgentStatus = kind === 'agent';
 
   return (
     <div
@@ -46,7 +50,7 @@ export function CompactActivityRow({
       <span
         className={`min-w-0 flex-1 truncate text-[12px] leading-snug ${
           isTerminal ? 'font-mono' : ''
-        } ${failed ? 'text-red-200/90' : 'text-white/90'}`}
+        } ${failed ? 'text-red-200/90' : isAgentStatus ? 'text-white/80' : 'text-white/90'}`}
         title={content}
       >
         {line}

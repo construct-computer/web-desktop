@@ -52,7 +52,8 @@ import { formatBytes } from '@/lib/format';
 import { isWallpaperWorkspacePath } from '@/lib/wallpapers';
 import { notifyWallpaperFilesChanged } from '@/stores/wallpaperStore';
 import { getFileIconKind, getFileType } from '@/lib/fileTypes';
-import { decodeDisplayName } from '@/lib/workspacePaths';
+import { decodeDisplayName, fileNameFromWorkspacePath } from '@/lib/workspacePaths';
+import { AGENT_FILES_NAVIGATE_EVENT, type AgentFilesNavigateDetail } from '@/lib/agentUiEvents';
 
 const logger = log('Files');
 
@@ -621,6 +622,38 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     },
     [history, historyIndex, loadDirectory],
   );
+
+  const handleAgentNavigate = useCallback(
+    async (detail: AgentFilesNavigateDetail) => {
+      setActiveTab('local');
+      closePreview();
+      const folderPath = detail.folderPath;
+      const newHistory = [...history.slice(0, historyIndex + 1), folderPath];
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+      setCurrentPath(folderPath);
+      await loadDirectory(folderPath);
+
+      if (detail.highlight && detail.filePath) {
+        const name = fileNameFromWorkspacePath(detail.filePath);
+        setSelectedName(name);
+        if (detail.openPreview && instanceId) {
+          openPreview(name, joinPath(folderPath, name));
+        }
+      }
+    },
+    [closePreview, history, historyIndex, instanceId, loadDirectory, openPreview],
+  );
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<AgentFilesNavigateDetail>).detail;
+      if (!detail?.folderPath) return;
+      void handleAgentNavigate(detail);
+    };
+    window.addEventListener(AGENT_FILES_NAVIGATE_EVENT, handler);
+    return () => window.removeEventListener(AGENT_FILES_NAVIGATE_EVENT, handler);
+  }, [handleAgentNavigate]);
 
   const goBack = useCallback(() => {
     if (historyIndex > 0) {

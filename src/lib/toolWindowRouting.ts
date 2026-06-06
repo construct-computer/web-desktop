@@ -86,7 +86,7 @@ function fileRoute(path: string): ToolWindowRoute {
     return { type: 'editor', metadata: { filePath: path }, openMode: 'file', autoClose: false };
   }
   // Unknown/binary: surface in the Files app instead.
-  return { type: 'files' };
+  return { type: 'files', autoClose: false };
 }
 
 /** Derive the toolkit slug from a Composio tool_slug (e.g. GOOGLEDRIVE_LIST_FILES). */
@@ -137,7 +137,7 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
     if (path && (action === 'read' || action === 'write')) {
       return fileRoute(path.replace(/^\/mnt\/saved\//, ''));
     }
-    return { type: 'files' };
+    return { type: 'files', autoClose: false };
   }
 
   // ── Workspace files (legacy aliases) ─────────────────────────────
@@ -145,20 +145,20 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
       tool === 'read' || tool === 'write' || tool === 'edit' ||
       tool === 'file_read' || tool === 'file_write' || tool === 'file_edit') {
     const path = filePathParam(p);
-    return path ? fileRoute(path) : { type: 'files' };
+    return path ? fileRoute(path) : { type: 'files', autoClose: false };
   }
   if (tool === 'view_image') {
     const path = filePathParam(p);
     return path
       ? { type: 'document-viewer', metadata: { filePath: path }, openMode: 'file', autoClose: true }
-      : { type: 'files' };
+      : { type: 'files', autoClose: false };
   }
   if (tool === 'list_directory' || tool === 'search_files' || tool === 'delete_file' || tool === 'list') {
-    return { type: 'files' };
+    return { type: 'files', autoClose: false };
   }
   if (tool === 'google_drive' || tool === 'drive_list' || tool === 'drive_download' ||
       tool === 'drive_upload' || tool === 'drive_search') {
-    return { type: 'files' };
+    return { type: 'files', autoClose: false };
   }
 
   // ── Calendar / scheduling ────────────────────────────────────────
@@ -184,7 +184,7 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
     if (str(p.action) !== 'call') return null;
     const name = str(p.name);
     if (!name) return null;
-    if (name.startsWith('drive.')) return { type: 'files' };
+    if (name.startsWith('drive.')) return { type: 'files', autoClose: false };
     if (name.startsWith('calendar.')) return { type: 'calendar' };
     if (name.startsWith('mail.')) return { type: 'email' };
     const ns = name.split('.')[0];

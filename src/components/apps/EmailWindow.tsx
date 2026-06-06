@@ -48,6 +48,11 @@ import { EmailHtmlBody } from './email/EmailHtmlBody';
 import { formatRelativeTimeShort } from '@/lib/format';
 import { getEmailAvatarClass, getEmailInitial } from '@/services/emailUi';
 import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem, AnimatedListContainer } from '@/components/ui';
+import {
+  AGENT_EMAIL_CONFIGURED_EVENT,
+  AGENT_EMAIL_REFRESH_EVENT,
+} from '@/lib/agentUiEvents';
+import { useWindowStore } from '@/stores/windowStore';
 import { useFreshness } from '@/hooks/useFreshness';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 
@@ -130,7 +135,7 @@ function markThreadReadLocally(thread: EmailThreadDetail): EmailThreadDetail {
 }
 
 export function EmailWindow(props: { config: WindowConfig }) {
-  void props;
+  const { config } = props;
   const [inboxEmail, setInboxEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
@@ -276,13 +281,23 @@ export function EmailWindow(props: { config: WindowConfig }) {
       void init();
       void refreshNow();
     };
-    window.addEventListener('agent-email-configured', handler);
-    window.addEventListener('agent-email-refresh', handler);
+    window.addEventListener(AGENT_EMAIL_CONFIGURED_EVENT, handler);
+    window.addEventListener(AGENT_EMAIL_REFRESH_EVENT, handler);
     return () => {
-      window.removeEventListener('agent-email-configured', handler);
-      window.removeEventListener('agent-email-refresh', handler);
+      window.removeEventListener(AGENT_EMAIL_CONFIGURED_EVENT, handler);
+      window.removeEventListener(AGENT_EMAIL_REFRESH_EVENT, handler);
     };
   }, [init, refreshNow]);
+
+  useEffect(() => {
+    if (!config.metadata?.pendingRefresh) return;
+    void init();
+    void refreshNow();
+    const { pendingRefresh: _pending, ...rest } = config.metadata || {};
+    useWindowStore.getState().updateWindow(config.id, {
+      metadata: Object.keys(rest).length > 0 ? rest : undefined,
+    });
+  }, [config.id, config.metadata?.pendingRefresh, init, refreshNow]);
 
   const openThread = useCallback(async (thread: EmailThread) => {
     setThreadLoading(true);

@@ -48,6 +48,20 @@ export function isImageWorkspacePath(path: string | undefined | null): boolean {
   return /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/i.test(normalizeWorkspacePath(path));
 }
 
+/** True when the path refers to the persisted R2 workspace (not ephemeral sandbox absolutes). */
+export function isSavedWorkspacePath(path: string): boolean {
+  const p = path.replace(/\\/g, '/');
+  return !p.startsWith('/') || p === '/mnt/saved' || p.startsWith('/mnt/saved/');
+}
+
+/** Parent folder for a workspace file path, using Files app path conventions (leading slash). */
+export function parentWorkspaceFolder(filePath: string): string {
+  const normalized = normalizeWorkspacePath(filePath.replace(/^\/mnt\/saved\/?/, ''));
+  const parts = normalized.split('/').filter(Boolean);
+  parts.pop();
+  return parts.length ? `/${parts.join('/')}` : '/';
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

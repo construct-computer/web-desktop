@@ -143,7 +143,7 @@ export function Spotlight() {
   const userPlan = useAuthStore(s => s.user?.plan);
   const instanceId = useComputerStore(s => s.instanceId);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
-  const loadChatHistory = useComputerStore(s => s.loadChatHistory);
+  const refreshActiveChatHistory = useComputerStore(s => s.refreshActiveChatHistory);
   const chatSessions = useComputerStore(s => s.chatSessions);
   const sessionTitle = useMemo(
     () => chatSessions.find(s => s.key === activeSessionKey)?.title || 'Chats',
@@ -170,9 +170,16 @@ export function Spotlight() {
   // Hydrate chat history whenever the active session or instance changes.
   useEffect(() => {
     if (instanceId && activeSessionKey) {
-      void loadChatHistory();
+      void refreshActiveChatHistory();
     }
-  }, [instanceId, activeSessionKey, loadChatHistory]);
+  }, [instanceId, activeSessionKey, refreshActiveChatHistory]);
+
+  // Re-fetch when Spotlight opens so stale/empty panes recover after being closed.
+  useEffect(() => {
+    if (open && instanceId && activeSessionKey) {
+      void refreshActiveChatHistory();
+    }
+  }, [open, instanceId, activeSessionKey, refreshActiveChatHistory]);
 
   const scrimTransition = prefersReducedMotion
     ? 'none'

@@ -26,6 +26,7 @@ import analytics from '@/lib/analytics';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 import { stagingAgentEmailUsername } from '@/lib/agentEmail';
 import { log } from '@/lib/logger';
+import { dispatchAgentEmailConfigured } from '@/lib/agentUiEvents';
 
 const logger = log('EmailSetupPane');
 
@@ -193,7 +194,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
       const result = await updateComputer({ agentmailInboxUsername: trimmed });
       if (result.success) {
         analytics.setupStepCompleted('email_inbox_created', { from: 'email_app' });
-        window.dispatchEvent(new CustomEvent('agent-email-configured'));
+        dispatchAgentEmailConfigured();
         onConfigured?.();
       } else {
         setAvailable(false);

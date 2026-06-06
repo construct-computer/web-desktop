@@ -19,6 +19,7 @@ import analytics from '@/lib/analytics';
 import { log } from '@/lib/logger';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 import { stagingAgentEmailUsername } from '@/lib/agentEmail';
+import { dispatchAgentEmailConfigured } from '@/lib/agentUiEvents';
 
 const logger = log('SetupModal');
 
@@ -226,7 +227,7 @@ export function SetupModal() {
       analytics.setupStepCompleted('profile_email', { emailChanged });
 
       if (emailChanged) {
-        window.dispatchEvent(new CustomEvent('agent-email-configured'));
+        dispatchAgentEmailConfigured();
       }
 
       await markSetupDone();

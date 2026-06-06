@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useComputerStore } from '@/stores/agentStore';
+import { retainAgentOpenedWindow, useComputerStore } from '@/stores/agentStore';
 import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, previewContainerFile, writeFile } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
 import { fileNameFromWorkspacePath } from '@/lib/workspacePaths';
@@ -724,6 +724,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [wordWrap, setWordWrap] = useState(false);
 
   const blobUrlRef = useRef<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   const saveRef = useRef(() => { if (isTextMode) saveEditorFile(windowId); });
   saveRef.current = () => { if (isTextMode) saveEditorFile(windowId); };
@@ -732,6 +733,21 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   useEffect(() => {
     return () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); };
   }, []);
+
+  // User interaction keeps agent-opened viewers from auto-closing.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const retain = () => retainAgentOpenedWindow(windowId, 'document-viewer');
+    el.addEventListener('pointerdown', retain, { capture: true });
+    el.addEventListener('keydown', retain, { capture: true });
+    el.addEventListener('wheel', retain, { passive: true, capture: true });
+    return () => {
+      el.removeEventListener('pointerdown', retain, { capture: true });
+      el.removeEventListener('keydown', retain, { capture: true });
+      el.removeEventListener('wheel', retain, { capture: true });
+    };
+  }, [windowId, isTextMode]);
 
   // ── Monaco mount handler ──
   const handleEditorMount: OnMount = useCallback((_editor, monaco) => {
@@ -1046,7 +1062,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   if (isTextMode) {
     const file = editorFile;
     return (
-      <div className="flex flex-col h-full">
+      <div ref={rootRef} className="flex flex-col h-full">
         <div className="flex-1 min-h-0">
           {(!file || file.loading) ? (
             <div className="flex items-center justify-center h-full text-[var(--color-text-muted)]">
@@ -1124,7 +1140,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
 
   // ── Document/viewer mode ──
   return (
-    <div className="w-full h-full flex flex-col">
+    <div ref={rootRef} className="w-full h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.06]">
         <DocTypeIcon type={docType} fileName={fileName} />
