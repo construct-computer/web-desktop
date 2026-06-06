@@ -1,5 +1,33 @@
 import type { ChatMessage } from './agentStore';
 
+function messageTimestampMs(message: ChatMessage): number {
+  const ts = message.timestamp;
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === 'number') return ts;
+  return 0;
+}
+
+/** Stable chronological ordering for chat rows (user before agent on timestamp ties). */
+export function sortChatMessagesByTimestamp(messages: ChatMessage[]): ChatMessage[] {
+  const roleRank = (message: ChatMessage): number => {
+    if (message.role === 'user') return 0;
+    if (message.role === 'system' && !message.content?.trim()) return 1;
+    if (message.role === 'activity') return 2;
+    if (message.role === 'agent') return 3;
+    return 4;
+  };
+  return messages
+    .map((message, index) => ({ message, index }))
+    .sort((a, b) => {
+      const byTime = messageTimestampMs(a.message) - messageTimestampMs(b.message);
+      if (byTime !== 0) return byTime;
+      const byRole = roleRank(a.message) - roleRank(b.message);
+      if (byRole !== 0) return byRole;
+      return a.index - b.index;
+    })
+    .map(({ message }) => message);
+}
+
 export function turnBreakMessage(now = Date.now()): ChatMessage {
   return { role: 'system', content: '', timestamp: new Date(now) };
 }
@@ -61,13 +89,48 @@ export function liveUserMessagesAheadOfHistory(live: ChatMessage[], history: Cha
   return tail;
 }
 
+/** Agent/activity rows after the latest user turn that SQL has not caught up to yet. */
+export function liveAssistantTailAheadOfHistory(live: ChatMessage[], history: ChatMessage[]): ChatMessage[] {
+  let lastLiveUserIdx = -1;
+  for (let i = live.length - 1; i >= 0; i--) {
+    if (live[i].role === 'user') {
+      lastLiveUserIdx = i;
+      break;
+    }
+  }
+  if (lastLiveUserIdx < 0) return [];
+
+  const tail: ChatMessage[] = [];
+  for (let i = lastLiveUserIdx + 1; i < live.length; i++) {
+    const message = live[i];
+    if (message.role === 'agent') {
+      if (!message.content.trim() || message.isError) continue;
+      const inHistory = history.some(
+        (h) => h.role === 'agent' && h.content.trim() === message.content.trim(),
+      );
+      if (!inHistory) tail.push(message);
+      continue;
+    }
+    if (message.role === 'activity') {
+      tail.push(message);
+      continue;
+    }
+    if (message.role === 'system' && !message.content?.trim()) {
+      tail.push(message);
+    }
+  }
+  return tail;
+}
+
 export function mergeLiveTailIntoHistory(history: ChatMessage[], live: ChatMessage[]): ChatMessage[] {
   if (live.length === 0) return history;
   // Server snapshot can briefly be empty while the UI still holds the full thread.
   if (history.length === 0) return live;
-  const tail = liveUserMessagesAheadOfHistory(live, history);
+  const userTail = liveUserMessagesAheadOfHistory(live, history);
+  const assistantTail = userTail.length === 0 ? liveAssistantTailAheadOfHistory(live, history) : [];
+  const tail = userTail.length > 0 ? userTail : assistantTail;
   if (tail.length === 0) return history;
-  return [...history, ...tail];
+  return sortChatMessagesByTimestamp([...history, ...tail]);
 }
 
 export function applyAgentTextDelta(

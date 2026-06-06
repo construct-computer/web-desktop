@@ -52,16 +52,16 @@ export function getChatRenderKind(msg: ChatMessage): ChatRenderKind {
   return 'assistant';
 }
 
-export function groupMessages(messages: ChatMessage[], isAgentRunning: boolean): MessageGroup[] {
+export function groupMessages(messages: ChatMessage[], _isAgentRunning: boolean): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let actBuf: ChatMessage[] = [];
   const flush = () => { if (actBuf.length) { groups.push({ type: 'activities', msgs: [...actBuf] }); actBuf = []; } };
 
+  // Always protect the latest agent bubble from thinking-text filtering so
+  // completed replies do not vanish when agentRunning flips false on idle.
   let lastAgentIdx = -1;
-  if (isAgentRunning) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'agent') { lastAgentIdx = i; break; }
-    }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'agent') { lastAgentIdx = i; break; }
   }
 
   for (let i = 0; i < messages.length; i++) {

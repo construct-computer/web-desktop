@@ -27,7 +27,6 @@ import {
   statusLabel,
   statusTone,
 } from '@/lib/workStatusFormat';
-import { useNotificationStore } from '@/stores/notificationStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 
@@ -82,8 +81,7 @@ function TaskListRow({ task, selected, onSelect }: TaskRowProps) {
 }
 
 export function WorkStatusTasksPanel() {
-  const selectedWorkOrderId = useNotificationStore((s) => s.selectedWorkOrderId);
-  const setSelectedWorkOrderId = useNotificationStore((s) => s.setSelectedWorkOrderId);
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const switchSession = useComputerStore((s) => s.switchSession);
   const toggleSpotlight = useWindowStore((s) => s.toggleSpotlight);
   const spotlightOpen = useWindowStore((s) => s.spotlightOpen);

@@ -4,7 +4,7 @@ import type { TrackedOperation } from '@/stores/agentTrackerStore';
 /**
  * Counts hosts (running platform / orchestrator rows) and parallel workers
  * (pending or running sub-agents in active operations) for consistent UI
- * in the agent graph drawer tab badge and the tracker sidebar.
+ * in agent tracker UI.
  */
 export function getSwarmMetrics(
   platformAgents: Record<string, PlatformAgentState>,

@@ -17,6 +17,7 @@ import {
   appendUserMessageForNewTurn,
   applyAgentTextDelta,
   mergeLiveTailIntoHistory,
+  sortChatMessagesByTimestamp,
 } from './chatTurnSync';
 import { isTriggeredSessionKey } from './agentSessionKeys';
 
@@ -1444,8 +1445,14 @@ function mergeInflightAssistantIntoHistory(
   }
   if (!cur) return;
 
-  // Without a live session or a reload backup, platform state may be stale.
-  if (!runningSessions.has(requestedSessionKey) && !stored) return;
+  // After a turn completes the session is no longer "running", but the desktop
+  // platform feed still holds the streamed assistant bubble until SQL catches up.
+  const hasFreshPlatformTail = Boolean(
+    fromPlatform
+    && pa?.sessionKey === requestedSessionKey
+    && lastLiveAgent?.content?.trim(),
+  );
+  if (!runningSessions.has(requestedSessionKey) && !stored && !hasFreshPlatformTail) return;
 
   let lastHistAgentIdx = -1;
   for (let i = history.length - 1; i >= 0; i--) {
@@ -2489,6 +2496,15 @@ export const useComputerStore = create<ComputerStore>()(
       if (!instanceId || !sessionKey) return;
       pendingHistoryKeys.add(sessionKey);
       if (get().activeSessionKey === sessionKey) {
+        const { chatMessages, agentRunning, runningSessions } = get();
+        const hasLiveThread = chatMessages.length > 0
+          && (agentRunning || runningSessions.has(sessionKey));
+        // session_history_ready fires after every user message; reloading the
+        // active session races the server snapshot and can wipe the live thread.
+        if (hasLiveThread && historyHydratedKeys.has(sessionKey)) {
+          pendingHistoryKeys.delete(sessionKey);
+          return;
+        }
         await get().loadChatHistory();
         return;
       }
@@ -3120,6 +3136,9 @@ export const useComputerStore = create<ComputerStore>()(
           runningSessions: get().runningSessions,
           platformAgents: get().platformAgents,
         });
+        const sortedHistory = sortChatMessagesByTimestamp(history);
+        history.length = 0;
+        history.push(...sortedHistory);
 
         // Replace chat with server history (plus any preserved live operations).
         // Re-inject any pending auth_connect cards that were persisted to sessionStorage.
@@ -3154,10 +3173,40 @@ export const useComputerStore = create<ComputerStore>()(
           }
         }
 
-        const compactedHistory = compactIncidentNotices(historyWithRuns);
+        let compactedHistory = compactIncidentNotices(historyWithRuns);
+        const liveMessagesNow = cacheOnly ? [] : get().chatMessages;
+        const liveMessageCount = liveMessagesNow.length;
+        if (!cacheOnly && liveMessageCount > 0) {
+          compactedHistory = sortChatMessagesByTimestamp(
+            compactIncidentNotices(
+              mergeLiveTailIntoHistory(compactedHistory, liveMessagesNow),
+            ),
+          );
+        }
+        if (!cacheOnly && compactedHistory.length === 0 && liveMessageCount > 0) {
+          sessionMessageCache.set(requestedSessionKey, liveMessagesNow);
+          scheduleHistoryFallbackReload(
+            requestedSessionKey,
+            () => get().loadChatHistory(),
+            () => get().activeSessionKey,
+          );
+          return;
+        }
+        if (!cacheOnly && compactedHistory.length > 0 && liveMessageCount > compactedHistory.length) {
+          sessionMessageCache.set(requestedSessionKey, liveMessagesNow);
+          scheduleHistoryFallbackReload(
+            requestedSessionKey,
+            () => get().loadChatHistory(),
+            () => get().activeSessionKey,
+          );
+          return;
+        }
         markHistorySettled(requestedSessionKey);
         historyRetryAttempted.delete(requestedSessionKey);
         sessionMessageCache.set(requestedSessionKey, compactedHistory);
+        if (instanceId) {
+          clearInflightAssistantStorage(instanceId, requestedSessionKey);
+        }
         if (!cacheOnly && get().activeSessionKey === requestedSessionKey) {
           set((state) => {
             const desktop = state.platformAgents.desktop;
@@ -3196,12 +3245,18 @@ export const useComputerStore = create<ComputerStore>()(
         }
         const nextPending = pendingHistorySessionKey;
         pendingHistorySessionKey = null;
-        // Re-run for whichever session is now visible (switch during fetch or queued request).
+        // Re-run only when the visible session changed, or a *different* session
+        // was queued while this fetch was in-flight (not a duplicate same-session call).
         const targetKey = get().activeSessionKey;
-        if (targetKey !== requestedSessionKey || nextPending) {
-          const keyToLoad = nextPending && nextPending !== requestedSessionKey ? nextPending : targetKey;
+        if (targetKey !== requestedSessionKey) {
           queueMicrotask(() => {
-            if (get().activeSessionKey === keyToLoad || nextPending === get().activeSessionKey) {
+            if (get().activeSessionKey === targetKey) {
+              get().loadChatHistory();
+            }
+          });
+        } else if (nextPending && nextPending !== requestedSessionKey) {
+          queueMicrotask(() => {
+            if (get().activeSessionKey === nextPending) {
               get().loadChatHistory();
             }
           });
@@ -5532,12 +5587,8 @@ export const useComputerStore = create<ComputerStore>()(
           const statusStartedAt = event.data?.startedAt as number | undefined;
           const statusIteration = event.data?.iteration as number | undefined;
 
-          if (status === 'idle') {
-            const iid = get().instanceId;
-            if (iid) clearInflightAssistantStorage(iid, eventSessionKey);
-          }
-
           {
+
             const prev = get().activeSessions;
             const next = { ...prev };
             if (status === 'idle') {
@@ -5733,6 +5784,13 @@ export const useComputerStore = create<ComputerStore>()(
                     browserState: { ...bs, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null },
                   }
                 : {}),
+            });
+            // Server persists assistant text after the stream ends; reload once
+            // idle so bubbles survive without a full page refresh.
+            queueMicrotask(() => {
+              if (get().activeSessionKey === eventSessionKey) {
+                void get().refreshActiveChatHistory({ force: true });
+              }
             });
           }
           break;
@@ -6986,9 +7044,6 @@ export const useComputerStore = create<ComputerStore>()(
                 body: workOrder.activityHint || workOrder.objective,
                 source: 'Construct',
                 variant: workOrder.status === 'failed' ? 'error' : wasActive ? 'success' : 'info',
-                onClick: () => {
-                  useNotificationStore.getState().openDrawerTab('agents', { workOrderId: workOrder.id });
-                },
               }, 6000, { priority });
             }
           }

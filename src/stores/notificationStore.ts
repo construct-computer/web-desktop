@@ -31,13 +31,8 @@ interface NotificationStore {
   activeToasts: string[];
   /** Whether the notification center drawer is open. */
   drawerOpen: boolean;
-  /** Active tab in the drawer: 'notifications' or 'agents'. */
-  drawerTab: 'notifications' | 'agents';
-  /** Work order to focus in the Work Status sidebar when opened from the widget. */
-  selectedWorkOrderId: string | null;
-  /** Open the drawer with a specific tab selected. */
-  openDrawerTab: (tab: 'notifications' | 'agents', opts?: { workOrderId?: string }) => void;
-  setSelectedWorkOrderId: (workOrderId: string | null) => void;
+  /** Open the notification drawer. */
+  openDrawer: () => void;
 
   /** Add a notification to history and show a toast banner. */
   addNotification: (
@@ -68,14 +63,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   notifications: [],
   activeToasts: [],
   drawerOpen: false,
-  drawerTab: 'notifications',
-  selectedWorkOrderId: null,
-  openDrawerTab: (tab, opts) => set({
-    drawerOpen: true,
-    drawerTab: tab,
-    selectedWorkOrderId: opts?.workOrderId ?? null,
-  }),
-  setSelectedWorkOrderId: (workOrderId) => set({ selectedWorkOrderId: workOrderId }),
+  openDrawer: () => set({ drawerOpen: true }),
 
   addNotification: (n, toastDurationMs = 5000, options) => {
     const priority = options?.priority ?? 'default';

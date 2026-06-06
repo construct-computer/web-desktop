@@ -17,7 +17,7 @@ export type WindowType =
   | 'app';
 
 /** Panel types that live in the MenuBar dropdown, not as standalone windows. */
-export type MenuBarPanelType = 'chat' | 'tracker';
+export type MenuBarPanelType = 'chat';
 
 export type WindowState = 'normal' | 'minimized' | 'maximized';
 

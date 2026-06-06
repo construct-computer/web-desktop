@@ -60,6 +60,11 @@ const IDLE_POLL_MS = 15_000;
 const ACTIVE_POLL_MS = 5_000;
 const ACTIVE_WORK_ORDER_STATUSES = new Set(['active', 'waiting', 'blocked']);
 
+/** Routine chat turns get a ledger work order on the backend — not background/autonomous work. */
+function isAutonomousWorkOrder(order: api.AutopilotWorkOrderSnapshot): boolean {
+  return order.sourceType !== 'user_message';
+}
+
 type ModeCopy = {
   label: string;
   color: string;
@@ -300,7 +305,7 @@ export function AutopilotPanel() {
   const updateWindow = useWindowStore((s) => s.updateWindow);
   const windows = useWindowStore((s) => s.windows);
   const unreadNotificationCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
-  const openNotificationTab = useNotificationStore((s) => s.openDrawerTab);
+  const openNotificationDrawer = useNotificationStore((s) => s.openDrawer);
   const usage = useBillingStore((s) => s.usage);
   const fetchUsage = useBillingStore((s) => s.fetchUsage);
   const authRequests = useAuthRequests();
@@ -532,7 +537,9 @@ export function AutopilotPanel() {
 
   const currentWorkOrder = useMemo(() => {
     if (!displayStatus?.workOrders?.length) return null;
-    return displayStatus.workOrders.find((order) => ACTIVE_WORK_ORDER_STATUSES.has(order.status)) ?? null;
+    return displayStatus.workOrders.find((order) => (
+      ACTIVE_WORK_ORDER_STATUSES.has(order.status) && isAutonomousWorkOrder(order)
+    )) ?? null;
   }, [displayStatus]);
 
   const summary = lastError
@@ -711,12 +718,6 @@ export function AutopilotPanel() {
     summary,
   ]);
 
-  const activeWorkOrderCount = displayStatus?.activeWorkOrderCount ?? 0;
-  const blockedWorkOrderCount = displayStatus?.blockedWorkOrderCount ?? 0;
-  const firstBlockedWorkOrderId = useMemo(
-    () => (displayStatus?.workOrders || []).find((o) => o.status === 'blocked')?.id,
-    [displayStatus],
-  );
   const visibleLearnedPolicies = useMemo(() => (
     (displayStatus?.learnedPolicies || []).slice(0, 3)
   ), [displayStatus]);
@@ -726,7 +727,6 @@ export function AutopilotPanel() {
       .slice(0, 3)
   ), [displayStatus]);
   const showOperationalLedger = visibleScheduledWork.length > 0 || visibleLearnedPolicies.length > 0;
-  const showWorkStatusLink = activeWorkOrderCount > 0;
 
   const isIdleGlance = !attention && !hasActiveRun && mode === 'idle';
   const idleItems = useMemo<IdleGlanceItem[]>(() => {
@@ -755,7 +755,7 @@ export function AutopilotPanel() {
         value: commParts.join(' • '),
         onClick: () => {
           if (emailUnreadCount > 0) openWindow('email');
-          else openNotificationTab('notifications');
+          else openNotificationDrawer();
         },
       });
     }
@@ -792,7 +792,7 @@ export function AutopilotPanel() {
     isIdleGlance,
     nextEvent,
     openSpotlightSession,
-    openNotificationTab,
+    openNotificationDrawer,
     openWindow,
     unreadNotificationCount,
     usage,
@@ -1110,29 +1110,6 @@ export function AutopilotPanel() {
               );
             })}
           </div>
-        )}
-
-        {showWorkStatusLink && (
-          <button
-            type="button"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              openNotificationTab(
-                'agents',
-                firstBlockedWorkOrderId ? { workOrderId: firstBlockedWorkOrderId } : undefined,
-              );
-            }}
-            className="mt-2 flex h-[28px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 text-left transition-colors hover:bg-white/[0.05]"
-          >
-            <ListChecks size={13} strokeWidth={2.1} className="shrink-0 text-cyan-200/[0.55]" />
-            <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/[0.72]">
-              {blockedWorkOrderCount > 0
-                ? `${blockedWorkOrderCount} task${blockedWorkOrderCount === 1 ? '' : 's'} need you`
-                : `${activeWorkOrderCount} background task${activeWorkOrderCount === 1 ? '' : 's'}`}
-            </span>
-            <span className="shrink-0 text-[10px] text-white/[0.40]">Work Status</span>
-          </button>
         )}
 
         {showOperationalLedger && (

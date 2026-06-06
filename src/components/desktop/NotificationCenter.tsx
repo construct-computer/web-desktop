@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle2, AlertCircle, Info, Trash2, Activity } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Info, Trash2 } from 'lucide-react';
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
-import { TrackerWindow } from '@/components/apps/TrackerWindow';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
 import {
@@ -14,7 +13,6 @@ import {
   NOTIFICATION_DRAWER_EASING,
   Z_INDEX,
 } from '@/lib/constants';
-import { useWorkOrders } from '@/hooks/useWorkOrders';
 
 // ─── Time helpers ──────────────────────────────────────────────────────────
 
@@ -121,14 +119,12 @@ function NotificationCard({ n, onRemove }: { n: Notification; onRemove: () => vo
 export function NotificationCenter() {
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const setDrawerOpen = useNotificationStore((s) => s.setDrawerOpen);
-  const activeTab = useNotificationStore((s) => s.drawerTab);
-  const setTab = (tab: 'notifications' | 'agents') => useNotificationStore.setState({ drawerTab: tab });
   const notifications = useNotificationStore((s) => s.notifications);
+  const unreadCount = useNotificationStore((s) => s.unreadCount)();
   const removeNotification = useNotificationStore((s) => s.removeNotification);
   const clearAll = useNotificationStore((s) => s.clearAll);
   const drawerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const { blockedCount, activeCount } = useWorkOrders();
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -176,7 +172,6 @@ export function NotificationCenter() {
   }, [drawerOpen, setDrawerOpen]);
 
   const grouped = groupNotifications(notifications);
-  const drawerWidthPx = isMobile ? null : NOTIFICATION_DRAWER_WIDTH;
   const drawerWidth = isMobile ? '100dvw' : `${NOTIFICATION_DRAWER_WIDTH}px`;
   const topOffset = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
   const bottomOffset = isMobile ? MOBILE_APP_BAR_HEIGHT : 0;
@@ -220,104 +215,55 @@ export function NotificationCenter() {
           transform: drawerOpen ? 'translateX(0)' : translateHidden,
         }}
       >
-        {/* Tabs */}
-        {(() => {
-          const unreadCount = useNotificationStore.getState().unreadCount();
-          const workStatusBadge = blockedCount > 0 ? blockedCount : activeCount > 0 ? activeCount : 0;
-          const workStatusBadgeVariant = blockedCount > 0 ? 'blocked' : 'active';
-
-          return (
-            <div className="flex items-center px-3 pt-3 pb-1 gap-1 flex-shrink-0">
-              <button
-                onClick={() => setTab('notifications')}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-                  activeTab === 'notifications'
-                    ? 'bg-white/60 dark:bg-white/10 text-black/80 dark:text-white/90 shadow-sm'
-                    : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60'
-                }`}
-              >
-                Notifications
-                {unreadCount > 0 && (
-                  <span className="text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white font-semibold px-1">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setTab('agents')}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-                  activeTab === 'agents'
-                    ? 'bg-white/60 dark:bg-white/10 text-black/80 dark:text-white/90 shadow-sm'
-                    : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60'
-                }`}
-              >
-                <Activity className="w-3 h-3" />
-                Work Status
-                {workStatusBadge > 0 && (
-                  <span className={`text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full text-white font-semibold px-1 ${
-                    workStatusBadgeVariant === 'blocked' ? 'bg-amber-500' : 'bg-blue-500'
-                  }`}>
-                    {workStatusBadge > 99 ? '99+' : workStatusBadge}
-                  </span>
-                )}
-              </button>
-            </div>
-          );
-        })()}
-
-        {/* Tab content */}
-        {activeTab === 'notifications' ? (
-          <>
-            {/* Notification header actions */}
-            {notifications.length > 0 && (
-              <div className="flex justify-end px-4 py-1 flex-shrink-0">
-                <button
-                  onClick={clearAll}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/8 transition-colors"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Clear
-                </button>
-              </div>
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-black/80 dark:text-white/90">Notifications</h2>
+            {unreadCount > 0 && (
+              <span className="text-[9px] min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white font-semibold px-1">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
             )}
-
-            {/* Notification list */}
-            <div className="flex-1 overflow-y-auto px-3 pb-4">
-              {notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full py-16 text-center">
-                  <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-3">
-                    <Info className="w-5 h-5 text-black/20 dark:text-white/20" />
-                  </div>
-                  <p className="text-sm text-black/35 dark:text-white/35">
-                    No notifications
-                  </p>
-                </div>
-              ) : (
-                grouped.map(([key, items]) => (
-                  <div key={key} className="mt-3 first:mt-1">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-black/35 dark:text-white/30 px-1 mb-2">
-                      {GROUP_LABELS[key]}
-                    </h3>
-                    <div className="space-y-2">
-                      {items.map((n) => (
-                        <NotificationCard
-                          key={n.id}
-                          n={n}
-                          onRemove={() => removeNotification(n.id)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          /* Work status tracker tab */
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <TrackerWindow config={{ type: 'settings' as any, id: 'nc-tracker', title: 'Work Status', x: 0, y: 0, width: drawerWidthPx ?? 420, height: 600, minWidth: drawerWidthPx ?? 420, minHeight: 400, state: 'normal', zIndex: 0, workspaceId: 'main' }} />
           </div>
-        )}
+          {notifications.length > 0 && (
+            <button
+              onClick={clearAll}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/8 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          {notifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-3">
+                <Info className="w-5 h-5 text-black/20 dark:text-white/20" />
+              </div>
+              <p className="text-sm text-black/35 dark:text-white/35">
+                No notifications
+              </p>
+            </div>
+          ) : (
+            grouped.map(([key, items]) => (
+              <div key={key} className="mt-3 first:mt-1">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-black/35 dark:text-white/30 px-1 mb-2">
+                  {GROUP_LABELS[key]}
+                </h3>
+                <div className="space-y-2">
+                  {items.map((n) => (
+                    <NotificationCard
+                      key={n.id}
+                      n={n}
+                      onRemove={() => removeNotification(n.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </>,
     document.body,

@@ -226,7 +226,7 @@ export function useDesktopTour() {
           sampleNotificationId = ns.addNotification({
             variant: 'info',
             title: 'Welcome to Construct!',
-            body: 'This side panel shows completed tasks, new emails, and active work.',
+            body: 'This side panel shows completed tasks, new emails, and other alerts.',
             source: 'SYSTEM',
           });
         },

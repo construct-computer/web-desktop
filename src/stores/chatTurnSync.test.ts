@@ -6,14 +6,15 @@ import {
   liveUserMessagesAheadOfHistory,
   mergeLiveTailIntoHistory,
   shouldAppendAgentTextDelta,
+  sortChatMessagesByTimestamp,
 } from './chatTurnSync';
 
-function user(content: string, clientId?: string): ChatMessage {
-  return { role: 'user', content, timestamp: new Date(), ...(clientId ? { clientId } : {}) };
+function user(content: string, clientId?: string, ts = Date.now()): ChatMessage {
+  return { role: 'user', content, timestamp: new Date(ts), ...(clientId ? { clientId } : {}) };
 }
 
-function agent(content: string): ChatMessage {
-  return { role: 'agent', content, timestamp: new Date() };
+function agent(content: string, ts = Date.now()): ChatMessage {
+  return { role: 'agent', content, timestamp: new Date(ts) };
 }
 
 describe('chatTurnSync', () => {
@@ -51,6 +52,35 @@ describe('chatTurnSync', () => {
   it('keeps the full live thread when the server history snapshot is still empty', () => {
     const live = [user('hello'), agent('hi there'), user('again')];
     expect(mergeLiveTailIntoHistory([], live)).toEqual(live);
+  });
+
+  it('preserves streamed assistant rows missing from a lagging server snapshot', () => {
+    const history = [user('hello')];
+    const live = [user('hello'), agent('hi there')];
+    expect(mergeLiveTailIntoHistory(history, live)).toEqual([
+      user('hello'),
+      agent('hi there'),
+    ]);
+  });
+
+  it('restores user-before-agent order when a live user merges onto assistant-only history', () => {
+    const history = [agent('Hello!', 2000)];
+    const live = [user('new chat', undefined, 1000), agent('Hello!', 2000)];
+    expect(mergeLiveTailIntoHistory(history, live)).toEqual([
+      user('new chat', undefined, 1000),
+      agent('Hello!', 2000),
+    ]);
+  });
+
+  it('sorts chat rows chronologically with user before agent on timestamp ties', () => {
+    const ts = 5_000;
+    expect(sortChatMessagesByTimestamp([
+      agent('reply', ts),
+      user('prompt', undefined, ts),
+    ])).toEqual([
+      user('prompt', undefined, ts),
+      agent('reply', ts),
+    ]);
   });
 
   it('preserves whitespace-only streaming deltas', () => {

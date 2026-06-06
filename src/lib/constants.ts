@@ -30,7 +30,7 @@ export const MOBILE_MENUBAR_HEIGHT = 44;
 export const DOCK_HEIGHT = 80; // dock bar height including magnification space
 export const STAGE_STRIP_WIDTH = 160; // stage manager left sidebar width
 export const MOBILE_APP_BAR_HEIGHT = 80; // bottom app bar on mobile
-/** Notification / Work Status drawer — wider on desktop for list-first task UI */
+/** Notification drawer width on desktop */
 export const NOTIFICATION_DRAWER_WIDTH = 420;
 export const NOTIFICATION_DRAWER_WIDTH_MOBILE = '100dvw';
 export const NOTIFICATION_DRAWER_TRANSITION_MS = 300;

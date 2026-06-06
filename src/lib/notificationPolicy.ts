@@ -4,7 +4,7 @@
  * - critical: always (auth, approvals, failures, agent-requested alerts)
  * - important: always (scheduled tasks, inbound messages, ask_user)
  * - default: only when the tab is in the background (user is away)
- * - silent: never — surface in chat / Work Status only
+ * - silent: never — surface in chat only
  */
 export type NotificationPriority = 'critical' | 'important' | 'default' | 'silent';
 
@@ -15,7 +15,7 @@ export function shouldPersistNotification(priority: NotificationPriority): boole
   return document.hidden;
 }
 
-/** Routine work-order lifecycle — visible in Work Status, not the notif drawer. */
+/** Routine work-order lifecycle — chat/autopilot only, not the notif drawer. */
 export function workOrderNotificationPriority(
   status: string,
 ): NotificationPriority {

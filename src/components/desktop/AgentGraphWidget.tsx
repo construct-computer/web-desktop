@@ -6,7 +6,6 @@ import {
   type TrackedOperation,
   type OperationType,
 } from '@/stores/agentTrackerStore';
-import { useNotificationStore } from '@/stores/notificationStore';
 import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import { MENUBAR_HEIGHT, Z_INDEX } from '@/lib/constants';
 import { AutopilotPanel } from './AutopilotWidget';
@@ -291,11 +290,6 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
-
-  const openTrackerAndSwitch = useCallback(() => {
-    // Open the notification center drawer with the Agents tab selected
-    useNotificationStore.getState().openDrawerTab('agents');
   }, []);
 
   // ══════════════════════════════════════════════════════════════════
@@ -934,7 +928,7 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
           // Reheat to migrate cluster
           alphaRef.current = Math.max(alphaRef.current, 0.8);
         } else {
-          // Click — toggle collapse if depth 0 or 1, else open tracker
+          // Click — toggle collapse for platform/operation nodes
           if (drag.depth === 0 || drag.depth === 1) {
             setCollapsedNodes(prev => {
               const next = new Set(prev);
@@ -943,8 +937,6 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
               return next;
             });
             alphaRef.current = Math.max(alphaRef.current, 0.5); // Reheat
-          } else {
-            openTrackerAndSwitch();
           }
         }
         dragNodeRef.current = null;
@@ -962,7 +954,7 @@ export function AgentGraphWidget({ showAutopilot = true }: AgentGraphWidgetProps
       document.removeEventListener('mouseup', onMouseUp);
       document.body.style.cursor = '';
     };
-  }, [visible, hitTestAt, openTrackerAndSwitch]);
+  }, [visible, hitTestAt]);
 
   // ── Visibility ────────────────────────────────────────────────────
 

@@ -19,11 +19,6 @@ import { useBillingStore } from '@/stores/billingStore';
 import { Download, ExternalLink, Crown, AlertTriangle } from 'lucide-react';
 import { InfoHint } from '@/components/ui';
 
-// Lazy panel imports (these are the full window components rendered inline)
-import { ChatWindow } from '@/components/apps/ChatWindow';
-import { TrackerWindow } from '@/components/apps/TrackerWindow';
-import type { WindowConfig } from '@/types';
-
 // Assets
 import constructLogo from '@/assets/logo.png';
 
@@ -39,28 +34,13 @@ interface MenuState {
   open: string | null;
 }
 
-// Dummy WindowConfig for panel components (they accept config but don't read .type)
-const PANEL_CONFIG: WindowConfig = {
-  id: '__menubar_panel__',
-  type: 'settings', // placeholder — panel components don't use config.type
-  title: '',
-  x: 0, y: 0, width: 400, height: 500,
-  minWidth: 300, minHeight: 300,
-  state: 'normal',
-  zIndex: 0,
-  workspaceId: 'main',
-};
-
 export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMobile }: MenuBarProps) {
   const [menu, setMenu] = useState<MenuState>({ open: null });
   const panel = useWindowStore((s) => s.menuBarPanel);
-  const toggleMenuBarPanel = useWindowStore((s) => s.toggleMenuBarPanel);
   const closeMenuBarPanel = useWindowStore((s) => s.closeMenuBarPanel);
   const [time, setTime] = useState(new Date());
   const menuRef = useRef<HTMLDivElement>(null);
   const logoButtonRef = useRef<HTMLButtonElement>(null);
-  const chatIconRef = useRef<HTMLButtonElement>(null);
-  const trackerIconRef = useRef<HTMLButtonElement>(null);
   const [wifiHover, setWifiHover] = useState(false);
   const wifiRef = useRef<HTMLDivElement>(null);
   const latency = useLatency(wifiHover);
@@ -72,8 +52,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const switchWorkspace = useWindowStore((s) => s.switchWorkspace);
   const deleteWorkspace = useWindowStore((s) => s.deleteWorkspace);
   // Stage manager is permanently on — no toggle needed
-  const trackerPanelOpen = useWindowStore((s) => s.trackerPanelOpen);
-  const toggleTrackerPanel = useWindowStore((s) => s.toggleTrackerPanel);
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer);
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount)();
@@ -161,8 +139,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
       const sessionDropdown = document.getElementById('chat-session-dropdown');
       if (sessionDropdown && sessionDropdown.contains(e.target as Node)) return;
       // Don't close if clicking the toggle button itself (toggle handler does that)
-      if (chatIconRef.current?.contains(e.target as Node)) return;
-      if (trackerIconRef.current?.contains(e.target as Node)) return;
       closeMenuBarPanel();
     };
     document.addEventListener('mousedown', handleClick);
@@ -178,11 +154,6 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
     if (menu.open && menu.open !== name) {
       setMenu({ open: name });
     }
-  };
-
-  const togglePanel = (name: 'chat' | 'tracker') => {
-    toggleMenuBarPanel(name);
-    setMenu({ open: null }); // close menus when panel opens
   };
 
   // Compute dropdown position from the logo button

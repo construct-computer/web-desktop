@@ -161,9 +161,6 @@ interface WindowStore {
   closeLaunchpad: () => void;
 
   // Tracker side panel
-  trackerPanelOpen: boolean;
-  toggleTrackerPanel: () => void;
-  closeTrackerPanel: () => void;
 
   // Stage Manager (macOS-style sidebar with scaled window thumbnails)
   stageManagerActive: boolean;
@@ -1171,9 +1168,6 @@ export const useWindowStore = create<WindowStore>()(
     closeLaunchpad: () => set({ launchpadOpen: false }),
 
     // ── Tracker Panel ─────────────────────────────────────────
-    trackerPanelOpen: false,
-    toggleTrackerPanel: () => set(s => ({ trackerPanelOpen: !s.trackerPanelOpen })),
-    closeTrackerPanel: () => set({ trackerPanelOpen: false }),
 
     // ── Stage Manager ────────────────────────────────────────
     stageManagerActive: true,

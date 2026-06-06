@@ -33,6 +33,22 @@ describe('groupMessages', () => {
     ]);
   });
 
+  it('keeps the latest agent message visible after the run goes idle', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'Help me', timestamp: new Date(1) },
+      {
+        role: 'agent',
+        content: 'I need to analyze the user request and my plan is to use spawn_agent before responding [3 steps]',
+        timestamp: new Date(2),
+      },
+    ];
+
+    expect(groupMessages(messages, false)).toEqual([
+      { type: 'message', msg: messages[0], index: 0 },
+      { type: 'message', msg: messages[1], index: 1 },
+    ]);
+  });
+
   it('groups adjacent activities before the next message', () => {
     const messages: ChatMessage[] = [
       { role: 'activity', content: 'Reading file', timestamp: new Date(1), activityType: 'file' },
