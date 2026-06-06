@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, Crown } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2, Search, Crown } from 'lucide-react';
 import { useComputerStore, shouldForceSessionRefresh, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
-import { EXTERNAL_PLATFORM_META, inferExternalPlatform } from '@/lib/externalPlatforms';
+import { getSessionDisplayMeta } from '@/lib/sessionDisplay';
 import { isAttentionSession, mergeAttentionSessions } from '@/lib/autopilotAttention';
 import * as api from '@/services/api';
 import { formatRelativeTime } from './utils';
@@ -16,14 +16,6 @@ function removeSessionAttention(status: api.AutopilotStatus | null, sessionKey: 
     blockers: status.blockers.filter((blocker) => blocker.sessionKey !== sessionKey),
     actions: status.actions.filter((action) => action.sessionKey !== sessionKey),
   };
-}
-
-function getSessionPlatform(key: string): { platform: string; icon: typeof Send; color: string } | null {
-  const platform = inferExternalPlatform(key);
-  if (platform === 'telegram') return { platform: 'Telegram', icon: Send, color: EXTERNAL_PLATFORM_META.telegram.color };
-  if (platform === 'slack') return { platform: 'Slack', icon: Hash, color: EXTERNAL_PLATFORM_META.slack.color };
-  if (platform === 'email') return { platform: 'Email', icon: Mail, color: EXTERNAL_PLATFORM_META.email.color };
-  return null;
 }
 
 /**
@@ -116,12 +108,14 @@ function SessionItem({
         {/* Platform or default icon */}
         <div className="relative shrink-0">
           {(() => {
-            const plat = getSessionPlatform(session.key);
-            if (plat) {
-              const Icon = plat.icon;
-              return <Icon className="w-3.5 h-3.5" style={{ color: plat.color, opacity: 0.8 }} />;
-            }
-            return <MessageSquare className="w-3.5 h-3.5 opacity-40" />;
+            const plat = getSessionDisplayMeta(session.key);
+            const Icon = plat.icon;
+            return (
+              <Icon
+                className={`w-3.5 h-3.5 ${plat.kind === 'desktop' ? 'opacity-40' : ''}`}
+                style={plat.kind === 'desktop' ? undefined : { color: plat.color, opacity: 0.8 }}
+              />
+            );
           })()}
           {hasUnread && !isActive && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--color-accent)] ring-1 ring-[#111113]" />

@@ -53,5 +53,6 @@ describe('external platform helpers', () => {
   it('keeps scheduled out of session-key platform inference (stays interactive)', () => {
     expect(inferExternalPlatform('sched_sch_1_occ_1')).toBeNull();
     expect(isExternalSessionKey('sched_sch_1_occ_1')).toBe(false);
+    expect(inferExternalPlatform('calendar_evt_evt1')).toBeNull();
   });
 });

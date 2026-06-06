@@ -12,6 +12,12 @@ import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
+import { sessionInfoFromEvent, touchChatSession, upsertChatSession } from './sessionListSync';
+import {
+  appendUserMessageForNewTurn,
+  applyAgentTextDelta,
+  mergeLiveTailIntoHistory,
+} from './chatTurnSync';
 import { isTriggeredSessionKey } from './agentSessionKeys';
 
 function stripScheduleDeliveryBlock(prompt: string): string {
@@ -215,6 +221,16 @@ export interface MemoryActivityData {
   items: MemoryActivityItem[];
 }
 
+export interface PolicyActivityItem {
+  id: number;
+  title: string;
+  description: string;
+}
+
+export interface PolicyActivityData {
+  items: PolicyActivityItem[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system' | 'notice';
   content: string;
@@ -282,6 +298,8 @@ export interface ChatMessage {
   noticeRepeatCount?: number;
   /** Automatic memory reads/writes shown as subtle expandable activity rows. */
   memoryActivity?: MemoryActivityData;
+  /** Learned workflow defaults picked up from successful runs. */
+  policyActivity?: PolicyActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
 }
@@ -1410,6 +1428,13 @@ function mergeInflightAssistantIntoHistory(
     }
   }
 
+  const liveTail = fromSingleton[fromSingleton.length - 1];
+  if (liveTail?.role === 'user') {
+    // A new user turn is in flight; do not merge a prior agent bubble or stale
+    // sessionStorage text into history while waiting for the next stream.
+    return;
+  }
+
   let cur = lastLiveAgent ? String(lastLiveAgent.content) : '';
   const stored = readInflightAssistantFromStorage(instanceId, requestedSessionKey);
   if (stored && (!cur || stored.length > cur.length)) {
@@ -1439,13 +1464,14 @@ function mergeInflightAssistantIntoHistory(
 
   const histA = history[lastHistAgentIdx];
   const histC = String(histA.content);
-  if (cur.length > histC.length && cur.startsWith(histC)) {
+  const historyEndsWithUser = history[history.length - 1]?.role === 'user';
+  if (!historyEndsWithUser && cur.length > histC.length && cur.startsWith(histC)) {
     history[lastHistAgentIdx] = { ...histA, content: cur };
     return;
   }
 
   // New turn: server has the latest user row but not the in-progress assistant row.
-  if (history[history.length - 1]?.role === 'user') {
+  if (historyEndsWithUser) {
     history.push({
       role: 'agent',
       content: cur,
@@ -3078,10 +3104,17 @@ export const useComputerStore = create<ComputerStore>()(
           }
         }
 
+        const liveMessagesForMerge = cacheOnly ? [] : currentMessages;
+        if (liveMessagesForMerge.length > 0) {
+          const merged = mergeLiveTailIntoHistory(history, liveMessagesForMerge);
+          history.length = 0;
+          history.push(...merged);
+        }
+
         mergeInflightAssistantIntoHistory(history, {
           requestedSessionKey,
           instanceId,
-          currentMessages,
+          currentMessages: liveMessagesForMerge,
           runningSessions: get().runningSessions,
           platformAgents: get().platformAgents,
         });
@@ -3262,23 +3295,27 @@ export const useComputerStore = create<ComputerStore>()(
             }
           : {}),
       };
+      clearInflightAssistantStorage(instanceId, activeSessionKey);
       set(state => {
         const pa = state.platformAgents.desktop;
-        const agentChatUpdates: Partial<typeof state> = {};
-        if (pa) {
-          agentChatUpdates.platformAgents = {
-            ...state.platformAgents,
-            desktop: {
-              ...pa,
-              chatMessages: [...(pa.chatMessages || []), userMsg],
-            },
-          };
-        }
+        const nextChatMessages = appendUserMessageForNewTurn(state.chatMessages, userMsg);
+        const nextDesktopMessages = appendUserMessageForNewTurn(
+          pa?.chatMessages?.length ? pa.chatMessages : state.chatMessages,
+          userMsg,
+        );
         const nextRunning = new Set(state.runningSessions);
         nextRunning.add(activeSessionKey);
         return {
-          ...agentChatUpdates,
-          chatMessages: appendMessage(state.chatMessages, userMsg),
+          platformAgents: {
+            ...state.platformAgents,
+            desktop: {
+              ...(pa || { platform: 'desktop' as const, running: true, queueLength: 0 }),
+              sessionKey: activeSessionKey,
+              responseText: '',
+              chatMessages: nextDesktopMessages,
+            },
+          },
+          chatMessages: nextChatMessages,
           agentThinking: '',
           agentRunning: true,
           runningSessions: nextRunning,
@@ -4747,6 +4784,13 @@ export const useComputerStore = create<ComputerStore>()(
 
       switch (event.type) {
         case 'message': {
+          set(state => ({
+            chatSessions: touchChatSession(
+              state.chatSessions,
+              eventSessionKey,
+              typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
+            ),
+          }));
           // Incoming user message broadcast from the backend.
           // Desktop-typed messages are already added optimistically in
           // sendChatMessage — only add if this is a NEW message (e.g.,
@@ -4855,25 +4899,11 @@ export const useComputerStore = create<ComputerStore>()(
             if (!shouldUpdateVisibleDesktopAgent) return state;
             const pa = getOrCreateAgent(state);
             const responseText = (pa.responseText || '') + text;
-
-            // Update per-agent chatMessages
-            const agentChat = pa.chatMessages || [];
-            const lastAgentMsg = agentChat[agentChat.length - 1];
-            let updatedAgentChat: ChatMessage[];
-            if (lastAgentMsg && lastAgentMsg.role === 'agent' && !lastAgentMsg.isError) {
-              updatedAgentChat = [...agentChat];
-              const nextMessage = attachIterationLimitFromContent({
-                ...lastAgentMsg,
-                content: lastAgentMsg.content + text,
-              });
-              updatedAgentChat[updatedAgentChat.length - 1] = {
-                ...nextMessage,
-              };
-            } else if (!text.trim()) {
-              updatedAgentChat = agentChat;
-            } else {
-              updatedAgentChat = [...agentChat, attachIterationLimitFromContent({ role: 'agent' as const, content: text, timestamp: new Date() })];
-            }
+            const updatedAgentChat = applyAgentTextDelta(
+              pa.chatMessages || [],
+              text,
+              attachIterationLimitFromContent,
+            );
 
             const updates: Partial<typeof state> = {
               platformAgents: {
@@ -4891,24 +4921,12 @@ export const useComputerStore = create<ComputerStore>()(
             // Do not gate on chatHistoryLoading — the fetch can overlap streaming;
             // loadChatHistory merges the in-flight assistant row back in.
             if (isActiveSession) {
-              const lastMsg = state.chatMessages[state.chatMessages.length - 1];
-              if (lastMsg && lastMsg.role === 'agent' && !lastMsg.isError) {
-                const updatedMessages = [...state.chatMessages];
-                const nextMessage = attachIterationLimitFromContent({
-                  ...lastMsg,
-                  content: lastMsg.content + text,
-                });
-                updatedMessages[updatedMessages.length - 1] = {
-                  ...nextMessage,
-                };
-                updates.chatMessages = updatedMessages;
-                updates.agentThinking = null;
-              } else if (!text.trim()) {
-                updates.agentThinking = null;
-              } else {
-                updates.chatMessages = appendMessage(state.chatMessages, attachIterationLimitFromContent({ role: 'agent', content: text, timestamp: new Date() }));
-                updates.agentThinking = null;
-              }
+              updates.chatMessages = applyAgentTextDelta(
+                state.chatMessages,
+                text,
+                attachIterationLimitFromContent,
+              );
+              updates.agentThinking = null;
             }
 
             return updates;
@@ -5151,6 +5169,37 @@ export const useComputerStore = create<ComputerStore>()(
           }
           if (!isRecall && operationId && resolveMemoryActivityMessage(operationId, memoryMessage)) break;
           appendToAgentChat(memoryMessage);
+          break;
+        }
+
+        case 'policy_learned': {
+          const rawPolicies = Array.isArray(event.data?.policies) ? event.data.policies : [];
+          const items = rawPolicies
+            .map((item): { id: number; title: string; description: string } | null => {
+              if (!item || typeof item !== 'object') return null;
+              const data = item as Record<string, unknown>;
+              const id = Number(data.id);
+              const title = typeof data.displayTitle === 'string'
+                ? data.displayTitle.trim()
+                : typeof data.summary === 'string'
+                  ? data.summary.trim()
+                  : '';
+              const description = typeof data.displayDescription === 'string'
+                ? data.displayDescription.trim()
+                : '';
+              if (!Number.isFinite(id) || id <= 0 || !title) return null;
+              return { id, title, description };
+            })
+            .filter((item): item is { id: number; title: string; description: string } => Boolean(item));
+          if (items.length === 0) break;
+          appendToAgentChat({
+            role: 'activity',
+            content: items.length === 1 ? 'Learned default' : `Learned defaults · ${items.length}`,
+            timestamp: new Date(),
+            tool: 'autopilot',
+            activityType: 'tool',
+            policyActivity: { items },
+          });
           break;
         }
 
@@ -5534,6 +5583,13 @@ export const useComputerStore = create<ComputerStore>()(
           // linger once the session resumes or finishes.
           set(state => {
             const updates: Partial<typeof state> = {};
+            if (status !== 'idle') {
+              updates.chatSessions = touchChatSession(
+                state.chatSessions,
+                eventSessionKey,
+                typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
+              );
+            }
             if (isActiveSession) {
               const cleared = clearWatchdogNotices(state.chatMessages);
               if (cleared.length !== state.chatMessages.length) updates.chatMessages = cleared;
@@ -5859,8 +5915,11 @@ export const useComputerStore = create<ComputerStore>()(
           const title = event.data?.title as string | undefined;
           if (sessionKey && title) {
             set(state => ({
-              chatSessions: state.chatSessions.map(s =>
-                s.key === sessionKey ? { ...s, title } : s
+              chatSessions: touchChatSession(
+                state.chatSessions.map(s =>
+                  s.key === sessionKey ? { ...s, title } : s
+                ),
+                sessionKey,
               ),
             }));
           }
@@ -5869,6 +5928,16 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'session_queued': {
           const reason = (event.data?.reason as string | undefined) ?? 'Session queued — another session is running';
+          const queuedSession = sessionInfoFromEvent(
+            event.data as Record<string, unknown> | undefined,
+            (event.data?.title as string) || 'Queued session',
+          );
+          if (queuedSession) {
+            pendingHistoryKeys.add(queuedSession.key);
+            set(state => ({
+              chatSessions: upsertChatSession(state.chatSessions, queuedSession),
+            }));
+          }
           useNotificationStore.getState().addNotification({
             title: 'Session queued',
             body: reason,
@@ -6235,12 +6304,14 @@ export const useComputerStore = create<ComputerStore>()(
           const sessionKey = event.data?.sessionKey as string;
           const title = event.data?.title as string;
           if (sessionKey && title) {
-            const { chatSessions } = get();
-            set({
-              chatSessions: chatSessions.map(s =>
-                s.key === sessionKey ? { ...s, title } : s
+            set(state => ({
+              chatSessions: touchChatSession(
+                state.chatSessions.map(s =>
+                  s.key === sessionKey ? { ...s, title } : s
+                ),
+                sessionKey,
               ),
-            });
+            }));
           }
           break;
         }
@@ -6408,23 +6479,18 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         case 'session_created': {
-          const newKey = event.data?.sessionKey as string | undefined;
-          if (newKey) {
-            pendingHistoryKeys.add(newKey);
-            set(state => {
-              if (state.chatSessions.some(s => s.key === newKey)) return {};
-              const now = Date.now();
-              const session: SessionInfo = {
-                key: newKey,
-                title: (event.data?.title as string) || 'Scheduled task',
-                created: now,
-                lastActivity: now,
-              };
-              return { chatSessions: [session, ...state.chatSessions] };
-            });
+          const session = sessionInfoFromEvent(
+            event.data as Record<string, unknown> | undefined,
+            (event.data?.title as string) || 'Scheduled task',
+          );
+          if (session) {
+            pendingHistoryKeys.add(session.key);
+            set(state => ({
+              chatSessions: upsertChatSession(state.chatSessions, session),
+            }));
             const { runningSessions, agentRunning } = get();
             if (runningSessions.size === 0 && !agentRunning) {
-              void get().switchSession(newKey, { force: true });
+              void get().switchSession(session.key, { force: true });
             }
           }
           break;

@@ -6,13 +6,23 @@ import {
   List,
   Network,
   Trash2,
+  Repeat,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { MEMORY_CHANGED_EVENT, type MemoryChangedDetail } from '@/lib/agentUiEvents';
-import { getMemories, deleteMemory, type MemoryRecord, type MemoryRelation } from '@/services/api';
+import {
+  getMemories,
+  deleteMemory,
+  getLearnedPolicies,
+  expireLearnedPolicy,
+  type MemoryRecord,
+  type MemoryRelation,
+  type AutopilotLearnedPolicySnapshot,
+} from '@/services/api';
+import { formatLearnedPolicyDisplay } from '@/lib/learnedPolicyDisplay';
 import type { WindowConfig } from '@/types';
 
 // ── Force-directed graph types ──
@@ -386,20 +396,39 @@ function formatMemoryDate(ts?: string): string {
 
 // ── Main component ──
 
-type ViewMode = 'graph' | 'list';
+type ViewMode = 'graph' | 'list' | 'defaults';
 
-export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
+function formatPolicyDate(ts?: number | null): string {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  } catch {
+    return '';
+  }
+}
+
+export function MemoryWindow({ config }: { config: WindowConfig }) {
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [relations, setRelations] = useState<MemoryRelation[]>([]);
+  const [learnedPolicies, setLearnedPolicies] = useState<AutopilotLearnedPolicySnapshot[]>([]);
+  const [learnedPolicyCount, setLearnedPolicyCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [defaultsLoading, setDefaultsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>('graph');
+  const [view, setView] = useState<ViewMode>(() => (
+    config.metadata?.tab === 'defaults' ? 'defaults' : 'graph'
+  ));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedPolicyId, setExpandedPolicyId] = useState<number | null>(() => {
+    const raw = config.metadata?.highlightPolicyId;
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+  });
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  void _config;
+  const [forgettingPolicyId, setForgettingPolicyId] = useState<number | null>(null);
 
   const handleDeleteMemory = useCallback(async (memoryId: string) => {
     setDeletingId(memoryId);
@@ -427,14 +456,47 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
         const rels = result.data.relations || [];
         setMemories(mems);
         setRelations(rels);
-        if (rels.length === 0) setView('list');
+        if (rels.length === 0 && view !== 'defaults') setView('list');
       } else {
         setError(result.error || 'Failed to load memories');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load memories');
     }
+  }, [view]);
+
+  const fetchDefaults = useCallback(async () => {
+    try {
+      setError(null);
+      const result = await getLearnedPolicies();
+      if (result.success) {
+        setLearnedPolicies(result.data.policies || []);
+        setLearnedPolicyCount(result.data.count ?? result.data.policies?.length ?? 0);
+      } else {
+        setError(result.error || 'Failed to load learned defaults');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load learned defaults');
+    }
   }, []);
+
+  const handleForgetPolicy = useCallback(async (policyId: number) => {
+    setForgettingPolicyId(policyId);
+    try {
+      const result = await expireLearnedPolicy(policyId);
+      if (result.success) {
+        setLearnedPolicies((prev) => prev.filter((item) => item.id !== policyId));
+        setLearnedPolicyCount((count) => Math.max(0, count - 1));
+        if (expandedPolicyId === policyId) setExpandedPolicyId(null);
+      } else {
+        setError(result.error || 'Failed to forget default');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to forget default');
+    } finally {
+      setForgettingPolicyId(null);
+    }
+  }, [expandedPolicyId]);
 
   const freshness = useFreshness(fetchData, {
     intervalMs: 60_000,
@@ -479,11 +541,44 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
   }, [freshness]);
 
   const handleRefresh = async () => {
+    if (view === 'defaults') {
+      setDefaultsLoading(true);
+      await fetchDefaults();
+      setDefaultsLoading(false);
+      return;
+    }
     const silent = memories.length > 0;
     if (!silent) setLoading(true);
     await freshness.refreshNow();
     if (!silent) setLoading(false);
   };
+
+  useEffect(() => {
+    if (view !== 'defaults') return;
+    let cancelled = false;
+    (async () => {
+      setDefaultsLoading(true);
+      await fetchDefaults();
+      if (!cancelled) setDefaultsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [view, fetchDefaults]);
+
+  useEffect(() => {
+    if (config.metadata?.tab === 'defaults') setView('defaults');
+    const raw = config.metadata?.highlightPolicyId;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      setExpandedPolicyId(raw);
+    }
+  }, [config.metadata?.tab, config.metadata?.highlightPolicyId]);
+
+  useEffect(() => {
+    if (view !== 'defaults' || expandedPolicyId == null) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`learned-policy-${expandedPolicyId}`)?.scrollIntoView({ block: 'nearest' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [view, expandedPolicyId, learnedPolicies.length]);
 
   const switchView = (nextView: ViewMode) => {
     setSelectedNode(null);
@@ -496,7 +591,17 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
     : memories;
 
   const animatedMemories = useAnimatedList(searchedMemories, (memory) => memory.id);
-  const showBlockingLoader = loading && memories.length === 0;
+  const searchedPolicies = searchQuery
+    ? learnedPolicies.filter((policy) => {
+      const display = formatLearnedPolicyDisplay(policy);
+      const haystack = `${display.title} ${display.description} ${display.scopeLabel}`.toLowerCase();
+      return haystack.includes(searchQuery.toLowerCase());
+    })
+    : learnedPolicies;
+  const animatedPolicies = useAnimatedList(searchedPolicies, (policy) => String(policy.id));
+  const showBlockingLoader = view === 'defaults'
+    ? defaultsLoading && learnedPolicies.length === 0
+    : loading && memories.length === 0;
 
   // Graph node selection is local to the Connections sidebar and never affects List view.
   const nodeMemories = selectedNode
@@ -525,7 +630,16 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
             )}
             onClick={() => switchView('list')}
           >
-            <List className="w-3 h-3" /> List
+            <List className="w-3 h-3" /> Facts
+          </button>
+          <button
+            className={cn(
+              'px-2 py-0.5 text-[11px] rounded transition-colors flex items-center gap-1',
+              view === 'defaults' ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-accent-muted)]',
+            )}
+            onClick={() => switchView('defaults')}
+          >
+            <Repeat className="w-3 h-3" /> Defaults
           </button>
         </div>
 
@@ -545,7 +659,7 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--color-text-muted)]" />
           <input
             type="text"
-            placeholder="Search knowledge..."
+            placeholder={view === 'defaults' ? 'Search defaults...' : 'Search knowledge...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-7 pr-2 py-1 w-full max-w-[180px] min-w-0 text-xs rounded-md border border-[var(--color-border)]
@@ -555,12 +669,19 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
 
         {/* Stats */}
         <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
-          {memories.length} item{memories.length !== 1 ? 's' : ''}
-          {relations.length > 0 && <>, {relations.length} connection{relations.length !== 1 ? 's' : ''}</>}
+          {view === 'defaults'
+            ? `${learnedPolicyCount} default${learnedPolicyCount === 1 ? '' : 's'}`
+            : <>
+              {memories.length} item{memories.length !== 1 ? 's' : ''}
+              {relations.length > 0 && <>, {relations.length} connection{relations.length !== 1 ? 's' : ''}</>}
+            </>}
         </span>
 
         {/* Refresh */}
-        <RefreshButton onClick={() => void handleRefresh()} refreshing={loading || freshness.isRefreshing} />
+        <RefreshButton
+          onClick={() => void handleRefresh()}
+          refreshing={view === 'defaults' ? defaultsLoading : loading || freshness.isRefreshing}
+        />
       </div>
 
       {/* Error */}
@@ -583,6 +704,82 @@ export function MemoryWindow({ config: _config }: { config: WindowConfig }) {
       {showBlockingLoader ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
+        </div>
+      ) : view === 'defaults' ? (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {searchedPolicies.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)] h-full min-h-[200px] px-6 text-center">
+              <Repeat className="w-10 h-10 opacity-40" />
+              <p className="text-sm">No learned defaults yet</p>
+              <p className="text-xs opacity-60 max-w-sm">
+                {searchQuery
+                  ? 'Try a different search term'
+                  : 'Construct will pick up habits from successful scheduled work and reports.'}
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[var(--color-border)]/50">
+              {animatedPolicies.map(({ key, item: policy, phase }) => {
+                const display = formatLearnedPolicyDisplay(policy);
+                const isExpanded = expandedPolicyId === policy.id;
+                return (
+                  <AnimatedListItem key={key} phase={phase}>
+                    <div id={`learned-policy-${policy.id}`}>
+                      <button
+                        className="w-full flex items-start gap-2.5 px-3 py-2.5 hover:bg-[var(--color-accent-muted)] transition-colors text-left"
+                        onClick={() => setExpandedPolicyId(isExpanded ? null : policy.id)}
+                      >
+                        <Repeat className="w-4 h-4 mt-0.5 shrink-0 text-violet-500" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium leading-relaxed">{display.title}</p>
+                          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+                            {display.description}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                              {display.scopeLabel}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[var(--color-text-muted)]">
+                              {display.strengthText}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums shrink-0 mt-0.5">
+                          {formatPolicyDate(policy.updatedAt)}
+                        </span>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-0">
+                          <div className="ml-6.5 p-2.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.03] border border-[var(--color-border)]/50 space-y-2">
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">What this changes</p>
+                              <p className="text-[11px] leading-relaxed text-[var(--color-text)]">
+                                {policy.agentInstruction || display.description}
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                              Learned after a successful run. Forget it if you want Construct to ask again next time.
+                            </p>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void handleForgetPolicy(policy.id); }}
+                              disabled={forgettingPolicyId === policy.id}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] rounded text-red-500 hover:bg-red-500/10 transition-colors"
+                            >
+                              {forgettingPolicyId === policy.id
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : <Trash2 className="w-3 h-3" />}
+                              Forget this default
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </AnimatedListItem>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : view === 'graph' ? (
         /* Graph view — graph fills canvas, memory list is an overlay sidebar when a node is selected */

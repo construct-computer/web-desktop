@@ -175,7 +175,7 @@ const LaunchpadDockItem = forwardRef<
                      flex flex-col items-center z-50">
         <div className="px-3 py-1 text-xs text-white rounded-md
                         glass-tooltip whitespace-nowrap">
-          Launchpad
+          All Apps
         </div>
         <div className="w-2 h-2 bg-black/80 rotate-45 -mt-1" />
       </div>
@@ -194,7 +194,7 @@ const LaunchpadDockItem = forwardRef<
       >
         <img
           src={iconLaunchpad}
-          alt="Launchpad"
+          alt="All Apps"
           style={{ width: iconSize, height: iconSize }}
           draggable={false}
         />

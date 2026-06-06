@@ -86,6 +86,16 @@ export interface MemoryActivityData {
   items: MemoryActivityItem[];
 }
 
+export interface PolicyActivityItem {
+  id: number;
+  title: string;
+  description: string;
+}
+
+export interface PolicyActivityData {
+  items: PolicyActivityItem[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'activity' | 'system';
   content: string;
@@ -112,6 +122,8 @@ export interface ChatMessage {
   browserAction?: BrowserActionMeta;
   /** Automatic memory reads/writes shown as subtle expandable activity rows. */
   memoryActivity?: MemoryActivityData;
+  /** Learned workflow defaults picked up from successful runs. */
+  policyActivity?: PolicyActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
 }

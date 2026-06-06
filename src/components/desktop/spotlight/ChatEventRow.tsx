@@ -100,12 +100,25 @@ export function memoryActivitySummary(activity: MemoryActivity): string | null {
   return activity.items[0]?.memory || null;
 }
 
+type PolicyActivity = NonNullable<ChatMessage['policyActivity']>;
+
+export function policyActivityTitle(activity: PolicyActivity): string {
+  if (activity.items.length > 1) return `Learned defaults · ${activity.items.length}`;
+  return 'Learned default';
+}
+
+export function policyActivitySummary(activity: PolicyActivity): string | null {
+  if (activity.items.length !== 1) return null;
+  return activity.items[0]?.title || null;
+}
+
 export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = useMemo(() => eventMeta(msg), [msg]);
   const isTerminal = msg.activityType === 'terminal';
   const memoryActivity = msg.memoryActivity;
+  const policyActivity = msg.policyActivity;
   const hasDetails = Boolean(meta.detail || meta.raw);
 
   const handleCopy = useCallback(() => {
@@ -136,6 +149,59 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     return (
       <div className={compact ? 'px-1 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
         <BrowserActivityRow message={msg} />
+      </div>
+    );
+  }
+
+  if (policyActivity) {
+    const title = policyActivityTitle(policyActivity);
+    const summary = policyActivitySummary(policyActivity);
+    const canExpand = policyActivity.items.length > 0;
+    const policyIconHints = resolveActivityIconHints('autopilot');
+
+    return (
+      <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+        <div className={compact ? 'flex items-center gap-2.5 min-w-0 w-full' : 'flex items-center gap-2.5 sm:gap-3 min-w-0 w-full'}>
+          <ActivityIconBadge
+            tool="autopilot"
+            iconPlatform={policyIconHints.iconPlatform}
+            iconUrl={policyIconHints.iconUrl}
+            size={compact ? 'sm' : 'md'}
+          />
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              disabled={!canExpand}
+              onClick={() => canExpand && setExpanded(!expanded)}
+              className="group flex max-w-full items-center gap-1.5 text-left disabled:cursor-default"
+            >
+              <span className="shrink-0 text-[12px] font-medium text-[var(--color-text-muted)]/55">{title}</span>
+              {summary && (
+                <>
+                  <span className="shrink-0 text-[12px] text-[var(--color-text-muted)]/22">·</span>
+                  <span className="min-w-0 truncate text-[12px] text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
+                    {summary}
+                  </span>
+                </>
+              )}
+              {canExpand && (
+                <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/45">
+                  {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </span>
+              )}
+            </button>
+            {expanded && (
+              <div className="mt-1 space-y-1 pl-0.5">
+                {policyActivity.items.map((item) => (
+                  <p key={item.id} className="text-[11px] leading-relaxed text-[var(--color-text-muted)]/55">
+                    <span className="text-[var(--color-text-muted)]/70">{item.title}</span>
+                    {item.description ? ` — ${item.description}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }

@@ -954,6 +954,18 @@ export interface AutopilotLearnedPolicySnapshot {
   provenance: Record<string, unknown> | null;
   updatedAt: number;
   expiresAt: number | null;
+  displayTitle: string;
+  displayDescription: string;
+  displayScopeLabel: string;
+  strength: 'strong' | 'likely' | 'tentative';
+  strengthLabel: string;
+  agentInstruction: string;
+}
+
+export interface LearnedPoliciesListResponse {
+  policies: AutopilotLearnedPolicySnapshot[];
+  count: number;
+  generatedAt: number;
 }
 
 export interface AutopilotScheduledWorkSnapshot {
@@ -1145,6 +1157,10 @@ export async function deleteAutopilotPolicyRule(
   return request(`/agent/autopilot/policy/rules/${encodeURIComponent(String(id))}`, {
     method: 'DELETE',
   });
+}
+
+export async function getLearnedPolicies(): Promise<ApiResult<LearnedPoliciesListResponse>> {
+  return request(`/agent/autopilot/learned-policies`, { captureErrors: false, retryNetwork: true });
 }
 
 export async function expireLearnedPolicy(

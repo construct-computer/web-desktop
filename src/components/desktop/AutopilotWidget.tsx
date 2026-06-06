@@ -11,6 +11,7 @@ import {
   Mail,
   MessageCircle,
   RefreshCw,
+  Repeat,
   ShieldAlert,
   Wrench,
   X,
@@ -33,6 +34,7 @@ import {
   getApprovalQueue,
   type ApprovalQueueEntry,
 } from '@/services/access-control';
+import { formatLearnedPolicyDisplay } from '@/lib/learnedPolicyDisplay';
 import { getAttentionItems, getPrimaryAttention, withoutCancelledAuthAttention, withoutPassiveProviderAttention, type AttentionItem } from '@/lib/autopilotAttention';
 import {
   AUTH_REQUEST_CANCELLED_EVENT,
@@ -180,16 +182,6 @@ function formatLedgerStatus(status: string | null | undefined): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatPolicyScope(policy: api.AutopilotLearnedPolicySnapshot): string {
-  const scope = policy.scopeValue || policy.scope || 'user';
-  return scope.replace(/[_-]/g, ' ');
-}
-
-function formatConfidence(confidence: number | null | undefined): string {
-  const value = Math.max(0, Math.min(1, confidence ?? 0));
-  return `${Math.round(value * 100)}%`;
-}
-
 function formatScheduleDue(value: string | null | undefined): string {
   if (!value) return 'no next run';
   const ms = new Date(value).getTime();
@@ -305,6 +297,8 @@ export function AutopilotPanel() {
   const chatSessions = useComputerStore((s) => s.chatSessions);
   const emailUnreadCount = useComputerStore((s) => s.emailUnreadCount);
   const openWindow = useWindowStore((s) => s.openWindow);
+  const updateWindow = useWindowStore((s) => s.updateWindow);
+  const windows = useWindowStore((s) => s.windows);
   const unreadNotificationCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
   const openNotificationTab = useNotificationStore((s) => s.openDrawerTab);
   const usage = useBillingStore((s) => s.usage);
@@ -317,6 +311,7 @@ export function AutopilotPanel() {
   const [pendingActions, setPendingActions] = useState<api.PendingUserAction[]>([]);
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [expiringPolicyId, setExpiringPolicyId] = useState<number | null>(null);
+  const [expirePolicyError, setExpirePolicyError] = useState<string | null>(null);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
   const nextEvent = useUpcomingCalendarEvent();
 
@@ -906,12 +901,33 @@ export function AutopilotPanel() {
     }
   };
 
+  const openKnowledgeDefaults = useCallback((policyId?: number) => {
+    const metadata = {
+      tab: 'defaults',
+      ...(policyId != null ? { highlightPolicyId: policyId } : {}),
+    };
+    const existing = windows.find((window) => window.type === 'memory');
+    if (existing) {
+      updateWindow(existing.id, { metadata });
+      useWindowStore.getState().focusWindow(existing.id);
+      if (useWindowStore.getState().activeWorkspaceId !== existing.workspaceId) {
+        useWindowStore.getState().switchWorkspace(existing.workspaceId);
+      }
+      return;
+    }
+    openWindow('memory', { metadata });
+  }, [openWindow, updateWindow, windows]);
+
   const handleExpirePolicy = (policy: api.AutopilotLearnedPolicySnapshot) => {
     if (expiringPolicyId !== null) return;
+    setExpirePolicyError(null);
     setExpiringPolicyId(policy.id);
     api.expireLearnedPolicy(policy.id)
       .then((result) => {
-        if (!result.success) return;
+        if (!result.success) {
+          setExpirePolicyError(result.error || 'Could not forget this default');
+          return;
+        }
         setStatus((current) => {
           if (!current) return current;
           const learnedPolicies = (current.learnedPolicies || []).filter((item) => item.id !== policy.id);
@@ -1125,47 +1141,77 @@ export function AutopilotPanel() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
                   <span className="inline-flex items-center gap-1">
-                    Saved preferences
-                    <InfoHint side="top" className="text-white/40 hover:text-white/80">Choices Construct can remember so it does not ask you the same thing again.</InfoHint>
+                    Learned defaults
+                    <InfoHint side="top" className="text-white/40 hover:text-white/80">
+                      Habits Construct learned from successful scheduled tasks and reports. Forget any default you do not want.
+                    </InfoHint>
                   </span>
                   <span>{displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length}</span>
                 </div>
-                {visibleLearnedPolicies.map((policy) => (
-                  <div
-                    key={policy.id}
-                    className="group flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-1.5"
-                    title={`${formatPolicyScope(policy)}: ${policy.summary}`}
-                  >
-                    <Gauge size={13} strokeWidth={2.1} className="shrink-0 text-violet-200/[0.54]" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-medium text-white/[0.70]">
-                        {cleanWidgetText(policy.summary, 74)}
-                      </span>
-                      <span className="block truncate text-[9.5px] text-white/[0.38]">
-                        {formatPolicyScope(policy)} - {formatConfidence(policy.confidence)}
-                        {policy.policyValue ? ` - ${cleanWidgetText(policy.policyValue, 42)}` : ''}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Disable saved preference: ${policy.summary}`}
-                      title="Disable saved preference"
-                      disabled={expiringPolicyId !== null}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleExpirePolicy(policy);
-                      }}
-                      className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/[0.28] opacity-0 transition hover:bg-white/[0.045] hover:text-white/[0.70] group-hover:opacity-100 disabled:cursor-default disabled:opacity-40"
+                {expirePolicyError && (
+                  <p className="px-1 text-[9.5px] text-rose-200/80">{expirePolicyError}</p>
+                )}
+                {visibleLearnedPolicies.map((policy) => {
+                  const display = formatLearnedPolicyDisplay(policy);
+                  return (
+                    <div
+                      key={policy.id}
+                      className="group flex min-h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5"
+                      title={display.description}
                     >
-                      {expiringPolicyId === policy.id ? (
-                        <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
-                      ) : (
-                        <X size={11} strokeWidth={2.4} />
-                      )}
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openKnowledgeDefaults(policy.id);
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                      >
+                        <Repeat size={13} strokeWidth={2.1} className="shrink-0 text-violet-200/[0.54]" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-medium text-white/[0.70]">
+                            {cleanWidgetText(display.title, 56)}
+                          </span>
+                          <span className="block truncate text-[9.5px] text-white/[0.38]">
+                            {display.scopeLabel} · {display.strengthText}
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Forget this default: ${display.title}`}
+                        title="Forget this default"
+                        disabled={expiringPolicyId !== null}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleExpirePolicy(policy);
+                        }}
+                        className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/[0.28] opacity-0 transition hover:bg-white/[0.045] hover:text-white/[0.70] group-hover:opacity-100 disabled:cursor-default disabled:opacity-40"
+                      >
+                        {expiringPolicyId === policy.id ? (
+                          <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
+                        ) : (
+                          <X size={11} strokeWidth={2.4} />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+                {(displayStatus?.learnedPolicyCount ?? 0) > visibleLearnedPolicies.length && (
+                  <button
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openKnowledgeDefaults();
+                    }}
+                    className="px-1.5 text-left text-[9.5px] text-white/[0.42] transition hover:text-white/[0.68]"
+                  >
+                    View all {displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length} defaults in Knowledge
+                  </button>
+                )}
               </div>
             )}
 

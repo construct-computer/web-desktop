@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Send, Square, User, Loader2, SquarePen, ChevronDown, ChevronRight, Trash2, MessageSquare, AlertCircle, Network, CheckCircle2, XCircle } from 'lucide-react';
+import { Send, Square, User, Loader2, SquarePen, ChevronDown, ChevronRight, Trash2, AlertCircle, Network, CheckCircle2, XCircle } from 'lucide-react';
+import { getSessionDisplayMeta } from '@/lib/sessionDisplay';
 import constructLogo from '@/assets/logo.png';
 import { Button, MarkdownRenderer } from '@/components/ui';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
@@ -107,10 +108,15 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
   const switchSession = useComputerStore((s) => s.switchSession);
   const deleteSession = useComputerStore((s) => s.deleteSession);
   const renameSession = useComputerStore((s) => s.renameSession);
+  const loadSessions = useComputerStore((s) => s.loadSessions);
 
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const editRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void loadSessions(true, { preserveActiveKey: activeSessionKey });
+  }, [loadSessions, activeSessionKey]);
 
   // Focus the input when editing starts
   useEffect(() => {
@@ -215,7 +221,16 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
             }`}
             onClick={() => handleSwitch(session.key)}
           >
-            <MessageSquare className="w-3 h-3 shrink-0 opacity-40" />
+            {(() => {
+              const meta = getSessionDisplayMeta(session.key);
+              const Icon = meta.icon;
+              return (
+                <Icon
+                  className={`w-3 h-3 shrink-0 ${meta.kind === 'desktop' ? 'opacity-40' : ''}`}
+                  style={meta.kind === 'desktop' ? undefined : { color: meta.color, opacity: 0.85 }}
+                />
+              );
+            })()}
 
             {editingKey === session.key ? (
               <input

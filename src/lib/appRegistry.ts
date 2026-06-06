@@ -99,7 +99,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
     windowType: 'access-control',
     icon: iconAccessControl,
     category: 'system',
-    keywords: ['approvals', 'permissions', 'security', 'rules', 'saved preferences'],
+    keywords: ['approvals', 'permissions', 'security', 'rules'],
   },
   {
     id: 'memory',
@@ -107,7 +107,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
     windowType: 'memory',
     icon: iconMemory,
     category: 'system',
-    keywords: ['remember', 'knowledge', 'facts', 'notes', 'long-term'],
+    keywords: ['remember', 'knowledge', 'facts', 'notes', 'long-term', 'defaults', 'habits', 'learned', 'workflow'],
   },
 
   // ── Permanent apps ──
@@ -166,7 +166,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
   },
 ];
 
-export const DESKTOP_DOCK_APP_IDS = ['app-registry', 'browser', 'terminal', 'files', 'calendar', 'email'] as const;
+export const DESKTOP_DOCK_APP_IDS = ['app-registry', 'files', 'calendar', 'email', 'browser', 'terminal'] as const;
 export const MOBILE_APP_BAR_APP_IDS = ['app-registry', 'files', 'calendar', 'email'] as const;
 export const MOBILE_HOME_APP_IDS = ['chat', 'files', 'calendar', 'email', 'app-registry', 'memory', 'settings'] as const;
 

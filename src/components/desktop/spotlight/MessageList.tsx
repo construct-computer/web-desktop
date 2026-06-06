@@ -395,7 +395,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
             <button
               type="button"
                 onClick={() => scrollToBottom()}
-              className="pointer-events-auto w-7 h-7 rounded-full surface-card-raised border border-[var(--color-border)]/20 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+              className="pointer-events-auto w-7 h-7 rounded-full overflow-hidden glass-popover flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
               aria-label="Scroll to latest messages"
             >
               <ArrowDown className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />

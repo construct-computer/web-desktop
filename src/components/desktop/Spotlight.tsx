@@ -143,6 +143,7 @@ export function Spotlight() {
   const userPlan = useAuthStore(s => s.user?.plan);
   const instanceId = useComputerStore(s => s.instanceId);
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const loadSessions = useComputerStore(s => s.loadSessions);
   const refreshActiveChatHistory = useComputerStore(s => s.refreshActiveChatHistory);
   const chatSessions = useComputerStore(s => s.chatSessions);
   const sessionTitle = useMemo(
@@ -166,6 +167,11 @@ export function Spotlight() {
     mq.addEventListener('change', update);
     return () => mq.removeEventListener('change', update);
   }, []);
+
+  useEffect(() => {
+    if (!open || !instanceId) return;
+    void loadSessions(true, { preserveActiveKey: activeSessionKey });
+  }, [open, instanceId, activeSessionKey, loadSessions]);
 
   // Hydrate when the session/instance changes or Spotlight opens — skip settled empty chats.
   useEffect(() => {

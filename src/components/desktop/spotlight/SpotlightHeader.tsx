@@ -3,15 +3,9 @@
  * Shows session title, platform badge, and read-only indicator.
  */
 
-import { Send, Hash, Mail, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { useComputerStore } from '@/stores/agentStore';
-
-function getSessionPlatform(key: string) {
-  if (key.startsWith('telegram_')) return { platform: 'Telegram', icon: Send, color: '#2AABEE' };
-  if (key.startsWith('slack_')) return { platform: 'Slack', icon: Hash, color: '#4A154B' };
-  if (key.startsWith('email_')) return { platform: 'Email', icon: Mail, color: '#EA4335' };
-  return null;
-}
+import { getSessionDisplayMeta } from '@/lib/sessionDisplay';
 
 export function SpotlightHeader() {
   const activeKey = useComputerStore(s => s.activeSessionKey);
@@ -20,8 +14,7 @@ export function SpotlightHeader() {
 
   if (!session) return null;
 
-  const plat = getSessionPlatform(session.key);
-  const isExternal = !!plat;
+  const plat = getSessionDisplayMeta(session.key);
 
   return (
     <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/[0.06] shrink-0">
@@ -29,17 +22,17 @@ export function SpotlightHeader() {
         <span className="text-[13px] font-medium text-[var(--color-text)]/70 truncate">
           {session.title || 'New Chat'}
         </span>
-        {plat && (
+        {plat.kind !== 'desktop' && (
           <span
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider text-white/80"
             style={{ background: plat.color }}
           >
             <plat.icon className="w-2.5 h-2.5" />
-            {plat.platform}
+            {plat.label}
           </span>
         )}
       </div>
-      {isExternal && (
+      {plat.readOnly && (
         <div className="flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/40">
           <Lock className="w-3 h-3" />
           Read-only

@@ -135,9 +135,9 @@ export function MobileAppBar() {
                      active:scale-95 transition-transform"
           onClick={() => { play('click'); toggleLaunchpad(); }}
         >
-          <img src={iconLaunchpad} alt="Launchpad" className="w-10 h-10" draggable={false} />
+          <img src={iconLaunchpad} alt="All Apps" className="w-10 h-10" draggable={false} />
           <span className="text-[11px] font-medium text-black/80 dark:text-white/80 leading-none">
-            Launchpad
+            All Apps
           </span>
         </button>
 

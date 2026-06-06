@@ -101,8 +101,8 @@ const steps: DriveStep[] = [
   {
     element: '[data-tour="dock"]',
     popover: {
-      title: 'Dock & Launchpad',
-      description: `${gifCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click Launchpad to browse system tools, MCP apps, and connected services.`,
+      title: 'Dock & All Apps',
+      description: `${gifCarouselTag('2674/2160')}Your favorite apps live here on the Dock. Click All Apps to browse system tools, MCP apps, and connected services.`,
       side: 'top',
       align: 'center',
     },
