@@ -20,66 +20,66 @@ describe('isTriggeredSessionKey', () => {
   });
 });
 
-describe('universal session hydration contract', () => {
-  it('loadSessions swaps messages when active key changes', () => {
-    expect(agentStoreSource).toMatch(/activeKeyChanged/);
-    expect(agentStoreSource).toMatch(/invalidateHistoryHydration\(activeKey\)/);
-    expect(agentStoreSource).toMatch(/updates\.chatMessages = cached \|\| \[\]/);
+describe('hydration loop prevention contract', () => {
+  it('tracks pending history keys separately from settled hydration', () => {
+    expect(agentStoreSource).toMatch(/const pendingHistoryKeys = new Set<string>\(\)/);
+    expect(agentStoreSource).toMatch(/function markHistorySettled/);
+    expect(agentStoreSource).toMatch(/function expectsHistoryContent/);
+    expect(agentStoreSource).toMatch(/isTriggeredSessionKey\(sessionKey\)/);
   });
 
-  it('empty history retries apply to all session keys', () => {
-    expect(agentStoreSource).toMatch(/EMPTY_HISTORY_MAX_RETRIES/);
-    expect(agentStoreSource).toMatch(/if \(retryCount < EMPTY_HISTORY_MAX_RETRIES\)/);
-    expect(agentStoreSource).not.toMatch(
-      /if \(isTriggeredSessionKey\(requestedSessionKey\) && retryCount < EMPTY_HISTORY_MAX_RETRIES\)/,
+  it('empty history retries only when content is expected', () => {
+    expect(agentStoreSource).toMatch(/if \(expectsHistoryContent\(requestedSessionKey\) && retryCount < EMPTY_HISTORY_MAX_RETRIES\)/);
+    expect(agentStoreSource).not.toMatch(/if \(retryCount < EMPTY_HISTORY_MAX_RETRIES\) \{/);
+  });
+
+  it('marks new chats settled immediately on createSession', () => {
+    expect(agentStoreSource).toMatch(/createSession:[\s\S]*markHistorySettled\(session\.key\)/);
+    expect(agentStoreSource).toMatch(/sessionMessageCache\.set\(session\.key, \[\]\)/);
+  });
+
+  it('fallback reload is one-shot and bounded, not infinite', () => {
+    expect(agentStoreSource).toMatch(/HISTORY_FALLBACK_MAX_ATTEMPTS/);
+    expect(agentStoreSource).toMatch(/historyFallbackTimers/);
+    expect(agentStoreSource).toMatch(/if \(attempts >= HISTORY_FALLBACK_MAX_ATTEMPTS\) \{\s*markHistorySettled\(sessionKey\)/);
+  });
+
+  it('refreshActiveChatHistory skips already-settled sessions unless forced', () => {
+    expect(agentStoreSource).toMatch(/refreshActiveChatHistory: async \(options\?: \{ force\?: boolean \}\)/);
+    expect(agentStoreSource).toMatch(
+      /if \(!options\?\.force && historyHydratedKeys\.has\(activeSessionKey\) && !pendingHistoryKeys\.has\(activeSessionKey\)\)/,
     );
   });
 
-  it('fallback reload and hydration invalidation apply to all keys', () => {
-    expect(agentStoreSource).toMatch(/scheduleHistoryFallbackReload/);
-    expect(agentStoreSource).toMatch(/function invalidateHistoryHydration/);
-    expect(agentStoreSource).not.toMatch(/function invalidateTriggeredHistoryHydration/);
-  });
-
-  it('switchSession supports force refresh on the same key', () => {
-    expect(agentStoreSource).toMatch(/switchSession: async \(key: string, options\?: \{ force\?: boolean \}\)/);
-    expect(agentStoreSource).toMatch(/isRefresh && !options\?\.force\) return/);
-    expect(agentStoreSource).toMatch(/invalidateHistoryHydration\(key\)/);
-  });
-
-  it('refreshActiveChatHistory invalidates then reloads', () => {
-    expect(agentStoreSource).toMatch(/refreshActiveChatHistory: async/);
-    expect(agentStoreSource).toMatch(/invalidateHistoryHydration\(activeSessionKey\)/);
-  });
-
-  it('only marks sessions hydrated when user or assistant content exists', () => {
-    expect(agentStoreSource).toMatch(/hasPersistedUserOrAssistantContent/);
-    expect(agentStoreSource).toMatch(/if \(hasUserOrAgentContent\) \{\s*historyHydratedKeys\.add\(requestedSessionKey\)/);
-  });
-
-  it('session_created auto-switches when idle (scheduled sessions)', () => {
-    expect(agentStoreSource).toMatch(/case 'session_created':[\s\S]*invalidateHistoryHydration\(newKey\)/);
-    expect(agentStoreSource).toMatch(/switchSession\(newKey, \{ force: true \}\)/);
-  });
-
-  it('agent_incident reloads missing user cards for any session', () => {
-    expect(agentStoreSource).toMatch(/case 'agent_incident':[\s\S]*hasUserCard/);
-    expect(agentStoreSource).not.toMatch(
-      /case 'agent_incident':[\s\S]*if \(isTriggeredSessionKey\(eventSessionKey\)\)/,
+  it('switchSession only invalidates on force when refresh is needed', () => {
+    expect(agentStoreSource).toMatch(
+      /if \(options\?\.force && \(pendingHistoryKeys\.has\(key\) \|\| !historyHydratedKeys\.has\(key\)\)\)/,
     );
-    expect(agentStoreSource).toMatch(/case 'session_history_ready':/);
   });
 
-  it('openSpotlightSession always force-refreshes the target session', () => {
+  it('session_created and session_history_ready mark pending and prefetch', () => {
+    expect(agentStoreSource).toMatch(/case 'session_created':[\s\S]*pendingHistoryKeys\.add\(newKey\)/);
+    expect(agentStoreSource).not.toMatch(/case 'session_created':[\s\S]*invalidateHistoryHydration\(newKey\)/);
+    expect(agentStoreSource).toMatch(/case 'session_history_ready':[\s\S]*pendingHistoryKeys\.add\(readyKey\)/);
+    expect(agentStoreSource).toMatch(/prefetchSessionHistory\(readyKey\)/);
+  });
+
+  it('exports shouldRefreshChatHistory for Spotlight entry points', () => {
+    expect(agentStoreSource).toMatch(/export function shouldRefreshChatHistory/);
+    expect(spotlightSource).toMatch(/shouldRefreshChatHistory\(activeSessionKey\)/);
+    expect(spotlightSource).not.toMatch(/void refreshActiveChatHistory\(\);\s*\}\s*, \[instanceId, activeSessionKey, refreshActiveChatHistory\]\);\s*\n\s*\/\/ Re-fetch when Spotlight opens/);
+  });
+
+  it('sidebar does not always force-refresh on session selection', () => {
+    expect(spotlightSidebarSource).toMatch(/shouldForceSessionRefresh\(session\.key\)/);
+    expect(spotlightSidebarSource).not.toMatch(/switchSession\(session\.key, \{ force: true \}\)/);
+  });
+
+  it('openSpotlightSession still force-refreshes notification targets', () => {
     expect(spotlightNavSource).toMatch(/switchSession\(sessionKey, \{ force: true \}\)/);
   });
 
-  it('sidebar force-refreshes on session selection', () => {
-    expect(spotlightSidebarSource).toMatch(/switchSession\(session\.key, \{ force: true \}\)/);
-  });
-
-  it('spotlight refreshes history when opened', () => {
-    expect(spotlightSource).toMatch(/refreshActiveChatHistory/);
-    expect(spotlightSource).toMatch(/if \(open && instanceId && activeSessionKey\)/);
+  it('successful history load calls markHistorySettled', () => {
+    expect(agentStoreSource).toMatch(/markHistorySettled\(requestedSessionKey\)/);
   });
 });

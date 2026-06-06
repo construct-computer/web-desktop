@@ -44,13 +44,14 @@ import * as api from '@/services/api';
 import type { FileEntry, DriveFileEntry } from '@/services/api';
 import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
-import { useFreshness } from '@/hooks/useFreshness';
+import { shouldShowBlockingLoader, useFreshness } from '@/hooks/useFreshness';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
 import { isWallpaperWorkspacePath } from '@/lib/wallpapers';
 import { notifyWallpaperFilesChanged } from '@/stores/wallpaperStore';
+import { cn } from '@/lib/utils';
 import { getFileIconKind, getFileType } from '@/lib/fileTypes';
 import { decodeDisplayName, fileNameFromWorkspacePath } from '@/lib/workspacePaths';
 import { AGENT_FILES_NAVIGATE_EVENT, type AgentFilesNavigateDetail } from '@/lib/agentUiEvents';
@@ -411,6 +412,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const currentPathRef = useRef(currentPath);
+  const rawEntriesRef = useRef(rawEntries);
   const directoryRequestSeqRef = useRef(0);
   const [showHidden, setShowHidden] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuType | null>(null);
@@ -579,12 +581,17 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     currentPathRef.current = currentPath;
   }, [currentPath]);
 
+  useEffect(() => {
+    rawEntriesRef.current = rawEntries;
+  }, [rawEntries]);
+
   const refreshStorageUsage = useCallback(() => {
     api.getStorageUsage().then(r => { if (r.success && r.data) setStorageUsage(r.data); });
   }, []);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
-    await loadDirectory(currentPath, opts);
+    const silent = opts?.silent ?? rawEntriesRef.current.length > 0;
+    await loadDirectory(currentPath, { silent });
     refreshStorageUsage();
   }, [loadDirectory, currentPath, refreshStorageUsage]);
 
@@ -595,14 +602,17 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     refreshOnOnline: true,
   });
 
+  const showBlockingLoader = shouldShowBlockingLoader(loading, rawEntries.length);
+  const listBackgroundRefreshing = (loading || freshness.isRefreshing) && rawEntries.length > 0;
+
   useEffect(() => {
     setHistory([currentPath]);
     setHistoryIndex(0);
+    currentPathRef.current = currentPath;
     let cancelled = false;
     void (async () => {
-      setLoading(true);
-      await freshness.refreshNow();
-      if (!cancelled) setLoading(false);
+      await loadDirectory(currentPath);
+      if (!cancelled) refreshStorageUsage();
     })();
     const iv = setInterval(refreshStorageUsage, 15_000);
     return () => {
@@ -618,7 +628,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
       setCurrentPath(path);
-      loadDirectory(path);
+      currentPathRef.current = path;
+      loadDirectory(path, { silent: rawEntriesRef.current.length > 0 });
     },
     [history, historyIndex, loadDirectory],
   );
@@ -632,7 +643,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
       setCurrentPath(folderPath);
-      await loadDirectory(folderPath);
+      currentPathRef.current = folderPath;
+      await loadDirectory(folderPath, { silent: rawEntriesRef.current.length > 0 });
 
       if (detail.highlight && detail.filePath) {
         const name = fileNameFromWorkspacePath(detail.filePath);
@@ -660,7 +672,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       const prev = history[historyIndex - 1];
       setHistoryIndex(historyIndex - 1);
       setCurrentPath(prev);
-      loadDirectory(prev);
+      currentPathRef.current = prev;
+      loadDirectory(prev, { silent: rawEntriesRef.current.length > 0 });
     }
   }, [history, historyIndex, loadDirectory]);
 
@@ -669,7 +682,8 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       const next = history[historyIndex + 1];
       setHistoryIndex(historyIndex + 1);
       setCurrentPath(next);
-      loadDirectory(next);
+      currentPathRef.current = next;
+      loadDirectory(next, { silent: rawEntriesRef.current.length > 0 });
     }
   }, [history, historyIndex, loadDirectory]);
 
@@ -1167,7 +1181,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             if (activeTab === 'local') void freshness.refreshNow();
             else driveFiles.refresh();
           }}
-          refreshing={activeTab === 'local' ? (loading || freshness.isRefreshing) : driveFiles.isLoading}
+          refreshing={activeTab === 'local' ? (freshness.isRefreshing || showBlockingLoader) : driveFiles.isLoading}
           className="h-7 w-7"
         />
 
@@ -1211,7 +1225,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             <FreshnessText
               lastUpdatedAt={freshness.lastUpdatedAt}
               now={freshness.now}
-              isRefreshing={freshness.isRefreshing || loading}
+              isRefreshing={freshness.isRefreshing || showBlockingLoader}
               isStale={freshness.isStale}
             />
           </span>
@@ -1359,14 +1373,18 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
             {(!isMobile || !previewFile) && (
               activeTab === 'local' ? (
                 <div
-                  className={`${previewFile && !isMobile ? 'w-1/2 border-r border-[var(--color-border)]' : 'flex-1'} overflow-y-auto`}
+                  className={cn(
+                    previewFile && !isMobile ? 'w-1/2 border-r border-[var(--color-border)]' : 'flex-1',
+                    'overflow-y-auto transition-opacity',
+                    listBackgroundRefreshing && 'opacity-60 pointer-events-none',
+                  )}
                 onClick={() => {
                   setSelectedName(null);
                   setContextMenu(null);
                 }}
                 onContextMenu={handleBackgroundContextMenu}
               >
-                {loading ? (
+                {showBlockingLoader ? (
                   <div className="flex items-center justify-center h-32 text-[var(--color-text-muted)]">
                     <Loader2 className="w-5 h-5 animate-spin mr-2" />
                     <span className="text-xs">Loading...</span>

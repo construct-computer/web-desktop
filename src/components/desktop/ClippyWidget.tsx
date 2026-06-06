@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
+import { ClippyStatusNarrative } from '@/components/desktop/ClippyStatusNarrative';
 import { useClippyActivitySummary, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivityRow';
 import { ActivityIconBadge } from '@/components/desktop/spotlight/ActivityIconBadge';
@@ -546,13 +547,14 @@ export function ClippyWidget() {
   // - Operation goals (what a spawned agent is doing)
   // - Errors (disconnected, agent error)
   // Simple "Working..." status is handled by the MenuBar indicator.
-  const hasActivityContext = activitySummary.activityFeed.length > 0 || activitySummary.subagents.length > 0;
+  const hasActivityContext =
+    activitySummary.toolFeed.length > 0
+    || !!activitySummary.statusNarrative
+    || activitySummary.subagents.length > 0;
   const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext || isActive;
   const showBubble = isActive && hasUniqueContext && !dismissed;
   const showWelcome = !!welcomeMsg && !showBubble;
-  const bubbleDetail = hasActivityContext
-    ? (activitySummary.detail || scrollText)
-    : scrollText;
+  const bubbleDetail = hasActivityContext ? '' : scrollText;
 
   // Determine what to show in the unified comic bubble
   const bubbleContent = useMemo(() => {
@@ -699,10 +701,10 @@ const NORMAL_BUBBLE_W = 180;
 const NORMAL_BUBBLE_H = 62;  // 276 * (180/800) ≈ 62
 const LG_BUBBLE_W = 220;
 const LG_BUBBLE_H = 186;     // 676 * (220/800) ≈ 186
-const DASHBOARD_BUBBLE_W = 286;
-const DASHBOARD_BUBBLE_H = 242;
-const MOBILE_DASHBOARD_BUBBLE_W = 220;
-const MOBILE_DASHBOARD_BUBBLE_H = 186;
+const DASHBOARD_BUBBLE_W = 300;
+const DASHBOARD_BUBBLE_H = 260;
+const MOBILE_DASHBOARD_BUBBLE_W = 230;
+const MOBILE_DASHBOARD_BUBBLE_H = 200;
 
 function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, closing, onClickBubble }: {
   title: string;
@@ -767,7 +769,7 @@ function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, cl
   // Format: top right bottom left
   // More padding on right to avoid tail, left padding for rounded corner
   const contentPadding = isDashboard
-    ? (isMobile ? '12px 36px 16px 28px' : '14px 40px 18px 32px')
+    ? (isMobile ? '13px 38px 16px 30px' : '16px 42px 20px 34px')
     : useLgBubble ? '14px 40px 18px 34px' : '10px 36px 14px 30px';
 
   return (
@@ -775,7 +777,7 @@ function ComicBubble({ title, detail, variant, summary, avatarSize, isMobile, cl
       className="absolute pointer-events-auto"
       style={{
         right: avatarSize * 0.85 + 10,  // Tail aligns into the screen area, offset further left
-        bottom: '68%',             // Bottom of bubble at screen center Y (14% + 38.4%/2 ≈ 33% from top)
+        bottom: '72%',
         animation: enterAnim,
         transformOrigin: 'right bottom',
         width: bubbleW,
@@ -855,16 +857,20 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
   summary: ClippyActivitySummary;
   isMobile: boolean;
 }) {
-  const visibleFeed = summary.activityFeed;
+  const visibleFeed = summary.toolFeed;
   const visibleSubagents = summary.subagents.slice(0, isMobile ? 2 : 2);
   const hiddenSubagents = Math.max(0, summary.subagents.length - visibleSubagents.length);
   const helperPill = summary.counts.total > 0
     ? `${summary.counts.total} helper${summary.counts.total === 1 ? '' : 's'}`
     : '';
+  const hasNarrative = !!summary.statusNarrative.trim();
+  const feedCap = isMobile ? 2 : 3;
 
   return (
     <div className="flex h-full w-full min-h-0 flex-col text-left text-white">
-      <div className="flex min-w-0 shrink-0 items-start justify-between gap-2">
+      <div
+        className={`flex min-w-0 shrink-0 items-start justify-between gap-2 ${hasNarrative ? 'mb-1.5' : ''}`}
+      >
         <div
           className="min-w-0 truncate"
           style={{
@@ -891,22 +897,26 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
         )}
       </div>
 
-      {summary.detail && (
-        <div
-          className="mt-1 line-clamp-2 shrink-0"
-          style={{
-            color: 'rgba(255,255,255,0.78)',
-            fontSize: isMobile ? '10px' : '11px',
-            lineHeight: 1.35,
-            textShadow: '0 1px 2px rgba(0,0,0,0.18)',
-          }}
-        >
-          {summary.detail}
-        </div>
-      )}
+      <ClippyStatusNarrative
+        text={summary.statusNarrative}
+        isMobile={isMobile}
+        showDivider={visibleFeed.length > 0}
+      />
 
       {visibleFeed.length > 0 ? (
-        <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          {hasNarrative && (
+            <div
+              className="mb-1 uppercase tracking-[0.08em]"
+              style={{
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: isMobile ? 8 : 9,
+                fontWeight: 600,
+              }}
+            >
+              Doing
+            </div>
+          )}
           {visibleFeed.map(item => (
             <CompactActivityRow
               key={item.id}
@@ -916,13 +926,14 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
               iconPlatform={item.iconPlatform}
               iconUrl={item.iconUrl}
               failed={item.failed}
-              kind={item.kind}
+              activityStatus={item.activityStatus}
               dense
+              clippy
             />
           ))}
         </div>
       ) : (
-        !summary.detail && (
+        !hasNarrative && (
           <div
             className="mt-2 line-clamp-2"
             style={{
@@ -956,7 +967,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
         </div>
       )}
 
-      {visibleFeed.length > 0 && visibleFeed.length >= (isMobile ? 3 : 5) && (
+      {visibleFeed.length > 0 && visibleFeed.length >= feedCap && (
         <div
           className="mt-1 shrink-0 text-center"
           style={{

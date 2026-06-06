@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, shouldRefreshChatHistory } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { hasAgentAccess } from '@/lib/plans';
@@ -167,19 +167,12 @@ export function Spotlight() {
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  // Hydrate chat history whenever the active session or instance changes.
+  // Hydrate when the session/instance changes or Spotlight opens — skip settled empty chats.
   useEffect(() => {
-    if (instanceId && activeSessionKey) {
-      void refreshActiveChatHistory();
-    }
-  }, [instanceId, activeSessionKey, refreshActiveChatHistory]);
-
-  // Re-fetch when Spotlight opens so stale/empty panes recover after being closed.
-  useEffect(() => {
-    if (open && instanceId && activeSessionKey) {
-      void refreshActiveChatHistory();
-    }
-  }, [open, instanceId, activeSessionKey, refreshActiveChatHistory]);
+    if (!instanceId || !activeSessionKey) return;
+    if (!shouldRefreshChatHistory(activeSessionKey)) return;
+    void refreshActiveChatHistory();
+  }, [instanceId, activeSessionKey, open, refreshActiveChatHistory]);
 
   const scrimTransition = prefersReducedMotion
     ? 'none'

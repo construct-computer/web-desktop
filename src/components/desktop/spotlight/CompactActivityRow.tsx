@@ -1,8 +1,14 @@
 import { Loader2, Check } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
-import type { ClippyActivityKind } from '@/hooks/useClippyActivitySummary';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatActivityLine } from './formatActivityLine';
+
+function middleEllipsis(text: string, max = 42): string {
+  if (text.length <= max) return text;
+  const head = Math.ceil((max - 1) / 2);
+  const tail = Math.floor((max - 1) / 2);
+  return `${text.slice(0, head)}…${text.slice(-tail)}`;
+}
 
 export function CompactActivityRow({
   content,
@@ -13,8 +19,8 @@ export function CompactActivityRow({
   failed,
   duration,
   activityStatus,
-  kind,
   dense,
+  clippy,
   className = '',
 }: {
   content: string;
@@ -25,17 +31,17 @@ export function CompactActivityRow({
   failed?: boolean;
   duration?: string;
   activityStatus?: ChatMessage['activityStatus'];
-  kind?: ClippyActivityKind;
   dense?: boolean;
+  clippy?: boolean;
   className?: string;
 }) {
   const line = formatActivityLine(content, { activityType });
-  const isTerminal = activityType === 'terminal';
-  const isAgentStatus = kind === 'agent';
+  const isTerminal = activityType === 'terminal' || tool === 'terminal' || tool === 'exec';
+  const displayLine = isTerminal && clippy ? middleEllipsis(line) : line;
 
   return (
     <div
-      className={`flex min-w-0 items-center gap-2 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
+      className={`flex min-w-0 items-center gap-1.5 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
     >
       <ActivityIconBadge
         type={activityType}
@@ -48,12 +54,12 @@ export function CompactActivityRow({
         surface="clippy"
       />
       <span
-        className={`min-w-0 flex-1 truncate text-[12px] leading-snug ${
-          isTerminal ? 'font-mono' : ''
-        } ${failed ? 'text-red-200/90' : isAgentStatus ? 'text-white/80' : 'text-white/90'}`}
+        className={`min-w-0 flex-1 truncate leading-snug ${
+          clippy ? 'text-[11px]' : 'text-[12px]'
+        } ${isTerminal ? 'font-mono' : ''} ${failed ? 'text-red-200/90' : 'text-white/90'}`}
         title={content}
       >
-        {line}
+        {displayLine}
       </span>
       {activityStatus === 'running' && !failed && (
         <Loader2 className="w-3 h-3 shrink-0 animate-spin text-[var(--color-accent)]/60" />

@@ -12,6 +12,7 @@ import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
 import { resolveLoadedSessions } from './sessionList';
+import { isTriggeredSessionKey } from './agentSessionKeys';
 
 function stripScheduleDeliveryBlock(prompt: string): string {
   const trimmed = (prompt || '').trim();
@@ -776,7 +777,9 @@ interface ComputerStore {
   // Chat
   loadChatHistory: () => Promise<void>;
   /** Invalidate hydration cache for the active session and reload from /history. */
-  refreshActiveChatHistory: () => Promise<void>;
+  refreshActiveChatHistory: (options?: { force?: boolean }) => Promise<void>;
+  /** Prefetch /history into session cache for a background session (e.g. scheduled task). */
+  prefetchSessionHistory: (sessionKey: string) => Promise<void>;
   sendChatMessage: (content: string, attachments?: string[], opts?: { componentMentions?: ComponentMention[] }) => void;
   addComponentMention: (mention: ComponentMention) => void;
   removeComponentMention: (appId: string, componentId: string) => void;
@@ -1458,19 +1461,60 @@ let chatHistoryLoading = false;
 let pendingHistorySessionKey: string | null = null;
 /** Sessions whose history was successfully hydrated this page load. */
 const historyHydratedKeys = new Set<string>();
+/** Backend signaled content exists but /history may still be racing. */
+const pendingHistoryKeys = new Set<string>();
 const emptyHistoryRetryCounts = new Map<string, number>();
 const EMPTY_HISTORY_MAX_RETRIES = 5;
 const EMPTY_HISTORY_FALLBACK_RELOAD_MS = 12_000;
+const HISTORY_FALLBACK_MAX_ATTEMPTS = 2;
+const historyFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const historyFallbackAttemptCounts = new Map<string, number>();
 /** Tracks sessions that already received a failure retry. */
 const historyRetryAttempted = new Set<string>();
+/** When set, loadChatHistory hydrates this key (optionally cache-only for prefetch). */
+let loadHistoryTarget: { key: string; cacheOnly: boolean } | null = null;
+/** Background prefetch in progress — retries keep cache-only until settled. */
+let ongoingPrefetchKey: string | null = null;
 
 function hasPersistedUserOrAssistantContent(messages: ChatMessage[]): boolean {
   return messages.some((m) => m.role === 'user' || m.role === 'agent');
 }
 
+function expectsHistoryContent(sessionKey: string): boolean {
+  return pendingHistoryKeys.has(sessionKey) || isTriggeredSessionKey(sessionKey);
+}
+
+function cancelHistoryFallback(sessionKey: string): void {
+  const timer = historyFallbackTimers.get(sessionKey);
+  if (timer) {
+    clearTimeout(timer);
+    historyFallbackTimers.delete(sessionKey);
+  }
+  historyFallbackAttemptCounts.delete(sessionKey);
+}
+
+function markHistorySettled(sessionKey: string): void {
+  historyHydratedKeys.add(sessionKey);
+  pendingHistoryKeys.delete(sessionKey);
+  emptyHistoryRetryCounts.delete(sessionKey);
+  cancelHistoryFallback(sessionKey);
+  if (ongoingPrefetchKey === sessionKey) {
+    ongoingPrefetchKey = null;
+  }
+}
+
+export function shouldRefreshChatHistory(sessionKey: string): boolean {
+  return !historyHydratedKeys.has(sessionKey) || pendingHistoryKeys.has(sessionKey);
+}
+
+export function shouldForceSessionRefresh(sessionKey: string): boolean {
+  return pendingHistoryKeys.has(sessionKey) || !historyHydratedKeys.has(sessionKey);
+}
+
 function invalidateHistoryHydration(sessionKey: string): void {
   historyHydratedKeys.delete(sessionKey);
   emptyHistoryRetryCounts.delete(sessionKey);
+  cancelHistoryFallback(sessionKey);
 }
 
 function scheduleHistoryFallbackReload(
@@ -1478,11 +1522,22 @@ function scheduleHistoryFallbackReload(
   loadChatHistory: () => Promise<void>,
   getActiveSessionKey: () => string,
 ): void {
-  setTimeout(() => {
+  if (!pendingHistoryKeys.has(sessionKey) && !isTriggeredSessionKey(sessionKey)) return;
+  const attempts = historyFallbackAttemptCounts.get(sessionKey) || 0;
+  if (attempts >= HISTORY_FALLBACK_MAX_ATTEMPTS) {
+    markHistorySettled(sessionKey);
+    return;
+  }
+  historyFallbackAttemptCounts.set(sessionKey, attempts + 1);
+  cancelHistoryFallback(sessionKey);
+  const timer = setTimeout(() => {
+    historyFallbackTimers.delete(sessionKey);
     if (getActiveSessionKey() !== sessionKey) return;
+    if (historyHydratedKeys.has(sessionKey)) return;
     invalidateHistoryHydration(sessionKey);
     void loadChatHistory();
   }, EMPTY_HISTORY_FALLBACK_RELOAD_MS);
+  historyFallbackTimers.set(sessionKey, timer);
 }
 const LAST_VIEWED_SESSION_KEY = 'construct:last-viewed-session';
 let sessionsLoading: Promise<void> | null = null;
@@ -2389,17 +2444,44 @@ export const useComputerStore = create<ComputerStore>()(
       });
     },
 
-    refreshActiveChatHistory: async () => {
+    refreshActiveChatHistory: async (options?: { force?: boolean }) => {
       const { instanceId, activeSessionKey } = get();
       if (!instanceId || !activeSessionKey) return;
-      invalidateHistoryHydration(activeSessionKey);
+      if (!options?.force && historyHydratedKeys.has(activeSessionKey) && !pendingHistoryKeys.has(activeSessionKey)) {
+        return;
+      }
+      if (options?.force) {
+        invalidateHistoryHydration(activeSessionKey);
+      }
       await get().loadChatHistory();
+    },
+
+    prefetchSessionHistory: async (sessionKey: string) => {
+      const { instanceId } = get();
+      if (!instanceId || !sessionKey) return;
+      pendingHistoryKeys.add(sessionKey);
+      if (get().activeSessionKey === sessionKey) {
+        await get().loadChatHistory();
+        return;
+      }
+      ongoingPrefetchKey = sessionKey;
+      loadHistoryTarget = { key: sessionKey, cacheOnly: true };
+      try {
+        await get().loadChatHistory();
+      } finally {
+        loadHistoryTarget = null;
+        if (historyHydratedKeys.has(sessionKey)) {
+          ongoingPrefetchKey = null;
+        }
+      }
     },
 
     loadChatHistory: async () => {
       const { instanceId, activeSessionKey } = get();
       if (!instanceId) return;
-      const requestedSessionKey = activeSessionKey || 'default';
+      const prefetchTarget = loadHistoryTarget;
+      const requestedSessionKey = prefetchTarget?.key ?? ongoingPrefetchKey ?? activeSessionKey || 'default';
+      const cacheOnly = prefetchTarget?.cacheOnly ?? ongoingPrefetchKey === requestedSessionKey;
 
       // If /clear was used recently (flag survives refresh), skip loading
       // stale history from the backend — the agent may not have finished
@@ -2430,7 +2512,7 @@ export const useComputerStore = create<ComputerStore>()(
 
         // If the user switched sessions while we were fetching, discard
         // the stale result to avoid showing the wrong session's messages.
-        if (get().activeSessionKey !== requestedSessionKey) {
+        if (!cacheOnly && get().activeSessionKey !== requestedSessionKey) {
           logger.info('Discarding stale chat history for session', requestedSessionKey);
           return;
         }
@@ -2461,39 +2543,44 @@ export const useComputerStore = create<ComputerStore>()(
         // the user thinks an empty tab has another chat’s messages).
         if ((!messages || messages.length === 0) && (!events || events.length === 0)) {
           const retryCount = emptyHistoryRetryCounts.get(requestedSessionKey) || 0;
-          if (retryCount < EMPTY_HISTORY_MAX_RETRIES) {
+          if (expectsHistoryContent(requestedSessionKey) && retryCount < EMPTY_HISTORY_MAX_RETRIES) {
             emptyHistoryRetry = true;
             emptyHistoryRetryCounts.set(requestedSessionKey, retryCount + 1);
-            set({ historyLoading: true, sessionSwitching: true });
+            if (!cacheOnly && get().activeSessionKey === requestedSessionKey) {
+              set({ historyLoading: true, sessionSwitching: true });
+            }
             setTimeout(() => {
-              if (get().activeSessionKey === requestedSessionKey) {
+              if (cacheOnly || get().activeSessionKey === requestedSessionKey) {
                 void get().loadChatHistory();
               }
             }, 1000 * (retryCount + 1));
             return;
           }
           emptyHistoryRetryCounts.delete(requestedSessionKey);
-          if (get().activeSessionKey === requestedSessionKey) {
-            const liveMessages = get().chatMessages;
+          const isVisibleSession = cacheOnly || get().activeSessionKey === requestedSessionKey;
+          if (isVisibleSession) {
+            const liveMessages = cacheOnly ? [] : get().chatMessages;
             const cachedMessages = sessionMessageCache.get(requestedSessionKey) || [];
             const keepLiveMessages = liveMessages.length > 0 || cachedMessages.length > 0;
-            const hasUserOrAgentContent = hasPersistedUserOrAssistantContent(liveMessages)
-              || hasPersistedUserOrAssistantContent(cachedMessages);
-            if (hasUserOrAgentContent) {
-              historyHydratedKeys.add(requestedSessionKey);
-            } else {
+            if (expectsHistoryContent(requestedSessionKey)) {
               scheduleHistoryFallbackReload(
                 requestedSessionKey,
                 () => get().loadChatHistory(),
                 () => get().activeSessionKey,
               );
-            }
-            if (!keepLiveMessages) {
-              set({ chatMessages: [], historyLoadError: null });
-              sessionMessageCache.set(requestedSessionKey, []);
             } else {
-              set({ historyLoadError: null });
+              markHistorySettled(requestedSessionKey);
             }
+            if (!cacheOnly) {
+              if (!keepLiveMessages) {
+                set({ chatMessages: [], historyLoadError: null });
+                sessionMessageCache.set(requestedSessionKey, []);
+              } else {
+                set({ historyLoadError: null });
+              }
+            }
+          } else if (!expectsHistoryContent(requestedSessionKey)) {
+            markHistorySettled(requestedSessionKey);
           }
           return;
         }
@@ -3010,30 +3097,34 @@ export const useComputerStore = create<ComputerStore>()(
           });
         }
 
-        if (get().activeSessionKey !== requestedSessionKey) {
+        if (!cacheOnly && get().activeSessionKey !== requestedSessionKey) {
           return;
         }
 
         let historyWithRuns = history;
-        try {
-          const runsRes = await api.listBrowserRuns(30);
-          if (runsRes.success && runsRes.data?.runs) {
-            get().hydrateBrowserRuns(runsRes.data.runs);
-            historyWithRuns = appendBrowserRunHistorySummaries(
-              history,
-              runsRes.data.runs,
-              requestedSessionKey,
-            );
+        if (!cacheOnly) {
+          try {
+            const runsRes = await api.listBrowserRuns(30);
+            if (runsRes.success && runsRes.data?.runs) {
+              get().hydrateBrowserRuns(runsRes.data.runs);
+              historyWithRuns = appendBrowserRunHistorySummaries(
+                history,
+                runsRes.data.runs,
+                requestedSessionKey,
+              );
+            }
+          } catch {
+            /* non-fatal — chat history still loads */
           }
-        } catch {
-          /* non-fatal — chat history still loads */
         }
 
         const compactedHistory = compactIncidentNotices(historyWithRuns);
-        historyHydratedKeys.add(requestedSessionKey);
+        markHistorySettled(requestedSessionKey);
         historyRetryAttempted.delete(requestedSessionKey);
-        set({ chatMessages: compactedHistory, historyLoadError: null });
         sessionMessageCache.set(requestedSessionKey, compactedHistory);
+        if (!cacheOnly && get().activeSessionKey === requestedSessionKey) {
+          set({ chatMessages: compactedHistory, historyLoadError: null });
+        }
         logger.info(`Loaded ${compactedHistory.length} messages from chat history`);
       } catch (err) {
         logger.warn('Error loading chat history:', err);
@@ -3051,7 +3142,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
       } finally {
         chatHistoryLoading = false;
-        if (!emptyHistoryRetry && get().activeSessionKey === requestedSessionKey) {
+        if (!emptyHistoryRetry && !cacheOnly && get().activeSessionKey === requestedSessionKey) {
           set({ historyLoading: false, sessionSwitching: false });
         }
         const nextPending = pendingHistorySessionKey;
@@ -3845,6 +3936,8 @@ export const useComputerStore = create<ComputerStore>()(
               platformAgents: nextPlatformAgents,
             };
           });
+          markHistorySettled(session.key);
+          sessionMessageCache.set(session.key, []);
           await get().loadSessions(true, { preserveActiveKey: session.key });
         }
       } catch (err) {
@@ -3869,7 +3962,7 @@ export const useComputerStore = create<ComputerStore>()(
           sessionStorage.setItem(LAST_VIEWED_SESSION_KEY, key);
         } catch { /* */ }
 
-        if (isRefresh && options?.force) {
+        if (options?.force && (pendingHistoryKeys.has(key) || !historyHydratedKeys.has(key))) {
           invalidateHistoryHydration(key);
         }
 
@@ -6316,7 +6409,7 @@ export const useComputerStore = create<ComputerStore>()(
         case 'session_created': {
           const newKey = event.data?.sessionKey as string | undefined;
           if (newKey) {
-            invalidateHistoryHydration(newKey);
+            pendingHistoryKeys.add(newKey);
             set(state => {
               if (state.chatSessions.some(s => s.key === newKey)) return {};
               const now = Date.now();
@@ -6339,10 +6432,8 @@ export const useComputerStore = create<ComputerStore>()(
         case 'session_history_ready': {
           const readyKey = event.data?.sessionKey as string | undefined;
           if (!readyKey) break;
-          invalidateHistoryHydration(readyKey);
-          if (readyKey === get().activeSessionKey) {
-            void get().loadChatHistory();
-          }
+          pendingHistoryKeys.add(readyKey);
+          void get().prefetchSessionHistory(readyKey);
           break;
         }
 

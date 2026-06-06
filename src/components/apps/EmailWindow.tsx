@@ -48,12 +48,13 @@ import { EmailHtmlBody } from './email/EmailHtmlBody';
 import { formatRelativeTimeShort } from '@/lib/format';
 import { getEmailAvatarClass, getEmailInitial } from '@/services/emailUi';
 import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem, AnimatedListContainer } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import {
   AGENT_EMAIL_CONFIGURED_EVENT,
   AGENT_EMAIL_REFRESH_EVENT,
 } from '@/lib/agentUiEvents';
 import { useWindowStore } from '@/stores/windowStore';
-import { useFreshness } from '@/hooks/useFreshness';
+import { shouldShowBlockingLoader, useFreshness } from '@/hooks/useFreshness';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 
 function formatFullDate(dateStr: string): string {
@@ -144,7 +145,6 @@ export function EmailWindow(props: { config: WindowConfig }) {
   const [items, setItems] = useState<MailboxItem[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
-  const [listPending, setListPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -195,9 +195,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
     const silent = Boolean(opts?.silent);
     const hasItems = itemsRef.current.length > 0;
     if (reset) {
-      if (silent || hasItems) {
-        if (!silent && hasItems) setListPending(true);
-      } else {
+      if (!silent && !hasItems) {
         setListLoading(true);
       }
     } else {
@@ -220,28 +218,30 @@ export function EmailWindow(props: { config: WindowConfig }) {
     }
 
     setListLoading(false);
-    setListPending(false);
     setLoadingMore(false);
   }, [folder, nextPageToken, searchQuery]);
 
-  const init = useCallback(async () => {
-    setLoading(true);
+  const init = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    if (!silent) {
+      setLoading(true);
+    }
     setNotConfigured(false);
     setInitError(null);
     const status = await getEmailStatus();
     if (!status.success) {
       setInitError(status.error || 'Failed to load email');
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
     if (!status.data?.configured) {
       setNotConfigured(true);
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
 
     setInboxEmail(status.data.email || '');
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
 
   const mailboxFreshness = useFreshness(
@@ -277,21 +277,23 @@ export function EmailWindow(props: { config: WindowConfig }) {
   }, [folder, searchQuery]);
 
   useEffect(() => {
-    const handler = () => {
+    const onConfigured = () => {
       void init();
       void refreshNow();
     };
-    window.addEventListener(AGENT_EMAIL_CONFIGURED_EVENT, handler);
-    window.addEventListener(AGENT_EMAIL_REFRESH_EVENT, handler);
+    const onRefresh = () => {
+      void refreshNow();
+    };
+    window.addEventListener(AGENT_EMAIL_CONFIGURED_EVENT, onConfigured);
+    window.addEventListener(AGENT_EMAIL_REFRESH_EVENT, onRefresh);
     return () => {
-      window.removeEventListener(AGENT_EMAIL_CONFIGURED_EVENT, handler);
-      window.removeEventListener(AGENT_EMAIL_REFRESH_EVENT, handler);
+      window.removeEventListener(AGENT_EMAIL_CONFIGURED_EVENT, onConfigured);
+      window.removeEventListener(AGENT_EMAIL_REFRESH_EVENT, onRefresh);
     };
   }, [init, refreshNow]);
 
   useEffect(() => {
     if (!config.metadata?.pendingRefresh) return;
-    void init();
     void refreshNow();
     const { pendingRefresh: _pending, ...rest } = config.metadata || {};
     useWindowStore.getState().updateWindow(config.id, {
@@ -460,7 +462,9 @@ export function EmailWindow(props: { config: WindowConfig }) {
   }, []);
 
   const animatedItems = useAnimatedList(items, getMailboxItemId);
-  const showBlockingLoader = listLoading && items.length === 0;
+  const showBlockingLoader = shouldShowBlockingLoader(listLoading, items.length);
+  const toolbarRefreshing = mailboxFreshness.isRefreshing || showBlockingLoader;
+  const listBackgroundRefreshing = mailboxFreshness.isRefreshing && items.length > 0;
 
   if (loading) {
     return (
@@ -538,13 +542,13 @@ export function EmailWindow(props: { config: WindowConfig }) {
               <FreshnessText
                 lastUpdatedAt={mailboxFreshness.lastUpdatedAt}
                 now={mailboxFreshness.now}
-                isRefreshing={mailboxFreshness.isRefreshing || listLoading}
+                isRefreshing={toolbarRefreshing}
                 isStale={mailboxFreshness.isStale}
               />
             </div>
             <RefreshButton
               onClick={() => void mailboxFreshness.refreshNow()}
-              refreshing={mailboxFreshness.isRefreshing || listLoading}
+              refreshing={toolbarRefreshing}
               className="h-7 w-7"
             />
           </div>
@@ -654,18 +658,21 @@ export function EmailWindow(props: { config: WindowConfig }) {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className={cn(
+          'flex-1 overflow-y-auto transition-opacity',
+          listBackgroundRefreshing && 'opacity-60 pointer-events-none',
+        )}>
           {showBlockingLoader ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 size={20} className="animate-spin text-[var(--color-text-muted)]" />
             </div>
-          ) : items.length === 0 && !listPending ? (
+          ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-muted)] gap-2">
               <Mail size={24} className="opacity-40" />
               <p className="text-xs">{searchQuery ? 'No matching results' : 'No mail yet'}</p>
             </div>
           ) : (
-            <AnimatedListContainer pending={listPending}>
+            <AnimatedListContainer>
               {animatedItems.map(({ key, item, phase }) => {
                 if (isDraftItem(item)) {
                   const id = getMailboxItemId(item);

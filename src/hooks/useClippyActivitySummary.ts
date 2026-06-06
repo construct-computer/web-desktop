@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 
-import iconChat from '@/icons/chat.png';
-import { summarizeAgentTextPreview } from '@/lib/clippyAgentPreview';
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
-import { useComputerStore, type ChatMessage, type ClippyStatusEntry } from '@/stores/agentStore';
+import {
+  buildToolFeed,
+  resolveAgentPreviewFromTurn,
+  resolveStatusNarrative,
+} from '@/lib/clippyActivityModel';
+import { useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import {
   useAgentTrackerStore,
   type SubAgentStatus,
@@ -36,6 +39,7 @@ export interface ClippyActivityItem {
   iconPlatform?: string;
   iconUrl?: string;
   failed?: boolean;
+  activityStatus?: ChatMessage['activityStatus'];
 }
 
 export interface ClippySubagentItem {
@@ -54,7 +58,7 @@ export interface ClippySubagentItem {
 
 export interface ClippyActivitySummary {
   headline: string;
-  detail: string;
+  statusNarrative: string;
   isActive: boolean;
   isIdle: boolean;
   primaryRunningSessionKey?: string;
@@ -64,16 +68,17 @@ export interface ClippyActivitySummary {
     failed: number;
     total: number;
   };
-  activityFeed: ClippyActivityItem[];
+  toolFeed: ClippyActivityItem[];
   subagents: ClippySubagentItem[];
+  /** @deprecated Use toolFeed */
+  activityFeed: ClippyActivityItem[];
+  /** @deprecated Use statusNarrative */
+  detail: string;
 }
 
-const MAX_FEED_ITEMS = 5;
-const MAX_FEED_ITEMS_MOBILE = 3;
 const MAX_SUBAGENTS = 6;
-const THINKING_MAX = 56;
-/** Clippy status event within this window means the agent message already has a dedicated line. */
-const CLIPPY_COVERAGE_MS = 5000;
+const TOOL_FEED_CAP_DESKTOP = 4;
+const TOOL_FEED_CAP_MOBILE = 3;
 
 function isRunningOperation(op: TrackedOperation): boolean {
   return op.status === 'running' || op.status === 'aggregating';
@@ -161,6 +166,7 @@ function terminalActivity(run: TerminalRun, actor: string): ClippyActivityItem {
     status: run.status,
     activityType: 'terminal',
     tool: 'terminal',
+    activityStatus: run.status === 'running' ? 'running' : 'completed',
   };
 }
 
@@ -178,41 +184,7 @@ function activityFromMessage(message: ChatMessage, actor: string, idPrefix: stri
     iconPlatform: message.iconPlatform,
     iconUrl: message.iconUrl,
     failed: message.activityStatus === 'failed' || message.isError,
-  };
-}
-
-function activityFromClippyStatus(entry: ClippyStatusEntry, actor: string): ClippyActivityItem {
-  return {
-    id: entry.id,
-    actor,
-    text: truncate(entry.text, 86),
-    kind: 'agent',
-    timestamp: entry.timestamp,
-    iconUrl: iconChat,
-  };
-}
-
-function messageCoveredByClippy(msgTime: number, entries: ClippyStatusEntry[]): boolean {
-  return entries.some(
-    (entry) => entry.timestamp >= msgTime - CLIPPY_COVERAGE_MS && entry.timestamp <= msgTime + 2000,
-  );
-}
-
-function activityFromAgentPreview(
-  message: ChatMessage,
-  actor: string,
-  isLive: boolean,
-): ClippyActivityItem | null {
-  const preview = summarizeAgentTextPreview(message.content);
-  if (!preview) return null;
-  const ts = timestampOf(message);
-  return {
-    id: isLive ? 'agent:live' : `agent:preview:${ts}`,
-    actor,
-    text: truncate(preview, 86),
-    kind: 'agent',
-    timestamp: ts,
-    iconUrl: iconChat,
+    activityStatus: message.activityStatus,
   };
 }
 
@@ -299,60 +271,24 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
     );
 
     const hasSubagents = focusedSubagents.length > 0;
-    const feed: ClippyActivityItem[] = [];
-    const feedCap = mobile ? MAX_FEED_ITEMS_MOBILE : MAX_FEED_ITEMS;
+    const toolCandidates: ClippyActivityItem[] = [];
     const mainActor = sessionTitle(activeSessionKey);
-
     const clippyEntries = clippyStatusBySession[activeSessionKey] || [];
-    for (const entry of clippyEntries) {
-      feed.push(activityFromClippyStatus(entry, mainActor));
-    }
-
     const sessionIsRunning = runningSessions.has(activeSessionKey) || agentRunning;
-    if (sessionIsRunning) {
-      let lastUserIdx = -1;
-      for (let i = chatMessages.length - 1; i >= 0; i--) {
-        if (chatMessages[i].role === 'user') {
-          lastUserIdx = i;
-          break;
-        }
-      }
-      const turnMessages = lastUserIdx >= 0 ? chatMessages.slice(lastUserIdx + 1) : chatMessages;
-      const agentTurnMessages = turnMessages.filter(
-        (msg) => msg.role === 'agent' && !msg.isError && msg.content.trim(),
-      );
-      for (const [index, message] of agentTurnMessages.entries()) {
-        if (message.askUser) {
-          feed.push({
-            id: `agent:ask:${timestampOf(message)}`,
-            actor: mainActor,
-            text: 'Needs your input',
-            kind: 'agent',
-            timestamp: timestampOf(message),
-            iconUrl: iconChat,
-          });
-          continue;
-        }
-        if (messageCoveredByClippy(timestampOf(message), clippyEntries)) continue;
-        const isLive = index === agentTurnMessages.length - 1;
-        const item = activityFromAgentPreview(message, mainActor, isLive);
-        if (item) feed.push(item);
-      }
-    }
 
     const recentChatActivity = chatMessages
       .filter(message => message.role === 'activity' && !message.operationId)
       .slice(-8);
     for (const [index, message] of recentChatActivity.entries()) {
       const item = activityFromMessage(message, 'Main', `main:${index}`);
-      if (item) feed.push(item);
+      if (item) toolCandidates.push(item);
     }
 
     if (!hasSubagents) {
       for (const agent of focusedSubagents) {
         const latest = agent.activities[agent.activities.length - 1];
         if (!latest?.text.trim()) continue;
-        feed.push({
+        toolCandidates.push({
           id: `subagent:${agent.id}:${latest.timestamp}`,
           actor: agent.label || 'Helper',
           text: truncate(latest.text, 86),
@@ -376,40 +312,36 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
         ? focusedSubagents.find(item => item.id === run.subagentId)
         : undefined;
       const actor = agent?.label || sessionTitle(run.sessionKey);
-      feed.push(terminalActivity(run, actor));
+      toolCandidates.push(terminalActivity(run, actor));
     }
 
-    const activityFeed = feed
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .filter((item, index, items) => items.findIndex(other => other.actor === item.actor && other.text === item.text) === index)
-      .slice(0, feedCap);
+    const keepPreview = sessionIsRunning || clippyEntries.length > 0;
+    const agentPreview = resolveAgentPreviewFromTurn({
+      chatMessages,
+      clippyEntries,
+      keepPreview,
+    });
 
-    const latestClippy = [...clippyEntries]
-      .sort((a, b) => b.timestamp - a.timestamp)[0]?.text;
-    const latestAgentFeed = activityFeed.find(item => item.kind === 'agent')?.text;
-    const clippyDetail = latestClippy
-      ? truncate(latestClippy, THINKING_MAX)
-      : latestAgentFeed
-        ? truncate(latestAgentFeed, THINKING_MAX)
-        : '';
-    const topFeed = activityFeed[0]?.text?.toLowerCase() ?? '';
-    const thinkingDetail =
-      !clippyDetail && scrollText ? truncate(scrollText, THINKING_MAX) : '';
-    const detail =
-      clippyDetail
-      || (thinkingDetail && topFeed && thinkingDetail.toLowerCase().includes(topFeed.slice(0, 24))
-        ? ''
-        : thinkingDetail);
+    const statusNarrative = resolveStatusNarrative({
+      clippyEntries,
+      agentPreview,
+      scrollText,
+    });
+
+    const toolFeed = buildToolFeed(toolCandidates, { mobile, statusNarrative });
+    const toolFeedCap = mobile ? TOOL_FEED_CAP_MOBILE : TOOL_FEED_CAP_DESKTOP;
 
     return {
       headline: stateLabel,
-      detail,
+      statusNarrative,
       isActive,
       isIdle,
       primaryRunningSessionKey,
       counts,
-      activityFeed,
+      toolFeed,
       subagents,
+      activityFeed: toolFeed,
+      detail: statusNarrative,
     };
   }, [
     activeSessionKey,

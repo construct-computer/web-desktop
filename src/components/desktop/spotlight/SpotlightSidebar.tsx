@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Send, Hash, Mail, Search, Crown } from 'lucide-react';
-import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
+import { useComputerStore, shouldForceSessionRefresh, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { openSettingsToSection } from '@/lib/settingsNav';
@@ -357,7 +357,9 @@ export function SpotlightSidebar() {
                 canManage
                 canRename={!hasAttention}
                 onSwitch={async () => {
-                  await switchSession(session.key, { force: true });
+                  await switchSession(session.key, {
+                    force: session.key !== activeKey || shouldForceSessionRefresh(session.key),
+                  });
                 }}
                 onRename={(title) => renameSession(session.key, title)}
                 onDelete={() => { void handleDeleteSession(session.key); }}

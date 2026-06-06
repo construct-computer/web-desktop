@@ -26,6 +26,11 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Refresh failed';
 }
 
+/** Show a blocking loader only when there is nothing to display yet. */
+export function shouldShowBlockingLoader(isLoading: boolean, itemCount: number): boolean {
+  return isLoading && itemCount === 0;
+}
+
 /**
  * Keeps async views current without duplicating interval/focus/online wiring.
  * Concurrent refreshes are coalesced so slow requests cannot pile up.
