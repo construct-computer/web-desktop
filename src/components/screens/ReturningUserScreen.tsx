@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useWallpaperUrl } from '@/hooks/useWallpaperUrl';
+import { useEffectiveWallpaperId, useWallpaperUrl } from '@/hooks/useWallpaperUrl';
+import { CrossfadeWallpaper } from '@/components/desktop/CrossfadeWallpaper';
 import constructGif from '@/assets/construct/loader.gif';
 
 const BOOT_STEPS = [
@@ -33,7 +33,7 @@ interface ReturningUserScreenProps {
  */
 export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, onRetry }: ReturningUserScreenProps) {
   const isLocked = !!onUnlock;
-  const wallpaperId = useSettingsStore((s) => s.wallpaperId);
+  const wallpaperId = useEffectiveWallpaperId();
   const { url: wallpaperSrc } = useWallpaperUrl(wallpaperId);
 
   // macOS lockscreen logic: crisp wallpaper by default, blurred when "wake" happens.
@@ -80,13 +80,12 @@ export function ReturningUserScreen({ onUnlock, isProvisioning, provisionError, 
       <div
         className="absolute inset-0 transition-all duration-700 ease-out"
         style={{
-          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
           filter: awake ? 'blur(18px) saturate(1.25)' : 'blur(0px) saturate(1)',
-          transform: awake ? 'scale(1.02)' : 'scale(1)'
+          transform: awake ? 'scale(1.02)' : 'scale(1)',
         }}
-      />
+      >
+        <CrossfadeWallpaper url={wallpaperSrc} />
+      </div>
       
       {/* Dark overlay that fades in upon wake */}
       <div 

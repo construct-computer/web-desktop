@@ -1,6 +1,6 @@
 import { Monitor } from 'lucide-react';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
+import { useEffectiveWallpaperId, useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
+import { CrossfadeWallpaper } from '@/components/desktop/CrossfadeWallpaper';
 import { takeoverLeadership } from '@/lib/tabSingleton';
 import constructLogo from '@/assets/logo.png';
 
@@ -9,7 +9,7 @@ import constructLogo from '@/assets/logo.png';
  * "Open Here" closes the other tab and opens the desktop in this one.
  */
 export function DuplicateTabScreen() {
-  const wallpaperId = useSettingsStore((s) => s.wallpaperId);
+  const wallpaperId = useEffectiveWallpaperId();
   const { url: wallpaperSrc } = useWallpaperBlurUrl(wallpaperId);
 
   const handleOpenHere = async () => {
@@ -21,14 +21,7 @@ export function DuplicateTabScreen() {
   return (
     <div className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden">
       {/* Wallpaper */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      />
+      <CrossfadeWallpaper url={wallpaperSrc} className="absolute inset-0" />
       <div className="absolute inset-0 soft-scrim" />
 
       {/* Content */}

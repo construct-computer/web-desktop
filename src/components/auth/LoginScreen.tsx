@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
+import { useEffectiveWallpaperId, useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
+import { CrossfadeWallpaper } from '@/components/desktop/CrossfadeWallpaper';
 import { useSound } from '@/hooks/useSound';
 import { detectActivePromoCode } from '@/lib/constants';
 import circleAppearGif from '@/assets/construct/circle-appear.gif';
@@ -19,7 +19,7 @@ export function LoginScreen() {
     magicLinkState,
     magicLinkEmail,
   } = useAuthStore();
-  const wallpaperId = useSettingsStore((s) => s.wallpaperId);
+  const wallpaperId = useEffectiveWallpaperId();
   const { url: wallpaperSrc } = useWallpaperBlurUrl(wallpaperId);
   const { play } = useSound();
 
@@ -115,13 +115,12 @@ export function LoginScreen() {
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: wallpaperSrc ? `url(${wallpaperSrc})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
           filter: 'blur(16px) saturate(1.2)',
-          transform: 'scale(1.02)'
+          transform: 'scale(1.02)',
         }}
-      />
+      >
+        <CrossfadeWallpaper url={wallpaperSrc} />
+      </div>
 
       {/* Dark scrim — stronger during hello/power phase, lighter when login shows */}
       <div

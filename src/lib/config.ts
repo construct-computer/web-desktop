@@ -142,6 +142,8 @@ export const STORAGE_KEYS = {
 
   // Preferences
   settings: 'construct:settings',
+  sessionWallpaper: 'construct:session-wallpaper',
+  userWallpapers: 'construct:user-wallpapers',
   deviceId: 'construct:deviceId',
   lastLiveUpdateCheck: 'construct:lastLiveUpdateCheck',
   nativePushToken: 'construct:nativePushToken',

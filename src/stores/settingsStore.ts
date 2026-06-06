@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
 import { isCustomWallpaperId } from '@/lib/wallpapers';
+import { getUserWallpaper, setUserWallpaper } from '@/lib/wallpaperPrefs';
 
 // ─── Wallpaper registry ────────────────────────────────────────────────────
 import wpConstruct from '@/assets/wallpapers/wallpaper.jpg';
@@ -62,6 +63,8 @@ interface SettingsState {
   toggleSound: () => void;
   setWallpaper: (id: string) => void;
   bumpWallpaperRev: () => void;
+  /** Load a user's saved wallpaper preference into active settings (on login). */
+  applyWallpaperForUser: (userId: string) => void;
   setDeveloperMode: (enabled: boolean) => void;
   setVoiceEnabled: (enabled: boolean) => void;
   setVoiceAutoSend: (enabled: boolean) => void;
@@ -86,10 +89,23 @@ export const useSettingsStore = create<SettingsState>()(
 
       setWallpaper: (id) => {
         analytics.wallpaperChanged(id);
+        try {
+          const userId = localStorage.getItem(STORAGE_KEYS.userId);
+          if (userId) setUserWallpaper(userId, id);
+        } catch { /* storage unavailable */ }
         set((s) => ({ wallpaperId: id, wallpaperRev: s.wallpaperRev + 1 }));
       },
 
       bumpWallpaperRev: () => set((s) => ({ wallpaperRev: s.wallpaperRev + 1 })),
+
+      applyWallpaperForUser: (userId) => {
+        const saved = getUserWallpaper(userId);
+        setUserWallpaper(userId, saved);
+        set((s) => {
+          if (s.wallpaperId === saved) return s;
+          return { wallpaperId: saved, wallpaperRev: s.wallpaperRev + 1 };
+        });
+      },
 
       setDeveloperMode: (enabled) => set({ developerMode: enabled }),
       setVoiceEnabled: (enabled) => set({ voiceEnabled: enabled }),

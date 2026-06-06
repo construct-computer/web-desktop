@@ -4,7 +4,13 @@ import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import analytics from '@/lib/analytics';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
-import { clearWallpaperCacheForUser } from '@/lib/wallpaperCache';
+import {
+  deferWallpaperCacheClearForUser,
+  promoteActiveWallpaperToSession,
+} from '@/lib/wallpaperCache';
+import { saveSessionWallpaper } from '@/lib/wallpaperSession';
+import { setUserWallpaper } from '@/lib/wallpaperPrefs';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
 
@@ -66,15 +72,27 @@ function clearStaleUserData(newUserId: string): void {
   localStorage.setItem(STORAGE_KEYS.userId, newUserId);
 
   if (previousUserId) {
-    void clearWallpaperCacheForUser(previousUserId);
+    deferWallpaperCacheClearForUser(previousUserId);
   }
+
+  useSettingsStore.getState().applyWallpaperForUser(newUserId);
 }
 
 async function clearWallpaperCacheOnSessionEnd(): Promise<void> {
+  // Wallpaper cache is preserved across logout so the login screen can show
+  // the last user's custom wallpaper from local storage.
+}
+
+function persistWallpaperSessionBeforeLogout(): void {
   try {
     const userId = localStorage.getItem(STORAGE_KEYS.userId);
-    if (userId) await clearWallpaperCacheForUser(userId);
-  } catch { /* */ }
+    if (!userId) return;
+
+    const { wallpaperId } = useSettingsStore.getState();
+    setUserWallpaper(userId, wallpaperId);
+    saveSessionWallpaper(wallpaperId, userId);
+    void promoteActiveWallpaperToSession(userId, wallpaperId);
+  } catch { /* storage unavailable */ }
 }
 
 function clearLocalSessionData(): void {
@@ -288,7 +306,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     void unregisterCurrentNativePushToken();
     api.logout();
 
-    // Clear all user-specific data so the next login starts completely fresh
+    persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
 
     set({
@@ -303,6 +321,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   handleRemoteLogout: () => {
     void unregisterCurrentNativePushToken();
+    persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
     set({
       user: null,

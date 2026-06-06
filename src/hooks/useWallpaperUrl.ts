@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { blobContainerFile } from '@/services/api';
+import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { useSettingsStore, getBuiltinWallpaperSrc } from '@/stores/settingsStore';
 import { customWallpaperPath, isCustomWallpaperId } from '@/lib/wallpapers';
-import { getCachedBlobUrl, getSyncCachedBlobUrl, putCachedWallpaper } from '@/lib/wallpaperCache';
+import {
+  getCachedBlobUrl,
+  getSessionCachedBlobUrl,
+  getSyncCachedBlobUrl,
+  getSyncSessionCachedBlobUrl,
+  putCachedWallpaper,
+} from '@/lib/wallpaperCache';
+import { readSessionWallpaper } from '@/lib/wallpaperSession';
 import { notifyWallpaperFilesChanged } from '@/stores/wallpaperStore';
 
 function getUserId(): string {
@@ -12,6 +20,14 @@ function getUserId(): string {
     return localStorage.getItem(STORAGE_KEYS.userId) || '';
   } catch {
     return '';
+  }
+}
+
+function hasAuthToken(): boolean {
+  try {
+    return !!localStorage.getItem(STORAGE_KEYS.token);
+  } catch {
+    return false;
   }
 }
 
@@ -37,24 +53,96 @@ function defaultWallpaperUrl(): string {
   return getBuiltinWallpaperSrc('construct');
 }
 
-function getInitialWallpaperState(wallpaperId: string): { url: string; loading: boolean } {
-  const effectiveId = resolveEffectiveWallpaperId(wallpaperId);
+export interface WallpaperContext {
+  wallpaperId: string;
+  cacheUserId: string;
+  isLoggedOut: boolean;
+}
 
-  if (!isCustomWallpaperId(effectiveId)) {
-    return { url: getBuiltinWallpaperSrc(effectiveId), loading: false };
+/** @internal Exported for unit tests. */
+export function resolveWallpaperContext(settingsWallpaperId: string): WallpaperContext {
+  const effectiveId = resolveEffectiveWallpaperId(settingsWallpaperId);
+  const userId = getUserId();
+  const authenticated = hasAuthToken() && !!userId;
+
+  if (authenticated) {
+    return { wallpaperId: effectiveId, cacheUserId: userId, isLoggedOut: false };
   }
 
-  const workspacePath = customWallpaperPath(effectiveId);
+  const session = readSessionWallpaper();
+  if (session) {
+    return {
+      wallpaperId: session.wallpaperId,
+      cacheUserId: session.cacheUserId,
+      isLoggedOut: true,
+    };
+  }
+
+  return { wallpaperId: effectiveId, cacheUserId: '', isLoggedOut: true };
+}
+
+async function resolveCustomWallpaperUrl(
+  wallpaperId: string,
+  cacheUserId: string,
+  isLoggedOut: boolean,
+): Promise<string | null> {
+  const workspacePath = customWallpaperPath(wallpaperId);
+  if (!workspacePath) return null;
+
+  if (isLoggedOut) {
+    const syncSession = getSyncSessionCachedBlobUrl(workspacePath);
+    if (syncSession) return syncSession;
+
+    const sessionUrl = await getSessionCachedBlobUrl(workspacePath);
+    if (sessionUrl) return sessionUrl;
+
+    if (cacheUserId) {
+      const syncUser = getSyncCachedBlobUrl(cacheUserId, workspacePath);
+      if (syncUser) return syncUser;
+
+      return getCachedBlobUrl(cacheUserId, workspacePath);
+    }
+
+    return null;
+  }
+
+  if (!cacheUserId) return null;
+
+  const syncCached = getSyncCachedBlobUrl(cacheUserId, workspacePath);
+  if (syncCached) return syncCached;
+
+  return getCachedBlobUrl(cacheUserId, workspacePath);
+}
+
+function getInitialWallpaperState(wallpaperId: string): { url: string; loading: boolean } {
+  const ctx = resolveWallpaperContext(wallpaperId);
+
+  if (!isCustomWallpaperId(ctx.wallpaperId)) {
+    return { url: getBuiltinWallpaperSrc(ctx.wallpaperId), loading: false };
+  }
+
+  const workspacePath = customWallpaperPath(ctx.wallpaperId);
   if (!workspacePath) {
     return { url: defaultWallpaperUrl(), loading: false };
   }
 
-  const userId = getUserId();
-  if (!userId) {
+  if (ctx.isLoggedOut) {
+    const sessionCached = getSyncSessionCachedBlobUrl(workspacePath);
+    if (sessionCached) return { url: sessionCached, loading: false };
+
+    if (ctx.cacheUserId) {
+      const userCached = getSyncCachedBlobUrl(ctx.cacheUserId, workspacePath);
+      if (userCached) return { url: userCached, loading: false };
+    }
+
+    return { url: defaultWallpaperUrl(), loading: true };
+  }
+
+  if (!ctx.cacheUserId) {
     return { url: defaultWallpaperUrl(), loading: false };
   }
 
-  const cached = getSyncCachedBlobUrl(userId, workspacePath);
+  const cached = getSyncCachedBlobUrl(ctx.cacheUserId, workspacePath);
   if (cached) {
     return { url: cached, loading: false };
   }
@@ -62,23 +150,33 @@ function getInitialWallpaperState(wallpaperId: string): { url: string; loading: 
   return { url: defaultWallpaperUrl(), loading: true };
 }
 
+/** Pick session snapshot vs active settings based on auth state. */
+export function useEffectiveWallpaperId(): string {
+  const wallpaperId = useSettingsStore((s) => s.wallpaperId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const effectiveFromSettings = resolveEffectiveWallpaperId(wallpaperId);
+
+  if (isAuthenticated) return effectiveFromSettings;
+
+  const session = readSessionWallpaper();
+  return session?.wallpaperId ?? effectiveFromSettings;
+}
+
 export function useWallpaperUrl(wallpaperId: string): { url: string; loading: boolean } {
   const wallpaperRev = useSettingsStore((s) => s.wallpaperRev);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const instanceId = useComputerStore((s) => s.computer?.id || '');
-  const effectiveId = resolveEffectiveWallpaperId(wallpaperId);
-  const [url, setUrl] = useState(() => getInitialWallpaperState(wallpaperId).url);
-  const [loading, setLoading] = useState(() => getInitialWallpaperState(wallpaperId).loading);
+  const effectiveWallpaperId = useEffectiveWallpaperId();
+  const displayId = isAuthenticated ? resolveEffectiveWallpaperId(wallpaperId) : effectiveWallpaperId;
+  const [url, setUrl] = useState(() => getInitialWallpaperState(displayId).url);
+  const [loading, setLoading] = useState(() => getInitialWallpaperState(displayId).loading);
 
   useEffect(() => {
-    if (!isCustomWallpaperId(effectiveId)) {
-      setUrl(getBuiltinWallpaperSrc(effectiveId));
-      setLoading(false);
-      return;
-    }
+    const ctx = resolveWallpaperContext(displayId);
+    const targetId = ctx.wallpaperId;
 
-    const workspacePath = customWallpaperPath(effectiveId);
-    if (!workspacePath) {
-      setUrl(getBuiltinWallpaperSrc('construct'));
+    if (!isCustomWallpaperId(targetId)) {
+      setUrl(getBuiltinWallpaperSrc(targetId));
       setLoading(false);
       return;
     }
@@ -86,26 +184,18 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
     let cancelled = false;
 
     const resolve = async () => {
-      const userId = getUserId();
-      if (!userId) {
+      const cached = await resolveCustomWallpaperUrl(targetId, ctx.cacheUserId, ctx.isLoggedOut);
+      if (cached && !cancelled) {
+        setUrl(cached);
+        setLoading(false);
+        return;
+      }
+
+      if (ctx.isLoggedOut) {
         if (!cancelled) {
           setUrl(defaultWallpaperUrl());
           setLoading(false);
         }
-        return;
-      }
-
-      const syncCached = getSyncCachedBlobUrl(userId, workspacePath);
-      if (syncCached && !cancelled) {
-        setUrl(syncCached);
-        setLoading(false);
-        return;
-      }
-
-      const cached = await getCachedBlobUrl(userId, workspacePath);
-      if (cached && !cancelled) {
-        setUrl(cached);
-        setLoading(false);
         return;
       }
 
@@ -116,6 +206,15 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
 
       if (!instanceId) {
         if (!cancelled) setLoading(false);
+        return;
+      }
+
+      const workspacePath = customWallpaperPath(targetId);
+      if (!workspacePath) {
+        if (!cancelled) {
+          setUrl(getBuiltinWallpaperSrc('construct'));
+          setLoading(false);
+        }
         return;
       }
 
@@ -131,13 +230,14 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
         }
 
         const blob = await response.blob();
+        const userId = ctx.cacheUserId;
         if (userId) {
           const revision = response.headers.get('ETag') || '';
           await putCachedWallpaper(userId, workspacePath, blob, revision);
-          const cached = getSyncCachedBlobUrl(userId, workspacePath)
+          const nextUrl = getSyncCachedBlobUrl(userId, workspacePath)
             ?? await getCachedBlobUrl(userId, workspacePath, revision);
           if (!cancelled) {
-            setUrl(cached || getBuiltinWallpaperSrc('construct'));
+            setUrl(nextUrl || getBuiltinWallpaperSrc('construct'));
             setLoading(false);
           }
           return;
@@ -160,7 +260,7 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, wallpaperRev, instanceId]);
+  }, [displayId, wallpaperRev, instanceId, isAuthenticated]);
 
   return { url, loading };
 }
