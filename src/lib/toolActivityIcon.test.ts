@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Bot, Clock, ListTodo, Users } from 'lucide-react';
 import { resolveActivityIconHints, resolveActivityVisual } from './toolActivityIcon';
 import iconBrowser from '@/icons/browser.png';
 import iconCalendar from '@/icons/calendar.png';
@@ -58,9 +59,31 @@ describe('toolActivityIcon branded PNG resolution', () => {
     });
   });
 
-  it('falls back to generic.png for unknown tools', () => {
-    const visual = resolveActivityVisual({ tool: 'spawn_agent', type: 'delegation' });
-    expect(visual).toEqual({ kind: 'image', src: iconGeneric, alt: 'spawn_agent' });
+  it('uses Lucide icons for orchestration and task tools without branded PNGs', () => {
+    expect(resolveActivityVisual({ tool: 'spawn_agent', type: 'delegation' })).toEqual({
+      kind: 'lucide', Icon: Users,
+    });
+    expect(resolveActivityVisual({ tool: 'spawn_agents', type: 'delegation' })).toEqual({
+      kind: 'lucide', Icon: Users,
+    });
+    expect(resolveActivityVisual({ tool: 'wait_for_agents', type: 'delegation' })).toEqual({
+      kind: 'lucide', Icon: Clock,
+    });
+    expect(resolveActivityVisual({ tool: 'task_create', type: 'tool' })).toEqual({
+      kind: 'lucide', Icon: ListTodo,
+    });
+    expect(resolveActivityVisual({
+      tool: 'mailbox_received',
+      type: 'background',
+      label: 'Received 3 messages from background tasks',
+    })).toEqual({
+      kind: 'lucide', Icon: Bot,
+    });
+  });
+
+  it('falls back to generic.png for truly unknown tools', () => {
+    const visual = resolveActivityVisual({ tool: 'totally_unknown_tool_xyz', type: 'tool' });
+    expect(visual).toEqual({ kind: 'image', src: iconGeneric, alt: 'totally_unknown_tool_xyz' });
   });
 
   it('returns icon hints aligned with native app icons', () => {

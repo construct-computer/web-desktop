@@ -317,14 +317,22 @@ export const useAgentTrackerStore = create<AgentTrackerStore>()((set, get) => ({
     set((state) => {
       const op = state.operations[operationId];
       if (!op) return state;
+      const subAgents = op.subAgents.map((a) =>
+        a.id === agentId ? { ...a, ...update } : a,
+      );
+      const allTerminal = subAgents.length > 0 && subAgents.every(
+        (s) => s.status === 'complete' || s.status === 'failed' || s.status === 'cancelled',
+      );
+      const shouldComplete = allTerminal && (op.status === 'running' || op.status === 'aggregating');
       return {
         operations: {
           ...state.operations,
           [operationId]: {
             ...op,
-            subAgents: op.subAgents.map((a) =>
-              a.id === agentId ? { ...a, ...update } : a,
-            ),
+            subAgents,
+            ...(shouldComplete
+              ? { status: 'complete' as const, completedAt: Date.now() }
+              : {}),
           },
         },
       };

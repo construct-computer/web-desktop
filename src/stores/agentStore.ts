@@ -35,8 +35,12 @@ import { openSpotlightSession } from '@/lib/spotlightNav';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
+  hasUserRunningSessions,
+  isSubagentSessionKey,
   pruneStaleBackgroundRunningSessions,
   shouldClearViewedAgentState,
+  stripSubagentSessions,
+  subagentSessionKeyForChildId,
 } from './agentStateCleanup';
 import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
@@ -1595,10 +1599,10 @@ function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial
       // Don't reset if there are active delegations/consultations/background
       // tasks — the main agent is blocked waiting for subagents, not dead.
       const ops = useAgentTrackerStore.getState().operations;
-      const hasActiveOps = Object.values(ops).some(
-        (op) => op.status === 'running' || op.status === 'aggregating',
+      const hasLiveSubagents = Object.values(ops).some((op) =>
+        op.subAgents.some((s) => s.status === 'running' || s.status === 'pending'),
       );
-      if (hasActiveOps) {
+      if (hasLiveSubagents) {
         // Subagents are still working — reschedule instead of resetting
         resetAgentRunningTimer(get, set);
         return;
@@ -1608,6 +1612,9 @@ function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial
       const pa = get().platformAgents?.['desktop'];
       const currentTool = pa?.currentTool;
       if (currentTool === 'wait_for_agents' || currentTool === 'spawn_agent') {
+        // #region agent log
+        fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'F',location:'agentStore.ts:resetAgentRunningTimer',message:'timer blocked by currentTool',data:{currentTool,agentRunning},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         resetAgentRunningTimer(get, set);
         return;
       }
@@ -5684,9 +5691,15 @@ export const useComputerStore = create<ComputerStore>()(
                 eventSessionKey,
               ),
             }));
-          } else {
+          } else if (!isSubagentSessionKey(eventSessionKey)) {
             nextRunning.add(eventSessionKey);
           }
+          if (status === 'idle' && !isSubagentSessionKey(eventSessionKey)) {
+            nextRunning = stripSubagentSessions(nextRunning);
+          }
+          // #region agent log
+          fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'A-G',location:'agentStore.ts:status_change',message:'status_change',data:{status,eventSessionKey,runningBefore:[...get().runningSessions],runningAfter:[...nextRunning],activeViewKey:get().activeSessionKey},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           const activeViewKey = get().activeSessionKey;
           nextRunning = pruneStaleBackgroundRunningSessions(
             nextRunning,
@@ -5697,7 +5710,7 @@ export const useComputerStore = create<ComputerStore>()(
           if (status === 'idle') {
             useAgentTrackerStore.getState().completeOperationsForSessionIdle(
               eventSessionKey,
-              nextRunning.size > 0,
+              hasUserRunningSessions(nextRunning),
             );
           }
           const agentRunningForActiveView = nextRunning.has(activeViewKey);
@@ -5719,6 +5732,22 @@ export const useComputerStore = create<ComputerStore>()(
                     ...state.platformAgents,
                     desktop: { ...desktop, toolHistory },
                   };
+                }
+              }
+              const ops = useAgentTrackerStore.getState().operations;
+              const hasLiveSubs = Object.values(ops).some((op) =>
+                op.subAgents.some((s) => s.status === 'running' || s.status === 'pending'));
+              if (!hasUserRunningSessions(nextRunning) && !hasLiveSubs) {
+                const desktopAfter = updates.platformAgents?.desktop ?? state.platformAgents.desktop;
+                if (desktopAfter?.running) {
+                  const clearedDesktop = clearDesktopAgentRuntime(desktopAfter, Date.now());
+                  if (clearedDesktop) {
+                    updates.platformAgents = {
+                      ...state.platformAgents,
+                      ...(updates.platformAgents ?? {}),
+                      desktop: clearedDesktop,
+                    };
+                  }
                 }
               }
               return updates;
@@ -5745,7 +5774,7 @@ export const useComputerStore = create<ComputerStore>()(
             // running, only reset local “this chat is thinking” state — do not
             // clear tracker / Web Agent / windows that belong to other lanes.
             clearAgentRunningTimer();
-            const anyOtherSessionRunning = nextRunning.size > 0;
+            const anyOtherSessionRunning = hasUserRunningSessions(nextRunning);
             if (!anyOtherSessionRunning) {
               closeAllAutoOpened(2000);
             }
@@ -6832,6 +6861,9 @@ export const useComputerStore = create<ComputerStore>()(
           const status = event.data?.status as string || 'complete';
           const tracker = useAgentTrackerStore.getState();
           tracker.updateOperationStatus(opId, status === 'complete' ? 'complete' : 'failed');
+          // #region agent log
+          fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'B',location:'agentStore.ts:orchestration:complete',message:'orchestration complete',data:{opId,status,runningSessions:[...get().runningSessions]},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           break;
         }
 
@@ -6881,6 +6913,33 @@ export const useComputerStore = create<ComputerStore>()(
               durationMs: dur,
               result: result.slice(0, 300),
             });
+            const opAfter = useAgentTrackerStore.getState().operations[opId];
+            // #region agent log
+            fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'B',location:'agentStore.ts:child:complete',message:'child complete',data:{childId,opId,opStatus:opAfter?.status,subStatuses:opAfter?.subAgents?.map(s=>({id:s.id,status:s.status})),runningSessions:[...get().runningSessions],agentRunning:get().agentRunning},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+          }
+
+          if (childId) {
+            const childSessionKey = subagentSessionKeyForChildId(childId);
+            set((state) => {
+              const nextRunning = new Set(state.runningSessions);
+              nextRunning.delete(childSessionKey);
+              const ops = useAgentTrackerStore.getState().operations;
+              const hasLiveSubs = Object.values(ops).some((op) =>
+                op.subAgents.some((s) => s.status === 'running' || s.status === 'pending'));
+              const updates: Partial<ComputerStore> = { runningSessions: nextRunning };
+              const desktop = state.platformAgents.desktop;
+              if (!hasUserRunningSessions(nextRunning) && !hasLiveSubs && desktop?.running) {
+                const clearedDesktop = clearDesktopAgentRuntime(desktop, Date.now());
+                if (clearedDesktop) {
+                  updates.platformAgents = {
+                    ...state.platformAgents,
+                    desktop: clearedDesktop,
+                  };
+                }
+              }
+              return updates;
+            });
           }
 
           // Activity message removed — SubAgentLine updates in the OperationCard.
@@ -6900,6 +6959,29 @@ export const useComputerStore = create<ComputerStore>()(
               completedAt: Date.now(),
               durationMs: dur,
               error,
+            });
+          }
+
+          if (childId) {
+            const childSessionKey = subagentSessionKeyForChildId(childId);
+            set((state) => {
+              const nextRunning = new Set(state.runningSessions);
+              nextRunning.delete(childSessionKey);
+              const ops = useAgentTrackerStore.getState().operations;
+              const hasLiveSubs = Object.values(ops).some((op) =>
+                op.subAgents.some((s) => s.status === 'running' || s.status === 'pending'));
+              const updates: Partial<ComputerStore> = { runningSessions: nextRunning };
+              const desktop = state.platformAgents.desktop;
+              if (!hasUserRunningSessions(nextRunning) && !hasLiveSubs && desktop?.running) {
+                const clearedDesktop = clearDesktopAgentRuntime(desktop, Date.now());
+                if (clearedDesktop) {
+                  updates.platformAgents = {
+                    ...state.platformAgents,
+                    desktop: clearedDesktop,
+                  };
+                }
+              }
+              return updates;
             });
           }
 
@@ -8059,7 +8141,8 @@ export const useComputerStore = create<ComputerStore>()(
             role: 'activity',
             content: `Received ${mbCount} message${mbCount !== 1 ? 's' : ''} from background task${mbCount !== 1 ? 's' : ''}`,
             timestamp: new Date(),
-            activityType: 'tool',
+            activityType: 'background',
+            tool: 'mailbox_received',
           };
           if (isActiveSession) set({ chatMessages: appendMessage(get().chatMessages, mailboxMsg) });
           break;

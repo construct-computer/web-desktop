@@ -9,9 +9,10 @@ export async function openSpotlightSession(sessionKey?: string): Promise<void> {
   const { loadSessions, switchSession } = useComputerStore.getState();
   const { spotlightOpen, toggleSpotlight } = useWindowStore.getState();
 
+  if (!spotlightOpen) toggleSpotlight();
+
   await loadSessions(true, sessionKey ? { preserveActiveKey: sessionKey } : undefined);
   if (sessionKey) {
     await switchSession(sessionKey, { force: true });
   }
-  if (!spotlightOpen) toggleSpotlight();
 }

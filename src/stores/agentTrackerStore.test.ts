@@ -38,6 +38,50 @@ describe('agentTrackerStore session idle cleanup', () => {
     expect(op.subAgents.find((s) => s.id === 'child_failed')?.status).toBe('failed');
   });
 
+  it('auto-completes the operation when all subagents reach a terminal state', () => {
+    const store = useAgentTrackerStore.getState();
+    store.startOperation('op_auto', 'orchestration', 'parallel work', 3, 'desktop', 'session_1');
+    const base = {
+      type: 'subagent' as const,
+      startedAt: Date.now(),
+      activities: [] as [],
+    };
+    store.addSubAgent('op_auto', {
+      ...base,
+      id: 'child_1',
+      label: 'Child 1',
+      goal: 'task 1',
+      status: 'complete',
+      completedAt: Date.now(),
+    });
+    store.addSubAgent('op_auto', {
+      ...base,
+      id: 'child_2',
+      label: 'Child 2',
+      goal: 'task 2',
+      status: 'running',
+    });
+    store.addSubAgent('op_auto', {
+      ...base,
+      id: 'child_3',
+      label: 'Child 3',
+      goal: 'task 3',
+      status: 'complete',
+      completedAt: Date.now(),
+    });
+
+    expect(useAgentTrackerStore.getState().operations.op_auto.status).toBe('running');
+
+    useAgentTrackerStore.getState().updateSubAgent('op_auto', 'child_2', {
+      status: 'complete',
+      completedAt: Date.now(),
+    });
+
+    const op = useAgentTrackerStore.getState().operations.op_auto;
+    expect(op.status).toBe('complete');
+    expect(op.completedAt).toBeTypeOf('number');
+  });
+
   it('drops operations for a deleted chat session only', () => {
     const store = useAgentTrackerStore.getState();
     store.startOperation('delete_me', 'orchestration', 'deleted session work', 1, 'desktop', 'deleted-session');

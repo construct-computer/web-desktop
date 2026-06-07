@@ -24,25 +24,31 @@ import {
 } from '@/services/api';
 import { formatLearnedPolicyDisplay } from '@/lib/learnedPolicyDisplay';
 import type { WindowConfig } from '@/types';
+import {
+  ALPHA_COOLING,
+  ALPHA_MIN,
+  dimmedNodeFill,
+  edgeColor,
+  edgeLabelColor,
+  hitTestPoint,
+  isDarkMode,
+  isEdgeHighlighted,
+  isNodeDimmed,
+  nodeLabelColor,
+  nodeStrokeColor,
+  resizeCanvasToContainer,
+  tickFlatSimulation,
+  type PhysicsEdge,
+  type PhysicsNode,
+} from '@/lib/forceGraph';
 
 // ── Force-directed graph types ──
 
-interface GraphNode {
-  id: string;
-  label: string;
+interface GraphNode extends PhysicsNode {
   type: string; // entity type from relations (e.g. "person", "concept")
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  pinned?: boolean;
 }
 
-interface GraphEdge {
-  source: string;
-  target: string;
-  label: string;
-}
+type GraphEdge = PhysicsEdge;
 
 // ── Color palette for entity types ──
 
@@ -98,71 +104,6 @@ function buildGraph(relations: MemoryRelation[]): { nodes: GraphNode[]; edges: G
   return { nodes: Array.from(nodeMap.values()), edges };
 }
 
-function tickSimulation(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  width: number,
-  height: number,
-  alpha: number,
-) {
-  const REPULSION = 3000;
-  const SPRING_LENGTH = 120;
-  const SPRING_K = 0.015;
-  const CENTER_GRAVITY = 0.01;
-  const DAMPING = 0.85;
-
-  const cx = width / 2;
-  const cy = height / 2;
-
-  // Repulsion between all node pairs
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i];
-      const b = nodes[j];
-      let dx = a.x - b.x;
-      let dy = a.y - b.y;
-      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      if (dist < 20) dist = 20;
-      const force = (REPULSION / (dist * dist)) * alpha;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      if (!a.pinned) { a.vx += fx; a.vy += fy; }
-      if (!b.pinned) { b.vx -= fx; b.vy -= fy; }
-    }
-  }
-
-  // Spring forces along edges
-  const nodeById = new Map(nodes.map(n => [n.id, n]));
-  for (const edge of edges) {
-    const a = nodeById.get(edge.source);
-    const b = nodeById.get(edge.target);
-    if (!a || !b) continue;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const displacement = dist - SPRING_LENGTH;
-    const force = SPRING_K * displacement * alpha;
-    const fx = (dx / dist) * force;
-    const fy = (dy / dist) * force;
-    if (!a.pinned) { a.vx += fx; a.vy += fy; }
-    if (!b.pinned) { b.vx -= fx; b.vy -= fy; }
-  }
-
-  // Center gravity + integration
-  for (const node of nodes) {
-    if (node.pinned) continue;
-    node.vx += (cx - node.x) * CENTER_GRAVITY * alpha;
-    node.vy += (cy - node.y) * CENTER_GRAVITY * alpha;
-    node.vx *= DAMPING;
-    node.vy *= DAMPING;
-    node.x += node.vx;
-    node.y += node.vy;
-    // Keep within bounds
-    node.x = Math.max(30, Math.min(width - 30, node.x));
-    node.y = Math.max(30, Math.min(height - 30, node.y));
-  }
-}
-
 // ── Canvas graph renderer ──
 
 function GraphCanvas({
@@ -203,75 +144,54 @@ function GraphCanvas({
       if (!running || !ctx || !canvas || !container) return;
 
       const rect = container.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
       const w = rect.width;
       const h = rect.height;
-
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        canvas.style.width = w + 'px';
-        canvas.style.height = h + 'px';
-      }
-
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      resizeCanvasToContainer(canvas, w, h);
       ctx.clearRect(0, 0, w, h);
 
       const { nodes, edges } = graphRef.current;
 
-      // Tick physics
-      if (alphaRef.current > 0.001) {
-        tickSimulation(nodes, edges, w, h, alphaRef.current);
-        alphaRef.current *= 0.995;
+      if (alphaRef.current > ALPHA_MIN) {
+        tickFlatSimulation(nodes, edges, w, h, alphaRef.current);
+        alphaRef.current *= ALPHA_COOLING;
       }
 
       const nodeById = new Map(nodes.map(n => [n.id, n]));
+      const isDark = isDarkMode();
 
-      // Detect theme
-      const isDark = document.documentElement.classList.contains('dark');
-
-      // Draw edges
       for (const edge of edges) {
         const a = nodeById.get(edge.source);
         const b = nodeById.get(edge.target);
         if (!a || !b) continue;
 
-        const isHighlighted = selectedNode === edge.source || selectedNode === edge.target;
+        const isHighlighted = isEdgeHighlighted(edge, selectedNode);
 
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
-        ctx.strokeStyle = isHighlighted
-          ? (isDark ? 'rgba(167,139,250,0.6)' : 'rgba(99,102,241,0.5)')
-          : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)');
+        ctx.strokeStyle = edgeColor(isHighlighted, isDark);
         ctx.lineWidth = isHighlighted ? 2 : 1;
         ctx.stroke();
 
-        // Edge label
         if (isHighlighted && edge.label) {
           const mx = (a.x + b.x) / 2;
           const my = (a.y + b.y) / 2;
           ctx.font = '10px system-ui, -apple-system, sans-serif';
-          ctx.fillStyle = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
+          ctx.fillStyle = edgeLabelColor(isDark);
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(edge.label, mx, my - 6);
         }
       }
 
-      // Draw nodes
       for (const node of nodes) {
         const isSelected = selectedNode === node.id;
         const isHovered = hoveredRef.current === node.id;
-        const isConnected = selectedNode
-          ? edges.some(e => (e.source === selectedNode && e.target === node.id) || (e.target === selectedNode && e.source === node.id))
-          : false;
-        const dimmed = selectedNode && !isSelected && !isConnected;
+        const dimmed = isNodeDimmed(node.id, selectedNode, edges);
 
         const color = getTypeColor(node.type);
         const radius = isSelected ? 8 : isHovered ? 7 : 6;
 
-        // Glow for selected
         if (isSelected) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, 14, 0, Math.PI * 2);
@@ -279,25 +199,21 @@ function GraphCanvas({
           ctx.fill();
         }
 
-        // Node circle
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = dimmed ? (isDark ? 'rgba(100,100,120,0.3)' : 'rgba(200,200,210,0.5)') : color;
+        ctx.fillStyle = dimmed ? dimmedNodeFill(isDark) : color;
         ctx.fill();
 
         if (isSelected || isHovered) {
-          ctx.strokeStyle = isDark ? '#fff' : '#000';
+          ctx.strokeStyle = nodeStrokeColor(isDark);
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
-        // Label
         ctx.font = `${isSelected ? '600 ' : ''}11px system-ui, -apple-system, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = dimmed
-          ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')
-          : (isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.75)');
+        ctx.fillStyle = nodeLabelColor(dimmed, isDark);
         ctx.fillText(node.label, node.x, node.y + radius + 3);
       }
 
@@ -315,13 +231,7 @@ function GraphCanvas({
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-
-    for (const node of graphRef.current.nodes) {
-      const dx = node.x - mx;
-      const dy = node.y - my;
-      if (dx * dx + dy * dy < 144) return node; // radius ~12
-    }
-    return null;
+    return hitTestPoint(graphRef.current.nodes, mx, my, () => 12) as GraphNode | null;
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

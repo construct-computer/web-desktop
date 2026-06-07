@@ -192,21 +192,51 @@ function hasAny(value: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(value));
 }
 
-/** Lucide icons only for tools/labels with no branded PNG available. */
+/** Explicit Lucide mappings for tools without a branded PNG. */
+const DIRECT_TOOL_LUCIDE: Record<string, LucideIcon> = {
+  spawn_agent: Users,
+  spawn_agents: Users,
+  wait_for_agents: Clock,
+  cancel_agents: Users,
+  delegate_task: Users,
+  consult_experts: Users,
+  background_task: Bot,
+  mailbox_received: Bot,
+  task_create: ListTodo,
+  task_update: ListTodo,
+  task_list: ListTodo,
+  task_get: ListTodo,
+  document_guide: BookOpen,
+  coding_guide: BookOpen,
+  local_app_guide: BookOpen,
+  web_design_guide: BookOpen,
+  update_plan: ClipboardList,
+  add_observation: ClipboardList,
+  list_active_sessions: Users,
+  get_session_progress: Users,
+  send_to_session: Users,
+  stop_session: Users,
+  interrupt_session: Users,
+};
+
+/** Lucide icons for tools/labels with no branded PNG. Returns null when no mapping exists. */
 function lucideIconForTool(
   type?: ChatMessage['activityType'],
   tool?: string,
   label?: string,
-): LucideIcon {
+): LucideIcon | null {
   const toolId = (tool || '').toLowerCase();
   const text = `${toolId} ${label || ''}`.toLowerCase();
 
+  if (toolId && DIRECT_TOOL_LUCIDE[toolId]) return DIRECT_TOOL_LUCIDE[toolId];
+
   if (hasAny(text, [/delegate|consult|spawn_agent|spawn_agents|subagent|advisor|agent status/])) return Users;
-  if (hasAny(text, [/background task/])) return Bot;
-  if (hasAny(text, [/wait_for_agents|waiting for \d+ agent/])) return Clock;
-  if (hasAny(text, [/task_|todo|task #|listing active tasks|listing all tasks|planning|plan/])) return ListTodo;
+  if (hasAny(text, [/background task|mailbox_received|received \d+ message/])) return Bot;
+  if (hasAny(text, [/wait_for_agents|waiting for \d+ helper|waiting for \d+ agent/])) return Clock;
+  if (hasAny(text, [/task_|todo|task #|listing active tasks|listing all tasks/])) return ListTodo;
+  if (hasAny(text, [/\bplanning\b|\bplan\b|update_plan/])) return ClipboardList;
   if (hasAny(text, [/composio|integration|registry_app|connecting app|app connection/])) return Plug;
-  if (hasAny(text, [/document_guide|coding guide|local app guide|web design guide|guide/])) return BookOpen;
+  if (hasAny(text, [/document_guide|coding guide|local app guide|web design guide|_guide\b/])) return BookOpen;
   if (hasAny(text, [/arxiv|domain intel/])) return Search;
   if (hasAny(text, [/database|stored output|activity history|activity stats/])) return Database;
   if (hasAny(text, [/notify|notification|alert/])) return Bell;
@@ -226,7 +256,7 @@ function lucideIconForTool(
     case 'background-group':
       return Bot;
     default:
-      return Wrench;
+      return null;
   }
 }
 
@@ -338,7 +368,13 @@ export function resolveActivityVisual(input: {
     return imageVisual(iconChat, 'Chat');
   }
 
-  // 4. Generic PNG fallback (Construct default app icon).
+  // 4. Lucide fallback for tools without a branded PNG.
+  const lucide = lucideIconForTool(type, tool, label);
+  if (lucide) {
+    return { kind: 'lucide', Icon: lucide };
+  }
+
+  // 5. Last resort: generic Construct app icon.
   return imageVisual(iconGeneric, tool || label || 'Tool');
 }
 
@@ -347,7 +383,7 @@ export function lucideIconForActivity(
   tool?: string,
   label?: string,
 ): LucideIcon {
-  return lucideIconForTool(type, tool, label);
+  return lucideIconForTool(type, tool, label) ?? Wrench;
 }
 
 export { AlertCircle, Info };

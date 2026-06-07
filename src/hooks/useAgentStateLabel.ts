@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useComputerStore, type ActiveSessionStatus } from '@/stores/agentStore';
+import { isSubagentSessionKey } from '@/stores/agentStateCleanup';
 import { useAgentTrackerStore, type TrackedOperation } from '@/stores/agentTrackerStore';
 
 const TOOL_LABELS: Record<string, string> = {
@@ -51,10 +52,14 @@ function pickPrimaryRunningSessionKey(
 ): string | undefined {
   if (runningSessions.has(activeSessionKey)) return activeSessionKey;
   for (const key of runningSessions) {
+    if (isSubagentSessionKey(key)) continue;
     const status = activeSessions[key]?.status;
     if (status === 'thinking' || status === 'stuck') return key;
   }
-  return runningSessions.values().next().value;
+  for (const key of runningSessions) {
+    if (!isSubagentSessionKey(key)) return key;
+  }
+  return undefined;
 }
 
 /**
@@ -84,8 +89,26 @@ export function useAgentStateLabel(): {
 
   const hasAnyRunningOps = Object.values(operations).some(isRunningOp);
   const hasAnyPlatformRunning = Object.values(platformAgents).some((p) => p.running);
-  const runningSessionCount = runningSessions.size;
+  const runningSessionCount = useMemo(() => {
+    let count = 0;
+    for (const key of runningSessions) {
+      if (!isSubagentSessionKey(key)) count += 1;
+    }
+    return count;
+  }, [runningSessions]);
   const isActive = runningSessionCount > 0 || hasAnyPlatformRunning || hasAnyRunningOps;
+
+  const lastActiveLogRef = useRef(0);
+  useEffect(() => {
+    if (!isActive) return;
+    const now = Date.now();
+    if (now - lastActiveLogRef.current < 3000) return;
+    lastActiveLogRef.current = now;
+    const runningOps = Object.values(operations).filter(isRunningOp);
+    // #region agent log
+    fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'A-E',location:'useAgentStateLabel.ts:isActive',message:'isActive breakdown',data:{agentRunning,runningSessionCount,runningSessionKeys:[...runningSessions],hasAnyPlatformRunning,hasAnyRunningOps,runningOpIds:runningOps.map(o=>o.id),runningOpStatuses:runningOps.map(o=>({id:o.id,status:o.status,subs:o.subAgents.map(s=>s.status)})),desktopRunning:platformAgents.desktop?.running,desktopCurrentTool:platformAgents.desktop?.currentTool},timestamp:now})}).catch(()=>{});
+    // #endregion
+  }, [isActive, agentRunning, runningSessions, operations, platformAgents, runningSessionCount, hasAnyPlatformRunning, hasAnyRunningOps]);
 
   const primaryRunningSessionKey = useMemo(
     () => pickPrimaryRunningSessionKey(runningSessions, activeSessions, activeSessionKey),

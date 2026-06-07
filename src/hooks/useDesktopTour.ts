@@ -223,12 +223,16 @@ export function useDesktopTour() {
           if (!ns.drawerOpen) ns.toggleDrawer();
           
           // Inject an informative sample notification for the tour
-          sampleNotificationId = ns.addNotification({
-            variant: 'info',
-            title: 'Welcome to Construct!',
-            body: 'This side panel shows completed tasks, new emails, and other alerts.',
-            source: 'SYSTEM',
-          });
+          sampleNotificationId = ns.addNotification(
+            {
+              variant: 'info',
+              title: 'Welcome to Construct!',
+              body: 'This side panel shows completed tasks, new emails, and other alerts.',
+              source: 'SYSTEM',
+            },
+            5000,
+            { priority: 'important' },
+          );
         },
       };
     }

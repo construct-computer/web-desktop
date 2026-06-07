@@ -14,6 +14,30 @@ export interface PlatformAgentRuntimeSnapshot {
   completedAt?: number;
 }
 
+/** Internal sub-agent loop sessions (child_<id>) — not user-facing chat sessions. */
+export function isSubagentSessionKey(sessionKey: string): boolean {
+  return sessionKey.startsWith('child_');
+}
+
+export function subagentSessionKeyForChildId(childId: string): string {
+  return childId.startsWith('child_') ? childId : `child_${childId}`;
+}
+
+export function stripSubagentSessions(runningSessions: Set<string>): Set<string> {
+  const next = new Set<string>();
+  for (const key of runningSessions) {
+    if (!isSubagentSessionKey(key)) next.add(key);
+  }
+  return next;
+}
+
+export function hasUserRunningSessions(runningSessions: Set<string>): boolean {
+  for (const key of runningSessions) {
+    if (!isSubagentSessionKey(key)) return true;
+  }
+  return false;
+}
+
 export function shouldClearViewedAgentState(input: {
   activeSessionKey: string;
   liveSessionKeys: Set<string>;
