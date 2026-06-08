@@ -28,9 +28,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad,
   onIframeError,
   onManualReconnect,
-  tabCount = 1,
-  tabBarExpanded = false,
-  onToggleTabBar,
   onOpenDetails,
   detailsOpen = false,
 }: {
@@ -43,9 +40,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad: () => void;
   onIframeError: () => void;
   onManualReconnect: () => void;
-  tabCount?: number;
-  tabBarExpanded?: boolean;
-  onToggleTabBar?: () => void;
   onOpenDetails?: () => void;
   detailsOpen?: boolean;
 }) {
@@ -81,9 +75,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
           onManualReconnect={onManualReconnect}
           progressLabel={tab.progressLabel}
           goal={tab.goal}
-          tabCount={tabCount}
-          tabBarExpanded={tabBarExpanded}
-          onToggleTabBar={onToggleTabBar}
           onOpenDetails={onOpenDetails}
           detailsOpen={detailsOpen}
         />

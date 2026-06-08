@@ -218,7 +218,7 @@ export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } =
   );
   const showBlockingLoader = loading && runs.length === 0;
 
-  if (tab === 'shots') {
+  if (tab === 'shots' && !embedded) {
     return (
       <div className="w-full h-full flex flex-col">
         <TabBar tab={tab} setTab={setTab} />
@@ -231,7 +231,7 @@ export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } =
 
   return (
     <div className="w-full h-full flex flex-col">
-      <TabBar tab={tab} setTab={setTab} />
+      {!embedded && <TabBar tab={tab} setTab={setTab} />}
       <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto text-left ${embedded ? 'px-3 py-3' : 'px-6 py-4'}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">

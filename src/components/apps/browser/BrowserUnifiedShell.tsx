@@ -3,6 +3,7 @@ import { Globe, PanelRight } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui';
 import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
+import { stopBrowserRun } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import {
@@ -63,9 +64,8 @@ export function BrowserUnifiedShell({
   const fetchView = activeTab?.fetchView ?? 'reader';
   const dataView = activeTab?.dataView ?? 'visual';
   const isLiveActive = activeTab?.mode === 'live';
-  const [tabBarExpanded, setTabBarExpanded] = useState(false);
-  const hideTabBar = isLiveActive && !tabBarExpanded;
-  const showStaticChrome = activeTab && activeTab.mode !== 'live';
+  const hideTabBar = false;
+  const showStaticChrome = !!activeTab;
   const showModeStatusBar = !hideTabBar;
 
   const [showDetails, setShowDetails] = useState(false);
@@ -77,14 +77,23 @@ export function BrowserUnifiedShell({
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<BrowserTab | null>(null);
   const [closingTab, setClosingTab] = useState(false);
+  const [stoppingActive, setStoppingActive] = useState(false);
+
+  const stopActiveSession = useCallback(async () => {
+    if (!activeTab || !activeTab.runId || stoppingActive) return;
+    setStoppingActive(true);
+    try {
+      await stopBrowserRun(activeTab.runId);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStoppingActive(false);
+    }
+  }, [activeTab, stoppingActive]);
 
   const setActiveTab = useCallback((tabId: string) => {
-    const tab = tabs.find((t) => t.id === tabId);
-    if (tab && isStaticBrowserTab(tab)) {
-      setTabBarExpanded(false);
-    }
     setActiveTabRaw(tabId);
-  }, [tabs, setActiveTabRaw]);
+  }, [setActiveTabRaw]);
 
   const openDetails = useCallback((defaultTab: DetailsTab = 'history') => {
     setShowDetails((prev) => {
@@ -94,9 +103,7 @@ export function BrowserUnifiedShell({
     });
   }, []);
 
-  const toggleTabBar = useCallback(() => {
-    setTabBarExpanded((v) => !v);
-  }, []);
+
 
   useEffect(() => {
     pruneInactiveLiveTabs(browserSessions);
@@ -254,20 +261,20 @@ export function BrowserUnifiedShell({
             onSelect={setActiveTab}
             onClose={handleCloseTab}
           />
-          {showStaticChrome && (
             <BrowserChromeBar
               tab={activeTab}
               fetchView={fetchView}
               onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
               dataView={dataView}
               onDataViewChange={(view) => activeTab && setDataView(activeTab.id, view)}
+              onStopLive={stopActiveSession}
+              stoppingLive={stoppingActive}
             />
-          )}
         </div>
       )}
 
       {configChecked && !hasComposioBrowser && (
-        <div className="px-3 py-1.5 text-[11px] leading-snug border-b border-amber-500/15 bg-amber-500/[0.06] text-amber-300/90">
+        <div className="px-3 py-1.5 text-[11px] leading-snug border-b border-amber-500/15 bg-amber-500/[0.06] text-amber-700 dark:text-amber-300/90">
           Interactive browser (Composio browser_tool) is unavailable — check the platform Composio API key.
           Use <strong>web_search</strong> or <strong>web_fetch</strong> for read-only page text in the meantime.
         </div>
@@ -287,9 +294,6 @@ export function BrowserUnifiedShell({
                 onIframeLoad={onIframeLoad}
                 onIframeError={onIframeError}
                 onManualReconnect={onManualReconnect}
-                tabCount={tabs.length}
-                tabBarExpanded={tabBarExpanded}
-                onToggleTabBar={toggleTabBar}
                 onOpenDetails={() => openDetails('captures')}
                 detailsOpen={showDetails}
               />

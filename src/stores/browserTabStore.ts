@@ -438,6 +438,7 @@ interface BrowserTabStore {
   pruneInactiveLiveTabs: (sessions: Record<string, { status?: string }>) => void;
   downgradeLiveTabsOnClose: () => void;
   removeLiveTabForSession: (sessionId: string) => void;
+  navigateTab: (tabId: string, url: string) => void;
   reset: () => void;
 }
 
@@ -756,6 +757,28 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
 
   removeLiveTabForSession: (sessionId) => {
     get().closeTab(`tab_live_${sessionId}`);
+  },
+
+  navigateTab: (tabId: string, url: string) => {
+    const normalized = normalizeBrowserUrl(url);
+    if (!normalized) return;
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              url: normalized,
+              proxyUrl: proxyUrlFor(normalized),
+              status: 'loading' as const,
+              title: hostFromUrl(normalized),
+              readerContent: undefined,
+              readerContentFull: undefined,
+              pageTitle: undefined,
+              fetchView: 'site' as const,
+            }
+          : t
+      ),
+    }));
   },
 
   reset: () => set({

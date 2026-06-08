@@ -1,6 +1,8 @@
-import { memo, useCallback, useState } from 'react';
-import { BookOpen, Check, Copy, Globe, Search, Server, Sparkles, StopCircle } from 'lucide-react';
+import { memo, useCallback, useState, useEffect } from 'react';
+import { BookOpen, Check, Copy, Globe, Search, Server, Sparkles, StopCircle, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import type { BrowserTab } from '@/stores/browserTabStore';
+import { useBrowserTabStore } from '@/stores/browserTabStore';
+import { browserWS } from '@/services/websocket';
 
 function displayUrl(tab: BrowserTab): string {
   if (tab.mode === 'search') return tab.query ? `Search: "${tab.query}"` : tab.title;
@@ -77,6 +79,11 @@ export const BrowserChromeBar = memo(function BrowserChromeBar({
   stoppingLive?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const [inputUrl, setInputUrl] = useState(tab?.url || '');
+
+  useEffect(() => {
+    setInputUrl(tab?.url || '');
+  }, [tab?.id, tab?.url]);
 
   const copyUrl = useCallback(async () => {
     const target = tab?.url || tab?.pageUrl;
@@ -87,6 +94,47 @@ export const BrowserChromeBar = memo(function BrowserChromeBar({
       window.setTimeout(() => setCopied(false), 1500);
     } catch { /* */ }
   }, [tab?.url, tab?.pageUrl]);
+
+  const handleReload = useCallback(() => {
+    if (!tab) return;
+    if (tab.mode === 'live') {
+      const daemonTabId = tab.id.startsWith('tab_live_') ? null : tab.id;
+      browserWS.sendAction(daemonTabId ? { action: 'refresh', tabId: daemonTabId } : { action: 'refresh' });
+    } else if (tab.url) {
+      useBrowserTabStore.getState().navigateTab(tab.id, tab.url);
+    }
+  }, [tab]);
+
+  const handleBack = useCallback(() => {
+    if (!tab) return;
+    if (tab.mode === 'live') {
+      const daemonTabId = tab.id.startsWith('tab_live_') ? null : tab.id;
+      browserWS.sendAction(daemonTabId ? { action: 'back', tabId: daemonTabId } : { action: 'back' });
+    }
+  }, [tab]);
+
+  const handleForward = useCallback(() => {
+    if (!tab) return;
+    if (tab.mode === 'live') {
+      const daemonTabId = tab.id.startsWith('tab_live_') ? null : tab.id;
+      browserWS.sendAction(daemonTabId ? { action: 'forward', tabId: daemonTabId } : { action: 'forward' });
+    }
+  }, [tab]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const targetUrl = inputUrl.trim();
+      if (!targetUrl) return;
+      let finalUrl = targetUrl;
+      if (!/^https?:\/\//i.test(finalUrl)) {
+        finalUrl = `https://${finalUrl}`;
+      }
+      if (tab) {
+        useBrowserTabStore.getState().navigateTab(tab.id, finalUrl);
+      }
+      e.currentTarget.blur();
+    }
+  }, [inputUrl, tab]);
 
   if (!tab) {
     return (
@@ -103,11 +151,60 @@ export const BrowserChromeBar = memo(function BrowserChromeBar({
   const showFetchToggle = tab.mode === 'fetch' && tab.status === 'complete' && !isJsonTab;
   const showStopLive = tab.mode === 'live' && onStopLive && tab.runPhase === 'live';
 
+  const isLive = tab.mode === 'live';
+  const canGoBack = isLive;
+  const canGoForward = isLive;
+
   return (
     <div className={CHROME_BAR_CLASS}>
-      <div className="flex-1 min-w-0 flex items-center gap-2">
+      <div className="shrink-0 flex items-center gap-1 border-r border-[var(--color-border)] pr-2 select-none">
+        <button
+          type="button"
+          onClick={handleBack}
+          disabled={!canGoBack}
+          className="p-1 rounded-md text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-white/[0.06] disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+          title="Back"
+          aria-label="Back"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleForward}
+          disabled={!canGoForward}
+          className="p-1 rounded-md text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-white/[0.06] disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+          title="Forward"
+          aria-label="Forward"
+        >
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleReload}
+          className="p-1 rounded-md text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-white/[0.06] transition-colors"
+          title="Reload"
+          aria-label="Reload"
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1 rounded-md bg-black/[0.03] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/[0.06] focus-within:border-[var(--color-accent)]/50 focus-within:bg-black/[0.05] dark:focus-within:bg-white/[0.05] transition-all">
         <ModeIcon tab={tab} />
-        <span className="truncate text-[12px] text-[var(--color-text-muted)] font-sans">{label}</span>
+        {tab.mode !== 'live' ? (
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={(e) => e.target.select()}
+            placeholder="Type a URL to browse..."
+            className="flex-1 min-w-0 bg-transparent border-none outline-none text-[12px] text-[var(--color-text-muted)] focus:text-[var(--color-text)] font-sans"
+            spellCheck={false}
+          />
+        ) : (
+          <span className="truncate text-[12px] text-[var(--color-text-muted)] font-sans">{label}</span>
+        )}
       </div>
 
       {hasUrl && (

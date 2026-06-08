@@ -277,9 +277,10 @@ export const BrowserTabBar = memo(function BrowserTabBar({
                   'group relative flex shrink-0 items-center gap-0.5 h-full rounded-t-lg text-[11px] transition-colors duration-150 cursor-pointer border border-transparent',
                   active
                     ? 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] z-10 shadow-[inset_0_-2px_0_var(--color-accent)]'
-                    : 'bg-white/[0.015] text-[var(--color-text-muted)] hover:bg-white/[0.05] hover:text-[var(--color-text)]',
+                    : 'bg-white/[0.015] text-[var(--color-text-muted)] hover:bg-[var(--color-item-hover)] hover:text-[var(--color-text)]',
                   isError ? 'text-red-400/90' : '',
                 ].join(' ')}
+                onClick={() => onSelect(tab.id)}
                 onMouseDown={(e) => {
                   if (e.button === 1) {
                     e.preventDefault();

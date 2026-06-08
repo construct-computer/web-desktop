@@ -25,9 +25,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onError,
   onManualReconnect,
   goal = '',
-  tabCount = 1,
-  tabBarExpanded = false,
-  onToggleTabBar,
   onOpenDetails,
   detailsOpen = false,
 }: {
@@ -45,9 +42,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onManualReconnect: () => void;
   progressLabel?: string;
   goal?: string;
-  tabCount?: number;
-  tabBarExpanded?: boolean;
-  onToggleTabBar?: () => void;
   onOpenDetails?: () => void;
   detailsOpen?: boolean;
 }) {
@@ -70,9 +64,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
       onManualReconnect={onManualReconnect}
       goal={goal}
       session={session}
-      tabCount={tabCount}
-      tabBarExpanded={tabBarExpanded}
-      onToggleTabBar={onToggleTabBar}
       onOpenDetails={onOpenDetails}
       detailsOpen={detailsOpen}
     />
@@ -168,7 +159,7 @@ function ClockIcon({ className }: { className?: string }) {
 
 const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   streamUrl, runPhase, runErrorDetail, stepCount, runId, pageUrl, isDead, reloadKey, onLoad, onError, onManualReconnect, goal, session,
-  tabCount, tabBarExpanded, onToggleTabBar, onOpenDetails, detailsOpen,
+  onOpenDetails, detailsOpen,
 }: {
   streamUrl: string;
   runPhase: RunPhase;
@@ -183,9 +174,6 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   onManualReconnect: () => void;
   goal?: string;
   session?: BrowserSessionRecord;
-  tabCount?: number;
-  tabBarExpanded?: boolean;
-  onToggleTabBar?: () => void;
   onOpenDetails?: () => void;
   detailsOpen?: boolean;
 }) {
@@ -217,22 +205,9 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
       : 'bg-amber-500/[0.08] text-amber-400 border-amber-500/20';
 
   const stepBadge = typeof stepCount === 'number' ? `${stepCount} step${stepCount === 1 ? '' : 's'}` : null;
-  const showTabToggle = (tabCount ?? 1) > 1 && onToggleTabBar;
-
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-[var(--color-surface)]">
       <div className={`shrink-0 flex items-center gap-2 px-3 py-1.5 text-[11px] font-sans border-b select-none min-h-[36px] ${barClass}`}>
-        {showTabToggle && (
-          <button
-            type="button"
-            onClick={onToggleTabBar}
-            className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]"
-            title={tabBarExpanded ? 'Hide tab bar' : 'Show all tabs'}
-          >
-            {tabBarExpanded ? <ChevronUp className="w-3 h-3" /> : <LayoutList className="w-3 h-3" />}
-            {tabBarExpanded ? 'Hide tabs' : 'Show tabs'}
-          </button>
-        )}
         {isLive && !isDead ? (
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />

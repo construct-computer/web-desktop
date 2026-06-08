@@ -36,7 +36,7 @@ export const SearchResultRow = memo(function SearchResultRow({
         href={result.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="block py-1 hover:bg-black/[0.04] rounded px-1 -mx-1"
+        className="block py-1 hover:bg-[var(--color-item-hover)] rounded px-1 -mx-1"
       >
         <div className="search-result-title text-[11px] font-medium line-clamp-1">
           {title}
@@ -51,7 +51,7 @@ export const SearchResultRow = memo(function SearchResultRow({
   }
 
   return (
-    <article className="search-result group relative px-3 py-4 rounded-lg hover:bg-black/[0.04] transition-colors">
+    <article className="search-result group relative px-3 py-4 rounded-lg hover:bg-[var(--color-item-hover)] transition-colors">
       <div className="flex items-start gap-2 min-w-0">
         {typeof index === 'number' && (
           <span className="search-result-rank shrink-0 w-5 text-right pt-0.5 tabular-nums">
