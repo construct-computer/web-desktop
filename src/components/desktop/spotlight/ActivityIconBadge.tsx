@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/stores/agentStore';
-import { isBrandedActivityVisual, resolveActivityVisual } from '@/lib/toolActivityIcon';
+import { isBrandedActivityVisual, resolveActivityIconHints, resolveActivityVisual } from '@/lib/toolActivityIcon';
 import type { ActivityTone } from './activityStyles';
 import { ActivityIcon } from './ActivityIcon';
 import { ActivityIconFrame, type ActivityIconFrameVariant } from './ActivityIconFrame';
@@ -48,5 +48,24 @@ export function ActivityIconBadge({
         fill={branded}
       />
     </ActivityIconFrame>
+  );
+}
+
+export function MemoryIconBadge({
+  size = 'sm',
+  surface = 'spotlight',
+}: {
+  size?: 'sm' | 'md';
+  surface?: 'spotlight' | 'clippy';
+}) {
+  const hints = resolveActivityIconHints('memory');
+  return (
+    <ActivityIconBadge
+      tool="memory"
+      iconPlatform={hints.iconPlatform}
+      iconUrl={hints.iconUrl}
+      size={size}
+      surface={surface}
+    />
   );
 }

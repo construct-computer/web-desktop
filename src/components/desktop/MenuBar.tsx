@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, WifiOff, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, Brain, Shield, Map, Package } from 'lucide-react';
+import { Wifi, WifiOff, Volume2, VolumeOff, List, FileText, MessageSquare, Activity, Info, Settings, Lock, RotateCcw, Power, LogOut, Monitor, MessageCircle, Send, Mail, Calendar, X, Shield, Map, Package, Brain } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';

@@ -4,44 +4,9 @@
  * wait duration + repeat badge, matching the density of the other tool rows.
  */
 
-import {
-  Globe, Code2, Timer, Search, Download, MousePointerClick, Keyboard,
-  Compass, Camera, Sparkles, FileText, StopCircle,
-} from 'lucide-react';
-import { ACTIVITY_ICON_CLASS } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
+import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatRepeatBadge } from './browserActivityUtils';
-
-interface BrowserStyle {
-  icon: typeof Globe;
-  color: string;
-}
-
-const BROWSER_STYLES: Record<string, BrowserStyle> = {
-  navigate: { icon: Globe, color: ACTIVITY_ICON_CLASS },
-  evaluate: { icon: Code2, color: ACTIVITY_ICON_CLASS },
-  wait: { icon: Timer, color: ACTIVITY_ICON_CLASS },
-  find_text: { icon: Search, color: ACTIVITY_ICON_CLASS },
-  fetch: { icon: Download, color: ACTIVITY_ICON_CLASS },
-  click: { icon: MousePointerClick, color: ACTIVITY_ICON_CLASS },
-  type: { icon: Keyboard, color: ACTIVITY_ICON_CLASS },
-  input: { icon: Keyboard, color: ACTIVITY_ICON_CLASS },
-  discover_data_sources: { icon: Compass, color: ACTIVITY_ICON_CLASS },
-  screenshot: { icon: Camera, color: ACTIVITY_ICON_CLASS },
-  open: { icon: Globe, color: ACTIVITY_ICON_CLASS },
-  task: { icon: Sparkles, color: ACTIVITY_ICON_CLASS },
-  read: { icon: FileText, color: ACTIVITY_ICON_CLASS },
-  files: { icon: Download, color: ACTIVITY_ICON_CLASS },
-  status: { icon: Timer, color: ACTIVITY_ICON_CLASS },
-  stop: { icon: StopCircle, color: ACTIVITY_ICON_CLASS },
-};
-
-const DEFAULT_STYLE: BrowserStyle = { icon: Sparkles, color: ACTIVITY_ICON_CLASS };
-
-function styleFor(actionType: string | null | undefined): BrowserStyle {
-  if (!actionType) return DEFAULT_STYLE;
-  return BROWSER_STYLES[actionType] || DEFAULT_STYLE;
-}
 
 /** Strip protocol + trailing slash for compact display. Hover for full URL. */
 function compactUrl(raw: string): string {
@@ -69,15 +34,18 @@ export function BrowserActivityRow({
   repeatCount?: number;
 }) {
   const meta = message.browserAction;
-  const { icon: Icon, color } = styleFor(meta?.actionType);
   const url = meta?.url;
   const waitMs = meta?.waitMs;
+  const activityType = message.activityType === 'web' ? 'web' : 'browser';
 
   return (
     <div className="flex items-center gap-2.5 rounded-md px-1 py-[2px] hover:bg-white/[0.025]">
-      <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center ${color}`}>
-        <Icon className="w-3 h-3" />
-      </div>
+      <ActivityIconBadge
+        type={activityType}
+        tool={message.tool ?? 'browser_navigate'}
+        label={message.content}
+        size="sm"
+      />
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
         <span className="text-[12px] text-[var(--color-text-muted)]/70 truncate">
           {message.content}

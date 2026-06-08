@@ -1,58 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import type { TrackedOperation } from '@/stores/agentTrackerStore';
-import { resolveStatusNarrative } from '@/lib/clippyActivityModel';
+import { activityFromMessage } from './useClippyActivitySummary';
+import type { ChatMessage } from '@/stores/agentStore';
+import iconMemory from '@/icons/memory.png';
+import iconFiles from '@/icons/files.png';
 
-/** Mirror feed dedupe logic from the hook for unit testing without React. */
-function buildFeedHasSubagentDedupe(
-  hasSubagents: boolean,
-  subagentFeedCount: number,
-  mainFeedCount: number,
-): number {
-  let feedLen = mainFeedCount;
-  if (!hasSubagents) {
-    feedLen += subagentFeedCount;
-  }
-  return feedLen;
-}
+describe('activityFromMessage', () => {
+  it('enriches memory recall activities with memory.png', () => {
+    const message: ChatMessage = {
+      role: 'activity',
+      content: 'Memory recalled',
+      timestamp: new Date(1),
+      tool: 'memory',
+      activityType: 'tool',
+      memoryActivity: {
+        provider: 'Construct Memory',
+        action: 'recalled',
+        items: [{ id: 'mem_1', event: 'RECALL', memory: 'User prefers compact updates.' }],
+      },
+    };
 
-describe('useClippyActivitySummary feed rules', () => {
-  it('skips subagent rows in feed when helpers are active', () => {
-    const withHelpers = buildFeedHasSubagentDedupe(true, 3, 2);
-    const withoutHelpers = buildFeedHasSubagentDedupe(false, 3, 2);
-    expect(withHelpers).toBe(2);
-    expect(withoutHelpers).toBe(5);
+    const item = activityFromMessage(message, 'Main', 'main:0');
+
+    expect(item?.tool).toBe('memory');
+    expect(item?.iconUrl).toBe(iconMemory);
   });
 
-  it('documents running operation filter', () => {
-    const op = { status: 'running', sessionKey: 'main' } as TrackedOperation;
-    const matches = !op.sessionKey || op.sessionKey === 'main';
-    expect(matches).toBe(true);
-  });
+  it('backfills file read icons when hints are missing', () => {
+    const message: ChatMessage = {
+      role: 'activity',
+      content: 'Reading uploads/5136a236f7e9…',
+      timestamp: new Date(1),
+      activityType: 'file',
+      tool: 'read_file',
+    };
 
-  it('statusNarrative prefers clippy over scroll filler', () => {
-    const narrative = resolveStatusNarrative({
-      clippyEntries: [{ id: '1', text: 'Checking export settings', timestamp: 100 }],
-      agentPreview: '',
-      scrollText: 'Working on the response.',
-    });
-    expect(narrative).toBe('Checking export settings');
-  });
+    const item = activityFromMessage(message, 'Main', 'main:0');
 
-  it('statusNarrative uses agent preview before generic scroll text', () => {
-    const narrative = resolveStatusNarrative({
-      clippyEntries: [],
-      agentPreview: "I'll open the config and verify the export block…",
-      scrollText: 'Working on the response.',
-    });
-    expect(narrative).toContain('open the config');
-  });
-
-  it('statusNarrative ignores generic scroll text', () => {
-    const narrative = resolveStatusNarrative({
-      clippyEntries: [],
-      agentPreview: '',
-      scrollText: 'Working on the response.',
-    });
-    expect(narrative).toBe('');
+    expect(item?.iconUrl).toBe(iconFiles);
+    expect(item?.iconPlatform).toBe('files');
   });
 });

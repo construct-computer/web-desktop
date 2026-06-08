@@ -4867,6 +4867,58 @@ export const useComputerStore = create<ComputerStore>()(
         });
       };
 
+      const patchChatMessages = (
+        patcher: (messages: ChatMessage[]) => ChatMessage[],
+      ) => {
+        set(state => {
+          const updates: Partial<typeof state> = {};
+          if (shouldUpdateVisibleDesktopAgent) {
+            const pa = getOrCreateAgent(state);
+            updates.platformAgents = {
+              ...state.platformAgents,
+              [eventPlatform]: {
+                ...pa,
+                chatMessages: patcher(pa.chatMessages || []),
+              },
+            };
+          }
+          if (isActiveSession) {
+            updates.chatMessages = patcher(state.chatMessages);
+          } else if (eventSessionKey && eventSessionKey !== 'default') {
+            const cached = sessionMessageCache.get(eventSessionKey) || [];
+            sessionMessageCache.set(eventSessionKey, patcher(cached));
+          }
+          return Object.keys(updates).length > 0 ? updates : state;
+        });
+      };
+
+      const upsertMemoryActivityMessage = (msg: ChatMessage) => {
+        const operationId = msg.memoryActivity?.operationId;
+        const upsert = (messages: ChatMessage[]): ChatMessage[] => {
+          if (operationId) {
+            const idx = messages.findIndex((m) => m.memoryActivity?.operationId === operationId);
+            if (idx >= 0) {
+              const next = [...messages];
+              next[idx] = msg;
+              return next;
+            }
+            return appendMessage(messages, msg);
+          }
+          if (msg.memoryActivity?.status === 'pending') {
+            const idx = messages.findIndex(
+              (m) => m.memoryActivity?.status === 'pending' && m.tool === 'memory',
+            );
+            if (idx >= 0) {
+              const next = [...messages];
+              next[idx] = msg;
+              return next;
+            }
+          }
+          return appendMessage(messages, msg);
+        };
+        patchChatMessages(upsert);
+      };
+
       const resolveMemoryActivityMessage = (operationId: string, replacement: ChatMessage | null): boolean => {
         if (!operationId) return false;
         let matched = false;
@@ -4883,26 +4935,7 @@ export const useComputerStore = create<ComputerStore>()(
           return next;
         };
 
-        set(state => {
-          const updates: Partial<typeof state> = {};
-          if (shouldUpdateVisibleDesktopAgent) {
-            const pa = getOrCreateAgent(state);
-            updates.platformAgents = {
-              ...state.platformAgents,
-              [eventPlatform]: {
-                ...pa,
-                chatMessages: apply(pa.chatMessages || []),
-              },
-            };
-          }
-          if (isActiveSession) {
-            updates.chatMessages = apply(state.chatMessages);
-          } else if (eventSessionKey && eventSessionKey !== 'default') {
-            const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, apply(cached));
-          }
-          return updates;
-        });
+        patchChatMessages(apply);
         return matched;
       };
 
@@ -5346,7 +5379,7 @@ export const useComputerStore = create<ComputerStore>()(
             })
             .filter((item): item is MemoryActivityItem => Boolean(item));
           if (!isRecall && status === 'pending') {
-            appendToAgentChat({
+            upsertMemoryActivityMessage({
               role: 'activity',
               content: 'Memory saving',
               timestamp: new Date(),

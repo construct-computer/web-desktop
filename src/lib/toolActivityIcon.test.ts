@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ListTodo } from 'lucide-react';
-import { resolveActivityIconHints, resolveActivityVisual } from './toolActivityIcon';
+import { enrichActivityIconFields, resolveActivityIconHints, resolveActivityVisual } from './toolActivityIcon';
 import iconAgents from '@/icons/agents.png';
 import iconBrowser from '@/icons/browser.png';
 import iconCalendar from '@/icons/calendar.png';
@@ -111,6 +111,98 @@ describe('toolActivityIcon branded PNG resolution', () => {
     expect(resolveActivityIconHints('agent_schedule')).toEqual({
       iconUrl: iconCalendar,
       iconPlatform: 'calendar',
+    });
+  });
+});
+
+describe('enrichActivityIconFields', () => {
+  it('maps memory and policy activities to memory.png', () => {
+    const memoryItem = { id: 'm1', event: 'RECALL' as const, memory: 'prefers compact updates' };
+    expect(enrichActivityIconFields({
+      memoryActivity: {
+        provider: 'Construct Memory',
+        items: [memoryItem],
+      },
+    })).toEqual({
+      tool: 'memory',
+      activityType: 'tool',
+      iconPlatform: 'memory',
+      iconUrl: iconMemory,
+    });
+
+    expect(enrichActivityIconFields({
+      tool: 'autopilot',
+      activityType: 'tool',
+      policyActivity: {
+        items: [{ id: 1, title: 'Default tone', description: 'Be concise' }],
+      },
+    })).toEqual({
+      tool: 'memory',
+      activityType: 'tool',
+      iconPlatform: 'memory',
+      iconUrl: iconMemory,
+    });
+  });
+
+  it('backfills hints for file and delegation activities without iconUrl', () => {
+    expect(enrichActivityIconFields({
+      tool: 'read_file',
+      activityType: 'file',
+      label: 'Reading uploads/5136a236f7e9…',
+    })).toEqual({
+      tool: 'read_file',
+      activityType: 'file',
+      iconPlatform: 'files',
+      iconUrl: iconFiles,
+    });
+
+    expect(enrichActivityIconFields({
+      tool: 'spawn_agents',
+      activityType: 'delegation',
+      label: 'Starting 6 helpers: Research the…',
+    })).toEqual({
+      tool: 'spawn_agents',
+      activityType: 'delegation',
+      iconPlatform: 'Agents',
+      iconUrl: iconAgents,
+    });
+  });
+
+  it('derives checkpoint icon from label when tool is missing', () => {
+    expect(enrichActivityIconFields({
+      activityType: 'tool',
+      label: 'Research checkpoint (checkpoint)',
+    })).toEqual({
+      tool: undefined,
+      activityType: 'tool',
+      iconPlatform: 'Research checkpoint',
+      iconUrl: iconCheckpoint,
+    });
+  });
+
+  it('maps knowledge tool alias to memory.png', () => {
+    expect(enrichActivityIconFields({
+      tool: 'knowledge',
+      activityType: 'tool',
+      label: 'Listing knowledge',
+    })).toEqual({
+      tool: 'memory',
+      activityType: 'tool',
+      iconPlatform: 'memory',
+      iconUrl: iconMemory,
+    });
+  });
+
+  it('preserves explicit iconUrl', () => {
+    const customUrl = 'https://example.com/icon.png';
+    expect(enrichActivityIconFields({
+      tool: 'read_file',
+      activityType: 'file',
+      iconUrl: customUrl,
+    })).toEqual({
+      tool: 'read_file',
+      activityType: 'file',
+      iconUrl: customUrl,
     });
   });
 });

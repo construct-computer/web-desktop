@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
-import { ActivityIconBadge } from './ActivityIconBadge';
-import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
+import { ActivityIconBadge, MemoryIconBadge } from './ActivityIconBadge';
 import type { ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
 import { isBrowserWebTool } from '@/stores/browserTabStore';
@@ -156,17 +155,10 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     const title = policyActivityTitle(policyActivity);
     const summary = policyActivitySummary(policyActivity);
     const canExpand = policyActivity.items.length > 0;
-    const policyIconHints = resolveActivityIconHints('memory');
-
     return (
       <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
         <div className={compact ? 'flex items-center gap-2.5 min-w-0 w-full' : 'flex items-center gap-2.5 sm:gap-3 min-w-0 w-full'}>
-          <ActivityIconBadge
-            tool="memory"
-            iconPlatform={policyIconHints.iconPlatform}
-            iconUrl={policyIconHints.iconUrl}
-            size={compact ? 'sm' : 'md'}
-          />
+          <MemoryIconBadge size={compact ? 'sm' : 'md'} />
           <div className="min-w-0 flex-1">
             <button
               type="button"
@@ -209,17 +201,10 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     const title = memoryActivityTitle(memoryActivity);
     const summary = memoryActivitySummary(memoryActivity);
     const canExpand = memoryActivity.items.length > 0;
-    const memoryIconHints = resolveActivityIconHints('memory');
-
     return (
       <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
         <div className={compact ? 'flex items-center gap-2.5 min-w-0 w-full' : 'flex items-center gap-2.5 sm:gap-3 min-w-0 w-full'}>
-          <ActivityIconBadge
-            tool="memory"
-            iconPlatform={memoryIconHints.iconPlatform}
-            iconUrl={memoryIconHints.iconUrl}
-            size={compact ? 'sm' : 'md'}
-          />
+          <MemoryIconBadge size={compact ? 'sm' : 'md'} />
           <div className="min-w-0 flex-1">
             <button
               type="button"

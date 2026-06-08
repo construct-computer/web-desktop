@@ -572,18 +572,39 @@ export function ClippyWidget() {
     return null;
   }, [activitySummary, bubbleDetail, hasActivityContext, showBubble, showWelcome, stateLabel, welcomeMsg]);
 
+  const bubbleContentSignature = useMemo(() => {
+    if (!bubbleContent) return '';
+    if (bubbleContent.variant === 'welcome') {
+      return `welcome:${bubbleContent.title}`;
+    }
+    const summary = bubbleContent.summary;
+    return [
+      bubbleContent.variant,
+      bubbleContent.title,
+      bubbleContent.detail,
+      summary?.headline,
+      summary?.statusNarrative,
+      summary?.toolFeed.map((item) => `${item.id}:${item.text}:${item.iconUrl ?? ''}`).join('|'),
+      summary?.subagents.map((agent) => `${agent.id}:${agent.status}:${agent.currentActivity}`).join('|'),
+    ].join('::');
+  }, [bubbleContent]);
+
   // Keep bubble mounted during exit animation
   const [visibleBubble, setVisibleBubble] = useState(bubbleContent);
   const [bubbleClosing, setBubbleClosing] = useState(false);
   const closingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const lastBubbleSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (bubbleContent) {
+      if (bubbleContentSignature === lastBubbleSignatureRef.current) return;
+      lastBubbleSignatureRef.current = bubbleContentSignature;
       // New content — show immediately, cancel any pending close
       clearTimeout(closingTimerRef.current);
       setBubbleClosing(false);
       setVisibleBubble(bubbleContent);
     } else if (visibleBubble && !bubbleClosing) {
+      lastBubbleSignatureRef.current = null;
       // Content disappeared — start close animation
       setBubbleClosing(true);
       closingTimerRef.current = setTimeout(() => {
@@ -592,7 +613,7 @@ export function ClippyWidget() {
       }, 300); // match clippy-bubble-out duration
     }
     return () => clearTimeout(closingTimerRef.current);
-  }, [bubbleContent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bubbleContent, bubbleContentSignature, bubbleClosing, visibleBubble]);
 
   return (
     <div

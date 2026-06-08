@@ -1,5 +1,6 @@
 import { Loader2, Check } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
+import { enrichActivityIconFields } from '@/lib/toolActivityIcon';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatRepeatBadge } from './browserActivityUtils';
 import { formatActivityLine } from './formatActivityLine';
@@ -41,20 +42,27 @@ export function CompactActivityRow({
   const line = formatActivityLine(content, { activityType });
   const isTerminal = activityType === 'terminal' || tool === 'terminal' || tool === 'exec';
   const displayLine = isTerminal && clippy ? middleEllipsis(line) : line;
+  const iconFields = enrichActivityIconFields({
+    tool,
+    activityType,
+    label: content,
+    iconPlatform,
+    iconUrl,
+  });
 
   return (
     <div
       className={`flex min-w-0 items-center gap-1.5 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
     >
       <ActivityIconBadge
-        type={activityType}
-        tool={tool}
+        type={iconFields.activityType ?? activityType}
+        tool={iconFields.tool ?? tool}
         label={content}
-        iconPlatform={iconPlatform}
-        iconUrl={iconUrl}
+        iconPlatform={iconFields.iconPlatform ?? iconPlatform}
+        iconUrl={iconFields.iconUrl ?? iconUrl}
         failed={failed}
         size="sm"
-        surface="clippy"
+        surface={clippy ? 'clippy' : 'spotlight'}
       />
       <span
         className={`min-w-0 flex-1 truncate leading-snug ${

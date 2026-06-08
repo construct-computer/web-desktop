@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { useAgentStateLabel } from '@/hooks/useAgentStateLabel';
+import { enrichActivityIconFields } from '@/lib/toolActivityIcon';
 import {
   buildToolFeed,
   resolveAgentPreviewFromTurn,
@@ -170,22 +171,52 @@ function terminalActivity(run: TerminalRun, actor: string): ClippyActivityItem {
   };
 }
 
-function activityFromMessage(message: ChatMessage, actor: string, idPrefix: string): ClippyActivityItem | null {
+export function activityFromMessage(message: ChatMessage, actor: string, idPrefix: string): ClippyActivityItem | null {
   if (!message.content.trim()) return null;
+  const iconFields = enrichActivityIconFields({
+    tool: message.tool,
+    activityType: message.activityType,
+    label: message.content,
+    iconPlatform: message.iconPlatform,
+    iconUrl: message.iconUrl,
+    memoryActivity: message.memoryActivity,
+    policyActivity: message.policyActivity,
+  });
   return {
     id: `${idPrefix}:${timestampOf(message)}`,
     actor,
     text: truncate(message.content, 86),
-    kind: normalizeKind(message.activityType),
+    kind: normalizeKind(iconFields.activityType ?? message.activityType),
     timestamp: timestampOf(message),
     status: message.activityStatus === 'failed' || message.isError ? 'failed' : undefined,
-    tool: message.tool,
-    activityType: message.activityType,
-    iconPlatform: message.iconPlatform,
-    iconUrl: message.iconUrl,
+    tool: iconFields.tool ?? message.tool,
+    activityType: iconFields.activityType ?? message.activityType,
+    iconPlatform: iconFields.iconPlatform ?? message.iconPlatform,
+    iconUrl: iconFields.iconUrl ?? message.iconUrl,
     failed: message.activityStatus === 'failed' || message.isError,
     activityStatus: message.activityStatus,
   };
+}
+
+function enrichTrackerActivity(activity: {
+  text: string;
+  activityType?: string;
+  tool?: string;
+  iconPlatform?: string;
+  iconUrl?: string;
+}): {
+  tool?: string;
+  activityType?: ChatMessage['activityType'];
+  iconPlatform?: string;
+  iconUrl?: string;
+} {
+  return enrichActivityIconFields({
+    tool: activity.tool,
+    activityType: coerceActivityType(activity.activityType),
+    label: activity.text,
+    iconPlatform: activity.iconPlatform,
+    iconUrl: activity.iconUrl,
+  });
 }
 
 export function useClippyActivitySummary(mobile = false): ClippyActivitySummary {
@@ -252,10 +283,23 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
         currentActivity: truncate(agent.currentActivity || lastActivity?.text || agent.goal || 'Starting up', 82),
         activityKind: normalizeKind(lastActivity?.activityType),
         terminalActive: runningTerminal,
-        tool: lastActivity?.tool,
-        activityType: coerceActivityType(lastActivity?.activityType),
-        iconPlatform: lastActivity?.iconPlatform,
-        iconUrl: lastActivity?.iconUrl,
+        ...(() => {
+          if (!lastActivity) {
+            return {
+              tool: undefined,
+              activityType: undefined,
+              iconPlatform: undefined,
+              iconUrl: undefined,
+            };
+          }
+          const iconFields = enrichTrackerActivity(lastActivity);
+          return {
+            tool: iconFields.tool ?? lastActivity.tool,
+            activityType: iconFields.activityType ?? coerceActivityType(lastActivity.activityType),
+            iconPlatform: iconFields.iconPlatform ?? lastActivity.iconPlatform,
+            iconUrl: iconFields.iconUrl ?? lastActivity.iconUrl,
+          };
+        })(),
       };
     });
 
@@ -288,16 +332,17 @@ export function useClippyActivitySummary(mobile = false): ClippyActivitySummary 
       for (const agent of focusedSubagents) {
         const latest = agent.activities[agent.activities.length - 1];
         if (!latest?.text.trim()) continue;
+        const iconFields = enrichTrackerActivity(latest);
         toolCandidates.push({
           id: `subagent:${agent.id}:${latest.timestamp}`,
           actor: agent.label || 'Helper',
           text: truncate(latest.text, 86),
-          kind: normalizeKind(latest.activityType),
+          kind: normalizeKind(iconFields.activityType ?? latest.activityType),
           timestamp: latest.timestamp,
-          tool: latest.tool,
-          activityType: coerceActivityType(latest.activityType),
-          iconPlatform: latest.iconPlatform,
-          iconUrl: latest.iconUrl,
+          tool: iconFields.tool ?? latest.tool,
+          activityType: iconFields.activityType ?? coerceActivityType(latest.activityType),
+          iconPlatform: iconFields.iconPlatform ?? latest.iconPlatform,
+          iconUrl: iconFields.iconUrl ?? latest.iconUrl,
         });
       }
     }

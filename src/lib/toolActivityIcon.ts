@@ -322,6 +322,77 @@ export function isBrandedActivityVisual(visual: ActivityVisual): boolean {
   return false;
 }
 
+export function enrichActivityIconFields(input: {
+  tool?: string;
+  activityType?: ChatMessage['activityType'];
+  label?: string;
+  iconPlatform?: string;
+  iconUrl?: string;
+  memoryActivity?: ChatMessage['memoryActivity'];
+  policyActivity?: ChatMessage['policyActivity'];
+}): {
+  tool?: string;
+  activityType?: ChatMessage['activityType'];
+  iconPlatform?: string;
+  iconUrl?: string;
+} {
+  const {
+    memoryActivity,
+    policyActivity,
+    label,
+    activityType,
+  } = input;
+  let { tool, iconPlatform, iconUrl } = input;
+
+  if (tool?.toLowerCase() === 'knowledge') {
+    tool = 'memory';
+  }
+
+  if (memoryActivity || policyActivity) {
+    const hints = resolveActivityIconHints('memory');
+    return {
+      tool: 'memory',
+      activityType: activityType ?? 'tool',
+      iconPlatform: iconPlatform ?? hints.iconPlatform,
+      iconUrl: iconUrl ?? hints.iconUrl,
+    };
+  }
+
+  if (iconUrl) {
+    return { tool, activityType, iconPlatform, iconUrl };
+  }
+
+  if (tool) {
+    const hints = resolveActivityIconHints(tool);
+    if (hints.iconUrl) {
+      return {
+        tool,
+        activityType,
+        iconPlatform: iconPlatform ?? hints.iconPlatform,
+        iconUrl: hints.iconUrl,
+      };
+    }
+  }
+
+  const visual = resolveActivityVisual({
+    type: activityType,
+    tool,
+    label,
+    iconPlatform,
+    iconUrl,
+  });
+  if (visual.kind === 'image') {
+    return {
+      tool,
+      activityType,
+      iconPlatform: iconPlatform ?? visual.alt,
+      iconUrl: visual.src,
+    };
+  }
+
+  return { tool, activityType, iconPlatform, iconUrl };
+}
+
 export function resolveActivityIconHints(
   tool: string,
   params?: Record<string, unknown>,

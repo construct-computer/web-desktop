@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2,
-  Brain,
   Search,
   List,
   Network,
   Trash2,
   Repeat,
 } from 'lucide-react';
+import iconMemory from '@/icons/memory.png';
 import { cn } from '@/lib/utils';
 import { FreshnessText, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
@@ -448,7 +448,7 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
     };
     window.addEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
     return () => window.removeEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
-  }, [freshness]);
+  }, [freshness.refreshNow]);
 
   const handleRefresh = async () => {
     if (view === 'defaults') {
@@ -773,7 +773,7 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
         <div className="flex-1 overflow-y-auto min-h-0">
           {searchedMemories.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[var(--color-text-muted)] h-full min-h-[200px]">
-              <Brain className="w-10 h-10 opacity-40" />
+              <img src={iconMemory} alt="" className="w-10 h-10 object-contain opacity-40" />
               <p className="text-sm">No saved knowledge yet</p>
               <p className="text-xs opacity-60">
                 {searchQuery ? 'Try a different search term' : 'Knowledge will appear as you work with Construct'}
@@ -790,7 +790,7 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
                       className="w-full flex items-start gap-2.5 px-3 py-2.5 hover:bg-[var(--color-accent-muted)] transition-colors text-left"
                       onClick={() => setExpandedId(isExpanded ? null : memory.id)}
                     >
-                      <Brain className="w-4 h-4 mt-0.5 shrink-0 text-violet-500" />
+                      <img src={iconMemory} alt="" className="w-4 h-4 mt-0.5 shrink-0 object-contain" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs leading-relaxed">{memory.memory}</p>
                         {memory.categories && memory.categories.length > 0 && (

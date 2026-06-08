@@ -4,7 +4,8 @@
  * Open Browser CTA. Intentionally compact to match the other tool rows.
  */
 import { useMemo, useState } from 'react';
-import { Globe, ExternalLink, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { ExternalLink, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import iconBrowser from '@/icons/browser.png';
 import { useWindowStore } from '@/stores/windowStore';
 import { getOrCreateBrowserAppWindow, markBrowserWindowEngaged, useComputerStore, type ChatMessage } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -152,7 +153,7 @@ export function BrowserRunCard({
         {favicon ? (
           <img src={favicon} alt="" className="w-3.5 h-3.5" referrerPolicy="no-referrer" />
         ) : (
-          <Globe className="w-3.5 h-3.5 text-[var(--color-text-muted)]/50" />
+          <img src={iconBrowser} alt="" className="w-3.5 h-3.5 object-contain" />
         )}
       </div>
 

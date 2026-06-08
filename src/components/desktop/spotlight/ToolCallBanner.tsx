@@ -1,9 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square, Brain, Check, Copy } from 'lucide-react';
+import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square, Check, Copy } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
-import { ActivityIconBadge } from './ActivityIconBadge';
-import { ActivityIconFrame } from './ActivityIconFrame';
-import { memoryActivityTitle, memoryActivitySummary } from './ChatEventRow';
+import { ActivityIconBadge, MemoryIconBadge } from './ActivityIconBadge';
+import {
+  memoryActivityTitle,
+  memoryActivitySummary,
+  policyActivityTitle,
+  policyActivitySummary,
+} from './ChatEventRow';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { BrowserRunCard } from './BrowserRunCard';
 import { CompactActivityRow } from './CompactActivityRow';
@@ -274,6 +278,16 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     />
                   );
                 }
+                if (act.policyActivity) {
+                  return (
+                    <PolicyTimelineRow
+                      key={key}
+                      message={act}
+                      duration={dur}
+                      repeatCount={repeat}
+                    />
+                  );
+                }
                 if (act.activityType === 'web' && act.browserAction) {
                   return (
                     <BrowserActivityRow
@@ -407,6 +421,14 @@ function FlatActivityLine({
       />
     );
   }
+  if (activity.policyActivity) {
+    return (
+      <PolicyTimelineRow
+        message={activity}
+        repeatCount={repeatCount}
+      />
+    );
+  }
   if (activity.activityType === 'web' && activity.browserAction) {
     return (
       <BrowserActivityRow
@@ -467,9 +489,7 @@ function MemoryTimelineRow({
   return (
     <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
       <div className="flex items-start gap-2.5">
-        <ActivityIconFrame size="sm" variant="default" className="mt-[1px]">
-          <Brain className="h-3.5 w-3.5" />
-        </ActivityIconFrame>
+        <MemoryIconBadge size="sm" />
         <div className="min-w-0 flex-1">
           <button
             type="button"
@@ -515,6 +535,78 @@ function MemoryTimelineRow({
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
+            </div>
+          )}
+        </div>
+        {duration && (
+          <span className="text-[10px] text-[var(--color-text-muted)]/25 shrink-0 tabular-nums mt-[2px]">
+            {duration}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Policy timeline row (expandable inside tool banner) ── */
+
+function PolicyTimelineRow({
+  message,
+  duration,
+  repeatCount,
+}: {
+  message: ChatMessage;
+  duration?: string;
+  repeatCount?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const activity = message.policyActivity!;
+  const title = policyActivityTitle(activity);
+  const summary = policyActivitySummary(activity);
+  const canExpand = activity.items.length > 0;
+
+  return (
+    <div className="rounded-md px-1 py-[1px] hover:bg-white/[0.025]">
+      <div className="flex items-start gap-2.5">
+        <MemoryIconBadge size="sm" />
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            disabled={!canExpand}
+            onClick={() => canExpand && setExpanded(!expanded)}
+            className="group flex max-w-full items-center gap-1.5 text-left text-[12px] leading-4 text-[var(--color-text-muted)]/55 disabled:cursor-default"
+          >
+            <span className="shrink-0 font-medium">{title}</span>
+            {summary && (
+              <>
+                <span className="shrink-0 text-[var(--color-text-muted)]/22">·</span>
+                <span className="min-w-0 truncate text-[var(--color-text-muted)]/40 group-hover:text-[var(--color-text-muted)]/55">
+                  {summary}
+                </span>
+              </>
+            )}
+            {repeatCount && repeatCount > 1 && (
+              <span className="text-[10px] px-1.5 py-px rounded-full bg-white/[0.06] text-[var(--color-text-muted)]/50 shrink-0">
+                ×{repeatCount}
+              </span>
+            )}
+            {canExpand && (
+              <span className="shrink-0 text-[var(--color-text-muted)]/25 group-hover:text-[var(--color-text-muted)]/45">
+                {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </span>
+            )}
+          </button>
+
+          {expanded && canExpand && (
+            <div className="mt-0.5 max-w-2xl border-l border-white/5 pl-2 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
+              <div className="space-y-0.5">
+                {activity.items.map((item) => (
+                  <p key={item.id} className="text-[var(--color-text-muted)]/62">
+                    <span className="text-[var(--color-text-muted)]/70">{item.title}</span>
+                    {item.description ? ` — ${item.description}` : ''}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
         </div>
