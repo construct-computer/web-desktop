@@ -23,10 +23,12 @@ export function WebToolActivityRow({
   message,
   duration,
   failed,
+  repeatCount,
 }: {
   message: ChatMessage;
   duration?: string;
   failed?: boolean;
+  repeatCount?: number;
 }) {
   const tool = message.tool || '';
   const showView = isBrowserWebTool(tool) && !!message.toolCallId;
@@ -42,6 +44,7 @@ export function WebToolActivityRow({
         failed={failed}
         duration={duration}
         activityStatus={message.activityStatus}
+        repeatCount={repeatCount}
         className="flex-1 hover:bg-white/[0.025]"
       />
       {showView && (

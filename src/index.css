@@ -427,6 +427,132 @@ html.dark {
   background-color: var(--surface-sidebar-bg);
 }
 
+/* Login screen auth buttons — coordinated hover/active motion */
+.login-auth-button {
+  --login-auth-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --login-auth-duration: 280ms;
+  --login-auth-active-duration: 120ms;
+  transition:
+    transform var(--login-auth-duration) var(--login-auth-ease),
+    box-shadow var(--login-auth-duration) var(--login-auth-ease),
+    background-color var(--login-auth-duration) var(--login-auth-ease),
+    border-color var(--login-auth-duration) var(--login-auth-ease),
+    color var(--login-auth-duration) var(--login-auth-ease);
+  will-change: transform;
+}
+
+.login-auth-button:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.015);
+  border-color: rgba(0, 0, 0, 0.16);
+  background-color: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.dark .login-auth-button:not(:disabled):hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background-color: rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.16);
+}
+
+.login-auth-button:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: var(--login-auth-active-duration);
+}
+
+.login-auth-button--ghost {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.login-auth-button--ghost:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.01);
+  border-color: rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.9);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.08),
+    0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.dark .login-auth-button--ghost:not(:disabled):hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 1);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.2),
+    0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.login-auth-button--solid {
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.dark .login-auth-button--solid {
+  background-color: rgba(255, 255, 255, 0.9);
+  color: #000;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.login-auth-button--solid:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.02);
+  background-color: #000;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.dark .login-auth-button--solid:not(:disabled):hover {
+  background-color: #fff;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.login-auth-button--link {
+  background: none;
+  border: none;
+  color: rgba(0, 0, 0, 0.5);
+  box-shadow: none;
+  will-change: transform, color;
+}
+
+.dark .login-auth-button--link {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.login-auth-button--link:not(:disabled):hover {
+  transform: translateY(-0.5px);
+  color: rgba(0, 0, 0, 0.8);
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dark .login-auth-button--link:not(:disabled):hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.login-auth-button--link:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-auth-button:not(:disabled):hover,
+  .login-auth-button:not(:disabled):active {
+    transform: none;
+  }
+}
+
 /* Settings window responsive primitives. These use the app pane width, not the
    viewport width, so they also behave correctly inside resized desktop windows. */
 .settings-window,

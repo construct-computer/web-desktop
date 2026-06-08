@@ -287,11 +287,7 @@ export function LoginScreen() {
                   <button
                     type="submit"
                     disabled={magicLinkState === 'verifying' || otp.length !== 6}
-                    className="w-[180px] py-2 text-[13px] font-semibold rounded-full
-                               bg-black/80 dark:bg-white/90 text-white dark:text-black
-                               hover:bg-black dark:hover:bg-white
-                               disabled:opacity-50
-                               transition-colors duration-150"
+                    className="login-auth-button login-auth-button--solid w-[180px] py-2 text-[13px] font-semibold rounded-full disabled:opacity-50"
                   >
                     {magicLinkState === 'verifying' ? 'Verifying...' : 'Continue'}
                   </button>
@@ -301,7 +297,7 @@ export function LoginScreen() {
                 </p>
                 <button
                   onClick={handleBackToMain}
-                  className="text-xs font-semibold text-black/50 dark:text-white/50 hover:text-black/80 dark:hover:text-white/80 transition-colors"
+                  className="login-auth-button login-auth-button--link text-xs font-semibold"
                 >
                   Go Back
                 </button>
@@ -328,19 +324,14 @@ export function LoginScreen() {
                   <button
                     type="submit"
                     disabled={magicLinkState === 'sending' || !email.trim()}
-                    className="absolute right-1 top-1 bottom-1 px-4
-                               text-xs font-semibold rounded-full
-                               bg-black/80 dark:bg-white/90 text-white dark:text-black
-                               hover:bg-black dark:hover:bg-white
-                               disabled:opacity-50
-                               transition-colors duration-150"
+                    className="login-auth-button login-auth-button--solid absolute right-1 top-1 bottom-1 px-4 text-xs font-semibold rounded-full disabled:opacity-50"
                   >
                     {magicLinkState === 'sending' ? '...' : '→'}
                   </button>
                 </form>
                 <button
                   onClick={handleBackToMain}
-                  className="text-xs font-semibold text-black/50 dark:text-white/50 hover:text-black/80 dark:hover:text-white/80 mt-2 transition-colors"
+                  className="login-auth-button login-auth-button--link text-xs font-semibold mt-2"
                 >
                   Cancel
                 </button>
@@ -351,14 +342,12 @@ export function LoginScreen() {
                 <button
                   onClick={handleGoogleLogin}
                   disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4
+                  className="login-auth-button w-full flex items-center justify-center gap-3 py-2.5 px-4
                              text-[14px] font-medium rounded-full
                              surface-control
                              border border-black/10 dark:border-white/15 shadow-lg
                              text-black/90 dark:text-white
-                             hover:bg-white/70 dark:hover:bg-white/25
-                             disabled:opacity-50
-                             transition-all duration-200"
+                             disabled:opacity-50"
                 >
                   <svg viewBox="0 0 24 24" width="18" height="18" className="flex-shrink-0">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
@@ -372,13 +361,10 @@ export function LoginScreen() {
                 <button
                   onClick={handleShowEmail}
                   disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-4
+                  className="login-auth-button login-auth-button--ghost w-full flex items-center justify-center gap-2 py-2 px-4
                              text-[13px] font-medium rounded-full
-                             bg-transparent border border-transparent
                              text-black/60 dark:text-white/60
-                             hover:text-black/90 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5
-                             disabled:opacity-50
-                             transition-colors duration-200"
+                             disabled:opacity-50"
                 >
                   <Mail className="w-4 h-4" />
                   Sign in with Email

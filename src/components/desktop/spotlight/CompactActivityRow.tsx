@@ -1,6 +1,7 @@
 import { Loader2, Check } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
 import { ActivityIconBadge } from './ActivityIconBadge';
+import { formatRepeatBadge } from './browserActivityUtils';
 import { formatActivityLine } from './formatActivityLine';
 
 function middleEllipsis(text: string, max = 42): string {
@@ -19,6 +20,7 @@ export function CompactActivityRow({
   failed,
   duration,
   activityStatus,
+  repeatCount,
   dense,
   clippy,
   className = '',
@@ -31,6 +33,7 @@ export function CompactActivityRow({
   failed?: boolean;
   duration?: string;
   activityStatus?: ChatMessage['activityStatus'];
+  repeatCount?: number;
   dense?: boolean;
   clippy?: boolean;
   className?: string;
@@ -66,6 +69,14 @@ export function CompactActivityRow({
       )}
       {activityStatus === 'completed' && !failed && (
         <Check className="w-3 h-3 shrink-0 text-emerald-400/50" />
+      )}
+      {repeatCount && repeatCount > 1 && (
+        <span
+          className="shrink-0 rounded-full bg-white/[0.06] px-1.5 py-px text-[10px] text-[var(--color-text-muted)]/50"
+          title={repeatCount > 3 ? `${repeatCount} similar steps` : undefined}
+        >
+          {formatRepeatBadge(repeatCount)}
+        </span>
       )}
       {duration && (
         <span className="shrink-0 text-[10px] tabular-nums text-white/40">{duration}</span>

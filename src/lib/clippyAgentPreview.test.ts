@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeAgentTextPreview } from './clippyAgentPreview';
+import {
+  agentDisplayContent,
+  isClippyOnlyAgentContent,
+  stripClippyFromText,
+  summarizeAgentTextPreview,
+} from './clippyAgentPreview';
 
 describe('summarizeAgentTextPreview', () => {
   it('returns first sentence with ellipsis when more content remains', () => {
@@ -36,5 +41,18 @@ describe('summarizeAgentTextPreview', () => {
   it('strips leaked CLIPPY prefix from preview source', () => {
     const preview = summarizeAgentTextPreview('CLIPPY: Checking calendar\n\nDone with the check.');
     expect(preview).toBe('Done with the check.');
+  });
+});
+
+describe('stripClippyFromText', () => {
+  it('removes CLIPPY-only messages from chat display', () => {
+    expect(isClippyOnlyAgentContent('CLIPPY: Spawning 3 subagents to research TestNG features...')).toBe(true);
+    expect(agentDisplayContent('CLIPPY: Spawning 3 subagents\n\nStarting helpers now.')).toBe('Starting helpers now.');
+  });
+
+  it('passes through normal assistant text', () => {
+    const { body, clippy } = stripClippyFromText('Hello there.');
+    expect(body).toBe('Hello there.');
+    expect(clippy).toBeUndefined();
   });
 });

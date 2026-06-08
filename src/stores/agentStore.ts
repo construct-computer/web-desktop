@@ -63,6 +63,7 @@ import {
   removeComponentMentionForSession,
   upsertComponentMentionForSession,
 } from '@/lib/componentMentions';
+import { agentDisplayContent } from '@/lib/clippyAgentPreview';
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 // Utility functions extracted to reduce this file's size.
@@ -3016,11 +3017,13 @@ export const useComputerStore = create<ComputerStore>()(
             }
             // Then the assistant text (if any)
             if (msg.content) {
-              const content = typeof msg.content === 'string'
+              const rawContent = typeof msg.content === 'string'
                 ? msg.content
                 : String(msg.content);
+              const content = agentDisplayContent(rawContent);
+              if (!content.trim()) continue;
               const meta = parseMetadata(msg.metadata);
-              const iterationLimit = metadataIterationLimit(meta) || contentIterationLimit(content);
+              const iterationLimit = metadataIterationLimit(meta) || contentIterationLimit(rawContent);
               history.push({
                 role: 'agent',
                 content,
@@ -3127,6 +3130,7 @@ export const useComputerStore = create<ComputerStore>()(
                     : `Research checkpoint (${reason})`,
                   timestamp: new Date(eventTs),
                   activityType: 'tool',
+                  tool: ev.event_type === 'research:hard_ceiling' ? 'research_ceiling' : 'research_checkpoint',
                 });
                 break;
               }

@@ -72,15 +72,21 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     const mainActivities = activities.filter(a => !subAgentTexts.has(a.content));
 
     type TimelineEntry =
-      | { kind: 'activity'; activity: ChatMessage; ts: number }
+      | { kind: 'activity'; activity: ChatMessage; ts: number; repeat: number }
       | { kind: 'subagent'; agent: TrackedSubAgent; ts: number };
 
+    const mergedMain = mergeBrowserRepeats(mainActivities);
     const entries: TimelineEntry[] = [];
     for (const agent of subAgents) {
       entries.push({ kind: 'subagent', agent, ts: agent.startedAt });
     }
-    for (const act of mainActivities) {
-      entries.push({ kind: 'activity', activity: act, ts: new Date(act.timestamp).getTime() });
+    for (const { act, repeat } of mergedMain) {
+      entries.push({
+        kind: 'activity',
+        activity: act,
+        ts: new Date(act.timestamp).getTime(),
+        repeat,
+      });
     }
     entries.sort((a, b) => a.ts - b.ts);
     return entries;
@@ -146,9 +152,21 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     });
   }, [timelineActivities, hasSubAgents]);
 
+  const mergedMainStepCount = useMemo(() => {
+    if (!hasSubAgents) return 0;
+    const subAgentTexts = new Set<string>();
+    for (const agent of subAgents) {
+      for (const act of agent.activities) {
+        subAgentTexts.add(act.text);
+      }
+    }
+    const mainActivities = activities.filter((a) => !subAgentTexts.has(a.content));
+    return mergeBrowserRepeats(mainActivities).length;
+  }, [hasSubAgents, subAgents, activities]);
+
   const stepCount = hasSubAgents
-    ? subAgents.length + activities.length
-    : activities.length;
+    ? subAgents.length + mergedMainStepCount
+    : itemsWithDuration.length;
 
   const collapsedPreview = useMemo(() => {
     if (expanded) return null;
@@ -235,7 +253,13 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                 if (entry.kind === 'subagent') {
                   return <SubAgentEntry key={entry.agent.id} agent={entry.agent} />;
                 }
-                return <FlatActivityLine key={`main-${i}`} activity={entry.activity} />;
+                return (
+                  <FlatActivityLine
+                    key={`main-${i}`}
+                    activity={entry.activity}
+                    repeatCount={entry.repeat}
+                  />
+                );
               })
             ) : (
               /* ── Flat activity list (no sub-agents) ── */
@@ -268,6 +292,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                       message={act}
                       duration={dur}
                       failed={isFailed}
+                      repeatCount={repeat}
                     />
                   );
                 }
@@ -283,6 +308,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     failed={isFailed}
                     activityStatus={act.activityStatus}
                     duration={dur}
+                    repeatCount={repeat}
                     className="hover:bg-white/[0.025]"
                   />
                 );
@@ -366,7 +392,38 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
 
 /* ── Flat activity line (for main-agent activities in merged timeline) ── */
 
-function FlatActivityLine({ activity }: { activity: ChatMessage }) {
+function FlatActivityLine({
+  activity,
+  repeatCount,
+}: {
+  activity: ChatMessage;
+  repeatCount?: number;
+}) {
+  if (activity.memoryActivity) {
+    return (
+      <MemoryTimelineRow
+        message={activity}
+        repeatCount={repeatCount}
+      />
+    );
+  }
+  if (activity.activityType === 'web' && activity.browserAction) {
+    return (
+      <BrowserActivityRow
+        message={activity}
+        repeatCount={repeatCount}
+      />
+    );
+  }
+  if (activity.tool && isBrowserWebTool(activity.tool)) {
+    return (
+      <WebToolActivityRow
+        message={activity}
+        failed={activity.activityStatus === 'failed' || activity.isError}
+        repeatCount={repeatCount}
+      />
+    );
+  }
   return (
     <CompactActivityRow
       content={activity.content}
@@ -375,6 +432,8 @@ function FlatActivityLine({ activity }: { activity: ChatMessage }) {
       iconPlatform={activity.iconPlatform}
       iconUrl={activity.iconUrl}
       failed={activity.activityStatus === 'failed' || activity.isError}
+      activityStatus={activity.activityStatus}
+      repeatCount={repeatCount}
       className="hover:bg-white/[0.025] text-[var(--color-text-muted)]/50"
     />
   );

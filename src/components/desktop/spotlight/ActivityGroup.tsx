@@ -2,18 +2,31 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { ChatEventRow } from './ChatEventRow';
+import { mergeBrowserRepeats } from './browserActivityUtils';
 import type { ChatMessage } from '@/stores/agentStore';
+
+function withRepeatCount(msg: ChatMessage, repeat: number): ChatMessage {
+  if (repeat <= 1) return msg;
+  return { ...msg, noticeRepeatCount: repeat };
+}
 
 export function ActivityGroup({ activities }: { activities: ChatMessage[] }) {
   const [expanded, setExpanded] = useState(false);
-  if (activities.length === 0) return null;
-  if (activities.length <= 2) {
-    return <>{activities.map((msg, i) => <ChatEventRow key={i} msg={msg} />)}</>;
+  const merged = mergeBrowserRepeats(activities);
+  if (merged.length === 0) return null;
+  if (merged.length <= 2) {
+    return (
+      <>
+        {merged.map(({ act, repeat }, i) => (
+          <ChatEventRow key={i} msg={withRepeatCount(act, repeat)} />
+        ))}
+      </>
+    );
   }
 
-  const first = activities[0];
-  const last = activities[activities.length - 1];
-  const middle = activities.length - 2;
+  const first = merged[0].act;
+  const last = merged[merged.length - 1].act;
+  const middle = merged.length - 2;
 
   return (
     <div className="px-5 py-0.5">
@@ -52,10 +65,12 @@ export function ActivityGroup({ activities }: { activities: ChatMessage[] }) {
             className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]/40 hover:text-[var(--color-text-muted)]/60 transition-colors mb-1"
           >
             <ChevronDown className="w-3 h-3" />
-            <span>{activities.length} actions</span>
+            <span>{merged.length} actions</span>
           </button>
           <div className="ml-1.5 border-l border-[var(--color-border)]/15 pl-2">
-            {activities.map((msg, i) => <ChatEventRow key={i} msg={msg} compact />)}
+            {merged.map(({ act, repeat }, i) => (
+              <ChatEventRow key={i} msg={withRepeatCount(act, repeat)} compact />
+            ))}
           </div>
         </>
       )}

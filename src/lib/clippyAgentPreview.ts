@@ -1,4 +1,49 @@
-const CLIPPY_PREFIX = 'CLIPPY:';
+export const CLIPPY_PREFIX = 'CLIPPY:';
+const CLIPPY_MAX_CHARS = 90;
+
+function normalizeClippyLine(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) return '';
+  if (compact.length <= CLIPPY_MAX_CHARS) return compact;
+  return `${compact.slice(0, CLIPPY_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+/** Strip leading CLIPPY status line from assistant text (matches worker persistence). */
+export function stripClippyFromText(fullText: string): { body: string; clippy?: string } {
+  if (!fullText) return { body: fullText };
+
+  const leading = fullText.match(/^\s*/)?.[0] ?? '';
+  const trimmed = fullText.slice(leading.length);
+  if (!trimmed.startsWith(CLIPPY_PREFIX)) {
+    return { body: fullText };
+  }
+
+  const afterPrefix = trimmed.slice(CLIPPY_PREFIX.length);
+  const newlineIndex = afterPrefix.indexOf('\n');
+  if (newlineIndex === -1) {
+    const line = normalizeClippyLine(afterPrefix);
+    return { body: '', ...(line ? { clippy: line } : {}) };
+  }
+
+  const line = normalizeClippyLine(afterPrefix.slice(0, newlineIndex));
+  let rest = afterPrefix.slice(newlineIndex + 1).replace(/^\s*\n+/, '');
+  if (leading && rest) rest = leading + rest;
+  else if (leading && !rest) rest = leading;
+
+  return {
+    body: rest,
+    ...(line ? { clippy: line } : {}),
+  };
+}
+
+export function isClippyOnlyAgentContent(content: string): boolean {
+  return !stripClippyFromText(content).body.trim();
+}
+
+/** User-visible assistant body with CLIPPY status line removed. */
+export function agentDisplayContent(content: string): string {
+  return stripClippyFromText(content).body;
+}
 
 /** Strip common markdown for compact Clippy previews. */
 export function stripMarkdownForPreview(text: string): string {

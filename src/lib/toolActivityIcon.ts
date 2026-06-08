@@ -29,6 +29,7 @@ import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
 import iconChat from '@/icons/chat.png';
 import iconAgents from '@/icons/agents.png';
+import iconCheckpoint from '@/icons/checkpoint.png';
 import { normalizePlatformSlug } from '@/lib/platforms';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
@@ -87,6 +88,13 @@ function isAgentActivity(tool?: string, type?: ChatMessage['activityType']): boo
   if (t && AGENT_PNG_TOOLS.has(t)) return true;
   if (type && AGENT_PNG_TYPES.has(type)) return true;
   return false;
+}
+
+function isResearchCheckpointActivity(tool?: string, label?: string): boolean {
+  const t = tool?.toLowerCase();
+  if (t === 'research_checkpoint' || t === 'research_ceiling') return true;
+  const text = (label || '').toLowerCase();
+  return text.startsWith('research checkpoint') || text.startsWith('research ceiling');
 }
 
 /** Tools with a native app icon that routeToolToWindow does not cover. */
@@ -391,12 +399,17 @@ export function resolveActivityVisual(input: {
     }
   }
 
-  // 3. Branded agents PNG for agent/subagent/orchestration activities.
+  // 3. Research checkpoint / ceiling indicators.
+  if (isResearchCheckpointActivity(tool, label)) {
+    return imageVisual(iconCheckpoint, 'Research checkpoint');
+  }
+
+  // 4. Branded agents PNG for agent/subagent/orchestration activities.
   if (isAgentActivity(tool, type)) {
     return imageVisual(iconAgents, 'Agents');
   }
 
-  // 4. Native Construct app icons (PNG) — preferred over generic Lucide.
+  // 5. Native Construct app icons (PNG) — preferred over generic Lucide.
   const builtin = resolveBuiltinIcon(tool, type, params);
   if (builtin) {
     const windowType = resolveWindowTypeForTool(tool, params, type);
@@ -407,13 +420,13 @@ export function resolveActivityVisual(input: {
     return imageVisual(iconChat, 'Chat');
   }
 
-  // 5. Lucide fallback for tools without a branded PNG.
+  // 6. Lucide fallback for tools without a branded PNG.
   const lucide = lucideIconForTool(type, tool, label);
   if (lucide) {
     return { kind: 'lucide', Icon: lucide };
   }
 
-  // 6. Last resort: generic Construct app icon.
+  // 7. Last resort: generic Construct app icon.
   return imageVisual(iconGeneric, tool || label || 'Tool');
 }
 

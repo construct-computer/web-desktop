@@ -12,6 +12,7 @@ import iconAppStore from '@/icons/app-store.png';
 import iconAccessLogs from '@/icons/access-logs.png';
 import iconChat from '@/icons/chat.png';
 import iconGeneric from '@/icons/generic.png';
+import iconCheckpoint from '@/icons/checkpoint.png';
 
 describe('toolActivityIcon branded PNG resolution', () => {
   it('uses calendar.png for native schedule tools', () => {
@@ -57,6 +58,22 @@ describe('toolActivityIcon branded PNG resolution', () => {
     });
     expect(resolveActivityVisual({ type: 'web' })).toEqual({
       kind: 'image', src: iconBrowser, alt: 'browser',
+    });
+  });
+
+  it('uses checkpoint.png for research checkpoint activities', () => {
+    expect(resolveActivityVisual({
+      tool: 'research_checkpoint',
+      type: 'tool',
+      label: 'Research checkpoint (checkpoint)',
+    })).toEqual({
+      kind: 'image', src: iconCheckpoint, alt: 'Research checkpoint',
+    });
+    expect(resolveActivityVisual({
+      type: 'tool',
+      label: 'Research ceiling reached (budget)',
+    })).toEqual({
+      kind: 'image', src: iconCheckpoint, alt: 'Research checkpoint',
     });
   });
 

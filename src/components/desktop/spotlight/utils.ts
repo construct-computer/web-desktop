@@ -4,6 +4,7 @@
 
 import type { ChatMessage } from '@/stores/agentStore';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
+import { isClippyOnlyAgentContent } from '@/lib/clippyAgentPreview';
 
 // ── Thinking text detection ───────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export function groupMessages(messages: ChatMessage[], _isAgentRunning: boolean)
     else if (msg.role === 'activity') { if (msg.content) actBuf.push(msg); }
     else if (msg.role === 'system' && !msg.askUser) { /* skip */ }
     else if (msg.role === 'agent' && !msg.iterationLimit && !msg.isError && !msg.content.trim()) { /* skip empty */ }
+    else if (msg.role === 'agent' && !msg.iterationLimit && !msg.isError && isClippyOnlyAgentContent(msg.content)) { /* CLIPPY status only */ }
     else if (msg.role === 'agent' && !msg.iterationLimit && !msg.isError && !msg.isStopped && i !== lastAgentIdx && isLikelyThinkingText(msg.content)) { /* filter thinking */ }
     else if (msg.role === 'user' && msg.content.startsWith('[App | ')) { /* skip internal app messages */ }
     else { flush(); groups.push({ type: 'message', msg, index: i }); }

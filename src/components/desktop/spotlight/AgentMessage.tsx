@@ -11,6 +11,7 @@ import { ChatEventRow } from './ChatEventRow';
 import type { ChatMessage } from '@/stores/agentStore';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, workspaceDisplayPath } from '@/lib/workspacePaths';
 import { StepLimitCard } from './StepLimitCard';
+import { agentDisplayContent } from '@/lib/clippyAgentPreview';
 
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
@@ -34,7 +35,12 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
     );
   }
 
-  const auth = parseAuthMarker(msg.content);
+  const displayContent = agentDisplayContent(msg.content);
+  if (!displayContent.trim() && !msg.askUser && !(msg.attachments?.length)) {
+    return null;
+  }
+
+  const auth = parseAuthMarker(displayContent);
   if (auth) {
     return (
       <>
@@ -67,7 +73,7 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
         <div className={`w-full text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
           {(() => {
             if (msg.askUser) return <AskUserCard data={msg.askUser} />;
-            return <MarkdownRenderer content={msg.content} />;
+            return <MarkdownRenderer content={displayContent} />;
           })()}
 
           {/* File attachments */}
