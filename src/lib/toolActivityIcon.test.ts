@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { Bot, Clock, ListTodo, Users } from 'lucide-react';
+import { ListTodo } from 'lucide-react';
 import { resolveActivityIconHints, resolveActivityVisual } from './toolActivityIcon';
+import iconAgents from '@/icons/agents.png';
 import iconBrowser from '@/icons/browser.png';
 import iconCalendar from '@/icons/calendar.png';
 import iconEmail from '@/icons/email.png';
@@ -59,25 +60,24 @@ describe('toolActivityIcon branded PNG resolution', () => {
     });
   });
 
-  it('uses Lucide icons for orchestration and task tools without branded PNGs', () => {
-    expect(resolveActivityVisual({ tool: 'spawn_agent', type: 'delegation' })).toEqual({
-      kind: 'lucide', Icon: Users,
-    });
-    expect(resolveActivityVisual({ tool: 'spawn_agents', type: 'delegation' })).toEqual({
-      kind: 'lucide', Icon: Users,
-    });
-    expect(resolveActivityVisual({ tool: 'wait_for_agents', type: 'delegation' })).toEqual({
-      kind: 'lucide', Icon: Clock,
-    });
-    expect(resolveActivityVisual({ tool: 'task_create', type: 'tool' })).toEqual({
-      kind: 'lucide', Icon: ListTodo,
-    });
+  it('uses agents.png for orchestration and delegation tools', () => {
+    for (const tool of ['spawn_agent', 'spawn_agents', 'wait_for_agents', 'mailbox_received']) {
+      expect(resolveActivityVisual({ tool, type: 'delegation' })).toEqual({
+        kind: 'image', src: iconAgents, alt: 'Agents',
+      });
+    }
     expect(resolveActivityVisual({
       tool: 'mailbox_received',
       type: 'background',
       label: 'Received 3 messages from background tasks',
     })).toEqual({
-      kind: 'lucide', Icon: Bot,
+      kind: 'image', src: iconAgents, alt: 'Agents',
+    });
+  });
+
+  it('uses Lucide icons for task tools without branded PNGs', () => {
+    expect(resolveActivityVisual({ tool: 'task_create', type: 'tool' })).toEqual({
+      kind: 'lucide', Icon: ListTodo,
     });
   });
 
