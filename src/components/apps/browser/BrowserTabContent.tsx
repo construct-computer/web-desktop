@@ -28,8 +28,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad,
   onIframeError,
   onManualReconnect,
-  immersive = false,
-  onExitImmersive,
   interactive = false,
   onRequestUnlock,
   onLock,
@@ -43,8 +41,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad: () => void;
   onIframeError: () => void;
   onManualReconnect: () => void;
-  immersive?: boolean;
-  onExitImmersive?: () => void;
   interactive?: boolean;
   onRequestUnlock?: () => void;
   onLock?: () => void;
@@ -72,7 +68,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
           runPhase={tab.runPhase || 'live'}
           runErrorDetail={tab.error || ''}
           stepCount={tab.stepCount}
-          runId={tab.runId}
           pageUrl={tab.pageUrl || tab.url}
           isDead={iframeDead}
           reloadKey={reloadKey}
@@ -81,8 +76,6 @@ export const BrowserTabContent = memo(function BrowserTabContent({
           onManualReconnect={onManualReconnect}
           progressLabel={tab.progressLabel}
           goal={tab.goal}
-          immersive={immersive}
-          onExitImmersive={onExitImmersive}
           interactive={interactive}
           onRequestUnlock={onRequestUnlock}
           onLock={onLock}

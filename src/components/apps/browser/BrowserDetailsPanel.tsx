@@ -20,10 +20,8 @@ import type { BrowserTab } from '@/stores/browserTabStore';
 import { formatBytes } from '@/lib/format';
 import { decodeDisplayName } from '@/lib/workspacePaths';
 import { BrowserRunHistory } from '../BrowserRunHistory';
-import { BrowserScreenshotGallery } from '../BrowserScreenshotGallery';
 
-type DetailsSection = 'page' | 'activity' | 'captures' | 'files';
-type CaptureScope = 'auto' | 'page' | 'run' | 'all';
+type DetailsSection = 'page' | 'activity' | 'files';
 
 export function BrowserDetailsPanel({
   sessions,
@@ -39,7 +37,6 @@ export function BrowserDetailsPanel({
   onClose?: () => void;
 }) {
   const [section, setSection] = useState<DetailsSection>('page');
-  const [captureScope, setCaptureScope] = useState<CaptureScope>('auto');
   const [filesScope, setFilesScope] = useState<'active' | 'all'>('active');
   const [stopping, setStopping] = useState(false);
   const hydrateBrowserSessions = useComputerStore((s) => s.hydrateBrowserSessions);
@@ -49,7 +46,6 @@ export function BrowserDetailsPanel({
     ? visibleSessions.find((s) => s.runId === activeTab.runId || s.id === activeTab.runId)
     : null;
   const activeSession = tabSession || visibleSessions.find((s) => s.id === activeSessionId) || visibleSessions[0];
-  const pageUrl = activeTab ? (activeTab.pageUrl || activeTab.url || '') : '';
 
   const files = useMemo(() => {
     const source = filesScope === 'active' && activeSession ? [activeSession] : visibleSessions;
@@ -68,10 +64,6 @@ export function BrowserDetailsPanel({
       setStopping(false);
     }
   };
-
-  const resolvedCaptureScope = captureScope === 'auto' ? defaultCaptureScope(activeTab) : captureScope;
-  const captureRunId = resolvedCaptureScope === 'run' ? activeTab?.runId || activeSession?.runId : null;
-  const captureUrl = resolvedCaptureScope === 'page' ? pageUrl : null;
 
   return (
     <div className="w-[380px] shrink-0 border-l border-[var(--color-border)] bg-[var(--color-sidebar)] flex flex-col min-h-0 animate-[fadeIn_0.2s_ease-out]">
@@ -114,11 +106,10 @@ export function BrowserDetailsPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-1 p-1 border-b border-[var(--color-border)] surface-toolbar text-[11px] select-none">
+      <div className="grid grid-cols-3 gap-1 p-1 border-b border-[var(--color-border)] surface-toolbar text-[11px] select-none">
         {([
           ['page', 'Page'],
           ['activity', 'Activity'],
-          ['captures', 'Captures'],
           ['files', 'Files'],
         ] as const).map(([key, label]) => (
           <button
@@ -142,16 +133,6 @@ export function BrowserDetailsPanel({
         )}
         {section === 'activity' && (
           <ActivitySection sessions={visibleSessions} activeSessionId={activeSession?.id || null} />
-        )}
-        {section === 'captures' && (
-          <CapturesSection
-            scope={captureScope}
-            resolvedScope={resolvedCaptureScope}
-            onScopeChange={setCaptureScope}
-            runId={captureRunId}
-            url={captureUrl}
-            captureUrl={pageUrl || null}
-          />
         )}
         {section === 'files' && (
           <FilesSection
@@ -181,13 +162,6 @@ function detailsSubtitle(tab: BrowserTab | null, session: BrowserSessionRecord |
     return `${modeName(tab.mode)} · ${state} · ${tab.runPhase || session?.status || 'live'}`;
   }
   return `${modeName(tab.mode)} · ${tab.status}`;
-}
-
-function defaultCaptureScope(tab?: BrowserTab | null): Exclude<CaptureScope, 'auto'> {
-  if (!tab) return 'all';
-  if (tab.mode === 'live' && tab.runId) return 'run';
-  if ((tab.mode === 'fetch' || tab.url || tab.pageUrl) && (tab.url || tab.pageUrl)) return 'page';
-  return 'all';
 }
 
 function modeName(mode?: BrowserTab['mode']): string {
@@ -333,50 +307,6 @@ function SessionCard({ session, active }: { session: BrowserSessionRecord; activ
       </div>
       <p className="mt-1 text-[11px] text-[var(--color-text-muted)] line-clamp-2">{session.task || session.streamUrl || session.id}</p>
     </button>
-  );
-}
-
-function CapturesSection({
-  scope,
-  resolvedScope,
-  onScopeChange,
-  runId,
-  url,
-  captureUrl,
-}: {
-  scope: CaptureScope;
-  resolvedScope: Exclude<CaptureScope, 'auto'>;
-  onScopeChange: (scope: CaptureScope) => void;
-  runId?: string | null;
-  url?: string | null;
-  captureUrl?: string | null;
-}) {
-  return (
-    <div className="h-full flex flex-col min-h-0">
-      <div className="px-4 py-2.5 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2 select-none">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
-          {resolvedScope === 'run' ? 'This run' : resolvedScope === 'page' ? 'This page' : 'All captures'}
-        </span>
-        <select
-          value={scope}
-          onChange={(e) => onScopeChange(e.target.value as CaptureScope)}
-          className="text-[10px] rounded-md border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] px-2 py-1 outline-none"
-        >
-          <option value="auto">Auto</option>
-          <option value="page">This page</option>
-          <option value="run">This run</option>
-          <option value="all">All</option>
-        </select>
-      </div>
-      <div className="flex-1 min-h-0">
-        <BrowserScreenshotGallery
-          runId={resolvedScope === 'run' ? runId : null}
-          url={resolvedScope === 'page' ? url : null}
-          captureUrl={captureUrl}
-          title={resolvedScope === 'run' ? 'Run captures' : resolvedScope === 'page' ? 'Page captures' : 'Recent captures'}
-        />
-      </div>
-    </div>
   );
 }
 

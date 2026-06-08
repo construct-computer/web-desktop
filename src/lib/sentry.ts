@@ -51,4 +51,24 @@ export function captureClientException(
   });
 }
 
+export function identifySentryUser(user: {
+  id: string;
+  email?: string | null;
+  displayName?: string | null;
+  plan?: string;
+}): void {
+  if (!initialized) return;
+  Sentry.setUser({
+    id: user.id,
+    email: user.email || undefined,
+    username: user.displayName || undefined,
+    plan: user.plan,
+  });
+}
+
+export function clearSentryUser(): void {
+  if (!initialized) return;
+  Sentry.setUser(null);
+}
+
 export { Sentry };

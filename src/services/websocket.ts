@@ -6,7 +6,6 @@ import {
   WS_RECONNECT_JITTER_MS,
   WS_KEEPALIVE_TIMEOUT_MS,
   WS_KEEPALIVE_PING_INTERVAL_MS,
-  IS_DEV,
 } from '@/lib/config';
 import { log } from '@/lib/logger';
 import { reportWsDisconnect, reportWsReconnect } from '@/lib/observability';
@@ -59,8 +58,8 @@ function getWsBaseUrl(): string {
     return `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}`;
   }
 
-  const backendHost = IS_DEV ? 'localhost:3000' : window.location.host;
-  return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${backendHost}`;
+  // Same-origin: Vite dev (5173) proxies /ws → worker (8787); deployed worker serves both.
+  return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 }
 
 /**

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import type { BrowserRunDetail } from '@/services/api';
-import { BrowserScreenshotGallery } from '../BrowserScreenshotGallery';
 import { formatBytes } from '@/lib/format';
 
 type HarvestMeta = {
@@ -47,21 +46,6 @@ export function BrowserRunDetailView({ detail }: { detail: BrowserRunDetail }) {
         <span className="capitalize font-medium text-[var(--color-text-muted)]">{run.status}</span>
         {durationLabel && <span>· {durationLabel}</span>}
         {run.step_count != null && <span>· {run.step_count} steps</span>}
-      </div>
-
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)] mb-1.5">Captures</p>
-        <div className="max-h-48 overflow-hidden rounded-lg border border-white/[0.06]">
-          <BrowserScreenshotGallery runId={run.run_id} />
-        </div>
-        {harvest?.screenshots && harvest.screenshots.length > 0 && (
-          <p className="text-[10px] text-[var(--color-text-subtle)] mt-1.5 leading-relaxed">
-            Run log lists {harvest.screenshots.length} capture key{harvest.screenshots.length === 1 ? '' : 's'}.
-            {harvest.screenshots.every((s) => s.key)
-              ? ' Use Refresh in the gallery if thumbnails are missing.'
-              : ''}
-          </p>
-        )}
       </div>
 
       {harvest?.outputFiles && harvest.outputFiles.length > 0 && (

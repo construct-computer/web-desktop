@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, PanelRight, Maximize2, Minimize2 } from 'lucide-react';
+import { Globe, PanelRight } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui';
 import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
@@ -60,14 +60,8 @@ export function BrowserUnifiedShell({
 
   const fetchView = activeTab?.fetchView ?? 'reader';
   const dataView = activeTab?.dataView ?? 'visual';
-  const isLiveActive = activeTab?.mode === 'live';
 
   const [showDetails, setShowDetails] = useState(false);
-  // Live tabs render full-bleed by default (immersive), letting the remote
-  // browser's own chrome show through. The user can exit immersive to reveal
-  // our toolbar and switch between tabs.
-  const [liveImmersive, setLiveImmersive] = useState(true);
-  const immersive = isLiveActive && liveImmersive;
 
   const [iframeDead, setIframeDead] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -129,36 +123,23 @@ export function BrowserUnifiedShell({
     });
   }, [activeTab, markEngaged]);
 
-  // Single Details toggle (+ immersive toggle for live tabs) lives in the
-  // window title bar so the browser chrome stays to a single row.
+  // Single Details toggle lives in the window title bar so the browser chrome
+  // stays to a single row. The tab strip is always visible (no immersive hide).
   useWindowTitleBarAccessory(
     windowId ?? '',
-    <>
-      {isLiveActive && (
-        <button
-          type="button"
-          onClick={() => { markEngaged(); setLiveImmersive((v) => !v); }}
-          className="p-1 rounded-[5px] transition-colors text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]"
-          title={liveImmersive ? 'Show tabs & toolbar' : 'Immersive live view'}
-          aria-label={liveImmersive ? 'Show tabs and toolbar' : 'Immersive live view'}
-        >
-          {liveImmersive ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={() => { markEngaged(); setShowDetails((v) => !v); }}
-        className={`p-1 rounded-[5px] transition-colors ${
-          showDetails
-            ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
-            : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
-        }`}
-        title={showDetails ? 'Hide details' : 'Run details, captures & downloads'}
-        aria-label={showDetails ? 'Hide details' : 'Show details'}
-      >
-        <PanelRight className="w-3.5 h-3.5" />
-      </button>
-    </>,
+    <button
+      type="button"
+      onClick={() => { markEngaged(); setShowDetails((v) => !v); }}
+      className={`p-1 rounded-[5px] transition-colors ${
+        showDetails
+          ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+          : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+      }`}
+      title={showDetails ? 'Hide details' : 'Run details & downloads'}
+      aria-label={showDetails ? 'Hide details' : 'Show details'}
+    >
+      <PanelRight className="w-3.5 h-3.5" />
+    </button>,
   );
 
   useEffect(() => {
@@ -289,7 +270,7 @@ export function BrowserUnifiedShell({
       onPointerDown={markEngaged}
       tabIndex={-1}
     >
-      {!immersive && tabs.length > 0 && (
+      {tabs.length > 0 && (
         <BrowserToolbar
           tabs={tabs}
           activeTab={activeTab}
@@ -326,8 +307,6 @@ export function BrowserUnifiedShell({
                 onIframeLoad={onIframeLoad}
                 onIframeError={onIframeError}
                 onManualReconnect={onManualReconnect}
-                immersive={immersive}
-                onExitImmersive={() => setLiveImmersive(false)}
                 interactive={activeLiveUnlocked}
                 onRequestUnlock={requestLiveUnlock}
                 onLock={lockActiveLiveTab}

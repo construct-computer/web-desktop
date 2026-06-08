@@ -12,6 +12,7 @@ export interface ClientErrorReport {
   stack?: string;
   correlationId?: string;
   errorId?: string;
+  error?: unknown;
   context?: Record<string, unknown>;
 }
 
@@ -30,7 +31,7 @@ function authHeaders(): HeadersInit {
 export function reportClientError(report: ClientErrorReport): void {
   analytics.errorOccurred(report.message, report.source);
 
-  captureClientException(new Error(report.message), {
+  captureClientException(report.error || new Error(report.message), {
     source: report.source,
     correlationId: report.correlationId,
     errorId: report.errorId,
@@ -49,6 +50,16 @@ export function reportClientError(report: ClientErrorReport): void {
       context: report.context,
     }),
   }).catch(() => {});
+}
+
+export function createCorrelationIds(): { requestId: string; traceId: string; traceparent: string } {
+  const requestId = crypto.randomUUID().slice(0, 12);
+  const traceId = crypto.randomUUID().replace(/-/g, '');
+  return {
+    requestId,
+    traceId,
+    traceparent: `00-${traceId}-0000000000000000-01`,
+  };
 }
 
 /** Queue a server-side PostHog mirror event (batched). */

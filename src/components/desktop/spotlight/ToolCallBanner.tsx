@@ -319,16 +319,24 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
           </span>
         )}
 
-        {/* Status icon */}
-        <ActivityIconFrame size="sm" variant={isFailed || isCancelled ? 'failed' : 'default'}>
-          {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : isFailed ? <XCircle className="h-3.5 w-3.5" />
-            : isCancelled ? <Square className="h-3.5 w-3.5" />
-            : <CheckCircle2 className="h-3.5 w-3.5" />}
-        </ActivityIconFrame>
+        {/* Branded agent identity icon */}
+        <ActivityIconBadge
+          type="delegation"
+          label={agent.goal}
+          failed={isFailed || isCancelled}
+          size="sm"
+        />
 
         <span className={`text-[12px] truncate flex-1 ${isRunning ? 'text-[var(--color-text-muted)]/60' : isFailed || isCancelled ? 'text-red-400/60' : 'text-[var(--color-text-muted)]/50'}`}>
           {shortGoal}
+        </span>
+
+        {/* Trailing run-status indicator */}
+        <span className="shrink-0 flex items-center justify-center">
+          {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-blue-300/70" />
+            : isFailed ? <XCircle className="h-3 w-3 text-red-400/70" />
+            : isCancelled ? <Square className="h-3 w-3 text-[var(--color-text-muted)]/40" />
+            : <CheckCircle2 className="h-3 w-3 text-emerald-400/60" />}
         </span>
         {duration && <span className="text-[10px] text-[var(--color-text-muted)]/25 shrink-0 tabular-nums">{duration}</span>}
       </button>

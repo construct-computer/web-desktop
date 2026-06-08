@@ -19,7 +19,6 @@ import {
   listBrowserRuns, getBrowserRun, stopBrowserRun,
   type BrowserRunSummary, type BrowserRunDetail,
 } from '@/services/api';
-import { BrowserScreenshotGallery } from './BrowserScreenshotGallery';
 import { BrowserRunDetailView } from './browser/BrowserRunDetailView';
 import { getOrCreateBrowserAppWindow, useComputerStore } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -71,7 +70,6 @@ const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string }> = [
 ];
 
 export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } = {}) {
-  const [tab, setTab] = useState<'runs' | 'shots'>('runs');
   const runs = useComputerStore((s) => s.browserRuns);
   const hydrated = useComputerStore((s) => s.browserRunsHydrated);
   const hydrateBrowserRuns = useComputerStore((s) => s.hydrateBrowserRuns);
@@ -218,20 +216,8 @@ export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } =
   );
   const showBlockingLoader = loading && runs.length === 0;
 
-  if (tab === 'shots' && !embedded) {
-    return (
-      <div className="w-full h-full flex flex-col">
-        <TabBar tab={tab} setTab={setTab} />
-        <div className="flex-1 min-h-0">
-          <BrowserScreenshotGallery />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full h-full flex flex-col">
-      {!embedded && <TabBar tab={tab} setTab={setTab} />}
       <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto text-left ${embedded ? 'px-3 py-3' : 'px-6 py-4'}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
@@ -389,22 +375,3 @@ export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } =
   );
 }
 
-function TabBar({ tab, setTab }: { tab: 'runs' | 'shots'; setTab: (t: 'runs' | 'shots') => void }) {
-  return (
-    <div className="shrink-0 flex items-center gap-1 px-4 pt-3 border-b border-[var(--color-border)]">
-      {(['runs', 'shots'] as const).map((k) => (
-        <button
-          key={k}
-          onClick={() => setTab(k)}
-          className={`text-[11px] px-2 py-1 rounded-t border-b-2 transition-colors ${
-            tab === k
-              ? 'border-white/40 text-[var(--color-text)]'
-              : 'border-transparent text-[var(--color-text-subtle)] opacity-60 hover:opacity-100'
-          }`}
-        >
-          {k === 'runs' ? 'Runs' : 'Screenshots'}
-        </button>
-      ))}
-    </div>
-  );
-}

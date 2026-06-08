@@ -48,7 +48,7 @@ import { Button, Input, Select } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { adminApi, AdminApiError, rangeQuery, type TimeRangeValue } from '@/services/adminApi';
 
-type TabId = 'overview' | 'usage' | 'users' | 'errors' | 'activity' | 'integrations' | 'analytics' | 'health';
+type TabId = 'overview' | 'usage' | 'users' | 'errors' | 'activity' | 'integrations' | 'analytics' | 'observability' | 'health';
 
 type DashboardData = {
   overview?: any;
@@ -70,6 +70,7 @@ type DashboardData = {
   funnel?: any;
   features?: any;
   retention?: any;
+  observabilityStatus?: any;
   health?: any;
   config?: any;
   securityEvents?: any;
@@ -120,6 +121,7 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Gauge }> = [
   { id: 'activity', label: 'Logs', icon: Activity },
   { id: 'integrations', label: 'Integrations', icon: Workflow },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'observability', label: 'Observe', icon: Eye },
   { id: 'health', label: 'Health', icon: ShieldCheck },
 ];
 
@@ -696,6 +698,7 @@ export function AdminDashboard() {
         safe('funnel', `/analytics/funnel?${q}`, next, errors),
         safe('features', `/analytics/features?${q}`, next, errors),
         safe('retention', '/analytics/retention', next, errors),
+        safe('observabilityStatus', '/observability/status', next, errors),
         safe('health', '/health', next, errors),
         safe('config', '/config/status', next, errors),
         safe('securityEvents', '/security-events?limit=80', next, errors),
@@ -865,6 +868,7 @@ export function AdminDashboard() {
             {activeTab === 'activity' && <ActivityTab data={data} openDrawer={setDrawer} />}
             {activeTab === 'integrations' && <IntegrationsTab data={data} openDrawer={setDrawer} />}
             {activeTab === 'analytics' && <AnalyticsTab data={data} openDrawer={setDrawer} />}
+            {activeTab === 'observability' && <ObservabilityTab data={data} openDrawer={setDrawer} />}
             {activeTab === 'health' && <HealthTab data={data} openDrawer={setDrawer} />}
           </div>
         </main>
@@ -1301,6 +1305,93 @@ function HealthTab({ data, openDrawer }: { data: DashboardData; openDrawer: (dra
           />
         </Card>
       </div>
+    </div>
+  );
+}
+
+function ObservabilityTab({ data, openDrawer }: { data: DashboardData; openDrawer: (drawer: DrawerState) => void }) {
+  const [needle, setNeedle] = useState('');
+  const [loading, setLoading] = useState(false);
+  const status = data.observabilityStatus;
+
+  async function runRecentQuery(view: 'events' | 'invocations' | 'traces' | 'calculations' = 'events') {
+    setLoading(true);
+    try {
+      const now = Date.now();
+      const result = await adminApi.post('/observability/query', {
+        view,
+        from: now - 60 * 60 * 1000,
+        to: now,
+        limit: view === 'calculations' ? 20 : 80,
+        needle: needle.trim() || undefined,
+        ...(view === 'calculations' ? {
+          calculations: [
+            { operator: 'count', alias: 'events' },
+            { operator: 'p95', alias: 'p95_duration_ms', key: '$metadata.duration', keyType: 'number' },
+            { operator: 'p99', alias: 'p99_duration_ms', key: '$metadata.duration', keyType: 'number' },
+          ],
+          groupBys: [{ type: 'string', value: '$metadata.service' }],
+        } : {}),
+      });
+      openDrawer({ title: `Cloudflare ${view}`, eyebrow: needle.trim() || 'last hour', data: result });
+    } catch (err) {
+      openDrawer({ title: 'Cloudflare Observability', eyebrow: 'query failed', data: { error: err instanceof Error ? err.message : 'Query failed' } });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function lookupCorrelation() {
+    const id = needle.trim();
+    if (!id) return;
+    setLoading(true);
+    try {
+      const [local, cloudflare] = await Promise.all([
+        adminApi.get(`/correlation/${encodeURIComponent(id)}`).catch((err) => ({ error: err instanceof Error ? err.message : 'Local lookup failed' })),
+        adminApi.get(`/observability/correlation/${encodeURIComponent(id)}`).catch((err) => ({ error: err instanceof Error ? err.message : 'Cloudflare lookup failed' })),
+      ]);
+      openDrawer({ title: id, eyebrow: 'joined observability lookup', data: { local, cloudflare } });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Cloudflare API" value={status?.configured ? 'On' : 'Off'} detail="Workers logs/traces" icon={Eye} />
+        <MetricCard label="Account ID" value={status?.accountIdPresent ? 'Set' : 'Missing'} detail="server-side only" icon={ShieldCheck} />
+        <MetricCard label="API Token" value={status?.tokenPresent ? 'Set' : 'Missing'} detail="never exposed to browser" icon={KeyRound} />
+        <MetricCard label="Query Window" value="1h" detail="bounded admin proxy" icon={Clock3} />
+      </div>
+      <Card className="p-4">
+        <SectionHeader title="Cloudflare Observability Explorer" subtitle="Query recent Workers logs, invocations, traces, and runtime aggregates without duplicating every log into D1." />
+        <div className="mt-4 flex flex-col gap-3 md:flex-row">
+          <Input
+            value={needle}
+            onChange={(event) => setNeedle(event.target.value)}
+            placeholder="request_id, correlation_id, session_key, error_id, cf-ray, or search text"
+            className="h-10 rounded-2xl border-white/10 bg-black/25 text-white"
+          />
+          <Button disabled={loading || !needle.trim()} onClick={() => void lookupCorrelation()} className="rounded-2xl border-white/10 bg-white/6 text-white">
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Workflow className="mr-2 h-4 w-4" />}
+            Correlate
+          </Button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button disabled={loading || !status?.configured} onClick={() => void runRecentQuery('events')} className="rounded-2xl border-white/10 bg-white/6 text-white">Recent Events</Button>
+          <Button disabled={loading || !status?.configured} onClick={() => void runRecentQuery('invocations')} className="rounded-2xl border-white/10 bg-white/6 text-white">Invocations</Button>
+          <Button disabled={loading || !status?.configured} onClick={() => void runRecentQuery('traces')} className="rounded-2xl border-white/10 bg-white/6 text-white">Traces</Button>
+          <Button disabled={loading || !status?.configured} onClick={() => void runRecentQuery('calculations')} className="rounded-2xl border-white/10 bg-white/6 text-white">Runtime Aggregates</Button>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <SectionHeader title="How to Use" subtitle="Use PostHog for product analytics, Sentry for exceptions, Cloudflare for runtime traces, and D1 for durable admin records." />
+        <div className="grid gap-3 text-xs text-white/55 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">Search a `correlation_id` from errors or audit logs to join D1 records with Cloudflare invocation logs.</div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">Use runtime aggregates for route latency and error spikes; use Analytics for funnels, tool success, LLM cost, and behavior.</div>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import * as api from '@/services/api';
-import type { SessionInfo, BrowserRunSummary, BrowserScreenshotSummary } from '@/services/api';
+import type { SessionInfo, BrowserRunSummary } from '@/services/api';
 import { browserWS, agentWS, type AgentEvent, type AgentFileAttachment, type AgentFrontendContext } from '@/services/websocket';
 import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
@@ -458,6 +458,29 @@ export function markBrowserWindowEngaged(windowId?: string | null): void {
   });
 }
 
+/**
+ * Close browser windows the agent opened that the user never engaged with.
+ * User-opened (`openedByUser`) or engaged (`pinnedByUser`/`userEngagedAt`)
+ * windows are always preserved. Engagement is re-checked at close time so a
+ * click/tab-switch during the grace period cancels the close.
+ */
+function closeAgentOpenedBrowserWindows(delayMs = 2000) {
+  setTimeout(() => {
+    const wStore = useWindowStore.getState();
+    const toClose = wStore.windows.filter(
+      (w) => w.type === 'browser'
+        && w.metadata?.openedByAgent
+        && !w.metadata?.openedByUser
+        && !isEngagedBrowserWindow(w),
+    );
+    for (const w of toClose) {
+      frameRenderers.delete(w.id);
+      canvasClearFns.delete(w.id);
+      wStore.closeWindow(w.id);
+    }
+  }, delayMs);
+}
+
 function closeAllAutoOpened(delayMs = 2000) {
   // Cancel all pending timers
   for (const [type] of autoCloseTimers) cancelAutoClose(type);
@@ -889,12 +912,6 @@ interface ComputerStore {
   hydrateBrowserRuns: (runs: BrowserRunSummary[]) => void;
   prependBrowserRun: (run: BrowserRunSummary) => void;
   patchBrowserRun: (patch: { run_id: string } & Partial<BrowserRunSummary>) => void;
-
-  // Browser gallery (live-patched via WS events)
-  browserScreenshots: BrowserScreenshotSummary[];
-  browserScreenshotsHydrated: boolean;
-  hydrateBrowserScreenshots: (shots: BrowserScreenshotSummary[]) => void;
-  prependBrowserScreenshot: (shot: BrowserScreenshotSummary) => void;
 
   // Browser
   hydrateBrowserSessions: (sessions: BrowserSessionRecord[], options?: { replace?: boolean }) => void;
@@ -1722,6 +1739,13 @@ export function getOrCreateBrowserAppWindow(options: {
   title?: string;
   metadata?: Record<string, unknown>;
   workspaceId?: string;
+  /**
+   * Who triggered this open. Provenance is stamped ONCE, only when a new window
+   * is created — reusing an existing window never overwrites it, so a window the
+   * user opened stays user-owned even after the agent routes tools into it.
+   * Agent-opened, never-engaged windows are the only ones eligible for auto-close.
+   */
+  opener?: 'agent' | 'user';
 } = {}): string {
   const ws = useWindowStore.getState();
   const focus = options.focus ?? true;
@@ -1746,10 +1770,15 @@ export function getOrCreateBrowserAppWindow(options: {
     return existing.id;
   }
 
+  const provenance = options.opener === 'user'
+    ? { openedByUser: true }
+    : options.opener === 'agent'
+      ? { openedByAgent: true }
+      : {};
   const newId = ws.openWindow('browser', {
     title,
     workspaceId: targetWs,
-    metadata,
+    metadata: { ...metadata, ...provenance },
   }) as string;
   consolidateBrowserWindows(newId, targetWs);
   if (focus) ws.focusWindow(newId);
@@ -1823,8 +1852,6 @@ export const useComputerStore = create<ComputerStore>()(
     activeSessionKey: 'default',
     browserRuns: [],
     browserRunsHydrated: false,
-    browserScreenshots: [],
-    browserScreenshotsHydrated: false,
 
     fetchComputer: async () => {
       if (fetchComputerPromise) return fetchComputerPromise;
@@ -3117,8 +3144,10 @@ export const useComputerStore = create<ComputerStore>()(
                   const preview = buildWebPreviewFromTabPayload(tabTool, tabPayload);
                   if (preview) {
                     const withPreview = attachWebPreviewToActivity(history, tabToolCallId, preview);
-                    history.length = 0;
-                    history.push(...withPreview);
+                    if (withPreview !== history) {
+                      history.length = 0;
+                      history.push(...withPreview);
+                    }
                   }
                 }
                 break;
@@ -4276,15 +4305,6 @@ export const useComputerStore = create<ComputerStore>()(
         return { browserRuns: next };
       });
     },
-    hydrateBrowserScreenshots: (shots) => {
-      set({ browserScreenshots: shots.slice(0, 200), browserScreenshotsHydrated: true });
-    },
-    prependBrowserScreenshot: (shot) => {
-      set((state) => {
-        if (state.browserScreenshots.some((s) => s.key === shot.key)) return state;
-        return { browserScreenshots: [shot, ...state.browserScreenshots].slice(0, 200) };
-      });
-    },
     hydrateBrowserSessions: (sessions, options) => {
       const sorted = sessions
         .slice()
@@ -4432,6 +4452,7 @@ export const useComputerStore = create<ComputerStore>()(
 
       const windowId = getOrCreateBrowserAppWindow({
         title,
+        opener: 'user',
         metadata: {
           ...(url ? { pendingUrl: url, browserPageUrl: url } : {}),
         },
@@ -5483,6 +5504,7 @@ export const useComputerStore = create<ComputerStore>()(
             getOrCreateBrowserAppWindow({
               workspaceId: targetWsId,
               metadata: { browserAppWindow: true },
+              opener: 'agent',
             });
             if (isBrowserWebTool(tool)) {
               useBrowserTabStore.getState().openTabFromToolCall(
@@ -5870,13 +5892,19 @@ export const useComputerStore = create<ComputerStore>()(
             const anyOtherSessionRunning = hasUserRunningSessions(nextRunning);
             if (!anyOtherSessionRunning) {
               closeAllAutoOpened(2000);
+              // Close agent-opened browser windows the user never touched.
+              // User-opened or engaged (clicked/tab-switched) windows persist.
+              closeAgentOpenedBrowserWindows(2000);
             }
 
             const { browserState: bs } = get();
             if (!anyOtherSessionRunning) {
               const wStore = useWindowStore.getState();
               const tfWindows = wStore.windows.filter(w =>
-                w.type === 'browser' && w.metadata?.browserSubagentId
+                w.type === 'browser'
+                && w.metadata?.browserSubagentId
+                && !isEngagedBrowserWindow(w)
+                && !w.metadata?.openedByUser
               );
               for (const tfWin of tfWindows) {
                 frameRenderers.delete(tfWin.id);
@@ -7409,6 +7437,7 @@ export const useComputerStore = create<ComputerStore>()(
           getOrCreateBrowserAppWindow({
             workspaceId: tfWorkspaceId,
             metadata: { browserAppWindow: true },
+            opener: 'agent',
           });
           break;
         }
@@ -7471,6 +7500,7 @@ export const useComputerStore = create<ComputerStore>()(
           const existingTfWindow = getOrCreateBrowserAppWindow({
             title: tfSubagentId === 'main' ? `Web: ${shortGoal}` : 'Browser',
             workspaceId: tfWorkspaceId,
+            opener: 'agent',
             metadata: {
               browserSubagentId: tfSubagentId,
               browserRunPhase: 'live',
@@ -7671,21 +7701,6 @@ export const useComputerStore = create<ComputerStore>()(
               runId: statusRunId,
               ...(liveUrl || streamUrl ? { streamUrl: liveUrl || streamUrl } : {}),
             });
-            if (nextStatus === 'success') {
-              void api.listBrowserScreenshots({ limit: 50 }).then((res) => {
-                if (res.success && res.data) get().hydrateBrowserScreenshots(res.data.screenshots);
-              });
-            }
-          }
-          break;
-        }
-
-        case 'browser:gallery_screenshot': {
-          // Post-run harvest landed a new gallery shot; prepend it live so the
-          // gallery doesn't need to refetch.
-          const shot = event.data?.screenshot as BrowserScreenshotSummary | undefined;
-          if (shot && shot.key) {
-            get().prependBrowserScreenshot(shot);
           }
           break;
         }
@@ -7734,6 +7749,7 @@ export const useComputerStore = create<ComputerStore>()(
             if (!tfWindowId) {
               tfWindowId = getOrCreateBrowserAppWindow({
                 title: isSubagent ? 'Construct Browser' : 'Construct Browser',
+                opener: 'agent',
                 metadata: {
                   browserSubagentId: tfSubagentId,
                   browserStreamUrl: streamingUrl,

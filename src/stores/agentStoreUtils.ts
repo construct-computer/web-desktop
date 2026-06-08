@@ -776,12 +776,6 @@ export function isWebBrowserToolActivity(tool: string | undefined, activityType?
   return activityType === 'web' || activityType === 'browser';
 }
 
-export function activityBufferHasWebBrowserTools(
-  activities: Array<{ tool?: string; activityType?: string; browserAction?: unknown }>,
-): boolean {
-  return activities.some((a) => isWebBrowserToolActivity(a.tool, a.activityType) || !!a.browserAction);
-}
-
 export type ToolActivityPatch = {
   toolCallId?: string;
   tool?: string;
@@ -969,7 +963,6 @@ export function buildWebPreviewFromTabPayload(
   if (tool === 'browser') {
     const pageUrl = typeof payload.pageUrl === 'string' ? payload.pageUrl
       : typeof payload.url === 'string' ? payload.url : undefined;
-    const screenshotCount = typeof payload.screenshotCount === 'number' ? payload.screenshotCount : 0;
     const done = payload.runPhase === 'complete';
     let pageTitle = 'Browser session';
     if (pageUrl) {
@@ -979,11 +972,7 @@ export function buildWebPreviewFromTabPayload(
       kind: 'fetch',
       url: pageUrl,
       pageTitle,
-      snippet: done
-        ? (screenshotCount > 0
-          ? `${screenshotCount} capture${screenshotCount === 1 ? '' : 's'} saved`
-          : 'Run finished — open Details for captures.')
-        : 'Live browser session in progress…',
+      snippet: done ? 'Run finished.' : 'Live browser session in progress…',
     };
   }
   if (tool === 'web_fetch' || typeof payload.content === 'string') {
@@ -1067,8 +1056,15 @@ export function appendBrowserRunHistorySummaries<M extends BrowserRunHistoryMess
   );
   if (hasBrowserTimeline) return messages;
 
+  const firstMessageAt = messages[0]?.timestamp?.getTime?.() ?? null;
+  if (firstMessageAt == null) return messages;
+
   const sessionRuns = runs
-    .filter((r) => (r.session_key === sessionKey || r.session_key == null) && r.status !== 'running')
+    .filter((r) => {
+      if (r.session_key !== sessionKey || r.status === 'running') return false;
+      const runAt = r.ended_at ?? r.started_at;
+      return runAt >= firstMessageAt;
+    })
     .sort((a, b) => (b.ended_at ?? b.started_at) - (a.ended_at ?? a.started_at))
     .slice(0, 5);
   if (sessionRuns.length === 0) return messages;

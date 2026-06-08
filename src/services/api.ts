@@ -1,6 +1,7 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import type { ApiResult, User, AgentWithConfig } from '@/types';
 import { Capacitor } from '@capacitor/core';
+import { createCorrelationIds, reportClientTiming } from '@/lib/observability';
 
 type ApiRequestOptions = RequestInit & {
   /** Disable error-store capture for background polling where transient failures are expected. */
@@ -59,9 +60,13 @@ async function request<T>(
     ...fetchOptions
   } = options;
   const token = getToken();
+  const startedAt = performance.now();
+  const correlation = createCorrelationIds();
   
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'x-request-id': correlation.requestId,
+    traceparent: correlation.traceparent,
     ...fetchOptions.headers,
   };
   
@@ -96,6 +101,20 @@ async function request<T>(
       // Non-JSON response - try to get text for error message
       const text = await response.text();
       if (!response.ok) {
+        reportClientTiming({
+          category: 'api',
+          action: endpoint,
+          durationMs: Math.round(performance.now() - startedAt),
+          success: false,
+          properties: {
+            endpoint,
+            method: fetchOptions.method || 'GET',
+            status: response.status,
+            request_id: correlation.requestId,
+            trace_id: correlation.traceId,
+            retry: _isRetry,
+          },
+        });
         return { success: false, error: text || `Request failed (${response.status})`, status: response.status };
       }
       // If somehow OK but not JSON, treat as empty
@@ -111,13 +130,48 @@ async function request<T>(
           useErrorStore.getState().capture({
             source: 'api',
             message: errorMsg,
-            context: { endpoint, status: response.status, response: data },
+            context: {
+              endpoint,
+              status: response.status,
+              response: data,
+              correlationId: correlation.traceId,
+              requestId: correlation.requestId,
+              kind: 'http',
+            },
           });
         } catch { /* errorStore not loaded yet during startup */ }
       }
+      reportClientTiming({
+        category: 'api',
+        action: endpoint,
+        durationMs: Math.round(performance.now() - startedAt),
+        success: false,
+        properties: {
+          endpoint,
+          method: fetchOptions.method || 'GET',
+          status: response.status,
+          request_id: correlation.requestId,
+          trace_id: correlation.traceId,
+          retry: _isRetry,
+        },
+      });
       return { success: false, error: errorMsg, status: response.status, data };
     }
 
+    reportClientTiming({
+      category: 'api',
+      action: endpoint,
+      durationMs: Math.round(performance.now() - startedAt),
+      success: true,
+      properties: {
+        endpoint,
+        method: fetchOptions.method || 'GET',
+        status: response.status,
+        request_id: correlation.requestId,
+        trace_id: correlation.traceId,
+        retry: _isRetry,
+      },
+    });
     return { success: true, data: data as T };
   } catch (error) {
     if (retryNetwork && !_isRetry) {
@@ -133,10 +187,31 @@ async function request<T>(
           source: 'api',
           message: errorMsg,
           stack: error instanceof Error ? error.stack : undefined,
-          context: { endpoint },
+          context: {
+            endpoint,
+            correlationId: correlation.traceId,
+            requestId: correlation.requestId,
+            kind: 'network',
+            online: navigator.onLine,
+          },
         });
       } catch { /* errorStore not loaded yet during startup */ }
     }
+    reportClientTiming({
+      category: 'api',
+      action: endpoint,
+      durationMs: Math.round(performance.now() - startedAt),
+      success: false,
+      properties: {
+        endpoint,
+        method: fetchOptions.method || 'GET',
+        request_id: correlation.requestId,
+        trace_id: correlation.traceId,
+        retry: _isRetry,
+        online: navigator.onLine,
+        failure_kind: 'network',
+      },
+    });
     return { success: false, error: errorMsg };
   }
 }
@@ -2897,84 +2972,6 @@ export async function stopAllBrowserForSession(sessionKey: string): Promise<ApiR
 
 export async function stopAllBrowserForUser(): Promise<ApiResult<{ status: string; stopped: number; attempted: number }>> {
   return request('/browser/stop-all-for-user', { method: 'POST' });
-}
-
-// ── Browser Screenshot Gallery ──
-
-export interface BrowserScreenshotSummary {
-  key: string;
-  size: number;
-  captured_at: number;
-  url: string | null;
-  session_key: string | null;
-  subagent_id: string | null;
-  /** Set when the screenshot came from the post-run harvest of a remote_browser run. */
-  run_id?: string | null;
-  full_page: boolean;
-  content_type: string;
-}
-
-export async function listBrowserScreenshots(opts: { limit?: number; sessionKey?: string } = {}): Promise<ApiResult<{ screenshots: BrowserScreenshotSummary[] }>> {
-  const params = new URLSearchParams();
-  if (opts.limit) params.set('limit', String(opts.limit));
-  if (opts.sessionKey) params.set('session_key', opts.sessionKey);
-  const qs = params.toString();
-  return request(`/browser/screenshots${qs ? `?${qs}` : ''}`);
-}
-
-/**
- * Fetch screenshot bytes (auth-protected proxy through the worker).
- * Caller is responsible for creating a blob URL and revoking it.
- */
-export async function fetchBrowserScreenshot(key: string): Promise<Response> {
-  const url = `${API_BASE_URL}/browser/screenshots/bytes?key=${encodeURIComponent(key)}`;
-  const doFetch = () => {
-    const token = getToken();
-    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  };
-  const res = await doFetch();
-  if (res.status === 401) {
-    const refreshed = await ensureTokenRefreshed();
-    if (refreshed) return doFetch();
-  }
-  return res;
-}
-
-export async function saveBrowserScreenshotToWorkspace(
-  key: string,
-  destPath?: string,
-): Promise<ApiResult<{ status: string; path: string; size: number }>> {
-  return request('/browser/screenshots/save', {
-    method: 'POST',
-    body: JSON.stringify({ key, dest_path: destPath }),
-  });
-}
-
-/**
- * Live-capture a screenshot of {url} and save it directly to the user's
- * workspace (also archived to the screenshot gallery). User-triggered analog
- * of the agent's `remote_browser_screenshot` tool.
- */
-export async function captureBrowserScreenshot(
-  url: string,
-  opts: { savePath?: string; fullPage?: boolean } = {},
-): Promise<ApiResult<{
-  status?: string;
-  path?: string | null;
-  size: number;
-  gallery_key?: string;
-  key?: string;
-  keys?: string[];
-  count?: number;
-  runId?: string;
-  url: string;
-  screenshots?: BrowserScreenshotSummary[];
-  warning?: string;
-}>> {
-  return request('/browser/screenshots/capture', {
-    method: 'POST',
-    body: JSON.stringify({ url, save_path: opts.savePath, full_page: opts.fullPage }),
-  });
 }
 
 // ── Local Apps ──

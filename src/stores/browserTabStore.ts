@@ -601,6 +601,40 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
 
   ensureLiveTab: (sessionId, data) => {
     const id = `tab_live_${sessionId}`;
+    const existingSessionTab = get().tabs.find((t) =>
+      t.mode === 'live' && (t.sessionId === sessionId || t.runId === sessionId)
+    );
+    if (existingSessionTab) {
+      set((state) => ({
+        tabs: state.tabs.map((t) => t.id === existingSessionTab.id ? {
+          ...t,
+          sessionId,
+          runPhase: t.runPhase ?? 'live',
+          ...(data.goal ? { goal: data.goal } : {}),
+          ...(data.url ? { url: data.url, pageUrl: data.url } : {}),
+          ...(data.title ? { title: data.title } : {}),
+        } : t),
+        activeTabId: existingSessionTab.id,
+      }));
+      return existingSessionTab.id;
+    }
+    const unboundLiveTab = [...get().tabs]
+      .reverse()
+      .find((t) => t.mode === 'live' && t.tool === 'browser' && !t.sessionId && !t.runId);
+    if (unboundLiveTab) {
+      set((state) => ({
+        tabs: state.tabs.map((t) => t.id === unboundLiveTab.id ? {
+          ...t,
+          sessionId,
+          runPhase: t.runPhase ?? 'live',
+          ...(data.goal ? { goal: data.goal } : {}),
+          ...(data.url ? { url: data.url, pageUrl: data.url } : {}),
+          ...(data.title ? { title: data.title } : {}),
+        } : t),
+        activeTabId: unboundLiveTab.id,
+      }));
+      return unboundLiveTab.id;
+    }
     if (get().dismissedTabIds.has(id)) {
       const title = data.title || (data.goal
         ? (data.goal.length > 36 ? `${data.goal.slice(0, 35)}…` : data.goal)
@@ -661,9 +695,13 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
   patchLiveTabBySession: (sessionId, patch) => {
     const id = `tab_live_${sessionId}`;
     set((state) => {
-      if (state.tabs.some((t) => t.id === id)) {
+      if (state.tabs.some((t) => t.id === id || t.sessionId === sessionId || t.runId === sessionId)) {
         return {
-          tabs: state.tabs.map((t) => (t.id === id ? { ...t, sessionId, ...patch } : t)),
+          tabs: state.tabs.map((t) => (
+            t.id === id || t.sessionId === sessionId || t.runId === sessionId
+              ? { ...t, sessionId, ...patch }
+              : t
+          )),
         };
       }
       if (state.dismissedTabIds.has(id) && state.tabSnapshots[id]) {

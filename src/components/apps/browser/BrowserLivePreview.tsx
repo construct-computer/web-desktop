@@ -1,8 +1,6 @@
-import { memo, useCallback, useMemo } from 'react';
-import { Check, Monitor, StopCircle, Loader2, PlayCircle, AlertTriangle, PanelTop, Lock, Unlock } from 'lucide-react';
-import { stopBrowserRun } from '@/services/api';
+import { memo, useMemo } from 'react';
+import { Check, Monitor, StopCircle, Loader2, PlayCircle, AlertTriangle, Lock, Unlock } from 'lucide-react';
 import type { BrowserSessionRecord } from '@/stores/agentStore';
-import { useState } from 'react';
 
 type RunPhase = 'live' | 'complete' | 'error';
 
@@ -17,7 +15,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   runPhase,
   runErrorDetail,
   stepCount,
-  runId,
   pageUrl,
   isDead,
   reloadKey,
@@ -25,8 +22,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onError,
   onManualReconnect,
   goal = '',
-  immersive = false,
-  onExitImmersive,
   interactive = false,
   onRequestUnlock,
   onLock,
@@ -36,7 +31,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   runPhase: RunPhase;
   runErrorDetail: string;
   stepCount?: number;
-  runId?: string;
   pageUrl?: string;
   isDead: boolean;
   reloadKey: number;
@@ -45,8 +39,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onManualReconnect: () => void;
   progressLabel?: string;
   goal?: string;
-  immersive?: boolean;
-  onExitImmersive?: () => void;
   interactive?: boolean;
   onRequestUnlock?: () => void;
   onLock?: () => void;
@@ -61,7 +53,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
       runPhase={runPhase}
       runErrorDetail={runErrorDetail}
       stepCount={stepCount}
-      runId={runId}
       pageUrl={pageUrl}
       isDead={isDead}
       reloadKey={reloadKey}
@@ -70,8 +61,6 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
       onManualReconnect={onManualReconnect}
       goal={goal}
       session={session}
-      immersive={immersive}
-      onExitImmersive={onExitImmersive}
       interactive={interactive}
       onRequestUnlock={onRequestUnlock}
       onLock={onLock}
@@ -90,7 +79,7 @@ function BrowserPreviewEmpty({
     if (!session && requestedUrl) {
       return {
         title: 'Ready for browser session',
-        body: `Ask Construct to open ${requestedUrl}. Live preview and captures will appear here.`,
+        body: `Ask Construct to open ${requestedUrl}. The live preview will appear here.`,
         icon: <PlayCircle className="w-10 h-10 text-[var(--color-accent)] opacity-40 animate-pulse" />,
       };
     }
@@ -104,7 +93,7 @@ function BrowserPreviewEmpty({
     if (session.status === 'complete') {
       return {
         title: 'Run finished',
-        body: 'Open Details for captures and downloads from this run.',
+        body: 'Open Details for downloads from this run.',
         icon: <Check className="w-10 h-10 text-emerald-400 opacity-40" />,
       };
     }
@@ -118,7 +107,7 @@ function BrowserPreviewEmpty({
     if (session.status === 'expired') {
       return {
         title: 'Preview expired',
-        body: 'Captures and run history remain in Details.',
+        body: 'Run history remains in Details.',
         icon: <ClockIcon className="w-10 h-10 text-amber-500 opacity-30" />,
       };
     }
@@ -155,14 +144,13 @@ function ClockIcon({ className }: { className?: string }) {
 }
 
 const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
-  streamUrl, runPhase, runErrorDetail, stepCount, runId, pageUrl, isDead, reloadKey, onLoad, onError, onManualReconnect, goal, session,
-  immersive, onExitImmersive, interactive, onRequestUnlock, onLock,
+  streamUrl, runPhase, runErrorDetail, stepCount, pageUrl, isDead, reloadKey, onLoad, onError, onManualReconnect, goal, session,
+  interactive, onRequestUnlock, onLock,
 }: {
   streamUrl: string;
   runPhase: RunPhase;
   runErrorDetail: string;
   stepCount?: number;
-  runId?: string;
   pageUrl?: string;
   isDead: boolean;
   reloadKey: number;
@@ -171,8 +159,6 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   onManualReconnect: () => void;
   goal?: string;
   session?: BrowserSessionRecord;
-  immersive?: boolean;
-  onExitImmersive?: () => void;
   interactive?: boolean;
   onRequestUnlock?: () => void;
   onLock?: () => void;
@@ -180,14 +166,6 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   const isLive = runPhase === 'live';
   const isComplete = runPhase === 'complete';
   const isErr = runPhase === 'error';
-  const [stopping, setStopping] = useState(false);
-
-  const onStop = useCallback(async () => {
-    if (!runId || stopping) return;
-    setStopping(true);
-    try { await stopBrowserRun(runId); } catch { /* WS will surface */ }
-    finally { setStopping(false); }
-  }, [runId, stopping]);
 
   const statusLabel = isErr
     ? 'Failed'
@@ -215,7 +193,7 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
             <div className="text-center text-[var(--color-text-muted)] max-w-sm px-6 p-6 rounded-2xl border border-white/[0.06] bg-white/[0.02]">
               <Monitor className="w-12 h-12 mx-auto mb-4 opacity-40 text-[var(--color-accent)]" />
               <p className="text-sm font-semibold text-[var(--color-text)]">Stream disconnected</p>
-              <p className="text-xs text-[var(--color-text-subtle)] mt-1">Session ended — open Details for captures.</p>
+              <p className="text-xs text-[var(--color-text-subtle)] mt-1">Session ended.</p>
               <button
                 type="button"
                 onClick={onManualReconnect}
@@ -250,19 +228,6 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
             {/* Slim floating status HUD — bottom-left, avoids covering the
                 remote browser's own top chrome. */}
             <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 select-none">
-              {immersive && onExitImmersive && (
-                <button
-                  type="button"
-                  onClick={onExitImmersive}
-                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-sans
-                             glass-popover border border-white/15 text-[var(--color-text-muted)]
-                             hover:text-[var(--color-text)] hover:bg-white/[0.06] transition-colors shadow-md"
-                  title="Show tabs & toolbar"
-                >
-                  <PanelTop className="w-3.5 h-3.5" />
-                  Tabs
-                </button>
-              )}
               <div className="inline-flex items-center gap-2 h-7 px-2.5 rounded-lg text-[11px] font-sans
                               glass-popover border border-white/15 shadow-md text-[var(--color-text-muted)]">
                 {isLive && !isDead ? (
@@ -304,19 +269,6 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
                 >
                   <Unlock className="w-3.5 h-3.5" />
                   View only · Unlock
-                </button>
-              )}
-              {immersive && isLive && runId && (
-                <button
-                  type="button"
-                  onClick={onStop}
-                  disabled={stopping}
-                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg text-[10px] font-medium
-                             glass-popover border border-red-500/40 text-red-400 hover:bg-red-500/15
-                             disabled:opacity-40 transition-colors shadow-md"
-                >
-                  <StopCircle className="w-3.5 h-3.5" />
-                  {stopping ? 'Stopping…' : 'Stop'}
                 </button>
               )}
             </div>

@@ -326,9 +326,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const browserStepCount = typeof config.metadata?.browserStepCount === 'number'
     ? config.metadata.browserStepCount as number
     : undefined;
-  const browserRunId = typeof config.metadata?.browserRunId === 'string'
-    ? config.metadata.browserRunId as string
-    : undefined;
   const browserPageUrl = typeof config.metadata?.browserPageUrl === 'string'
     ? config.metadata.browserPageUrl as string
     : '';
@@ -356,7 +353,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   const selectedRunPhase = activeSession
     ? (activeSession.status === 'error' ? 'error' : activeSession.status === 'complete' ? 'complete' : 'live')
     : browserRunPhase;
-  const selectedRunId = activeSession?.runId || browserRunId;
   const selectedStepCount = activeSession?.stepCount ?? browserStepCount;
   const selectedRunError = activeSession?.error || browserRunErrorDetail;
   const showingBrowser = !!activeBrowserUrl;
@@ -1004,7 +1000,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             runPhase={selectedRunPhase}
             runErrorDetail={selectedRunError}
             stepCount={selectedStepCount}
-            runId={selectedRunId}
             pageUrl={browserPageUrl}
             isDead={iframeDead}
             reloadKey={reloadKey}

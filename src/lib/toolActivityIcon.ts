@@ -28,6 +28,7 @@ import iconCalendar from '@/icons/calendar.png';
 import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
 import iconChat from '@/icons/chat.png';
+import iconAgents from '@/icons/agents.png';
 import { normalizePlatformSlug } from '@/lib/platforms';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
@@ -54,6 +55,39 @@ const WEB_TOOLS = new Set([
   'arxiv',
   'domain_intel',
 ]);
+
+/** Agent/subagent/orchestration tools that use the branded "agents" PNG. */
+const AGENT_PNG_TOOLS = new Set([
+  'spawn_agent',
+  'spawn_agents',
+  'delegate_task',
+  'consult_experts',
+  'cancel_agents',
+  'wait_for_agents',
+  'list_active_sessions',
+  'get_session_progress',
+  'send_to_session',
+  'stop_session',
+  'interrupt_session',
+  'background_task',
+  'mailbox_received',
+]);
+
+const AGENT_PNG_TYPES = new Set([
+  'delegation',
+  'delegation-group',
+  'consultation-group',
+  'orchestration-group',
+  'background',
+  'background-group',
+]);
+
+function isAgentActivity(tool?: string, type?: ChatMessage['activityType']): boolean {
+  const t = tool?.toLowerCase();
+  if (t && AGENT_PNG_TOOLS.has(t)) return true;
+  if (type && AGENT_PNG_TYPES.has(type)) return true;
+  return false;
+}
 
 /** Tools with a native app icon that routeToolToWindow does not cover. */
 const DIRECT_TOOL_WINDOW: Record<string, WindowType> = {
@@ -357,7 +391,12 @@ export function resolveActivityVisual(input: {
     }
   }
 
-  // 3. Native Construct app icons (PNG) — preferred over generic Lucide.
+  // 3. Branded agents PNG for agent/subagent/orchestration activities.
+  if (isAgentActivity(tool, type)) {
+    return imageVisual(iconAgents, 'Agents');
+  }
+
+  // 4. Native Construct app icons (PNG) — preferred over generic Lucide.
   const builtin = resolveBuiltinIcon(tool, type, params);
   if (builtin) {
     const windowType = resolveWindowTypeForTool(tool, params, type);
@@ -368,13 +407,13 @@ export function resolveActivityVisual(input: {
     return imageVisual(iconChat, 'Chat');
   }
 
-  // 4. Lucide fallback for tools without a branded PNG.
+  // 5. Lucide fallback for tools without a branded PNG.
   const lucide = lucideIconForTool(type, tool, label);
   if (lucide) {
     return { kind: 'lucide', Icon: lucide };
   }
 
-  // 5. Last resort: generic Construct app icon.
+  // 6. Last resort: generic Construct app icon.
   return imageVisual(iconGeneric, tool || label || 'Tool');
 }
 
