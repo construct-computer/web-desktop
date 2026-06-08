@@ -55,11 +55,12 @@ describe('chatTurnSync', () => {
   });
 
   it('preserves streamed assistant rows missing from a lagging server snapshot', () => {
-    const history = [user('hello')];
-    const live = [user('hello'), agent('hi there')];
+    const ts = 1_000;
+    const history = [user('hello', undefined, ts)];
+    const live = [user('hello', undefined, ts), agent('hi there', ts)];
     expect(mergeLiveTailIntoHistory(history, live)).toEqual([
-      user('hello'),
-      agent('hi there'),
+      user('hello', undefined, ts),
+      agent('hi there', ts),
     ]);
   });
 
