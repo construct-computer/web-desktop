@@ -7,6 +7,7 @@ import { Button, MarkdownRenderer } from '@/components/ui';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
+import { ReasoningBlock } from '@/components/ui/ReasoningBlock';
 import { ActivityIcon as ToolActivityIcon } from '@/components/desktop/spotlight/ActivityIcon';
 import { ChatEventRow } from '@/components/desktop/spotlight/ChatEventRow';
 import { MessageList } from '@/components/desktop/spotlight/MessageList';
@@ -770,6 +771,9 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
                     : 'bg-[var(--color-surface-raised)] border border-[var(--color-border)]'
                 }`}
               >
+                {msg.role === 'agent' && !isError && msg.reasoning && (
+                  <ReasoningBlock reasoning={msg.reasoning} />
+                )}
                 {(() => {
                   if (msg.askUser) return <AskUserCard data={msg.askUser} />;
                   // Detect auth connect markers in agent messages

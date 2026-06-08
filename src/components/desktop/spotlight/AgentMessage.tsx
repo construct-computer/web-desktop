@@ -3,6 +3,7 @@ import { FileText, Image as ImageIcon, Download, Loader2 } from 'lucide-react';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
+import { ReasoningBlock } from '@/components/ui/ReasoningBlock';
 import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
@@ -71,6 +72,7 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
       <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
       <div className="flex min-w-0 max-w-full sm:max-w-[90%] flex-col items-start gap-0.5">
         <div className={`w-full text-[15px] leading-relaxed selection:!bg-white/90 selection:!text-[var(--color-accent)] ${isError ? '' : 'text-[var(--color-text)]'}`}>
+          {!isError && msg.reasoning && <ReasoningBlock reasoning={msg.reasoning} />}
           {(() => {
             if (msg.askUser) return <AskUserCard data={msg.askUser} />;
             return <MarkdownRenderer content={displayContent} />;

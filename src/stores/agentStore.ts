@@ -16,6 +16,7 @@ import { sessionInfoFromEvent, touchChatSession, upsertChatSession } from './ses
 import {
   appendUserMessageForNewTurn,
   applyAgentTextDelta,
+  attachReasoningToLastAgent,
   mergeLiveTailIntoHistory,
   sortChatMessagesByTimestamp,
 } from './chatTurnSync';
@@ -310,6 +311,12 @@ export interface ChatMessage {
   policyActivity?: PolicyActivityData;
   /** Live code/file preview emitted while the agent is generating artifacts. */
   codePreview?: CodePreviewData;
+  /**
+   * Model reasoning / thinking text captured for this assistant turn (Anthropic
+   * thinking, OpenAI/Grok reasoning, Gemini thoughts, GPT-OSS harmony channel).
+   * Rendered as a collapsible, dimmed "Thinking" block above the answer.
+   */
+  reasoning?: string;
 }
 
 /** Ephemeral Clippy widget status from stripped CLIPPY: lines (not in chat history). */
@@ -770,6 +777,12 @@ interface ComputerStore {
   agentThinking: string | null;
   /** Streaming thinking text from the LLM. null = not thinking, '' = started (no tokens yet). */
   agentThinkingStream: string | null;
+  /**
+   * Accumulated reasoning/thinking text for the in-progress assistant turn,
+   * attached to the assistant chat bubble once its answer starts streaming so
+   * it survives as a collapsible block after the live indicator clears.
+   */
+  agentReasoningBuffer: string;
   /** Session-scoped image attachment previews. */
   pendingImageDataBySession: Record<string, string[]>;
   /** Session-scoped component chips queued for the next Spotlight message. */
@@ -1826,6 +1839,7 @@ export const useComputerStore = create<ComputerStore>()(
     historyLoadError: null,
     agentThinking: null,
     agentThinkingStream: null,
+    agentReasoningBuffer: '',
     pendingImageDataBySession: {},
     pendingComponentMentionsBySession: {},
     pendingComponentMentions: [],
@@ -3457,6 +3471,7 @@ export const useComputerStore = create<ComputerStore>()(
           },
           chatMessages: nextChatMessages,
           agentThinking: '',
+          agentReasoningBuffer: '',
           agentRunning: true,
           runningSessions: nextRunning,
         };
@@ -5097,11 +5112,18 @@ export const useComputerStore = create<ComputerStore>()(
             if (!shouldUpdateVisibleDesktopAgent) return state;
             const pa = getOrCreateAgent(state);
             const responseText = (pa.responseText || '') + text;
-            const updatedAgentChat = applyAgentTextDelta(
+            // Fold the reasoning accumulated this turn into the bubble that is
+            // now producing the answer, then drain the buffer so it isn't
+            // re-attached to later bubbles in the same run.
+            const reasoningBuf = state.agentReasoningBuffer || '';
+            let updatedAgentChat = applyAgentTextDelta(
               pa.chatMessages || [],
               text,
               attachIterationLimitFromContent,
             );
+            if (reasoningBuf) {
+              updatedAgentChat = attachReasoningToLastAgent(updatedAgentChat, reasoningBuf);
+            }
 
             const updates: Partial<typeof state> = {
               platformAgents: {
@@ -5114,16 +5136,21 @@ export const useComputerStore = create<ComputerStore>()(
                 },
               },
             };
+            if (reasoningBuf) updates.agentReasoningBuffer = '';
 
             // Desktop singleton: keep backward compat for ChatWindow.
             // Do not gate on chatHistoryLoading — the fetch can overlap streaming;
             // loadChatHistory merges the in-flight assistant row back in.
             if (isActiveSession) {
-              updates.chatMessages = applyAgentTextDelta(
+              let desktopChat = applyAgentTextDelta(
                 state.chatMessages,
                 text,
                 attachIterationLimitFromContent,
               );
+              if (reasoningBuf) {
+                desktopChat = attachReasoningToLastAgent(desktopChat, reasoningBuf);
+              }
+              updates.chatMessages = desktopChat;
               updates.agentThinking = null;
             }
 
@@ -5212,10 +5239,15 @@ export const useComputerStore = create<ComputerStore>()(
           // Ignore child subagent thinking — only show main/orchestrator thinking
           const thinkDeltaSub = event.data?.subagentId as string | undefined;
           if (thinkDeltaSub && thinkDeltaSub !== 'orchestrator') break;
-          // Append actual LLM thinking tokens
+          // Append actual LLM thinking tokens to the live indicator and to the
+          // per-turn buffer that gets folded into the assistant bubble as a
+          // persistent collapsible "Thinking" block once the answer streams.
           const chunk = event.data?.content as string || '';
           if (chunk) {
-            set(state => ({ agentThinkingStream: (state.agentThinkingStream || '') + chunk }));
+            set(state => ({
+              agentThinkingStream: (state.agentThinkingStream || '') + chunk,
+              agentReasoningBuffer: (state.agentReasoningBuffer || '') + chunk,
+            }));
           }
           break;
         }

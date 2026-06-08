@@ -38,6 +38,8 @@ export function captureClientException(
     source?: string;
     correlationId?: string;
     errorId?: string;
+    route?: string;
+    fingerprint?: string;
     extra?: Record<string, unknown>;
   },
 ): void {
@@ -46,6 +48,12 @@ export function captureClientException(
     if (context?.source) scope.setTag('source', context.source);
     if (context?.correlationId) scope.setTag('correlationId', context.correlationId);
     if (context?.errorId) scope.setTag('errorId', context.errorId);
+    if (context?.route) scope.setTag('route', context.route);
+    if (context?.fingerprint) {
+      scope.setTag('fingerprint', context.fingerprint);
+      // Group by our stable fingerprint so the same loop/error stays one issue.
+      scope.setFingerprint([context.source || 'client', context.fingerprint]);
+    }
     if (context?.extra) scope.setExtras(context.extra);
     Sentry.captureException(error);
   });

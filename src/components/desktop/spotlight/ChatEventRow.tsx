@@ -156,13 +156,13 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     const title = policyActivityTitle(policyActivity);
     const summary = policyActivitySummary(policyActivity);
     const canExpand = policyActivity.items.length > 0;
-    const policyIconHints = resolveActivityIconHints('autopilot');
+    const policyIconHints = resolveActivityIconHints('memory');
 
     return (
       <div className={compact ? 'flex items-center gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
         <div className={compact ? 'flex items-center gap-2.5 min-w-0 w-full' : 'flex items-center gap-2.5 sm:gap-3 min-w-0 w-full'}>
           <ActivityIconBadge
-            tool="autopilot"
+            tool="memory"
             iconPlatform={policyIconHints.iconPlatform}
             iconUrl={policyIconHints.iconUrl}
             size={compact ? 'sm' : 'md'}

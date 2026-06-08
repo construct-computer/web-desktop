@@ -133,6 +133,24 @@ export function mergeLiveTailIntoHistory(history: ChatMessage[], live: ChatMessa
   return sortChatMessagesByTimestamp([...history, ...tail]);
 }
 
+/**
+ * Attach reasoning/thinking text to the most recent in-progress assistant
+ * bubble. Used when reasoning streams in just before (or alongside) the answer
+ * so the "Thinking" block persists on the message after the live indicator
+ * clears. Concatenates onto any reasoning already present so multi-step turns
+ * accumulate rather than overwrite.
+ */
+export function attachReasoningToLastAgent(messages: ChatMessage[], reasoning: string): ChatMessage[] {
+  if (!reasoning) return messages;
+  const lastIdx = messages.length - 1;
+  const last = messages[lastIdx];
+  if (!last || last.role !== 'agent' || last.isError) return messages;
+  const merged = (last.reasoning || '') + reasoning;
+  const updated = [...messages];
+  updated[lastIdx] = { ...last, reasoning: merged };
+  return updated;
+}
+
 export function applyAgentTextDelta(
   messages: ChatMessage[],
   text: string,
