@@ -1,11 +1,15 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Camera, Check, Globe, Monitor, StopCircle, Loader2, PlayCircle, AlertTriangle, Terminal } from 'lucide-react';
-import { captureBrowserScreenshot, stopBrowserRun } from '@/services/api';
+import { memo, useCallback, useMemo } from 'react';
+import { Check, Monitor, StopCircle, Loader2, PlayCircle, AlertTriangle, PanelRight, LayoutList, ChevronUp } from 'lucide-react';
+import { stopBrowserRun } from '@/services/api';
 import type { BrowserSessionRecord } from '@/stores/agentStore';
-import { useComputerStore } from '@/stores/agentStore';
-import { BrowserDashboardPanel } from './BrowserDashboardPanel';
+import { useState } from 'react';
 
 type RunPhase = 'live' | 'complete' | 'error';
+
+function hostLabel(url?: string): string {
+  if (!url) return '';
+  try { return new URL(url).hostname; } catch { return url; }
+}
 
 export const BrowserLivePreview = memo(function BrowserLivePreview({
   streamUrl,
@@ -20,8 +24,12 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onLoad,
   onError,
   onManualReconnect,
-  progressLabel = '',
   goal = '',
+  tabCount = 1,
+  tabBarExpanded = false,
+  onToggleTabBar,
+  onOpenDetails,
+  detailsOpen = false,
 }: {
   streamUrl: string | null;
   session?: BrowserSessionRecord;
@@ -37,9 +45,14 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
   onManualReconnect: () => void;
   progressLabel?: string;
   goal?: string;
+  tabCount?: number;
+  tabBarExpanded?: boolean;
+  onToggleTabBar?: () => void;
+  onOpenDetails?: () => void;
+  detailsOpen?: boolean;
 }) {
   if (!streamUrl) {
-    return <BrowserPreviewEmpty session={session} requestedUrl={pageUrl} />;
+    return <BrowserPreviewEmpty session={session} requestedUrl={pageUrl} onOpenDetails={onOpenDetails} />;
   }
 
   return (
@@ -55,60 +68,72 @@ export const BrowserLivePreview = memo(function BrowserLivePreview({
       onLoad={onLoad}
       onError={onError}
       onManualReconnect={onManualReconnect}
-      progressLabel={progressLabel}
       goal={goal}
       session={session}
+      tabCount={tabCount}
+      tabBarExpanded={tabBarExpanded}
+      onToggleTabBar={onToggleTabBar}
+      onOpenDetails={onOpenDetails}
+      detailsOpen={detailsOpen}
     />
   );
 });
 
-function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessionRecord; requestedUrl?: string }) {
+function BrowserPreviewEmpty({
+  session,
+  requestedUrl,
+  onOpenDetails,
+}: {
+  session?: BrowserSessionRecord;
+  requestedUrl?: string;
+  onOpenDetails?: () => void;
+}) {
   const message = useMemo(() => {
     if (!session && requestedUrl) {
       return {
         title: 'Ready for browser session',
-        body: `Ask Construct to open ${requestedUrl}. Live preview, screenshots, and downloaded files will appear here.`,
+        body: `Ask Construct to open ${requestedUrl}. Live preview and captures will appear here.`,
         icon: <PlayCircle className="w-10 h-10 text-[var(--color-accent)] opacity-40 animate-pulse" />,
       };
     }
     if (!session) {
       return {
         title: 'Waiting for browser session',
-        body: 'When Construct opens a remote browser session, the live video stream will automatically attach here.',
+        body: 'When Construct opens a remote browser session, the live stream will attach here.',
         icon: <Monitor className="w-10 h-10 text-[var(--color-text-subtle)] opacity-20" />,
       };
     }
     if (session.status === 'complete') {
       return {
-        title: 'Session finished',
-        body: 'The browser run has completed successfully. Reopen a recent run from the Runs panel if the URL is still active.',
+        title: 'Run finished',
+        body: 'Open Details for captures and downloads from this run.',
         icon: <Check className="w-10 h-10 text-emerald-400 opacity-40" />,
       };
     }
     if (session.status === 'idle') {
       return {
         title: 'Session stopped',
-        body: 'This browser session has been stopped by the user or agent coordinator.',
+        body: 'This remote browser session was stopped.',
         icon: <StopCircle className="w-10 h-10 text-[var(--color-text-subtle)] opacity-30" />,
       };
     }
     if (session.status === 'expired') {
       return {
-        title: 'Preview URL expired',
-        body: 'Live browser streaming links are short-lived. Session logs, screenshots, and files remain in the dashboard.',
+        title: 'Preview expired',
+        body: 'Captures and run history remain in Details.',
         icon: <ClockIcon className="w-10 h-10 text-amber-500 opacity-30" />,
       };
     }
     if (session.status === 'error') {
       return {
         title: 'Browser run failed',
-        body: session.error || 'The live preview could not be established. Check the activity history log for details.',
+        body: session.error || 'Check Details for run logs.',
         icon: <AlertTriangle className="w-10 h-10 text-red-400 opacity-40 animate-bounce" />,
       };
     }
     return {
-      title: 'Attaching live stream',
-      body: 'Construct has spun up a secure Cloud Chromium instance. Attaching live stream preview...',
+      title: 'Connecting…',
+      body: 'Attaching live stream from remote browser.',
       icon: <Loader2 className="w-10 h-10 text-[var(--color-accent)] animate-spin opacity-60" />,
     };
   }, [requestedUrl, session]);
@@ -118,11 +143,20 @@ function BrowserPreviewEmpty({ session, requestedUrl }: { session?: BrowserSessi
       <div className="mb-2">{message.icon}</div>
       <p className="text-sm font-semibold text-[var(--color-text-muted)]">{message.title}</p>
       <p className="text-xs text-[var(--color-text-subtle)] leading-relaxed">{message.body}</p>
+      {onOpenDetails && (
+        <button
+          type="button"
+          onClick={onOpenDetails}
+          className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] border border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]"
+        >
+          <PanelRight className="w-3.5 h-3.5" />
+          Open Details
+        </button>
+      )}
     </div>
   );
 }
 
-// Simple internal helper since Clock isn't imported
 function ClockIcon({ className }: { className?: string }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -133,7 +167,8 @@ function ClockIcon({ className }: { className?: string }) {
 }
 
 const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
-  streamUrl, runPhase, runErrorDetail, stepCount, runId, pageUrl, isDead, reloadKey, onLoad, onError, onManualReconnect, progressLabel, goal, session,
+  streamUrl, runPhase, runErrorDetail, stepCount, runId, pageUrl, isDead, reloadKey, onLoad, onError, onManualReconnect, goal, session,
+  tabCount, tabBarExpanded, onToggleTabBar, onOpenDetails, detailsOpen,
 }: {
   streamUrl: string;
   runPhase: RunPhase;
@@ -146,198 +181,135 @@ const BrowserStreamOverlay = memo(function BrowserStreamOverlay({
   onLoad: () => void;
   onError: () => void;
   onManualReconnect: () => void;
-  progressLabel?: string;
   goal?: string;
   session?: BrowserSessionRecord;
+  tabCount?: number;
+  tabBarExpanded?: boolean;
+  onToggleTabBar?: () => void;
+  onOpenDetails?: () => void;
+  detailsOpen?: boolean;
 }) {
   const isLive = runPhase === 'live';
   const isComplete = runPhase === 'complete';
   const isErr = runPhase === 'error';
   const [stopping, setStopping] = useState(false);
-  const [showConsole, setShowConsole] = useState(false);
-  const browserSessions = useComputerStore((s) => s.browserState.browserSessions);
-  const sessions = useMemo(
-    () => Object.values(browserSessions).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)),
-    [browserSessions]
-  );
 
   const onStop = useCallback(async () => {
     if (!runId || stopping) return;
     setStopping(true);
-    try { await stopBrowserRun(runId); } catch { /* polling will surface error */ }
+    try { await stopBrowserRun(runId); } catch { /* WS will surface */ }
+    finally { setStopping(false); }
   }, [runId, stopping]);
 
-  const [shotState, setShotState] = useState<'idle' | 'capturing' | 'saved' | 'error'>('idle');
-  const [shotMessage, setShotMessage] = useState<string>('');
-  const onCapture = useCallback(async () => {
-    if (!pageUrl || shotState === 'capturing') return;
-    setShotState('capturing');
-    setShotMessage('');
-    const res = await captureBrowserScreenshot(pageUrl);
-    if (res.success) {
-      setShotState('saved');
-      setShotMessage(res.data.path);
-      setTimeout(() => setShotState('idle'), 2500);
-    } else {
-      setShotState('error');
-      setShotMessage(res.error || 'Capture failed');
-      setTimeout(() => setShotState('idle'), 3500);
-    }
-  }, [pageUrl, shotState]);
-
-  const headerLabel = isErr
-    ? `Run failed${runErrorDetail ? `: ${runErrorDetail.slice(0, 140)}${runErrorDetail.length > 140 ? '...' : ''}` : ''}`
+  const statusLabel = isErr
+    ? 'Failed'
     : isComplete
-      ? 'Run finished. Preview frozen after session termination.'
+      ? 'Finished'
       : reloadKey > 0 && !isDead
-        ? `Reconnecting stream, attempt ${reloadKey}...`
-        : 'Live streaming. Agent is controlling browser';
+        ? 'Reconnecting'
+        : 'Live';
 
+  const subtitle = goal || session?.task || hostLabel(pageUrl);
   const barClass = isErr
-    ? 'bg-red-500/[0.08] text-red-400 border-red-500/20 shadow-sm'
+    ? 'bg-red-500/[0.08] text-red-400 border-red-500/20'
     : isComplete
-      ? 'bg-emerald-500/[0.08] text-emerald-400 border-emerald-500/20 shadow-sm'
-      : 'bg-amber-500/[0.08] text-amber-400 border-amber-500/20 shadow-sm';
+      ? 'bg-emerald-500/[0.08] text-emerald-400 border-emerald-500/20'
+      : 'bg-amber-500/[0.08] text-amber-400 border-amber-500/20';
 
   const stepBadge = typeof stepCount === 'number' ? `${stepCount} step${stepCount === 1 ? '' : 's'}` : null;
+  const showTabToggle = (tabCount ?? 1) > 1 && onToggleTabBar;
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-[var(--color-surface)]">
-      <div className={`shrink-0 flex items-center gap-2.5 px-4 py-2 text-[11px] font-sans border-b select-none ${barClass}`}>
+      <div className={`shrink-0 flex items-center gap-2 px-3 py-1.5 text-[11px] font-sans border-b select-none min-h-[36px] ${barClass}`}>
+        {showTabToggle && (
+          <button
+            type="button"
+            onClick={onToggleTabBar}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]"
+            title={tabBarExpanded ? 'Hide tab bar' : 'Show all tabs'}
+          >
+            {tabBarExpanded ? <ChevronUp className="w-3 h-3" /> : <LayoutList className="w-3 h-3" />}
+            {tabBarExpanded ? 'Hide tabs' : 'Show tabs'}
+          </button>
+        )}
         {isLive && !isDead ? (
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-warning)] opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)] shadow-[0_0_6px_rgba(250,204,21,0.8)]" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-warning)]" />
           </span>
         ) : (
           <span className="relative flex h-2 w-2 shrink-0 rounded-full bg-current opacity-60" />
         )}
-        <span className="min-w-0 leading-snug flex-1 truncate font-medium">{headerLabel}</span>
+        <span className="shrink-0 font-semibold uppercase tracking-wide text-[10px] opacity-80">{statusLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-[var(--color-text-muted)]">
+          {subtitle}
+          {pageUrl && hostLabel(pageUrl) ? ` · ${hostLabel(pageUrl)}` : ''}
+        </span>
         {stepBadge && (
-          <span className="shrink-0 flex items-center gap-1.5 text-[10px] font-mono tabular-nums opacity-85 px-1.5 py-0.5 rounded bg-white/[0.04]">
-            {stepBadge}
-          </span>
+          <span className="shrink-0 text-[10px] font-mono tabular-nums opacity-70">{stepBadge}</span>
         )}
-        
-        <div className="flex items-center gap-1.5">
+        {onOpenDetails && (
           <button
             type="button"
-            onClick={() => setShowConsole(!showConsole)}
+            onClick={onOpenDetails}
             className={[
-              'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all duration-150',
-              showConsole
-                ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10 font-semibold'
+              'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all',
+              detailsOpen
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10'
                 : 'border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]',
             ].join(' ')}
-            title="Toggle execution logs, screenshots and downloaded files"
+            title="Run details, captures, and downloads"
           >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Console</span>
+            <PanelRight className="w-3.5 h-3.5" />
+            Details
           </button>
-          {pageUrl && (
-            <button
-              type="button"
-              onClick={onCapture}
-              disabled={shotState === 'capturing'}
-              className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-current/25 hover:bg-current/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
-              title={
-                shotState === 'saved' ? `Saved to ${shotMessage}`
-                : shotState === 'error' ? shotMessage
-                : 'Save a screenshot of this page to your workspace'
-              }
-            >
-              {shotState === 'saved' ? <Check className="w-3 h-3" /> : <Camera className="w-3 h-3" />}
-              {shotState === 'capturing' ? 'Saving...'
-                : shotState === 'saved' ? 'Saved'
-                : shotState === 'error' ? 'Error'
-                : 'Screenshot'}
-            </button>
-          )}
-          {isLive && runId && (
-            <button
-              type="button"
-              onClick={onStop}
-              disabled={stopping}
-              className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
-              title="Stop this browser run"
-            >
-              <StopCircle className="w-3 h-3" />
-              {stopping ? 'Stopping...' : 'Stop'}
-            </button>
-          )}
-        </div>
+        )}
+        {isLive && runId && (
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={stopping}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40"
+          >
+            <StopCircle className="w-3 h-3" />
+            {stopping ? 'Stopping…' : 'Stop'}
+          </button>
+        )}
       </div>
-      
-      <div className="flex-1 w-full relative min-h-0 flex bg-[var(--color-surface)]">
-        <div className="flex-1 h-full relative min-h-0">
-          {isDead ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-surface)] z-20 select-none">
-              <div className="text-center text-[var(--color-text-muted)] max-w-sm px-6 p-6 rounded-2xl border border-white/[0.06] bg-white/[0.02] shadow-xl backdrop-blur-md">
-                <Monitor className="w-12 h-12 mx-auto mb-4 opacity-40 text-[var(--color-accent)] animate-pulse" />
-                <p className="text-sm font-semibold text-[var(--color-text)]">Live stream disconnected</p>
-                <p className="text-xs mt-1.5 text-[var(--color-text-subtle)] leading-relaxed">
-                  The agent is still executing commands on remote Cloud Chromium, but the preview channel closed.
-                </p>
-                <button
-                  type="button"
-                  onClick={onManualReconnect}
-                  className="mt-5 px-4 py-1.5 text-[11px] rounded-lg border border-[var(--color-border)]
-                             bg-white/5 hover:bg-white/10 text-[var(--color-text)] transition-all duration-150 shadow-sm"
-                >
-                  Reconnect Live Preview
-                </button>
-              </div>
-            </div>
-          ) : (
-            <iframe
-              key={`${streamUrl}:${reloadKey}`}
-              src={streamUrl}
-              className="w-full h-full bg-white border-0"
-              title="Live browser preview"
-              allow="clipboard-read; clipboard-write"
-              onLoad={onLoad}
-              onError={onError}
-            />
-          )}
 
-          {/* Floating progress and goal indicator overlay */}
-          {isLive && (progressLabel || goal) && (
-            <div className="absolute bottom-4 left-4 z-20 max-w-[280px] rounded-xl border border-white/[0.08] bg-black/85 backdrop-blur-md p-3.5 shadow-2xl flex flex-col gap-1.5 animate-[fadeIn_0.35s_ease-out] select-none text-left">
-              {goal && (
-                <div className="text-[9px] text-[var(--color-text-subtle)] font-bold uppercase tracking-wider font-sans">
-                  Active Goal
-                </div>
-              )}
-              {goal && (
-                <div className="text-[11px] text-[var(--color-text-muted)] font-medium leading-relaxed line-clamp-3 font-sans">
-                  {goal}
-                </div>
-              )}
-              {progressLabel && (
-                <div className="text-[9px] text-[var(--color-accent)] font-bold uppercase tracking-wider mt-1.5 flex items-center gap-1.5 font-sans">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse shadow-[0_0_6px_rgba(96,165,250,0.8)]" />
-                  <span>Agent Activity</span>
-                </div>
-              )}
-              {progressLabel && (
-                <div className="text-[11px] text-[var(--color-text)] font-sans leading-relaxed">
-                  {progressLabel}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      {isErr && runErrorDetail && (
+        <p className="shrink-0 px-3 py-1 text-[10px] text-red-400/90 border-b border-red-500/10 truncate">{runErrorDetail}</p>
+      )}
 
-        {/* Right Side: Console Details Panel */}
-        {showConsole && (
-          <BrowserDashboardPanel
-            sessions={sessions}
-            activeSessionId={session?.id || null}
-            onClose={() => setShowConsole(false)}
+      <div className="flex-1 w-full relative min-h-0">
+        {isDead ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-surface)] z-20 select-none">
+            <div className="text-center text-[var(--color-text-muted)] max-w-sm px-6 p-6 rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+              <Monitor className="w-12 h-12 mx-auto mb-4 opacity-40 text-[var(--color-accent)]" />
+              <p className="text-sm font-semibold text-[var(--color-text)]">Stream disconnected</p>
+              <p className="text-xs text-[var(--color-text-subtle)] mt-1">Session ended — open Details for captures.</p>
+              <button
+                type="button"
+                onClick={onManualReconnect}
+                className="mt-4 px-4 py-1.5 text-[11px] rounded-lg border border-[var(--color-border)] bg-white/5 hover:bg-white/10"
+              >
+                Retry stream
+              </button>
+            </div>
+          </div>
+        ) : (
+          <iframe
+            key={`${streamUrl}:${reloadKey}`}
+            src={streamUrl}
+            className="w-full h-full bg-white border-0"
+            title="Live browser preview"
+            allow="clipboard-read; clipboard-write"
+            onLoad={onLoad}
+            onError={onError}
           />
         )}
       </div>
     </div>
   );
 });
-

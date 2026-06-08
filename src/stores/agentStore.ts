@@ -285,6 +285,8 @@ export interface ChatMessage {
   clientId?: string;
   /** Structured details for browser activity rows (icons, payload disclosures). */
   browserAction?: BrowserActionMeta;
+  /** Correlates browser activities to a single Composio run for Spotlight deduping. */
+  browserRunId?: string;
   /** Inline snapshot of web_search/web_fetch results for chat preview cards. */
   webPreview?: WebPreviewData;
   /** Stable incident id for deduping live + history notices. */
@@ -701,11 +703,11 @@ interface ComputerStore {
 
   // API key configuration status
   hasApiKey: boolean;
-  hasBrowserUseKey: boolean;
+  hasComposioBrowser: boolean;
   hasAgentmailKey: boolean;
   configChecked: boolean;
   /** Platform-provided shared keys (users don't need to configure these). */
-  platformKeys: { hasOpenrouter: boolean; hasBrowserUse: boolean; hasAgentmail: boolean };
+  platformKeys: { hasOpenrouter: boolean; hasComposioBrowser: boolean; hasAgentmail: boolean };
 
   // Real-time state for the computer
   browserState: BrowserState;
@@ -791,7 +793,7 @@ interface ComputerStore {
   // Actions
   fetchComputer: () => Promise<void>;
   checkConfigStatus: () => Promise<void>;
-  updateComputer: (data: { openrouterApiKey?: string; browserUseApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateComputer: (data: { openrouterApiKey?: string; agentmailApiKey?: string; agentmailInboxUsername?: string; model?: string; ownerName?: string; ownerEmail?: string; agentName?: string }) => Promise<{ success: boolean; error?: string }>;
 
   // Subscriptions
   subscribeToComputer: () => void;
@@ -870,7 +872,7 @@ interface ComputerStore {
   prependBrowserScreenshot: (shot: BrowserScreenshotSummary) => void;
 
   // Browser
-  hydrateBrowserSessions: (sessions: BrowserSessionRecord[]) => void;
+  hydrateBrowserSessions: (sessions: BrowserSessionRecord[], options?: { replace?: boolean }) => void;
   setBrowserFrame: (frame: Blob, forceDisplay?: boolean, subagentId?: string, taggedTabId?: string) => void;
   /** Open a new browser window (creates daemon tab). Returns the window ID. */
   openBrowserWindow: (url?: string) => string;
@@ -1612,9 +1614,6 @@ function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial
       const pa = get().platformAgents?.['desktop'];
       const currentTool = pa?.currentTool;
       if (currentTool === 'wait_for_agents' || currentTool === 'spawn_agent') {
-        // #region agent log
-        fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'F',location:'agentStore.ts:resetAgentRunningTimer',message:'timer blocked by currentTool',data:{currentTool,agentRunning},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         resetAgentRunningTimer(get, set);
         return;
       }
@@ -1737,10 +1736,10 @@ export const useComputerStore = create<ComputerStore>()(
     isLoading: false,
     error: null,
     hasApiKey: false,
-    hasBrowserUseKey: false,
+    hasComposioBrowser: false,
     hasAgentmailKey: false,
     configChecked: false,
-    platformKeys: { hasOpenrouter: false, hasBrowserUse: false, hasAgentmail: false },
+    platformKeys: { hasOpenrouter: false, hasComposioBrowser: false, hasAgentmail: false },
     browserState: {
       url: '',
       title: '',
@@ -1886,17 +1885,17 @@ export const useComputerStore = create<ComputerStore>()(
 
       const result = await api.getAgentConfigStatus(instanceId);
       if (result.success) {
-        const pk = result.data.platformKeys || { hasOpenrouter: false, hasBrowserUse: false, hasAgentmail: false };
+        const pk = result.data.platformKeys || { hasOpenrouter: false, hasComposioBrowser: false, hasAgentmail: false };
         set({
           hasApiKey: result.data.hasApiKey,
-          hasBrowserUseKey: result.data.hasBrowserUseKey,
+          hasComposioBrowser: result.data.hasComposioBrowser,
           hasAgentmailKey: result.data.hasAgentmailKey,
           configChecked: true,
           platformKeys: pk,
         });
       } else {
         // If we can't check, assume not configured
-        set({ configChecked: true, hasApiKey: false, hasBrowserUseKey: false, hasAgentmailKey: false });
+        set({ configChecked: true, hasApiKey: false, hasComposioBrowser: false, hasAgentmailKey: false });
       }
     },
 
@@ -1908,7 +1907,6 @@ export const useComputerStore = create<ComputerStore>()(
       // auth-verified DB record to prevent spoofing.
       const result = await api.updateAgentConfig(instanceId, {
         openrouter_api_key: data.openrouterApiKey,
-        browser_use_api_key: data.browserUseApiKey,
         agentmail_api_key: data.agentmailApiKey,
         agentmail_inbox_username: data.agentmailInboxUsername,
         model: data.model,
@@ -4252,22 +4250,47 @@ export const useComputerStore = create<ComputerStore>()(
         return { browserScreenshots: [shot, ...state.browserScreenshots].slice(0, 200) };
       });
     },
-    hydrateBrowserSessions: (sessions) => {
+    hydrateBrowserSessions: (sessions, options) => {
+      const sorted = sessions
+        .slice()
+        .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+        .slice(0, 100);
+      const replace = options?.replace === true;
+
       set((state) => {
-        const sorted = sessions
-          .slice()
-          .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
-          .slice(0, 100);
-        const browserSessions = Object.fromEntries(
-          sorted.map((session) => [
-            session.id,
-            { ...(state.browserState.browserSessions[session.id] || {}), ...session },
-          ]),
+        const prior = state.browserState.browserSessions;
+        const browserSessions = replace ? {} as typeof prior : { ...prior };
+        for (const session of sorted) {
+          const terminal = session.status === 'complete' || session.status === 'error'
+            || session.status === 'idle' || session.status === 'expired';
+          const merged = { ...(prior[session.id] || {}), ...session };
+          if (terminal && !session.streamUrl) {
+            delete merged.streamUrl;
+          }
+          browserSessions[session.id] = merged;
+        }
+        if (!replace) {
+          const keepIds = new Set([
+            ...sorted.filter((s) => s.status === 'running' || s.status === 'starting').map((s) => s.id),
+            ...sorted
+              .filter((s) => s.status !== 'running' && s.status !== 'starting')
+              .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+              .slice(0, 3)
+              .map((s) => s.id),
+          ]);
+          for (const id of Object.keys(browserSessions)) {
+            if (!keepIds.has(id)) delete browserSessions[id];
+          }
+        }
+        const hasRunning = Object.values(browserSessions).some(
+          (s) => s.status === 'running' || s.status === 'starting',
         );
         const activeBrowserSessionId =
           state.browserState.activeBrowserSessionId && browserSessions[state.browserState.activeBrowserSessionId]
             ? state.browserState.activeBrowserSessionId
-            : (sorted[0]?.id || null);
+            : (hasRunning ? sorted.find((s) => s.status === 'running' || s.status === 'starting')?.id : null)
+              || sorted[0]?.id
+              || null;
         return {
           browserState: {
             ...state.browserState,
@@ -4276,6 +4299,24 @@ export const useComputerStore = create<ComputerStore>()(
           },
         };
       });
+
+      const tabStore = useBrowserTabStore.getState();
+      for (const session of sorted) {
+        const terminal = session.status === 'complete' || session.status === 'error'
+          || session.status === 'idle' || session.status === 'expired';
+        const runPhase = session.status === 'running' || session.status === 'starting'
+          ? 'live' as const
+          : session.status === 'complete'
+            ? 'complete' as const
+            : 'error' as const;
+        tabStore.patchLiveTabBySession(session.id, {
+          runPhase,
+          runId: session.runId,
+          ...(session.streamUrl ? { streamUrl: session.streamUrl } : {}),
+          ...(terminal && !session.streamUrl ? { streamUrl: undefined } : {}),
+        });
+      }
+      tabStore.pruneInactiveLiveTabs(get().browserState.browserSessions);
     },
 
     setBrowserFrame: (frame, forceDisplay, subagentId, taggedTabId) => {
@@ -4362,12 +4403,30 @@ export const useComputerStore = create<ComputerStore>()(
         browserWS.sendAction({ action: 'newTab', ...(url ? { url } : {}) });
       }
 
-      return getOrCreateBrowserAppWindow({
+      const windowId = getOrCreateBrowserAppWindow({
         title,
         metadata: {
           ...(url ? { pendingUrl: url, browserPageUrl: url } : {}),
         },
       });
+
+      // Unified shell reads browserTabStore tabs — create a fetch tab so desktop
+      // open_window with a URL shows a page instead of the empty placeholder.
+      if (url) {
+        useBrowserTabStore.getState().openOrFocusUrlTab(url);
+        const win = useWindowStore.getState().getWindow(windowId);
+        if (win) {
+          useWindowStore.getState().updateWindow(windowId, {
+            metadata: {
+              ...win.metadata,
+              pendingUrl: undefined,
+              browserPageUrl: url,
+            },
+          });
+        }
+      }
+
+      return windowId;
     },
 
     closeBrowserWindow: (windowId) => {
@@ -4410,8 +4469,21 @@ export const useComputerStore = create<ComputerStore>()(
 
       // Drop emulated search/fetch/research tabs when the agent browser window closes.
       if (win.metadata?.browserAppWindow) {
-        useBrowserTabStore.getState().clearStaticTabs();
-        useBrowserTabStore.getState().pruneInactiveLiveTabs(get().browserState.browserSessions);
+        const tabStore = useBrowserTabStore.getState();
+        tabStore.clearStaticTabs();
+        tabStore.downgradeLiveTabsOnClose();
+        tabStore.pruneInactiveLiveTabs(get().browserState.browserSessions);
+        const hasRunning = Object.values(get().browserState.browserSessions).some(
+          (s) => s.status === 'running' || s.status === 'starting',
+        );
+        if (!hasRunning) {
+          set({
+            browserState: {
+              ...get().browserState,
+              activeBrowserSessionId: null,
+            },
+          });
+        }
       }
 
       // Close the window
@@ -5349,11 +5421,8 @@ export const useComputerStore = create<ComputerStore>()(
               || tool === 'ask_user') {
             break;
           }
-          // Skip open/task browser tool_call — browser:start/progress handle rich UI.
-          if (tool === 'browser') {
-            const intent = params?.intent as string | undefined;
-            if (!intent || intent === 'open' || intent === 'task') break;
-          }
+          // Skip browser tool_call rows — browser:start/progress/tab_update handle UI.
+          if (tool === 'browser') break;
           if (tool === 'remote_browser' || tool === 'remote_browser_session') break;
           // Skip tools with empty descriptions (e.g. respond_directly fallback)
           if (!activityText) {
@@ -5697,9 +5766,6 @@ export const useComputerStore = create<ComputerStore>()(
           if (status === 'idle' && !isSubagentSessionKey(eventSessionKey)) {
             nextRunning = stripSubagentSessions(nextRunning);
           }
-          // #region agent log
-          fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'A-G',location:'agentStore.ts:status_change',message:'status_change',data:{status,eventSessionKey,runningBefore:[...get().runningSessions],runningAfter:[...nextRunning],activeViewKey:get().activeSessionKey},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           const activeViewKey = get().activeSessionKey;
           nextRunning = pruneStaleBackgroundRunningSessions(
             nextRunning,
@@ -5808,19 +5874,26 @@ export const useComputerStore = create<ComputerStore>()(
               queuedMessageCount: 0,
               taskProgress: null,
               ...(!anyOtherSessionRunning
-                ? {
-                    platformAgents: updatedPlatformAgents,
-                    browserState: { ...bs, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null },
-                  }
+                ? { platformAgents: updatedPlatformAgents }
                 : {}),
             });
-            // Server persists assistant text after the stream ends; reload once
-            // idle so bubbles survive without a full page refresh.
-            queueMicrotask(() => {
-              if (get().activeSessionKey === eventSessionKey) {
-                void get().refreshActiveChatHistory({ force: true });
-              }
-            });
+            // Server persists assistant text after the stream ends; delay reload so
+            // the snapshot includes the final assistant turn and we do not race
+            // the live thread still rendering in Spotlight.
+            const liveCountAtIdle = isActiveSession ? get().chatMessages.length : 0;
+            setTimeout(() => {
+              if (get().activeSessionKey !== eventSessionKey) return;
+              void get().refreshActiveChatHistory({ force: true }).then(() => {
+                if (liveCountAtIdle === 0) return;
+                const after = get().chatMessages.length;
+                if (after < liveCountAtIdle) {
+                  const cached = sessionMessageCache.get(eventSessionKey);
+                  if (cached && cached.length >= liveCountAtIdle) {
+                    set({ chatMessages: cached });
+                  }
+                }
+              });
+            }, 2000);
           }
           break;
         }
@@ -6861,9 +6934,6 @@ export const useComputerStore = create<ComputerStore>()(
           const status = event.data?.status as string || 'complete';
           const tracker = useAgentTrackerStore.getState();
           tracker.updateOperationStatus(opId, status === 'complete' ? 'complete' : 'failed');
-          // #region agent log
-          fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'B',location:'agentStore.ts:orchestration:complete',message:'orchestration complete',data:{opId,status,runningSessions:[...get().runningSessions]},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           break;
         }
 
@@ -6914,9 +6984,6 @@ export const useComputerStore = create<ComputerStore>()(
               result: result.slice(0, 300),
             });
             const opAfter = useAgentTrackerStore.getState().operations[opId];
-            // #region agent log
-            fetch('http://127.0.0.1:7445/ingest/9b69e368-0552-4456-bc02-8b3da8ec344b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4964ea'},body:JSON.stringify({sessionId:'4964ea',hypothesisId:'B',location:'agentStore.ts:child:complete',message:'child complete',data:{childId,opId,opStatus:opAfter?.status,subStatuses:opAfter?.subAgents?.map(s=>({id:s.id,status:s.status})),runningSessions:[...get().runningSessions],agentRunning:get().agentRunning},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
           }
 
           if (childId) {
@@ -7308,10 +7375,21 @@ export const useComputerStore = create<ComputerStore>()(
 
         case 'browser:tab_update': {
           useBrowserTabStore.getState().updateTabFromEvent(event.data || {});
-          const tabToolCallId = event.data?.toolCallId as string | undefined;
           const tabPayload = event.data?.payload as Record<string, unknown> | undefined;
+          const tabRunId = typeof tabPayload?.runId === 'string' ? tabPayload.runId as string : undefined;
+          const tabStreamUrl = typeof tabPayload?.streamUrl === 'string' ? tabPayload.streamUrl as string
+            : typeof tabPayload?.liveUrl === 'string' ? tabPayload.liveUrl as string : undefined;
+          if (tabRunId && tabStreamUrl) {
+            useBrowserTabStore.getState().patchLiveTabBySession(tabRunId, {
+              streamUrl: tabStreamUrl,
+              runId: tabRunId,
+              runPhase: tabPayload?.runPhase === 'complete' ? 'complete' : 'live',
+              ...(typeof tabPayload?.pageUrl === 'string' ? { pageUrl: tabPayload.pageUrl as string } : {}),
+            });
+          }
+          const tabToolCallId = event.data?.toolCallId as string | undefined;
           const tabStatus = event.data?.status as string | undefined;
-          const tabTool = (event.data?.tool as string) || 'web_fetch';
+          const tabTool = (event.data?.tool as string) || (tabRunId ? 'browser' : 'web_fetch');
           if (tabToolCallId && tabStatus === 'complete' && tabPayload && isActiveSession) {
             const preview = buildWebPreviewFromTabPayload(tabTool, tabPayload);
             if (preview) {
@@ -7404,11 +7482,12 @@ export const useComputerStore = create<ComputerStore>()(
             ...(!isSubagentBrowser && isActiveSession ? {
               chatMessages: appendMessage(state.chatMessages, {
                 role: 'activity' as const,
-                content: `Browsing ${url}`,
+                content: goal || (url ? `Browsing ${url}` : 'Browsing the web'),
                 timestamp: new Date(),
                 tool: 'browser',
                 activityType: 'web',
                 activityStatus: 'running',
+                ...(!browserSessionId.startsWith('pending:') ? { browserRunId: browserSessionId } : {}),
                 browserAction: {
                   actionType: 'open',
                   ...(url ? { url } : {}),
@@ -7506,31 +7585,59 @@ export const useComputerStore = create<ComputerStore>()(
             const costUsd = typeof event.data?.costUsd === 'number' ? event.data.costUsd as number : undefined;
             const stepCount = typeof event.data?.stepCount === 'number' ? event.data.stepCount as number : undefined;
             const endedAt = typeof event.data?.endedAt === 'number' ? event.data.endedAt as number : (nextStatus !== 'running' ? Date.now() : null);
+            const liveUrl = typeof event.data?.liveUrl === 'string' ? event.data.liveUrl as string
+              : typeof event.data?.live_url === 'string' ? event.data.live_url as string : undefined;
             get().patchBrowserRun({
               run_id: statusRunId,
               status: nextStatus,
               ...(endedAt !== null ? { ended_at: endedAt } : {}),
               ...(costUsd !== undefined ? { cost_usd: costUsd } : {}),
               ...(stepCount !== undefined ? { step_count: stepCount } : {}),
+              ...(liveUrl ? { live_url: liveUrl } : {}),
             });
+            const priorSession = get().browserState.browserSessions[statusRunId];
+            const streamUrl = liveUrl || priorSession?.streamUrl;
+            const mappedStatus = nextStatus === 'running' ? 'running'
+              : nextStatus === 'success' ? 'complete'
+                : nextStatus === 'cancelled' ? 'idle' : 'error';
             set((state) => ({
               browserState: {
                 ...state.browserState,
                 browserSessions: {
                   ...state.browserState.browserSessions,
                   [statusRunId]: {
-                    ...(state.browserState.browserSessions[statusRunId] || {}),
+                    ...(priorSession || {}),
                     id: statusRunId,
                     subagentId: (event.data?.subagentId as string | undefined) || 'main',
                     runId: statusRunId,
-                    status: nextStatus === 'running' ? 'running' : nextStatus === 'success' ? 'complete' : nextStatus === 'cancelled' ? 'idle' : 'error',
-                    startedAt: state.browserState.browserSessions[statusRunId]?.startedAt || Date.now(),
+                    status: mappedStatus,
+                    startedAt: priorSession?.startedAt || Date.now(),
+                    ...(endedAt !== null ? { endedAt } : {}),
+                    ...(streamUrl ? { streamUrl } : {}),
                     ...(costUsd !== undefined ? { costUsd } : {}),
                     ...(stepCount !== undefined ? { stepCount } : {}),
                   },
                 },
+                ...(streamUrl ? {
+                  browserStreams: {
+                    ...state.browserState.browserStreams,
+                    [(event.data?.subagentId as string | undefined) || 'main']: streamUrl,
+                  },
+                } : {}),
               },
             }));
+            const terminal = nextStatus !== 'running';
+            const tabStreamUrl = !terminal && (liveUrl || streamUrl) ? (liveUrl || streamUrl) : undefined;
+            useBrowserTabStore.getState().patchLiveTabBySession(statusRunId, {
+              runPhase: mappedStatus === 'complete' ? 'complete' : mappedStatus === 'running' ? 'live' : 'error',
+              runId: statusRunId,
+              ...(tabStreamUrl ? { streamUrl: tabStreamUrl } : { streamUrl: undefined }),
+            });
+            if (nextStatus === 'success') {
+              void api.listBrowserScreenshots({ limit: 50 }).then((res) => {
+                if (res.success && res.data) get().hydrateBrowserScreenshots(res.data.screenshots);
+              });
+            }
           }
           break;
         }
@@ -7693,6 +7800,7 @@ export const useComputerStore = create<ComputerStore>()(
           }
 
           // Batch into single set() (M16)
+          const progressRunId = get().browserState.activeBrowserSessionId || undefined;
           set(state => ({
             agentThinking: headLabel,
             ...(isActiveSession ? {
@@ -7702,6 +7810,7 @@ export const useComputerStore = create<ComputerStore>()(
                 timestamp: new Date(),
                 tool: 'browser',
                 activityType: 'web',
+                ...(progressRunId ? { browserRunId: progressRunId } : {}),
                 browserAction,
               }),
             } : {}),

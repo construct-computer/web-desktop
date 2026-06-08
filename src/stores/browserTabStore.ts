@@ -125,6 +125,30 @@ function hostFromUrl(raw: string): string {
   }
 }
 
+/** Normalize URLs for dedupe when opening pages from desktop open_window or pendingUrl. */
+export function normalizeBrowserUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  try {
+    const u = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    u.hash = '';
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.slice(0, -1);
+    }
+    return u.href;
+  } catch {
+    return trimmed;
+  }
+}
+
+function stableUrlTabSourceId(normalizedUrl: string): string {
+  let hash = 0;
+  for (let i = 0; i < normalizedUrl.length; i++) {
+    hash = ((hash << 5) - hash + normalizedUrl.charCodeAt(i)) | 0;
+  }
+  return `desktop_${Math.abs(hash).toString(36)}`;
+}
+
 function proxyUrlFor(target: string): string {
   return `${API_BASE_URL}/web/preview?url=${encodeURIComponent(target)}`;
 }
@@ -307,6 +331,8 @@ export function liveTabSessionId(tab: BrowserTab): string | undefined {
   return undefined;
 }
 
+const COMPLETED_LIVE_TAB_RETAIN_MS = 30 * 60 * 1000;
+
 export function isLiveBrowserSessionActive(
   tab: BrowserTab,
   sessions: Record<string, { status?: string }>,
@@ -321,7 +347,11 @@ export function isLiveBrowserSessionActive(
     if (session?.status === 'running' || session?.status === 'starting') return true;
   }
 
-  return tab.runPhase === 'live';
+  if (tab.streamUrl && (tab.runPhase === 'complete' || tab.status === 'complete')) {
+    return Date.now() - tab.createdAt < COMPLETED_LIVE_TAB_RETAIN_MS;
+  }
+
+  return false;
 }
 
 function pickActiveTabId(tabs: BrowserTab[], removedId: string, previousActive: string | null): string | null {
@@ -332,12 +362,33 @@ function pickActiveTabId(tabs: BrowserTab[], removedId: string, previousActive: 
   return tabs[tabs.length - 1]?.id ?? null;
 }
 
+function applyLivePayload(tab: BrowserTab, payload: Record<string, unknown>): BrowserTab {
+  const streamUrl = typeof payload.streamUrl === 'string' ? payload.streamUrl
+    : typeof payload.liveUrl === 'string' ? payload.liveUrl : tab.streamUrl;
+  const runPhase = payload.runPhase === 'live' || payload.runPhase === 'complete' || payload.runPhase === 'error'
+    ? payload.runPhase
+    : tab.runPhase;
+  const runId = typeof payload.runId === 'string' ? payload.runId : tab.runId;
+  const pageUrl = typeof payload.pageUrl === 'string' ? payload.pageUrl
+    : typeof payload.url === 'string' ? payload.url : tab.pageUrl || tab.url;
+  return {
+    ...tab,
+    payload,
+    status: 'complete',
+    ...(streamUrl ? { streamUrl } : {}),
+    ...(runPhase ? { runPhase } : {}),
+    ...(runId ? { runId, sessionId: runId } : {}),
+    ...(pageUrl ? { pageUrl, url: pageUrl } : {}),
+  };
+}
+
 function applyPayload(tab: BrowserTab, payload: Record<string, unknown>): BrowserTab {
   switch (tab.mode) {
     case 'search': return applySearchPayload(tab, payload);
     case 'fetch': return applyFetchPayload(tab, payload);
     case 'arxiv': return applyArxivPayload(tab, payload);
     case 'domain': return applyDomainPayload(tab, payload);
+    case 'live': return applyLivePayload(tab, payload);
     default:
       return { ...tab, payload, status: 'complete' };
   }
@@ -369,6 +420,8 @@ interface BrowserTabStore {
   tabSnapshots: Record<string, BrowserTab>;
   dismissedTabIds: Set<string>;
   openTabFromToolCall: (tool: string, toolCallId: string | undefined, params: Record<string, unknown>) => string;
+  /** Open a fetch tab for a URL, or focus an existing tab with the same normalized URL. */
+  openOrFocusUrlTab: (url: string, sourceId?: string) => string;
   openTabFromEvent: (data: Record<string, unknown>) => string;
   updateTabFromEvent: (data: Record<string, unknown>) => void;
   failTab: (toolCallId: string | undefined, error: string) => void;
@@ -383,6 +436,7 @@ interface BrowserTabStore {
   reopenTab: (tabId: string) => boolean;
   clearStaticTabs: () => void;
   pruneInactiveLiveTabs: (sessions: Record<string, { status?: string }>) => void;
+  downgradeLiveTabsOnClose: () => void;
   removeLiveTabForSession: (sessionId: string) => void;
   reset: () => void;
 }
@@ -424,6 +478,23 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
       activeTabId: id,
     }));
     return id;
+  },
+
+  openOrFocusUrlTab: (url, sourceId) => {
+    const normalized = normalizeBrowserUrl(url);
+    if (!normalized) return get().activeTabId || '';
+    const existing = get().tabs.find(
+      (t) => t.url && normalizeBrowserUrl(t.url) === normalized,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return existing.id;
+    }
+    return get().openTabFromToolCall(
+      'web_fetch',
+      sourceId || stableUrlTabSourceId(normalized),
+      { url: normalized },
+    );
   },
 
   openTabFromEvent: (data) => {
@@ -673,6 +744,16 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
     });
   },
 
+  downgradeLiveTabsOnClose: () => {
+    set((state) => ({
+      tabs: state.tabs.map((t) => (
+        t.mode === 'live'
+          ? { ...t, runPhase: 'complete' as const, streamUrl: undefined, status: 'complete' as const }
+          : t
+      )),
+    }));
+  },
+
   removeLiveTabForSession: (sessionId) => {
     get().closeTab(`tab_live_${sessionId}`);
   },
@@ -690,6 +771,10 @@ export const BROWSER_WEB_TOOLS = new Set([
   'web_fetch',
   'arxiv',
   'domain_intel',
+  'composio_search',
+  'browser',
+  'discover',
+  'execute',
 ]);
 
 export function isBrowserWebTool(tool: string): boolean {

@@ -113,9 +113,11 @@ export function BrowserScreenshotGallery({
     }
   }, [savingKey]);
 
-  const filteredItems = runId || subagentId
-    ? items.filter((shot) => (runId && shot.run_id === runId) || (subagentId && shot.subagent_id === subagentId))
-    : items;
+  const filteredItems = runId
+    ? items.filter((shot) => shot.run_id === runId)
+    : subagentId
+      ? items.filter((shot) => shot.subagent_id === subagentId)
+      : items;
 
   return (
     <div ref={scrollRef} className="w-full h-full overflow-y-auto px-6 py-4 text-left">
@@ -137,9 +139,11 @@ export function BrowserScreenshotGallery({
 
       {!loading && filteredItems.length === 0 && !error && (
         <p className="text-xs text-[var(--color-text-subtle)] opacity-50">
-          {runId || subagentId
-            ? 'No screenshots are linked to the selected session yet.'
-            : 'No browser screenshots yet. Construct saves a snapshot when each browser run finishes.'}
+          {runId
+            ? 'No captures for this run. Try Refresh — if still empty, the harvest may not have saved images.'
+            : subagentId
+              ? 'No screenshots for this session.'
+              : 'No browser screenshots yet. Construct saves captures when a browser run finishes.'}
         </p>
       )}
 

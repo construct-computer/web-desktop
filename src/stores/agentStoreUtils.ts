@@ -953,7 +953,7 @@ export function buildWebPreviewFromTabPayload(
   tool: string,
   payload: Record<string, unknown>,
 ): { kind: 'search' | 'fetch'; query?: string; url?: string; pageTitle?: string; snippet?: string; structuredSummary?: string; contentFormat?: 'json' | 'markdown'; resultCount?: number; results?: Array<{ title: string; url: string; snippet: string }>; truncated?: boolean } | undefined {
-  if (tool === 'web_search' || Array.isArray(payload.results)) {
+  if (tool === 'web_search' || tool === 'composio_search' || tool === 'discover' || tool === 'execute' || Array.isArray(payload.results)) {
     const results = (payload.results as Array<Record<string, unknown>> || []).slice(0, 3).map((r) => ({
       title: String(r.title ?? ''),
       url: String(r.url ?? ''),
@@ -964,6 +964,26 @@ export function buildWebPreviewFromTabPayload(
       query: typeof payload.query === 'string' ? payload.query : undefined,
       resultCount: Array.isArray(payload.results) ? payload.results.length : results.length,
       results,
+    };
+  }
+  if (tool === 'browser') {
+    const pageUrl = typeof payload.pageUrl === 'string' ? payload.pageUrl
+      : typeof payload.url === 'string' ? payload.url : undefined;
+    const screenshotCount = typeof payload.screenshotCount === 'number' ? payload.screenshotCount : 0;
+    const done = payload.runPhase === 'complete';
+    let pageTitle = 'Browser session';
+    if (pageUrl) {
+      try { pageTitle = new URL(pageUrl).hostname; } catch { pageTitle = pageUrl; }
+    }
+    return {
+      kind: 'fetch',
+      url: pageUrl,
+      pageTitle,
+      snippet: done
+        ? (screenshotCount > 0
+          ? `${screenshotCount} capture${screenshotCount === 1 ? '' : 's'} saved`
+          : 'Run finished — open Details for captures.')
+        : 'Live browser session in progress…',
     };
   }
   if (tool === 'web_fetch' || typeof payload.content === 'string') {

@@ -11,9 +11,20 @@ import { WebToolActivityRow } from './WebToolActivityRow';
 import { isBrowserWebTool } from '@/stores/browserTabStore';
 import { formatActivityLine } from './formatActivityLine';
 import { mergeBrowserRepeats } from './browserActivityUtils';
+
+function isBrowserRunNoise(act: ChatMessage, runId?: string): boolean {
+  if (!runId) return false;
+  if (act.browserRunId && act.browserRunId !== runId) return false;
+  if (act.tool === 'browser' || act.tool === 'remote_browser' || act.tool === 'remote_browser_session') return true;
+  if (act.activityType === 'web' && act.browserAction) return true;
+  if (act.webPreview && act.tool === 'browser') return true;
+  if (typeof act.content === 'string' && act.content.startsWith('Browsing ')) return true;
+  return false;
+}
 import { useElapsed } from './hooks';
 import { formatDuration } from './utils';
 import type { ChatMessage } from '@/stores/agentStore';
+import { useComputerStore } from '@/stores/agentStore';
 
 const EMPTY_SUB_AGENTS: TrackedSubAgent[] = [];
 
@@ -75,12 +86,48 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
     return entries;
   }, [hasSubAgents, subAgents, activities]);
 
+  const browserRunMeta = useMemo(() => {
+    if (hasSubAgents) return null;
+    const start = activities.find(
+      (a) => (a.tool === 'browser' || a.tool === 'remote_browser') && (
+        (typeof a.content === 'string' && (a.content.startsWith('Browsing ') || a.content.length > 0))
+        || !!a.browserAction
+      ),
+    );
+    if (!start) return null;
+    const runId = start.browserRunId
+      || activities.map((a) => a.browserRunId).find(Boolean);
+    const browserRuns = useComputerStore.getState().browserRuns;
+    const durableRun = runId ? browserRuns.find((r) => r.run_id === runId) : browserRuns[0];
+    const taskGoal = durableRun?.task?.trim();
+    const startUrl = start.browserAction?.url
+      || (start.content.startsWith('Browsing ') ? start.content.replace(/^Browsing\s+/, '').trim() : undefined);
+    return {
+      goal: taskGoal || (startUrl ? `Browsing ${startUrl}` : 'Browsing the web'),
+      startUrl,
+      runId,
+    };
+  }, [activities, hasSubAgents]);
+
+  const timelineActivities = useMemo(() => {
+    if (!browserRunMeta) return activities;
+    if (browserRunMeta.runId) {
+      return activities.filter((a) => !isBrowserRunNoise(a, browserRunMeta.runId));
+    }
+    return activities.filter((a) => {
+      if (a.tool === 'browser' && typeof a.content === 'string' && a.content.startsWith('Browsing ')) return false;
+      if (a.tool === 'browser' && a.browserAction) return false;
+      if (a.webPreview && a.tool === 'browser') return false;
+      return true;
+    });
+  }, [activities, browserRunMeta]);
+
   // Flat activity durations (used when no sub-agents). Browser activities are
   // first collapsed: consecutive identical browser steps fold into one row
   // with a `×N` badge so the panel doesn't drown in repeats.
   const itemsWithDuration = useMemo(() => {
     if (hasSubAgents) return [];
-    const merged = mergeBrowserRepeats(activities);
+    const merged = mergeBrowserRepeats(timelineActivities);
     // Per-row duration = gap to the next merged group's first activity.
     // Track original-index of the last-activity-in-group to compute that.
     let runningIdx = 0;
@@ -88,33 +135,16 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
       const groupEndIdx = runningIdx + entry.repeat - 1;
       let dur = '';
       const nextGroupStartIdx = groupEndIdx + 1;
-      if (nextGroupStartIdx < activities.length) {
+      if (nextGroupStartIdx < timelineActivities.length) {
         const diff =
-          new Date(activities[nextGroupStartIdx].timestamp).getTime() -
-          new Date(activities[groupEndIdx].timestamp).getTime();
+          new Date(timelineActivities[nextGroupStartIdx].timestamp).getTime() -
+          new Date(timelineActivities[groupEndIdx].timestamp).getTime();
         if (diff > 500) dur = formatDuration(diff);
       }
       runningIdx += entry.repeat;
       return { act: entry.act, dur, repeat: entry.repeat, key: i };
     });
-  }, [activities, hasSubAgents]);
-
-  // Detect a browser run for the main agent so we can promote it to a
-  // dedicated card above the activity list. We key on the first "Browsing X"
-  // activity emitted by browser:start. Sub-agent banners skip this — their
-  // browser context already shows up inside the SubAgentEntry tree.
-  const browserRunMeta = useMemo(() => {
-    if (hasSubAgents) return null;
-    const start = activities.find(
-      (a) => (a.tool === 'browser' || a.tool === 'remote_browser') && (
-        (typeof a.content === 'string' && a.content.startsWith('Browsing '))
-        || !!a.browserAction
-      ),
-    );
-    if (!start) return null;
-    const startUrl = start.content.replace(/^Browsing\s+/, '').trim() || undefined;
-    return { goal: startUrl ? `Browsing ${startUrl}` : 'Browsing the web', startUrl };
-  }, [activities, hasSubAgents]);
+  }, [timelineActivities, hasSubAgents]);
 
   const stepCount = hasSubAgents
     ? subAgents.length + activities.length
@@ -189,6 +219,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
             <BrowserRunCard
               goal={browserRunMeta.goal}
               startUrl={browserRunMeta.startUrl}
+              runId={browserRunMeta.runId}
               activities={activities}
             />
           </div>

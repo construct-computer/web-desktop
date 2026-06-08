@@ -7,6 +7,7 @@ import type { ChatMessage } from '@/stores/agentStore';
 import { isBrowserWebTool } from '@/stores/browserTabStore';
 import { BrowserActivityRow } from './BrowserActivityRow';
 import { WebToolActivityRow } from './WebToolActivityRow';
+import { WebPreviewCard } from './WebPreviewCard';
 
 function cleanErrorTitle(content: string): { title: string; detail?: string; raw?: string; badges?: string[] } {
   const simple = content.match(/^Error:\s*(.+)$/s);
@@ -149,6 +150,15 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
     return (
       <div className={compact ? 'px-1 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
         <BrowserActivityRow message={msg} />
+        {msg.webPreview && <WebPreviewCard preview={msg.webPreview} message={msg} />}
+      </div>
+    );
+  }
+
+  if (msg.webPreview) {
+    return (
+      <div className={compact ? 'px-1 py-[2px]' : 'px-3 sm:px-6 py-[3px]'}>
+        <WebPreviewCard preview={msg.webPreview} message={msg} />
       </div>
     );
   }

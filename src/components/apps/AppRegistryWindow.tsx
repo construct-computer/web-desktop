@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
+import { isComposioToolkitConnected } from '@/lib/composioSlug';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -151,7 +152,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           ...prev,
           description: d.long_description || d.description || prev.description,
           icon: d.icon_url || prev.icon,
-          tools: d.tools?.map((t) => ({ name: t.name, description: t.description })) || prev.tools,
+          tools: d.tools?.map((t) => ({ slug: t.name, name: t.name, description: t.description })) || prev.tools,
           tags: d.tags || prev.tags,
           version: d.latest_version || prev.version,
           popularity: d.install_count,
@@ -170,7 +171,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           ...prev, description: d.description || prev.description,
           icon: d.logo || prev.icon, composioLogo: d.logo || prev.composioLogo,
           toolCount: d.tools_count || d.tools?.length || prev.toolCount,
-          tools: d.tools?.map((t: any) => ({ name: t.name, description: t.description })) || prev.tools,
+          tools: d.tools?.map((t) => ({ slug: t.slug || t.name, name: t.name, description: t.description })) || prev.tools,
           composioCategories: d.categories?.map((c: any) => ({
             slug: c.slug || '',
             name: c.name || c.slug || '',
@@ -216,7 +217,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     if (app.status !== 'available') return true;
     if (app.source === 'local') return true;
     if (app.registryApp && installedIds.has(app.registryApp.id)) return true;
-    if (app.composioSlug && connectedToolkits.has(app.composioSlug)) return true;
+    if (app.composioSlug && isComposioToolkitConnected(connectedToolkits, app.composioSlug)) return true;
     if (app.source === 'installed') return true;
     if (installedIds.has(app.id)) return true;
     return false;
@@ -479,8 +480,10 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const uninstallTarget = getUninstallTarget();
 
     const getAction = detail.registryApp ? () => handleInstallRegistry(detail) : null;
+    const isNoAuthToolkit = isComposio && detail.no_auth === true;
     const showComposioConnect = isComposio
       && !installed
+      && !isNoAuthToolkit
       && !detail.requiresUpgrade
       && detail.connectable !== false
       && !!detail.composioSlug;
@@ -547,7 +550,21 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           </div>
         )}
 
-        {isComposio && detail.connectable === false && (
+        {isNoAuthToolkit && !installed && (
+          <InfoCard title="Ready to use" subtitle="No connection required.">
+            <div className="flex items-start gap-2.5 rounded-[8px] bg-sky-500/[0.06] border border-sky-500/15 px-3 py-2">
+              <Sparkles className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-sky-600 dark:text-sky-400">Available immediately</p>
+                <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                  Ask Construct to use this toolkit via discover and execute — no OAuth setup needed.
+                </p>
+              </div>
+            </div>
+          </InfoCard>
+        )}
+
+        {isComposio && detail.connectable === false && !isNoAuthToolkit && (
           <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06]">
             <AlertCircle className="w-4 h-4 text-[var(--color-text-muted)] mt-0.5 shrink-0" />
             <div className="flex-1">
@@ -660,7 +677,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     );
 
     const detailSecondary = !detailLoading && (toolCount > 0 || detail.tools.length > 0) ? (
-      <ToolsList tools={detail.tools.map(t => ({ slug: t.name, name: t.name, description: t.description || undefined }))} />
+      <ToolsList tools={detail.tools.map(t => ({ slug: t.slug || t.name, name: t.name, description: t.description || undefined }))} />
     ) : null;
     const detailBodyLoading = detailLoading;
 
@@ -723,7 +740,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                         Open Interface
                       </button>
                     )}
-                    {(uninstallTarget || (isComposio && connectedToolkits.has(detail.composioSlug!))) && (
+                    {(uninstallTarget || (isComposio && detail.composioSlug && isComposioToolkitConnected(connectedToolkits, detail.composioSlug))) && (
                       <button
                         onClick={() => {
                           if (isComposio && detail.composioSlug) handleDisconnect(detail.composioSlug);

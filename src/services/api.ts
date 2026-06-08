@@ -522,12 +522,12 @@ export interface AgentConfigStatus {
   configured: boolean;
   hasApiKey: boolean;
   hasTelegramToken: boolean;
-  hasBrowserUseKey: boolean;
+  hasComposioBrowser: boolean;
   hasAgentmailKey: boolean;
   /** Whether the platform provides shared API keys (zero-config fallback). */
   platformKeys?: {
     hasOpenrouter: boolean;
-    hasBrowserUse: boolean;
+    hasComposioBrowser: boolean;
     hasAgentmail: boolean;
   };
 }

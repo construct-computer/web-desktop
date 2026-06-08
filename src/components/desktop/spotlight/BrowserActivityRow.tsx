@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ACTIVITY_ICON_CLASS } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
+import { formatRepeatBadge } from './browserActivityUtils';
 
 interface BrowserStyle {
   icon: typeof Globe;
@@ -112,8 +113,11 @@ export function BrowserActivityRow({
             </span>
           )}
           {repeatCount && repeatCount > 1 && (
-            <span className="text-[10px] px-1.5 py-px rounded-full bg-white/[0.06] text-[var(--color-text-muted)]/50 shrink-0">
-              ×{repeatCount}
+            <span
+              className="text-[10px] px-1.5 py-px rounded-full bg-white/[0.06] text-[var(--color-text-muted)]/50 shrink-0"
+              title={repeatCount > 3 ? `${repeatCount} similar steps` : undefined}
+            >
+              {formatRepeatBadge(repeatCount)}
             </span>
           )}
           {canExpand && (

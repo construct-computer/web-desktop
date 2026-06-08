@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, memo, useMemo } from 'react';
 import {
   RefreshCw, Globe, X,
   AlertTriangle,
-  ChevronUp, ChevronDown, Square, Camera, Check,
+  ChevronUp, ChevronDown, Square,
 } from 'lucide-react';
 import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from '@/stores/agentStore';
 import { browserWS } from '@/services/websocket';
@@ -11,7 +11,7 @@ import { BrowserDashboardPanel } from './browser/BrowserDashboardPanel';
 import { BrowserLivePreview } from './browser/BrowserLivePreview';
 import { BrowserUnifiedShell } from './browser/BrowserUnifiedShell';
 import { useBrowserTabStore } from '@/stores/browserTabStore';
-import { captureBrowserScreenshot, listBrowserActiveSessions } from '@/services/api';
+import { listBrowserActiveSessions } from '@/services/api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Constants
@@ -370,9 +370,22 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
       }
     };
     void refreshActiveBrowserSessions();
-    const interval = window.setInterval(() => {
+    let interval = window.setInterval(() => {
       void refreshActiveBrowserSessions();
     }, 15_000);
+    const retunePoll = () => {
+      const sessions = useComputerStore.getState().browserState.browserSessions;
+      const hasRunning = Object.values(sessions).some(
+        (s) => s.status === 'running' || s.status === 'starting',
+      );
+      const nextMs = hasRunning ? 15_000 : 60_000;
+      window.clearInterval(interval);
+      interval = window.setInterval(() => { void refreshActiveBrowserSessions(); }, nextMs);
+    };
+    retunePoll();
+    const unsub = useComputerStore.subscribe((state, prev) => {
+      if (state.browserState.browserSessions !== prev.browserState.browserSessions) retunePoll();
+    });
     const refreshWhenVisible = () => {
       if (!document.hidden) void refreshActiveBrowserSessions();
     };
@@ -381,6 +394,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
     window.addEventListener('online', refreshActiveBrowserSessions);
     return () => {
       cancelled = true;
+      unsub();
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('focus', refreshWhenVisible);
@@ -900,7 +914,16 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
      ═══════════════════════════════════════════════════════════════════════════ */
 
   if (useUnifiedShell) {
-    return <BrowserUnifiedShell isAgentBrowserWindow={isAgentBrowserWindow} />;
+    const pendingUrl = typeof config.metadata?.pendingUrl === 'string'
+      ? config.metadata.pendingUrl as string
+      : undefined;
+    return (
+      <BrowserUnifiedShell
+        isAgentBrowserWindow={isAgentBrowserWindow}
+        windowId={windowId}
+        pendingUrl={pendingUrl}
+      />
+    );
   }
 
   // Default state — no local browser; the agent uses a remote browser (Web Agent)
@@ -947,9 +970,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             {hasContent && url ? (unfocusedDisplay || url) : 'Construct-controlled browser'}
           </span>
         </div>
-        {hasContent && url && (
-          <AddressBarScreenshotButton url={url} />
-        )}
       </div>
       )}
 
@@ -1069,51 +1089,6 @@ function ChromeBar() {
     </div>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Address bar screenshot button
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const AddressBarScreenshotButton = memo(function AddressBarScreenshotButton({ url }: { url: string }) {
-  const [state, setState] = useState<'idle' | 'capturing' | 'saved' | 'error'>('idle');
-  const [message, setMessage] = useState('');
-  const onClick = useCallback(async () => {
-    if (state === 'capturing') return;
-    setState('capturing');
-    setMessage('');
-    const res = await captureBrowserScreenshot(url);
-    if (res.success) {
-      setState('saved');
-      setMessage(res.data.path);
-      setTimeout(() => setState('idle'), 2500);
-    } else {
-      setState('error');
-      setMessage(res.error || 'Capture failed');
-      setTimeout(() => setState('idle'), 3500);
-    }
-  }, [url, state]);
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={state === 'capturing'}
-      title={
-        state === 'saved' ? `Saved to ${message}`
-        : state === 'error' ? message
-        : 'Save a screenshot of this page to your workspace'
-      }
-      className="shrink-0 inline-flex items-center justify-center w-[28px] h-[28px] rounded-md
-                 border border-[var(--color-border)] surface-control
-                 hover:bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]
-                 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-    >
-      {state === 'saved'
-        ? <Check className="w-3.5 h-3.5 text-[var(--color-success)]" />
-        : <Camera className={`w-3.5 h-3.5 ${state === 'capturing' ? 'animate-pulse' : ''}`} />}
-    </button>
-  );
-});
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Status bar

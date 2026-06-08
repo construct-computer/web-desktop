@@ -333,6 +333,9 @@ export function CalendarWindow(props: CalendarWindowProps) {
         rawEventsRef.current = raw;
         const expanded = expandAllRecurrences(raw, rangeStart, rangeEnd);
         setEvents(expanded);
+      } else if (!result.success && result.status === undefined && rawEventsRef.current.length > 0) {
+        // Keep the last good month visible while the worker reconnects.
+        return;
       } else {
         setError(result.error || 'Failed to load events');
       }

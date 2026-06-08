@@ -56,7 +56,11 @@ export function WebToolActivityRow({
         )}
       </div>
       {message.webPreview && (
-        <WebPreviewCard preview={message.webPreview} onOpen={() => openWebToolTab(message.toolCallId)} />
+        <WebPreviewCard
+          preview={message.webPreview}
+          message={message}
+          onOpen={() => openWebToolTab(message.toolCallId)}
+        />
       )}
     </div>
   );

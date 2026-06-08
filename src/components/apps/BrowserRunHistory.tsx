@@ -20,6 +20,7 @@ import {
   type BrowserRunSummary, type BrowserRunDetail,
 } from '@/services/api';
 import { BrowserScreenshotGallery } from './BrowserScreenshotGallery';
+import { BrowserRunDetailView } from './browser/BrowserRunDetailView';
 import { getOrCreateBrowserAppWindow, useComputerStore } from '@/stores/agentStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 
@@ -69,7 +70,7 @@ const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'cancelled', label: 'Cancelled' },
 ];
 
-export function BrowserRunHistory() {
+export function BrowserRunHistory({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<'runs' | 'shots'>('runs');
   const runs = useComputerStore((s) => s.browserRuns);
   const hydrated = useComputerStore((s) => s.browserRunsHydrated);
@@ -231,7 +232,7 @@ export function BrowserRunHistory() {
   return (
     <div className="w-full h-full flex flex-col">
       <TabBar tab={tab} setTab={setTab} />
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-4 text-left">
+      <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto text-left ${embedded ? 'px-3 py-3' : 'px-6 py-4'}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs uppercase tracking-wider text-[var(--color-text-subtle)] opacity-60">
@@ -371,15 +372,7 @@ export function BrowserRunHistory() {
                           <p className="text-[11px] text-red-400">Failed to load run details.</p>
                         )}
                         {typeof detail === 'object' && detail !== null && (
-                          detail.run.final_text
-                            ? (
-                              <pre className="text-[11px] text-[var(--color-text-muted)] whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
-                                {detail.run.final_text}
-                              </pre>
-                            )
-                            : (
-                              <p className="text-[11px] text-[var(--color-text-subtle)] opacity-60">No final output recorded.</p>
-                            )
+                          <BrowserRunDetailView detail={detail} />
                         )}
                       </div>
                     )}

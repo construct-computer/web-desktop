@@ -13,6 +13,7 @@ import {
   sortCategoryGroupsBySize,
 } from './appDiscoveryCatalog';
 import { POPULAR_INTEGRATION_GROUPS } from './popularIntegrations';
+import { isComposioToolkitConnected } from '@/lib/composioSlug';
 import {
   buildBrowseCategoryNav,
   categoryDisplayName,
@@ -69,7 +70,7 @@ export interface UnifiedApp {
   id: string; name: string; description: string;
   icon?: string; category: string; tags: string[];
   source: 'registry' | 'composio' | 'installed' | 'local';
-  tools: Array<{ name: string; description?: string | null }>;
+  tools: Array<{ slug?: string; name: string; description?: string | null }>;
   toolCount?: number;
   hasUi: boolean;
   status: 'available' | 'installed' | 'connected';
@@ -89,6 +90,7 @@ export interface UnifiedApp {
   requiresUpgrade?: boolean;
   available?: boolean;
   connectable?: boolean;
+  no_auth?: boolean;
 }
 
 // ── Constants ──
@@ -109,7 +111,12 @@ export const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: 'games', label: 'Games' },
 ];
 
+export const META_TOOLKIT_SLUGS = new Set(['browser_tool', 'composio_search', 'text_to_pdf']);
+
 export const FALLBACK_CURATED: CuratedDef[] = [
+  { slug: 'browser_tool', name: 'Browser Tool', description: 'Cloud browser for scraping, logins, and screenshots.', category: 'search' },
+  { slug: 'composio_search', name: 'Composio Search', description: 'Specialized web search, news, shopping, and research tools.', category: 'search' },
+  { slug: 'text_to_pdf', name: 'Text to PDF', description: 'Convert text to PDF without OAuth.', category: 'utilities' },
   { slug: 'googlecalendar', name: 'Google Calendar', description: 'Manage events and scheduling.', category: 'productivity' },
   { slug: 'notion', name: 'Notion', description: 'Manage pages and databases.', category: 'productivity' },
   { slug: 'todoist', name: 'Todoist', description: 'Create and manage tasks.', category: 'productivity' },
@@ -282,6 +289,7 @@ export function composioCatalogToUnified(
     requiresUpgrade: t.requiresUpgrade,
     available: t.available,
     connectable: t.connectable ?? isComposioConnectable(t),
+    no_auth: t.no_auth === true,
     sourceUrl: `https://composio.dev/toolkits/${t.slug}`,
   };
 }
@@ -532,7 +540,7 @@ export function useAppDiscovery() {
       .filter((t) => !HIDDEN_SLUGS.has(t.slug.toLowerCase()))
       .map((t) => composioCatalogToUnified(
         t,
-        connectedToolkits.has(t.slug),
+        isComposioToolkitConnected(connectedToolkits, t.slug),
         curatedApps,
         featuredSlugs,
       )),
@@ -653,7 +661,7 @@ export function useAppDiscovery() {
     : [];
 
   const searchResults: UnifiedApp[] = isSearching ? deduplicateApps([
-    ...catalogSearchMatches.map((t) => composioSearchToUnified(t, connectedToolkits.has(t.slug), curatedApps, featuredSlugs)),
+    ...catalogSearchMatches.map((t) => composioSearchToUnified(t, isComposioToolkitConnected(connectedToolkits, t.slug), curatedApps, featuredSlugs)),
     ...registryList,
   ]).filter(a => category === 'all' || a.category === category)
     .sort((a, b) => {

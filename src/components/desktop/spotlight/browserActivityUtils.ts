@@ -1,15 +1,35 @@
 import type { ChatMessage } from '@/stores/agentStore';
 
+function hostFromUrl(url?: string): string {
+  if (!url) return '';
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+function mergeKey(act: ChatMessage): string | null {
+  if (act.activityType !== 'web' && act.tool !== 'browser') return null;
+  if (act.browserRunId) return `run:${act.browserRunId}`;
+  const host = hostFromUrl(act.browserAction?.url);
+  if (host) return `host:${host}:${act.tool || 'browser'}`;
+  if (act.tool === 'browser' && act.content?.startsWith('Browsing ')) {
+    return `browse:${act.content}`;
+  }
+  if (act.browserAction) {
+    return `action:${act.browserAction.actionType || 'step'}:${hostFromUrl(act.browserAction.url)}`;
+  }
+  return null;
+}
+
 /**
- * Collapse consecutive browser activities whose label, action type, and url
- * match. Returns each item with a `repeat` count. Non-browser activities
- * pass through untouched (repeat=1).
+ * Collapse consecutive browser activities that belong to the same run or host.
+ * Returns each item with a `repeat` count. Non-browser activities pass through (repeat=1).
  */
 export function mergeBrowserRepeats(activities: ChatMessage[]): Array<{ act: ChatMessage; repeat: number }> {
   const out: Array<{ act: ChatMessage; repeat: number }> = [];
   for (const act of activities) {
     const last = out[out.length - 1];
-    if (last && canMerge(last.act, act)) {
+    const key = mergeKey(act);
+    const lastKey = last ? mergeKey(last.act) : null;
+    if (last && key && lastKey === key) {
       last.repeat += 1;
       continue;
     }
@@ -18,16 +38,8 @@ export function mergeBrowserRepeats(activities: ChatMessage[]): Array<{ act: Cha
   return out;
 }
 
-function canMerge(a: ChatMessage, b: ChatMessage): boolean {
-  if (a.activityType !== 'web' || b.activityType !== 'web') return false;
-  if (!a.browserAction || !b.browserAction) return false;
-  if (a.content !== b.content) return false;
-  if (a.browserAction.actionType !== b.browserAction.actionType) return false;
-  if ((a.browserAction.url || '') !== (b.browserAction.url || '')) return false;
-  // Don't merge waits with different durations; that loses useful signal.
-  if ((a.browserAction.waitMs ?? -1) !== (b.browserAction.waitMs ?? -1)) return false;
-  // Don't merge entries with sub-actions: each compound is semantically distinct.
-  if ((a.browserAction.subActions?.length || 0) > 0) return false;
-  if ((b.browserAction.subActions?.length || 0) > 0) return false;
-  return true;
+/** Display cap for repeat badges in the activity timeline. */
+export function formatRepeatBadge(repeat: number): string {
+  if (repeat <= 1) return '';
+  return repeat > 3 ? '×3+' : `×${repeat}`;
 }

@@ -7,6 +7,8 @@ interface FreshnessOptions {
   runOnMount?: boolean;
   refreshOnFocus?: boolean;
   refreshOnOnline?: boolean;
+  /** Slow polling after consecutive refresh failures (e.g. offline / worker reload). */
+  backoffOnError?: boolean;
 }
 
 interface FreshnessRefreshOptions {
@@ -47,6 +49,7 @@ export function useFreshness(
     runOnMount = false,
     refreshOnFocus = true,
     refreshOnOnline = true,
+    backoffOnError = true,
   }: FreshnessOptions = {},
 ): FreshnessState {
   const refreshRef = useRef(refresh);
@@ -54,12 +57,19 @@ export function useFreshness(
   const activeRefreshCountRef = useRef(0);
   const refreshRunIdRef = useRef(0);
   const mountedRef = useRef(true);
+  const consecutiveFailuresRef = useRef(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [pollIntervalMs, setPollIntervalMs] = useState(intervalMs);
 
   refreshRef.current = refresh;
+
+  useEffect(() => {
+    setPollIntervalMs(intervalMs);
+    consecutiveFailuresRef.current = 0;
+  }, [intervalMs]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -80,12 +90,22 @@ export function useFreshness(
       try {
         await refreshRef.current();
         if (mountedRef.current) {
+          consecutiveFailuresRef.current = 0;
+          if (intervalMs) setPollIntervalMs(intervalMs);
           const ts = Date.now();
           setLastUpdatedAt(ts);
           setNow(ts);
         }
       } catch (err) {
-        if (mountedRef.current) setError(toErrorMessage(err));
+        if (mountedRef.current) {
+          consecutiveFailuresRef.current += 1;
+          setError(toErrorMessage(err));
+          if (backoffOnError && intervalMs) {
+            const failures = consecutiveFailuresRef.current;
+            const next = Math.min(intervalMs * 2 ** Math.min(failures, 3), 60_000);
+            setPollIntervalMs(next);
+          }
+        }
       } finally {
         if (refreshRunIdRef.current === runId) inFlightRef.current = null;
         activeRefreshCountRef.current = Math.max(0, activeRefreshCountRef.current - 1);
@@ -95,7 +115,7 @@ export function useFreshness(
 
     inFlightRef.current = run;
     return run;
-  }, [enabled]);
+  }, [backoffOnError, enabled, intervalMs]);
 
   useEffect(() => {
     if (!enabled || !runOnMount) return;
@@ -103,12 +123,12 @@ export function useFreshness(
   }, [enabled, refreshNow, runOnMount]);
 
   useEffect(() => {
-    if (!enabled || !intervalMs) return;
+    if (!enabled || !pollIntervalMs) return;
     const id = window.setInterval(() => {
       void refreshNow();
-    }, intervalMs);
+    }, pollIntervalMs);
     return () => window.clearInterval(id);
-  }, [enabled, intervalMs, refreshNow]);
+  }, [enabled, pollIntervalMs, refreshNow]);
 
   useEffect(() => {
     if (!enabled || !refreshOnFocus) return;
@@ -125,10 +145,14 @@ export function useFreshness(
 
   useEffect(() => {
     if (!enabled || !refreshOnOnline) return;
-    const handleOnline = () => void refreshNow();
+    const handleOnline = () => {
+      consecutiveFailuresRef.current = 0;
+      if (intervalMs) setPollIntervalMs(intervalMs);
+      void refreshNow({ force: true });
+    };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [enabled, refreshNow, refreshOnOnline]);
+  }, [enabled, intervalMs, refreshNow, refreshOnOnline]);
 
   useEffect(() => {
     if (!staleMs || !lastUpdatedAt) return;

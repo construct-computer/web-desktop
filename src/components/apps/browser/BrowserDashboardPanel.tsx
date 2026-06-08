@@ -9,28 +9,32 @@ import { BrowserScreenshotGallery } from '../BrowserScreenshotGallery';
 import { formatBytes } from '@/lib/format';
 import { decodeDisplayName } from '@/lib/workspacePaths';
 
-type BrowserDashboardTab = 'sessions' | 'runs' | 'shots' | 'files';
+type BrowserDashboardTab = 'overview' | 'history' | 'captures' | 'downloads';
 
 export function BrowserDashboardPanel({
   sessions,
   activeSessionId,
+  defaultTab,
   onClose,
 }: {
   sessions: BrowserSessionRecord[];
   activeSessionId: string | null;
+  defaultTab?: BrowserDashboardTab;
   onClose?: () => void;
 }) {
-  const [tab, setTab] = useState<BrowserDashboardTab>('sessions');
   const [stopping, setStopping] = useState(false);
   const [filesScope, setFilesScope] = useState<'active' | 'all'>('active');
   const [shotsScope, setShotsScope] = useState<'active' | 'all'>('active');
   const hydrateBrowserSessions = useComputerStore((s) => s.hydrateBrowserSessions);
   const visibleSessions = useMemo(() => sessions.filter(isVisibleSession), [sessions]);
-  const active = visibleSessions.find((s) => s.id === activeSessionId) || visibleSessions[0];
+  const activeSession = visibleSessions.find((s) => s.id === activeSessionId) || visibleSessions[0];
+  const [tab, setTab] = useState<BrowserDashboardTab>(
+    defaultTab ?? 'overview',
+  );
   const files = useMemo(() => {
-    const source = filesScope === 'active' && active ? [active] : visibleSessions;
+    const source = filesScope === 'active' && activeSession ? [activeSession] : visibleSessions;
     return source.flatMap((s) => (s.files || []).map((f) => ({ ...f, sessionId: s.id })));
-  }, [active, filesScope, visibleSessions]);
+  }, [activeSession, filesScope, visibleSessions]);
   const runningCount = visibleSessions.filter((s) => s.status === 'running' || s.status === 'starting').length;
   const terminalCount = visibleSessions.filter((s) => s.status === 'complete' || s.status === 'error' || s.status === 'idle').length;
   const stoppableCount = visibleSessions.filter((s) => s.status !== 'complete' && s.status !== 'error' && s.status !== 'expired').length;
@@ -40,7 +44,7 @@ export function BrowserDashboardPanel({
     setStopping(true);
     try {
       const res = await stopAllBrowserForUser();
-      if (res.success) hydrateBrowserSessions([]);
+      if (res.success) hydrateBrowserSessions([], { replace: true });
     } finally {
       setStopping(false);
     }
@@ -55,20 +59,20 @@ export function BrowserDashboardPanel({
               type="button"
               onClick={onClose}
               className="shrink-0 w-7 h-7 rounded-lg border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.06] flex items-center justify-center transition-colors"
-              title="Close console details"
+              title="Close details panel"
             >
               <X className="w-4 h-4" />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">Browser Session</p>
+            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">Run details</p>
             <p className="text-xs font-semibold text-[var(--color-text)] truncate mt-0.5">
-              {active?.task || active?.streamUrl || 'No active session'}
+              {activeSession?.task || activeSession?.streamUrl || 'No active session'}
             </p>
           </div>
-          {active && (
+          {activeSession && (
             <span className="shrink-0 text-[9px] font-semibold rounded-md px-2 py-0.5 bg-white/[0.06] border border-white/[0.04] text-[var(--color-text-subtle)]">
-              <ExpiresCountdown expiresAt={active?.expiresAt} status={active?.status} />
+              <ExpiresCountdown expiresAt={activeSession?.expiresAt} status={activeSession?.status} />
             </span>
           )}
           <button
@@ -86,10 +90,10 @@ export function BrowserDashboardPanel({
 
       <div className="flex border-b border-[var(--color-border)] surface-toolbar text-[11px] p-1 gap-1 bg-white/[0.01] select-none">
         {([
-          ['sessions', 'Sessions'],
-          ['runs', 'Runs'],
-          ['shots', 'Shots'],
-          ['files', 'Files'],
+          ['overview', 'Overview'],
+          ['history', 'History'],
+          ['captures', 'Captures'],
+          ['downloads', 'Downloads'],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -106,36 +110,35 @@ export function BrowserDashboardPanel({
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === 'sessions' && (
-          <BrowserSessionList sessions={visibleSessions} activeSessionId={active?.id || null} />
+        {tab === 'overview' && (
+          <BrowserSessionList sessions={visibleSessions} activeSessionId={activeSession?.id || null} />
         )}
-        {tab === 'runs' && <BrowserRunHistory />}
-        {tab === 'shots' && (
+        {tab === 'history' && <BrowserRunHistory embedded />}
+        {tab === 'captures' && (
           <div className="h-full flex flex-col min-h-0">
             <div className="px-3.5 py-2.5 border-b border-[var(--color-border)] surface-toolbar flex items-center justify-between gap-2 select-none">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
-                {shotsScope === 'active' ? 'Active Screenshots' : 'All Screenshots'}
+                {shotsScope === 'active' ? 'This run' : 'All captures'}
               </span>
               <button
                 type="button"
                 onClick={() => setShotsScope((scope) => scope === 'active' ? 'all' : 'active')}
-                disabled={!active}
+                disabled={!activeSession}
                 className="text-[10px] px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors disabled:opacity-40"
               >
-                {shotsScope === 'active' ? 'Show All' : 'Active Only'}
+                {shotsScope === 'active' ? 'Show All' : 'This run'}
               </button>
             </div>
             <BrowserScreenshotGallery
-              runId={shotsScope === 'active' ? active?.runId : null}
-              subagentId={shotsScope === 'active' ? active?.subagentId : null}
+              runId={shotsScope === 'active' ? activeSession?.runId : null}
             />
           </div>
         )}
-        {tab === 'files' && (
+        {tab === 'downloads' && (
           <BrowserFilesPanel
             files={files}
             activeOnly={filesScope === 'active'}
-            hasActiveSession={!!active}
+            hasActiveSession={!!activeSession}
             onToggleScope={() => setFilesScope((scope) => scope === 'active' ? 'all' : 'active')}
           />
         )}

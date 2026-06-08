@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe } from 'lucide-react';
+import { Globe, PanelRight } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui';
 import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
 import { useComputerStore } from '@/stores/agentStore';
+import { useWindowStore } from '@/stores/windowStore';
 import {
   useBrowserTabStore,
   isStaticBrowserTab,
@@ -14,26 +15,36 @@ import { BrowserTabBar } from './BrowserTabBar';
 import { BrowserChromeBar } from './BrowserChromeBar';
 import { BrowserTabContent } from './BrowserTabContent';
 import { BrowserModeStatusBar } from './BrowserModeStatusBar';
+import { BrowserDashboardPanel } from './BrowserDashboardPanel';
 
 const MAX_RECONNECT_ATTEMPTS = 6;
 const RECONNECT_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000, 30000];
 
+type DetailsTab = 'overview' | 'history' | 'captures' | 'downloads';
+
 interface BrowserUnifiedShellProps {
   isAgentBrowserWindow: boolean;
+  windowId?: string;
+  pendingUrl?: string;
 }
 
-export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShellProps) {
+export function BrowserUnifiedShell({
+  isAgentBrowserWindow,
+  windowId,
+  pendingUrl,
+}: BrowserUnifiedShellProps) {
   const tabs = useBrowserTabStore((s) => s.tabs);
   const activeTabId = useBrowserTabStore((s) => s.activeTabId);
-  const setActiveTab = useBrowserTabStore((s) => s.setActiveTab);
+  const setActiveTabRaw = useBrowserTabStore((s) => s.setActiveTab);
   const setFetchView = useBrowserTabStore((s) => s.setFetchView);
   const setDataView = useBrowserTabStore((s) => s.setDataView);
   const closeTab = useBrowserTabStore((s) => s.closeTab);
   const pruneInactiveLiveTabs = useBrowserTabStore((s) => s.pruneInactiveLiveTabs);
+  const patchLiveTabBySession = useBrowserTabStore((s) => s.patchLiveTabBySession);
 
   const browserSessions = useComputerStore((s) => s.browserState.browserSessions);
   const activeBrowserSessionId = useComputerStore((s) => s.browserState.activeBrowserSessionId);
-  const hasBrowserUseKey = useComputerStore((s) => s.hasBrowserUseKey);
+  const hasComposioBrowser = useComputerStore((s) => s.hasComposioBrowser);
   const configChecked = useComputerStore((s) => s.configChecked);
 
   const sessionList = useMemo(
@@ -51,18 +62,72 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
 
   const fetchView = activeTab?.fetchView ?? 'reader';
   const dataView = activeTab?.dataView ?? 'visual';
+  const isLiveActive = activeTab?.mode === 'live';
+  const [tabBarExpanded, setTabBarExpanded] = useState(false);
+  const hideTabBar = isLiveActive && !tabBarExpanded;
+  const showStaticChrome = activeTab && activeTab.mode !== 'live';
+  const showModeStatusBar = !hideTabBar;
+
+  const [showDetails, setShowDetails] = useState(false);
+  const [detailsDefaultTab, setDetailsDefaultTab] = useState<DetailsTab>('history');
 
   const [iframeDead, setIframeDead] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const reloadAttempts = useRef(0);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [stoppingLive, setStoppingLive] = useState(false);
   const [pendingCloseTab, setPendingCloseTab] = useState<BrowserTab | null>(null);
   const [closingTab, setClosingTab] = useState(false);
+
+  const setActiveTab = useCallback((tabId: string) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (tab && isStaticBrowserTab(tab)) {
+      setTabBarExpanded(false);
+    }
+    setActiveTabRaw(tabId);
+  }, [tabs, setActiveTabRaw]);
+
+  const openDetails = useCallback((defaultTab: DetailsTab = 'history') => {
+    setShowDetails((prev) => {
+      if (prev) return false;
+      setDetailsDefaultTab(defaultTab);
+      return true;
+    });
+  }, []);
+
+  const toggleTabBar = useCallback(() => {
+    setTabBarExpanded((v) => !v);
+  }, []);
 
   useEffect(() => {
     pruneInactiveLiveTabs(browserSessions);
   }, [browserSessions, pruneInactiveLiveTabs]);
+
+  // Belt-and-suspenders: consume pendingUrl from window metadata (e.g. navigateTo
+  // before daemon connects) when no matching tab exists yet.
+  useEffect(() => {
+    if (!pendingUrl) return;
+    const tabStore = useBrowserTabStore.getState();
+    tabStore.openOrFocusUrlTab(pendingUrl);
+    if (windowId) {
+      const win = useWindowStore.getState().getWindow(windowId);
+      if (win?.metadata?.pendingUrl) {
+        useWindowStore.getState().updateWindow(windowId, {
+          metadata: { ...win.metadata, pendingUrl: undefined },
+        });
+      }
+    }
+  }, [pendingUrl, windowId]);
+
+  useEffect(() => {
+    if (!iframeDead || !activeTab || activeTab.mode !== 'live') return;
+    const sessionId = activeTab.sessionId || activeTab.runId;
+    if (sessionId) {
+      patchLiveTabBySession(sessionId, {
+        runPhase: 'complete',
+        streamUrl: undefined,
+      });
+    }
+  }, [iframeDead, activeTab, patchLiveTabBySession]);
 
   const finalizeCloseTab = useCallback((tab: BrowserTab) => {
     closeTab(tab.id);
@@ -102,7 +167,6 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
       await terminateLiveBrowserTab(pendingCloseTab);
       finalizeCloseTab(pendingCloseTab);
     } catch {
-      // Still remove the tab so the UI does not stay cluttered; session stop is best-effort.
       finalizeCloseTab(pendingCloseTab);
     } finally {
       setClosingTab(false);
@@ -155,17 +219,7 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
     setReloadKey((k) => k + 1);
   }, []);
 
-  const onStopLive = useCallback(async () => {
-    if (!activeTab || activeTab.mode !== 'live' || stoppingLive) return;
-    if (!isLiveBrowserSessionActive(activeTab, browserSessions)) return;
-    setStoppingLive(true);
-    try {
-      await terminateLiveBrowserTab(activeTab);
-      finalizeCloseTab(activeTab);
-    } finally {
-      setStoppingLive(false);
-    }
-  }, [activeTab, browserSessions, stoppingLive, finalizeCloseTab]);
+  const detailsDefaultForPanel = detailsDefaultTab;
 
   return (
     <div
@@ -173,27 +227,48 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
       onKeyDown={onShellKeyDown}
       tabIndex={-1}
     >
-      <div className="shrink-0">
-        <BrowserTabBar
-          tabs={tabs}
-          activeTabId={activeTab?.id ?? null}
-          onSelect={setActiveTab}
-          onClose={handleCloseTab}
-        />
-        <BrowserChromeBar
-          tab={activeTab}
-          fetchView={fetchView}
-          onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
-          dataView={dataView}
-          onDataViewChange={(view) => activeTab && setDataView(activeTab.id, view)}
-          onStopLive={activeTab?.mode === 'live' ? onStopLive : undefined}
-          stoppingLive={stoppingLive}
-        />
-      </div>
+      {isAgentBrowserWindow && (
+        <div className="shrink-0 flex items-center justify-end gap-2 px-3 py-1 border-b border-[var(--color-border)] surface-toolbar min-h-[32px]">
+          <button
+            type="button"
+            onClick={() => { openDetails('history'); }}
+            className={[
+              'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all',
+              showDetails
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10'
+                : 'border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]',
+            ].join(' ')}
+            title="Run history, captures, and downloads"
+          >
+            <PanelRight className="w-3.5 h-3.5" />
+            Details
+          </button>
+        </div>
+      )}
 
-      {configChecked && !hasBrowserUseKey && (
+      {!hideTabBar && tabs.length > 0 && (
+        <div className="shrink-0">
+          <BrowserTabBar
+            tabs={tabs}
+            activeTabId={activeTab?.id ?? null}
+            onSelect={setActiveTab}
+            onClose={handleCloseTab}
+          />
+          {showStaticChrome && (
+            <BrowserChromeBar
+              tab={activeTab}
+              fetchView={fetchView}
+              onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
+              dataView={dataView}
+              onDataViewChange={(view) => activeTab && setDataView(activeTab.id, view)}
+            />
+          )}
+        </div>
+      )}
+
+      {configChecked && !hasComposioBrowser && (
         <div className="px-3 py-1.5 text-[11px] leading-snug border-b border-amber-500/15 bg-amber-500/[0.06] text-amber-300/90">
-          Interactive browser (Browser Use) is unavailable — check the platform API key or subscription.
+          Interactive browser (Composio browser_tool) is unavailable — check the platform Composio API key.
           Use <strong>web_search</strong> or <strong>web_fetch</strong> for read-only page text in the meantime.
         </div>
       )}
@@ -212,6 +287,11 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
                 onIframeLoad={onIframeLoad}
                 onIframeError={onIframeError}
                 onManualReconnect={onManualReconnect}
+                tabCount={tabs.length}
+                tabBarExpanded={tabBarExpanded}
+                onToggleTabBar={toggleTabBar}
+                onOpenDetails={() => openDetails('captures')}
+                detailsOpen={showDetails}
               />
             </div>
           ) : (
@@ -223,30 +303,42 @@ export function BrowserUnifiedShell({ isAgentBrowserWindow }: BrowserUnifiedShel
                   ? 'When Construct searches the web or opens pages, they will appear here as tabs.'
                   : 'Ask Construct to search the web or visit a page.'}
               </p>
-              {configChecked && !hasBrowserUseKey && (
+              {configChecked && !hasComposioBrowser && (
                 <p className="text-[11px] text-amber-400/80 leading-relaxed mt-1">
-                  Live browsing requires Browser Use. Search and fetch tabs still work without it.
+                  Live browsing requires Composio browser_tool. Search and fetch tabs still work without it.
                 </p>
               )}
             </div>
           )}
         </div>
+
+        {showDetails && (
+          <BrowserDashboardPanel
+            key={detailsDefaultForPanel}
+            sessions={sessionList}
+            activeSessionId={activeSession?.id || null}
+            defaultTab={detailsDefaultForPanel}
+            onClose={() => setShowDetails(false)}
+          />
+        )}
       </div>
 
-      <BrowserModeStatusBar
-        tab={activeTab}
-        fetchView={fetchView}
-      />
+      {showModeStatusBar && (
+        <BrowserModeStatusBar
+          tab={activeTab}
+          fetchView={fetchView}
+        />
+      )}
 
       <ConfirmDialog
         open={!!pendingCloseTab}
-        title="End browser session?"
+        title="Stop remote browser?"
         message={
           pendingCloseTab
-            ? `Closing "${pendingCloseTab.title}" will stop the live browser session. The agent may lose access to that page.`
+            ? `Stopping "${pendingCloseTab.title}" ends the Composio cloud browser session — not just this preview. The agent will lose access to that page.`
             : ''
         }
-        confirmLabel={closingTab ? 'Stopping…' : 'End session'}
+        confirmLabel={closingTab ? 'Stopping…' : 'Stop browser'}
         cancelLabel="Keep open"
         destructive
         onConfirm={() => { void confirmCloseLiveTab(); }}
