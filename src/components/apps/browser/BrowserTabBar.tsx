@@ -31,7 +31,7 @@ function TabModeIcon({ mode, active }: { mode: BrowserTabMode; active: boolean }
   }
 }
 
-function TabFavicon({ tab, active }: { tab: BrowserTab; active: boolean }) {
+export function TabFavicon({ tab, active }: { tab: BrowserTab; active: boolean }) {
   const [failed, setFailed] = useState(false);
   const pageUrl = tab.url || tab.pageUrl;
   const host = hostFromUrl(pageUrl);
@@ -51,7 +51,7 @@ function TabFavicon({ tab, active }: { tab: BrowserTab; active: boolean }) {
   return <TabModeIcon mode={tab.mode} active={active} />;
 }
 
-function TabOverflowMenu({
+export function TabOverflowMenu({
   tabs,
   activeTabId,
   onSelect,

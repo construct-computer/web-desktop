@@ -391,6 +391,14 @@ export interface WebPreviewData {
 const autoCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const autoOpenedWindowIds = new Set<string>();
 
+type BrowserWindowLike = { type?: string; metadata?: Record<string, unknown>; id?: string };
+
+function isEngagedBrowserWindow(win: BrowserWindowLike | undefined | null): boolean {
+  return !!win
+    && win.type === 'browser'
+    && (!!win.metadata?.pinnedByUser || typeof win.metadata?.userEngagedAt === 'number');
+}
+
 /** Grace periods per window type (ms). Longer for tools the agent chains. */
 const WINDOW_CLOSE_GRACE: Record<string, number> = {
   terminal: 8000,
@@ -410,7 +418,7 @@ function scheduleAutoClose(windowType: string) {
     autoCloseTimers.delete(windowType);
     const wStore = useWindowStore.getState();
     const toClose = wStore.windows.filter(
-      (w) => w.type === windowType && autoOpenedWindowIds.has(w.id),
+      (w) => w.type === windowType && autoOpenedWindowIds.has(w.id) && !isEngagedBrowserWindow(w),
     );
     for (const w of toClose) {
       wStore.closeWindow(w.id);
@@ -433,6 +441,23 @@ export function retainAgentOpenedWindow(windowId: string, windowType = 'document
   cancelAutoClose(windowType);
 }
 
+export function markBrowserWindowEngaged(windowId?: string | null): void {
+  if (!windowId) return;
+  const ws = useWindowStore.getState();
+  const win = ws.windows.find((w) => w.id === windowId);
+  if (!win || win.type !== 'browser') return;
+  autoOpenedWindowIds.delete(windowId);
+  cancelAutoClose('browser');
+  ws.updateWindow(windowId, {
+    metadata: {
+      ...(win.metadata || {}),
+      browserAppWindow: win.metadata?.browserAppWindow ?? true,
+      pinnedByUser: true,
+      userEngagedAt: Date.now(),
+    },
+  });
+}
+
 function closeAllAutoOpened(delayMs = 2000) {
   // Cancel all pending timers
   for (const [type] of autoCloseTimers) cancelAutoClose(type);
@@ -441,7 +466,7 @@ function closeAllAutoOpened(delayMs = 2000) {
     const wStore = useWindowStore.getState();
     for (const wId of autoOpenedWindowIds) {
       const win = wStore.windows.find((w) => w.id === wId);
-      if (win) wStore.closeWindow(wId);
+      if (win && !isEngagedBrowserWindow(win)) wStore.closeWindow(wId);
     }
     autoOpenedWindowIds.clear();
   }, delayMs);
@@ -1679,8 +1704,14 @@ function browserWindowsInWorkspace(workspaceId: string | undefined) {
 /** Close duplicate browser windows in a workspace, keeping the canonical one. */
 function consolidateBrowserWindows(canonicalId: string, workspaceId: string | undefined) {
   const ws = useWindowStore.getState();
+  const canonical = ws.windows.find((w) => w.id === canonicalId);
   for (const win of browserWindowsInWorkspace(workspaceId)) {
     if (win.id !== canonicalId) {
+      if (isEngagedBrowserWindow(win)) continue;
+      if (isEngagedBrowserWindow(canonical)) {
+        ws.closeWindow(win.id);
+        continue;
+      }
       ws.closeWindow(win.id);
     }
   }
@@ -1699,7 +1730,9 @@ export function getOrCreateBrowserAppWindow(options: {
   const metadata = { ...(options.metadata || {}), browserAppWindow: true };
   const inWs = browserWindowsInWorkspace(targetWs);
 
-  const existing = inWs.find((w) => w.metadata?.browserAppWindow) || inWs[0];
+  const existing = inWs.find(isEngagedBrowserWindow)
+    || inWs.find((w) => w.metadata?.browserAppWindow)
+    || inWs[0];
   if (existing) {
     ws.updateWindow(existing.id, {
       title,
@@ -2310,6 +2343,7 @@ export const useComputerStore = create<ComputerStore>()(
               if (winTabId) {
                 // Window has a daemon tab assigned — close if that tab no longer exists
                 if (!daemonTabIds.has(winTabId)) {
+                  if (isEngagedBrowserWindow(win)) continue;
                   tabBlobCache.delete(winTabId);
                   frameRenderers.delete(win.id);
                   canvasClearFns.delete(win.id);
@@ -2330,6 +2364,7 @@ export const useComputerStore = create<ComputerStore>()(
                   });
                 } else {
                   // Max retries exceeded — close the orphaned window
+                  if (isEngagedBrowserWindow(win)) continue;
                   frameRenderers.delete(win.id);
                   canvasClearFns.delete(win.id);
                   wStore.closeWindow(win.id);
@@ -4261,12 +4296,7 @@ export const useComputerStore = create<ComputerStore>()(
         const prior = state.browserState.browserSessions;
         const browserSessions = replace ? {} as typeof prior : { ...prior };
         for (const session of sorted) {
-          const terminal = session.status === 'complete' || session.status === 'error'
-            || session.status === 'idle' || session.status === 'expired';
           const merged = { ...(prior[session.id] || {}), ...session };
-          if (terminal && !session.streamUrl) {
-            delete merged.streamUrl;
-          }
           browserSessions[session.id] = merged;
         }
         if (!replace) {
@@ -4302,8 +4332,6 @@ export const useComputerStore = create<ComputerStore>()(
 
       const tabStore = useBrowserTabStore.getState();
       for (const session of sorted) {
-        const terminal = session.status === 'complete' || session.status === 'error'
-          || session.status === 'idle' || session.status === 'expired';
         const runPhase = session.status === 'running' || session.status === 'starting'
           ? 'live' as const
           : session.status === 'complete'
@@ -4313,7 +4341,6 @@ export const useComputerStore = create<ComputerStore>()(
           runPhase,
           runId: session.runId,
           ...(session.streamUrl ? { streamUrl: session.streamUrl } : {}),
-          ...(terminal && !session.streamUrl ? { streamUrl: undefined } : {}),
         });
       }
       tabStore.pruneInactiveLiveTabs(get().browserState.browserSessions);
@@ -6250,12 +6277,14 @@ export const useComputerStore = create<ComputerStore>()(
             }
           } else if (closeWindowId) {
             logger.info('Agent closed window:', closeWindowId);
-            useWindowStore.getState().closeWindow(closeWindowId);
+            const wStore = useWindowStore.getState();
+            const win = wStore.windows.find((w) => w.id === closeWindowId);
+            if (!isEngagedBrowserWindow(win)) wStore.closeWindow(closeWindowId);
           } else if (closeType && closeWsId) {
             // Close windows of this type only in the specified workspace
             const wStore = useWindowStore.getState();
             const toClose = wStore.windows.filter(
-              w => w.type === closeType && w.workspaceId === closeWsId
+              w => w.type === closeType && w.workspaceId === closeWsId && !isEngagedBrowserWindow(w)
             );
             for (const win of toClose) {
               wStore.closeWindow(win.id);
@@ -6263,7 +6292,14 @@ export const useComputerStore = create<ComputerStore>()(
             logger.info(`Closed ${toClose.length} ${closeType} window(s) in workspace ${closeWsId}`);
           } else if (closeType) {
             logger.info('Agent closed all windows of type:', closeType);
-            useWindowStore.getState().closeWindowsByType(closeType);
+            if (closeType === 'browser') {
+              const wStore = useWindowStore.getState();
+              for (const win of wStore.windows.filter((w) => w.type === 'browser' && !isEngagedBrowserWindow(w))) {
+                wStore.closeWindow(win.id);
+              }
+            } else {
+              useWindowStore.getState().closeWindowsByType(closeType);
+            }
           }
           break;
         }
@@ -6419,9 +6455,13 @@ export const useComputerStore = create<ComputerStore>()(
             const windowId = findWindowForDaemonTab(tabId)
               || (closedSubagentId ? findWindowForSubagent(closedSubagentId) : undefined);
             if (windowId) {
-              frameRenderers.delete(windowId);
-              canvasClearFns.delete(windowId);
-              useWindowStore.getState().closeWindow(windowId);
+              const wStore = useWindowStore.getState();
+              const win = wStore.windows.find((w) => w.id === windowId);
+              if (!isEngagedBrowserWindow(win)) {
+                frameRenderers.delete(windowId);
+                canvasClearFns.delete(windowId);
+                wStore.closeWindow(windowId);
+              }
             }
 
             // Clean up frame cache
@@ -7626,12 +7666,10 @@ export const useComputerStore = create<ComputerStore>()(
                 } : {}),
               },
             }));
-            const terminal = nextStatus !== 'running';
-            const tabStreamUrl = !terminal && (liveUrl || streamUrl) ? (liveUrl || streamUrl) : undefined;
             useBrowserTabStore.getState().patchLiveTabBySession(statusRunId, {
               runPhase: mappedStatus === 'complete' ? 'complete' : mappedStatus === 'running' ? 'live' : 'error',
               runId: statusRunId,
-              ...(tabStreamUrl ? { streamUrl: tabStreamUrl } : { streamUrl: undefined }),
+              ...(liveUrl || streamUrl ? { streamUrl: liveUrl || streamUrl } : {}),
             });
             if (nextStatus === 'success') {
               void api.listBrowserScreenshots({ limit: 50 }).then((res) => {

@@ -728,11 +728,16 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
   pruneInactiveLiveTabs: (sessions) => {
     set((state) => {
       const toRemove = state.tabs
-        .filter((t) => t.mode === 'live' && !isLiveBrowserSessionActive(t, sessions))
+        .filter((t) => (
+          t.mode === 'live'
+          && t.id !== state.activeTabId
+          && !t.runId
+          && !t.streamUrl
+          && !isLiveBrowserSessionActive(t, sessions)
+        ))
         .map((t) => t.id);
       if (toRemove.length === 0) return state;
       const removeSet = new Set(toRemove);
-      const dismissedTabIds = persistDismissedTabIds(removeSet);
       const tabSnapshots = { ...state.tabSnapshots };
       for (const tab of state.tabs) {
         if (removeSet.has(tab.id)) tabSnapshots[tab.id] = tab;
@@ -741,7 +746,7 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
       const activeTabId = state.activeTabId && !removeSet.has(state.activeTabId)
         ? state.activeTabId
         : (tabs[tabs.length - 1]?.id ?? null);
-      return { tabs, activeTabId, dismissedTabIds, tabSnapshots };
+      return { tabs, activeTabId, tabSnapshots };
     });
   },
 

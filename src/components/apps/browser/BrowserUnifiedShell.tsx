@@ -1,27 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, PanelRight } from 'lucide-react';
+import { Globe, PanelRight, Maximize2, Minimize2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui';
 import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
 import { stopBrowserRun } from '@/services/api';
-import { useComputerStore } from '@/stores/agentStore';
+import { markBrowserWindowEngaged, useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
+import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
 import {
   useBrowserTabStore,
   isStaticBrowserTab,
   isLiveBrowserSessionActive,
   type BrowserTab,
 } from '@/stores/browserTabStore';
-import { BrowserTabBar } from './BrowserTabBar';
-import { BrowserChromeBar } from './BrowserChromeBar';
+import { BrowserToolbar } from './BrowserToolbar';
 import { BrowserTabContent } from './BrowserTabContent';
-import { BrowserModeStatusBar } from './BrowserModeStatusBar';
-import { BrowserDashboardPanel } from './BrowserDashboardPanel';
+import { BrowserDetailsPanel } from './BrowserDetailsPanel';
 
 const MAX_RECONNECT_ATTEMPTS = 6;
 const RECONNECT_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000, 30000];
-
-type DetailsTab = 'overview' | 'history' | 'captures' | 'downloads';
 
 interface BrowserUnifiedShellProps {
   isAgentBrowserWindow: boolean;
@@ -64,12 +61,13 @@ export function BrowserUnifiedShell({
   const fetchView = activeTab?.fetchView ?? 'reader';
   const dataView = activeTab?.dataView ?? 'visual';
   const isLiveActive = activeTab?.mode === 'live';
-  const hideTabBar = false;
-  const showStaticChrome = !!activeTab;
-  const showModeStatusBar = !hideTabBar;
 
   const [showDetails, setShowDetails] = useState(false);
-  const [detailsDefaultTab, setDetailsDefaultTab] = useState<DetailsTab>('history');
+  // Live tabs render full-bleed by default (immersive), letting the remote
+  // browser's own chrome show through. The user can exit immersive to reveal
+  // our toolbar and switch between tabs.
+  const [liveImmersive, setLiveImmersive] = useState(true);
+  const immersive = isLiveActive && liveImmersive;
 
   const [iframeDead, setIframeDead] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -78,6 +76,12 @@ export function BrowserUnifiedShell({
   const [pendingCloseTab, setPendingCloseTab] = useState<BrowserTab | null>(null);
   const [closingTab, setClosingTab] = useState(false);
   const [stoppingActive, setStoppingActive] = useState(false);
+  const [unlockedLiveTabIds, setUnlockedLiveTabIds] = useState<Set<string>>(() => new Set());
+  const [pendingUnlockTabId, setPendingUnlockTabId] = useState<string | null>(null);
+
+  const markEngaged = useCallback(() => {
+    markBrowserWindowEngaged(windowId);
+  }, [windowId]);
 
   const stopActiveSession = useCallback(async () => {
     if (!activeTab || !activeTab.runId || stoppingActive) return;
@@ -92,18 +96,70 @@ export function BrowserUnifiedShell({
   }, [activeTab, stoppingActive]);
 
   const setActiveTab = useCallback((tabId: string) => {
+    markEngaged();
     setActiveTabRaw(tabId);
-  }, [setActiveTabRaw]);
+  }, [markEngaged, setActiveTabRaw]);
 
-  const openDetails = useCallback((defaultTab: DetailsTab = 'history') => {
-    setShowDetails((prev) => {
-      if (prev) return false;
-      setDetailsDefaultTab(defaultTab);
-      return true;
+  const activeLiveUnlocked = !!activeTab && activeTab.mode === 'live' && unlockedLiveTabIds.has(activeTab.id);
+
+  const requestLiveUnlock = useCallback(() => {
+    if (!activeTab || activeTab.mode !== 'live') return;
+    markEngaged();
+    setPendingUnlockTabId(activeTab.id);
+  }, [activeTab, markEngaged]);
+
+  const confirmLiveUnlock = useCallback(() => {
+    if (!pendingUnlockTabId) return;
+    markEngaged();
+    setUnlockedLiveTabIds((prev) => {
+      const next = new Set(prev);
+      next.add(pendingUnlockTabId);
+      return next;
     });
-  }, []);
+    setPendingUnlockTabId(null);
+  }, [markEngaged, pendingUnlockTabId]);
 
+  const lockActiveLiveTab = useCallback(() => {
+    if (!activeTab || activeTab.mode !== 'live') return;
+    markEngaged();
+    setUnlockedLiveTabIds((prev) => {
+      const next = new Set(prev);
+      next.delete(activeTab.id);
+      return next;
+    });
+  }, [activeTab, markEngaged]);
 
+  // Single Details toggle (+ immersive toggle for live tabs) lives in the
+  // window title bar so the browser chrome stays to a single row.
+  useWindowTitleBarAccessory(
+    windowId ?? '',
+    <>
+      {isLiveActive && (
+        <button
+          type="button"
+          onClick={() => { markEngaged(); setLiveImmersive((v) => !v); }}
+          className="p-1 rounded-[5px] transition-colors text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]"
+          title={liveImmersive ? 'Show tabs & toolbar' : 'Immersive live view'}
+          aria-label={liveImmersive ? 'Show tabs and toolbar' : 'Immersive live view'}
+        >
+          {liveImmersive ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => { markEngaged(); setShowDetails((v) => !v); }}
+        className={`p-1 rounded-[5px] transition-colors ${
+          showDetails
+            ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+            : 'text-black/50 dark:text-white/50 hover:bg-black/[0.06] dark:hover:bg-white/[0.08] hover:text-[var(--color-text)]'
+        }`}
+        title={showDetails ? 'Hide details' : 'Run details, captures & downloads'}
+        aria-label={showDetails ? 'Hide details' : 'Show details'}
+      >
+        <PanelRight className="w-3.5 h-3.5" />
+      </button>
+    </>,
+  );
 
   useEffect(() => {
     pruneInactiveLiveTabs(browserSessions);
@@ -131,7 +187,6 @@ export function BrowserUnifiedShell({
     if (sessionId) {
       patchLiveTabBySession(sessionId, {
         runPhase: 'complete',
-        streamUrl: undefined,
       });
     }
   }, [iframeDead, activeTab, patchLiveTabBySession]);
@@ -226,51 +281,28 @@ export function BrowserUnifiedShell({
     setReloadKey((k) => k + 1);
   }, []);
 
-  const detailsDefaultForPanel = detailsDefaultTab;
-
   return (
     <div
       className="relative flex flex-col h-full surface-app overflow-hidden outline-none"
       onKeyDown={onShellKeyDown}
+      onFocus={markEngaged}
+      onPointerDown={markEngaged}
       tabIndex={-1}
     >
-      {isAgentBrowserWindow && (
-        <div className="shrink-0 flex items-center justify-end gap-2 px-3 py-1 border-b border-[var(--color-border)] surface-toolbar min-h-[32px]">
-          <button
-            type="button"
-            onClick={() => { openDetails('history'); }}
-            className={[
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all',
-              showDetails
-                ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10'
-                : 'border-white/20 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.04]',
-            ].join(' ')}
-            title="Run history, captures, and downloads"
-          >
-            <PanelRight className="w-3.5 h-3.5" />
-            Details
-          </button>
-        </div>
-      )}
-
-      {!hideTabBar && tabs.length > 0 && (
-        <div className="shrink-0">
-          <BrowserTabBar
-            tabs={tabs}
-            activeTabId={activeTab?.id ?? null}
-            onSelect={setActiveTab}
-            onClose={handleCloseTab}
-          />
-            <BrowserChromeBar
-              tab={activeTab}
-              fetchView={fetchView}
-              onFetchViewChange={(view) => activeTab && setFetchView(activeTab.id, view)}
-              dataView={dataView}
-              onDataViewChange={(view) => activeTab && setDataView(activeTab.id, view)}
-              onStopLive={stopActiveSession}
-              stoppingLive={stoppingActive}
-            />
-        </div>
+      {!immersive && tabs.length > 0 && (
+        <BrowserToolbar
+          tabs={tabs}
+          activeTab={activeTab}
+          activeTabId={activeTab?.id ?? null}
+          onSelect={setActiveTab}
+          onClose={handleCloseTab}
+          fetchView={fetchView}
+          onFetchViewChange={(view) => { markEngaged(); if (activeTab) setFetchView(activeTab.id, view); }}
+          dataView={dataView}
+          onDataViewChange={(view) => { markEngaged(); if (activeTab) setDataView(activeTab.id, view); }}
+          onStopLive={stopActiveSession}
+          stoppingLive={stoppingActive}
+        />
       )}
 
       {configChecked && !hasComposioBrowser && (
@@ -294,8 +326,11 @@ export function BrowserUnifiedShell({
                 onIframeLoad={onIframeLoad}
                 onIframeError={onIframeError}
                 onManualReconnect={onManualReconnect}
-                onOpenDetails={() => openDetails('captures')}
-                detailsOpen={showDetails}
+                immersive={immersive}
+                onExitImmersive={() => setLiveImmersive(false)}
+                interactive={activeLiveUnlocked}
+                onRequestUnlock={requestLiveUnlock}
+                onLock={lockActiveLiveTab}
               />
             </div>
           ) : (
@@ -317,22 +352,15 @@ export function BrowserUnifiedShell({
         </div>
 
         {showDetails && (
-          <BrowserDashboardPanel
-            key={detailsDefaultForPanel}
+          <BrowserDetailsPanel
             sessions={sessionList}
             activeSessionId={activeSession?.id || null}
-            defaultTab={detailsDefaultForPanel}
+            activeTab={activeTab}
+            liveInteractive={activeLiveUnlocked}
             onClose={() => setShowDetails(false)}
           />
         )}
       </div>
-
-      {showModeStatusBar && (
-        <BrowserModeStatusBar
-          tab={activeTab}
-          fetchView={fetchView}
-        />
-      )}
 
       <ConfirmDialog
         open={!!pendingCloseTab}
@@ -347,6 +375,16 @@ export function BrowserUnifiedShell({
         destructive
         onConfirm={() => { void confirmCloseLiveTab(); }}
         onCancel={() => setPendingCloseTab(null)}
+      />
+
+      <ConfirmDialog
+        open={!!pendingUnlockTabId}
+        title="Unlock live browser?"
+        message="This lets your clicks and typing go directly into the Composio cloud browser. The agent may still be using the same session, so unlock only when you want to take temporary control."
+        confirmLabel="Unlock"
+        cancelLabel="Keep view only"
+        onConfirm={confirmLiveUnlock}
+        onCancel={() => setPendingUnlockTabId(null)}
       />
     </div>
   );

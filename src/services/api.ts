@@ -2958,7 +2958,19 @@ export async function saveBrowserScreenshotToWorkspace(
 export async function captureBrowserScreenshot(
   url: string,
   opts: { savePath?: string; fullPage?: boolean } = {},
-): Promise<ApiResult<{ status: string; path: string; size: number; gallery_key: string; url: string }>> {
+): Promise<ApiResult<{
+  status?: string;
+  path?: string | null;
+  size: number;
+  gallery_key?: string;
+  key?: string;
+  keys?: string[];
+  count?: number;
+  runId?: string;
+  url: string;
+  screenshots?: BrowserScreenshotSummary[];
+  warning?: string;
+}>> {
   return request('/browser/screenshots/capture', {
     method: 'POST',
     body: JSON.stringify({ url, save_path: opts.savePath, full_page: opts.fullPage }),

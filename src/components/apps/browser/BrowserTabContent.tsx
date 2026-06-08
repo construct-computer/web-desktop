@@ -28,8 +28,11 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad,
   onIframeError,
   onManualReconnect,
-  onOpenDetails,
-  detailsOpen = false,
+  immersive = false,
+  onExitImmersive,
+  interactive = false,
+  onRequestUnlock,
+  onLock,
 }: {
   tab: BrowserTab;
   fetchView: 'site' | 'reader';
@@ -40,8 +43,11 @@ export const BrowserTabContent = memo(function BrowserTabContent({
   onIframeLoad: () => void;
   onIframeError: () => void;
   onManualReconnect: () => void;
-  onOpenDetails?: () => void;
-  detailsOpen?: boolean;
+  immersive?: boolean;
+  onExitImmersive?: () => void;
+  interactive?: boolean;
+  onRequestUnlock?: () => void;
+  onLock?: () => void;
 }) {
   switch (tab.mode) {
     case 'search':
@@ -75,8 +81,11 @@ export const BrowserTabContent = memo(function BrowserTabContent({
           onManualReconnect={onManualReconnect}
           progressLabel={tab.progressLabel}
           goal={tab.goal}
-          onOpenDetails={onOpenDetails}
-          detailsOpen={detailsOpen}
+          immersive={immersive}
+          onExitImmersive={onExitImmersive}
+          interactive={interactive}
+          onRequestUnlock={onRequestUnlock}
+          onLock={onLock}
         />
       );
     default:

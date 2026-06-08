@@ -11,6 +11,7 @@ import {
   listBrowserScreenshots,
   fetchBrowserScreenshot,
   saveBrowserScreenshotToWorkspace,
+  captureBrowserScreenshot,
   type BrowserScreenshotSummary,
 } from '@/services/api';
 import { useComputerStore } from '@/stores/agentStore';
@@ -31,6 +32,18 @@ function relTime(ts: number): string {
 function hostFromUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   try { return new URL(u).host || null; } catch { return null; }
+}
+
+function normalizeUrlForMatch(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    url.hash = '';
+    if (url.pathname.length > 1 && url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
+    return url.href;
+  } catch {
+    return raw.trim() || null;
+  }
 }
 
 function Thumb({ shot }: { shot: BrowserScreenshotSummary }) {
@@ -75,9 +88,15 @@ function Thumb({ shot }: { shot: BrowserScreenshotSummary }) {
 export function BrowserScreenshotGallery({
   runId,
   subagentId,
+  url,
+  title,
+  captureUrl,
 }: {
   runId?: string | null;
   subagentId?: string | null;
+  url?: string | null;
+  title?: string;
+  captureUrl?: string | null;
 } = {}) {
   const items = useComputerStore((s) => s.browserScreenshots);
   const hydrated = useComputerStore((s) => s.browserScreenshotsHydrated);
@@ -85,6 +104,7 @@ export function BrowserScreenshotGallery({
   const [loading, setLoading] = useState(!hydrated);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [savedKeys, setSavedKeys] = useState<Record<string, string>>({}); // key -> dest path
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -113,26 +133,60 @@ export function BrowserScreenshotGallery({
     }
   }, [savingKey]);
 
+  const onCapture = useCallback(async () => {
+    const target = captureUrl?.trim();
+    if (!target || capturing) return;
+    setCapturing(true);
+    setError(null);
+    const res = await captureBrowserScreenshot(target, { fullPage: true });
+    setCapturing(false);
+    if (res.success && res.data?.screenshots) {
+      hydrate(res.data.screenshots);
+      return;
+    }
+    if (res.success) {
+      await refresh();
+      if (res.data?.warning) setError(res.data.warning);
+      return;
+    }
+    setError((!res.success && res.error) || 'Capture failed');
+  }, [captureUrl, capturing, hydrate, refresh]);
+
+  const targetUrl = normalizeUrlForMatch(url);
   const filteredItems = runId
     ? items.filter((shot) => shot.run_id === runId)
-    : subagentId
-      ? items.filter((shot) => shot.subagent_id === subagentId)
-      : items;
+    : targetUrl
+      ? items.filter((shot) => normalizeUrlForMatch(shot.url) === targetUrl)
+      : subagentId
+        ? items.filter((shot) => shot.subagent_id === subagentId)
+        : items;
 
   return (
     <div ref={scrollRef} className="w-full h-full overflow-y-auto px-6 py-4 text-left">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs uppercase tracking-wider text-[var(--color-text-subtle)] opacity-60">
-          {runId || subagentId ? 'Matching screenshots' : 'Recent screenshots'}
+          {title || (runId || subagentId || targetUrl ? 'Matching screenshots' : 'Recent screenshots')}
         </p>
-        <button
-          onClick={refresh}
-          className="p-1 text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
-          disabled={loading}
-          title="Refresh"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {captureUrl && (
+            <button
+              onClick={() => { void onCapture(); }}
+              className="px-2 py-1 rounded-md border border-white/[0.08] bg-white/[0.03] text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/[0.06] disabled:opacity-40"
+              disabled={capturing}
+              title="Capture this page with live browser"
+            >
+              {capturing ? 'Capturing' : 'Capture'}
+            </button>
+          )}
+          <button
+            onClick={refresh}
+            className="p-1 text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
+            disabled={loading || capturing}
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3 h-3 ${loading || capturing ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
@@ -141,6 +195,8 @@ export function BrowserScreenshotGallery({
         <p className="text-xs text-[var(--color-text-subtle)] opacity-50">
           {runId
             ? 'No captures for this run. Try Refresh — if still empty, the harvest may not have saved images.'
+            : targetUrl
+              ? 'No captures for this page yet.'
             : subagentId
               ? 'No screenshots for this session.'
               : 'No browser screenshots yet. Construct saves captures when a browser run finishes.'}

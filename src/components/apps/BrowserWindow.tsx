@@ -2,16 +2,17 @@ import { useState, useRef, useCallback, useEffect, memo, useMemo } from 'react';
 import {
   RefreshCw, Globe, X,
   AlertTriangle,
-  ChevronUp, ChevronDown, Square,
+  ChevronUp, ChevronDown, Square, PanelRight,
 } from 'lucide-react';
-import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob } from '@/stores/agentStore';
+import { useComputerStore, registerFrameRenderer, registerCanvasClear, getCachedFrameBlob, markBrowserWindowEngaged } from '@/stores/agentStore';
 import { browserWS } from '@/services/websocket';
 import type { WindowConfig } from '@/types';
-import { BrowserDashboardPanel } from './browser/BrowserDashboardPanel';
+import { BrowserDetailsPanel } from './browser/BrowserDetailsPanel';
 import { BrowserLivePreview } from './browser/BrowserLivePreview';
 import { BrowserUnifiedShell } from './browser/BrowserUnifiedShell';
 import { useBrowserTabStore } from '@/stores/browserTabStore';
 import { listBrowserActiveSessions } from '@/services/api';
+import { ConfirmDialog } from '@/components/ui';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Constants
@@ -406,6 +407,11 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   /* ── FindBar state ──────────────────────────────────────────────────────── */
   const [findBarOpen, setFindBarOpen] = useState(false);
 
+  /* ── Legacy details panel toggle (daemon-canvas path only) ──────────────── */
+  const [showLegacyDetails, setShowLegacyDetails] = useState(false);
+  const [legacyLiveInteractive, setLegacyLiveInteractive] = useState(false);
+  const [confirmLegacyUnlock, setConfirmLegacyUnlock] = useState(false);
+
   /* ── Context menu state ─────────────────────────────────────────────────── */
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -542,6 +548,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
   /* ── Focus handler: switch daemon to this window's tab ───────────────────── */
   const focusingRef = useRef(false);
   const onWindowFocus = useCallback(() => {
+    markBrowserWindowEngaged(windowId);
     if (daemonTabId && !focusingRef.current) {
       focusingRef.current = true;
       useComputerStore.getState().focusBrowserWindow(windowId);
@@ -943,10 +950,6 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
               </p>
             </div>
           </div>
-          <BrowserDashboardPanel
-            sessions={sessionList}
-            activeSessionId={activeSession?.id || null}
-          />
         </div>
         <StatusBar connected={false} fps={0} />
       </div>
@@ -960,6 +963,7 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
       tabIndex={-1}
       onKeyDown={onBrowserKeyDown}
       onFocus={onWindowFocus}
+      onPointerDown={() => markBrowserWindowEngaged(windowId)}
     >
       {/* ── Address bar (read-only, agent-controlled) — hidden for Browser windows ── */}
       {!isAgentBrowserWindow && (
@@ -970,6 +974,22 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             {hasContent && url ? (unfocusedDisplay || url) : 'Construct-controlled browser'}
           </span>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            markBrowserWindowEngaged(windowId);
+            setShowLegacyDetails((v) => !v);
+          }}
+          className={`shrink-0 p-1 rounded-md transition-colors ${
+            showLegacyDetails
+              ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
+              : 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-white/[0.06]'
+          }`}
+          title={showLegacyDetails ? 'Hide details' : 'Run details, captures & downloads'}
+          aria-label="Toggle details"
+        >
+          <PanelRight className="w-3.5 h-3.5" />
+        </button>
       </div>
       )}
 
@@ -991,6 +1011,15 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
             onLoad={onIframeLoad}
             onError={onIframeError}
             onManualReconnect={onManualReconnect}
+            interactive={legacyLiveInteractive}
+            onRequestUnlock={() => {
+              markBrowserWindowEngaged(windowId);
+              setConfirmLegacyUnlock(true);
+            }}
+            onLock={() => {
+              markBrowserWindowEngaged(windowId);
+              setLegacyLiveInteractive(false);
+            }}
           />
         ) : (
           <>
@@ -1056,10 +1085,14 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
         )}
       </div>
 
-      <BrowserDashboardPanel
-        sessions={sessionList}
-        activeSessionId={activeSession?.id || null}
-      />
+      {showLegacyDetails && (
+        <BrowserDetailsPanel
+          sessions={sessionList}
+          activeSessionId={activeSession?.id || null}
+          liveInteractive={legacyLiveInteractive}
+          onClose={() => setShowLegacyDetails(false)}
+        />
+      )}
       </div>
 
       {/* ── Status bar (hidden for Browser windows) ──── */}
@@ -1073,6 +1106,19 @@ export function BrowserWindow({ config }: BrowserWindowProps) {
         loadingPhase={loadingPhase}
       />
       )}
+      <ConfirmDialog
+        open={confirmLegacyUnlock}
+        title="Unlock live browser?"
+        message="This lets your clicks and typing go directly into the Composio cloud browser. The agent may still be using the same session, so unlock only when you want to take temporary control."
+        confirmLabel="Unlock"
+        cancelLabel="Keep view only"
+        onConfirm={() => {
+          markBrowserWindowEngaged(windowId);
+          setLegacyLiveInteractive(true);
+          setConfirmLegacyUnlock(false);
+        }}
+        onCancel={() => setConfirmLegacyUnlock(false)}
+      />
     </div>
   );
 }
