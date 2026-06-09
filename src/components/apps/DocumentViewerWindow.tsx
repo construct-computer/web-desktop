@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { retainAgentOpenedWindow, useComputerStore } from '@/stores/agentStore';
-import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, previewContainerFile, writeFile } from '@/services/api';
+import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, getFileMeta, previewContainerFile, writeFile, type FileMetaResponse } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
 import { fileNameFromWorkspacePath } from '@/lib/workspacePaths';
 import {
@@ -674,6 +674,18 @@ function resolveDocType(filePath: string | undefined): DocType {
   return 'unknown';
 }
 
+function fingerprintFromMeta(meta: FileMetaResponse): string {
+  return meta.revision || `${meta.size}:${meta.modified}`;
+}
+
+function fingerprintFromResponse(response: Response, blob: Blob): string {
+  const etag = response.headers.get('etag');
+  if (etag) return etag;
+  const lastModified = response.headers.get('last-modified');
+  if (lastModified) return `${blob.size}:${lastModified}`;
+  return `${blob.size}`;
+}
+
 // ── Main component ───────────────────────────────────────────────────────
 
 export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
@@ -724,6 +736,9 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [wordWrap, setWordWrap] = useState(false);
 
   const blobUrlRef = useRef<string | null>(null);
+  const loadedRevisionRef = useRef<string | null>(null);
+  const hasContentRef = useRef(false);
+  const loadFileRef = useRef<(opts?: { silent?: boolean; force?: boolean }) => Promise<void>>(async () => {});
   const rootRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   const saveRef = useRef(() => { if (isTextMode) saveEditorFile(windowId); });
@@ -810,8 +825,28 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     }
   }, [isTextMode, editorFile?.loading]);
 
+  // Reset viewer state when the target file changes within the same window.
+  useEffect(() => {
+    loadedRevisionRef.current = null;
+    hasContentRef.current = false;
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setBlobUrl(null);
+    setDocxHtml(null);
+    setXlsxSheets(null);
+    setPptxSlides(null);
+    setMarkdownText(null);
+    setHtmlContent(null);
+    setRawText(null);
+    setConversionFrames(null);
+    setError(null);
+    setLoading(!isTextMode);
+  }, [filePath, driveFileId, isTextMode]);
+
   // ── Document loading (non-text files) ──
-  const loadFile = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadFile = useCallback(async (opts?: { silent?: boolean; force?: boolean }) => {
     if (isTextMode) return; // text files use editorStore
     if (!driveFileId && (!instanceId || !filePath)) {
       setError('No file path specified');
@@ -819,17 +854,19 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
       return;
     }
 
-    const hasContent = Boolean(
-      blobUrlRef.current
-      || docxHtml
-      || xlsxSheets
-      || pptxSlides
-      || markdownText
-      || htmlContent
-      || rawText
-      || conversionFrames,
-    );
-    const silent = Boolean(opts?.silent) || hasContent;
+    const force = Boolean(opts?.force);
+    const silent = Boolean(opts?.silent) || hasContentRef.current;
+
+    // Lightweight revision check before downloading workspace files.
+    if (!force && !driveFileId && instanceId && filePath && loadedRevisionRef.current) {
+      try {
+        const meta = await getFileMeta(instanceId, filePath);
+        if (meta.success && fingerprintFromMeta(meta.data) === loadedRevisionRef.current) {
+          return;
+        }
+      } catch { /* fall through to full load */ }
+    }
+
     if (!silent) setLoading(true);
     setError(null);
 
@@ -840,11 +877,19 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
       if (!response.ok) throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
 
       const blob = await response.blob();
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-      setConversionFrames(null);
+      const fingerprint = fingerprintFromResponse(response, blob);
+      if (!force && loadedRevisionRef.current === fingerprint) {
+        return;
+      }
+
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
 
       switch (docType) {
         case 'convertible': {
+          setConversionFrames(null);
           if (driveFileId) {
             setError('Conversion previews are not available for Drive files yet. Download the original to view externally.');
             break;
@@ -954,41 +999,46 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           break;
         }
       }
+
+      loadedRevisionRef.current = fingerprint;
+      hasContentRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load document');
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [isTextMode, instanceId, filePath, driveFileId, docType, docxHtml, xlsxSheets, pptxSlides, markdownText, htmlContent, rawText, conversionFrames, blobUrl]);
+  }, [isTextMode, instanceId, filePath, driveFileId, docType]);
 
-  // Load document on mount
-  useEffect(() => { if (!isTextMode) loadFile(); }, [loadFile, isTextMode]);
+  loadFileRef.current = loadFile;
 
-  // Auto-reload documents when file changes (poll every 5s)
-  const lastModRef = useRef<number>(0);
+  // Load document when file identity changes.
+  useEffect(() => {
+    if (!isTextMode) void loadFile({ force: true });
+  }, [isTextMode, instanceId, filePath, driveFileId, docType, loadFile]);
+
+  // Auto-reload documents when file changes (poll metadata every 5s).
   useEffect(() => {
     if (isTextMode || driveFileId || !instanceId || !filePath) return;
     const interval = setInterval(async () => {
       try {
-        const response = await downloadContainerFile(instanceId, filePath);
-        if (!response.ok) return;
-        const blob = await response.blob();
-        if (blob.size !== lastModRef.current) {
-          lastModRef.current = blob.size;
-          loadFile({ silent: true });
+        const meta = await getFileMeta(instanceId, filePath);
+        if (!meta.success) return;
+        const fingerprint = fingerprintFromMeta(meta.data);
+        if (fingerprint !== loadedRevisionRef.current) {
+          void loadFileRef.current({ silent: true });
         }
       } catch { /* ignore */ }
     }, 5000);
     return () => clearInterval(interval);
-  }, [isTextMode, instanceId, filePath, loadFile]);
+  }, [isTextMode, instanceId, filePath, driveFileId]);
 
-  // Instant reload when agent writes to this file (via signal store)
+  // Instant reload when agent writes to this file (via signal store).
   const reloadSignal = useDocViewerSignalStore(s => filePath ? s.reloadSignals[filePath] : 0);
   useEffect(() => {
     if (!isTextMode && reloadSignal && reloadSignal > 0) {
-      loadFile({ silent: hasDocumentContent });
+      void loadFile({ silent: hasContentRef.current });
     }
-  }, [reloadSignal, isTextMode, loadFile, hasDocumentContent]);
+  }, [reloadSignal, isTextMode, loadFile]);
 
   // ── Save handler for markdown/CSV raw editing ──
   const handleSaveDoc = useCallback(async () => {
@@ -1159,7 +1209,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
           </button>
         )}
-        <button onClick={() => void loadFile({ silent: hasDocumentContent })} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Reload">
+        <button onClick={() => void loadFile({ silent: hasDocumentContent, force: true })} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Reload">
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
         <button onClick={handleDownload} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Download">
@@ -1181,7 +1231,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
         {error && (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3">
             <div className="text-red-400 text-sm">{error}</div>
-            <button onClick={() => void loadFile()} className="px-3 py-1.5 text-xs rounded bg-white/10 hover:bg-white/20 text-[var(--color-text)]">Retry</button>
+            <button onClick={() => void loadFile({ force: true })} className="px-3 py-1.5 text-xs rounded bg-white/10 hover:bg-white/20 text-[var(--color-text)]">Retry</button>
           </div>
         )}
 

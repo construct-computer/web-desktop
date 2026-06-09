@@ -474,14 +474,7 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     const category = getFileCategory(name);
     if (category !== 'image' && category !== 'audio' && category !== 'video' && category !== 'pdf') return false;
 
-    // Close previous
-    if (previewBlobRef.current) {
-      URL.revokeObjectURL(previewBlobRef.current);
-      previewBlobRef.current = null;
-    }
-
     setPreviewFile({ name, path: label, category });
-    setPreviewBlobUrl(null);
     setPreviewLoading(true);
 
     try {
@@ -489,6 +482,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
+        if (previewBlobRef.current) {
+          URL.revokeObjectURL(previewBlobRef.current);
+        }
         previewBlobRef.current = url;
         setPreviewBlobUrl(url);
         return true;
