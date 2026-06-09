@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import { NOTIFICATION_DEDUP_WINDOW_MS } from '@/lib/config';
 import { shouldPersistNotification, type NotificationPriority } from '@/lib/notificationPolicy';
 
+export interface NotificationAction {
+  id: string;
+  label: string;
+  /** Invoked when the action button is clicked. */
+  run: () => void;
+  /** Visual emphasis for the button. Defaults to 'default'. */
+  variant?: 'primary' | 'default';
+}
+
 export interface Notification {
   id: string;
   title: string;
@@ -12,6 +21,8 @@ export interface Notification {
   read: boolean;
   /** Optional callback invoked when the toast banner or notification item is clicked. */
   onClick?: () => void;
+  /** Optional inline action buttons (e.g. "Continue"), rendered in the toast and the notification center. */
+  actions?: NotificationAction[];
 }
 
 let nextId = 0;

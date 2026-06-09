@@ -108,6 +108,24 @@ function NotificationCard({ n, onRemove }: { n: Notification; onRemove: () => vo
               {n.body}
             </p>
           )}
+          {n.actions && n.actions.length > 0 && (
+            <div className="flex items-center gap-2 mt-2">
+              {n.actions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); action.run(); }}
+                  className={
+                    action.variant === 'primary'
+                      ? 'inline-flex h-6 cursor-pointer items-center rounded-md bg-[var(--color-accent)] px-2.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90'
+                      : 'inline-flex h-6 cursor-pointer items-center rounded-md border border-black/10 px-2.5 text-[11px] font-medium text-black/60 transition-colors hover:text-black/85 dark:border-white/15 dark:text-white/60 dark:hover:text-white/85'
+                  }
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

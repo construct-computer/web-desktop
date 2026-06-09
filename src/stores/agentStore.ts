@@ -3187,6 +3187,30 @@ export const useComputerStore = create<ComputerStore>()(
                 }
                 break;
               }
+              case 'iteration_limit': {
+                // Fallback for the rare case the assistant-message metadata write
+                // was lost (e.g. a DO reset mid-turn). The normal path already
+                // rebuilds the StepLimitCard from message metadata above, so only
+                // synthesize one here if none exists yet — avoids a double card.
+                if (history.some(h => h.iterationLimit)) break;
+                const limitVal = typeof payload.limit === 'number' ? payload.limit : Number(payload.limit);
+                const iterationLimit: ChatMessage['iterationLimit'] = {
+                  ...(Number.isFinite(limitVal) && limitVal > 0 ? { limit: limitVal } : {}),
+                  plan: typeof payload.plan === 'string' ? payload.plan : undefined,
+                  canContinue: payload.canContinue !== false,
+                };
+                const limitMessage = typeof payload.message === 'string' && payload.message
+                  ? payload.message
+                  : 'Max steps for your plan reached. I paused to avoid running indefinitely. You can continue from here.';
+                history.push({
+                  role: 'agent',
+                  content: limitMessage,
+                  timestamp: new Date(eventTs),
+                  isError: false,
+                  iterationLimit,
+                });
+                break;
+              }
               default:
                 // Unknown/future event — ignore rather than fail.
                 break;
@@ -7515,7 +7539,8 @@ export const useComputerStore = create<ComputerStore>()(
             };
           });
           // Desktop notification so the user notices the pause even if the
-          // spotlight chat is hidden — clicking Continue lives on the inline card.
+          // spotlight chat is hidden. Clicking the toast jumps to the inline
+          // card; when continuing is allowed we also surface an inline Continue.
           useNotificationStore.getState().addNotification({
             title: 'Max steps reached',
             body: iterationLimit.canContinue
@@ -7523,6 +7548,15 @@ export const useComputerStore = create<ComputerStore>()(
               : 'Construct reached the step limit for this run.',
             source: 'Construct',
             variant: 'info',
+            onClick: () => { void openSpotlightSession(eventSessionKey); },
+            ...(iterationLimit.canContinue ? {
+              actions: [{
+                id: 'continue',
+                label: 'Continue',
+                variant: 'primary' as const,
+                run: () => { void get().continueSession(eventSessionKey); },
+              }],
+            } : {}),
           }, 20_000);
           break;
         }
