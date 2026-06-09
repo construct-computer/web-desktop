@@ -3,11 +3,17 @@ import type { ChatMessage } from '@/stores/agentStore';
 import type { ActivityTone } from './activityStyles';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import {
-  AlertCircle,
-  Info,
   lucideIconForActivity,
   resolveActivityVisual,
 } from '@/lib/toolActivityIcon';
+import { iconError, iconInfo, iconWarn } from '@/icons';
+
+function toneStatusIcon(tone: ActivityTone, cls: string) {
+  const className = `object-contain shrink-0 ${cls}`;
+  if (tone === 'error') return <img src={iconError} alt="Error" className={className} />;
+  if (tone === 'warn') return <img src={iconWarn} alt="Warning" className={className} />;
+  return <img src={iconInfo} alt="Info" className={className} />;
+}
 
 function parseIconSize(className: string, fill?: boolean): number {
   if (fill) return 18;
@@ -38,8 +44,7 @@ export function ActivityIcon({
   fill?: boolean;
 }) {
   const cls = className || 'w-3 h-3';
-  if (tone === 'error' || tone === 'warn') return <AlertCircle className={cls} />;
-  if (tone === 'info') return <Info className={cls} />;
+  if (tone === 'error' || tone === 'warn' || tone === 'info') return toneStatusIcon(tone, cls);
 
   const [imgFailed, setImgFailed] = useState(false);
   const visual = resolveActivityVisual({ type, tool, label, iconPlatform, iconUrl });

@@ -102,8 +102,12 @@ export function AccessControlWindow(props: { config: WindowConfig }) {
     if (!opts?.silent) setLoading(true);
     setError(null);
     try {
+      // The Approvals app is scoped to external-actor access control only —
+      // people reaching the user's Construct via Slack/email/Telegram. Inline
+      // risk approvals for the agent's own actions are handled as Approve/Deny
+      // cards in the spotlight chat, so we exclude 'tool_permission' here.
       const [q, l, s, b] = await Promise.all([
-        getApprovalQueue(),
+        getApprovalQueue(undefined, undefined, 'external_access'),
         getAccessList(),
         getAccessSettings(),
         getWorkspaceBindings(),

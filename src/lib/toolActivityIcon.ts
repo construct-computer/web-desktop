@@ -23,13 +23,20 @@ import type { ChatMessage } from '@/stores/agentStore';
 import { composioDisplayTool } from '@/stores/agentStoreUtils';
 import { getAppByWindowType, SYSTEM_WINDOW_METADATA } from '@/lib/appRegistry';
 import { routeToolToWindow } from '@/lib/toolWindowRouting';
-import iconMemory from '@/icons/memory.png';
-import iconCalendar from '@/icons/calendar.png';
-import iconAppStore from '@/icons/app-store.png';
-import iconGeneric from '@/icons/generic.png';
-import iconChat from '@/icons/chat.png';
-import iconAgents from '@/icons/agents.png';
-import iconCheckpoint from '@/icons/checkpoint.png';
+import {
+  iconAgents,
+  iconAutomator,
+  iconBooks,
+  iconChat,
+  iconCheckpoint,
+  iconClick,
+  iconDb,
+  iconGeneric,
+  iconKeyboard,
+  iconNotes,
+  iconSearch,
+  iconSysinfo,
+} from '@/icons';
 import { normalizePlatformSlug } from '@/lib/platforms';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
@@ -261,6 +268,23 @@ const DIRECT_TOOL_LUCIDE: Record<string, LucideIcon> = {
   interrupt_session: Users,
 };
 
+/**
+ * Lucide icons that now have a dedicated PNG. Keyed by the Lucide component that
+ * `lucideIconForTool` would have returned, so matching behavior is unchanged and
+ * only the rendered glyph is swapped. Icons absent here (e.g. ScrollText, Users,
+ * Bot) keep their Lucide rendering.
+ */
+const LUCIDE_PNG_OVERRIDES = new Map<LucideIcon, string>([
+  [BookOpen, iconBooks],
+  [ListTodo, iconNotes],
+  [ClipboardList, iconAutomator],
+  [Database, iconDb],
+  [Plug, iconSysinfo],
+  [Search, iconSearch],
+  [MousePointerClick, iconClick],
+  [Keyboard, iconKeyboard],
+]);
+
 /** Lucide icons for tools/labels with no branded PNG. Returns null when no mapping exists. */
 function lucideIconForTool(
   type?: ChatMessage['activityType'],
@@ -280,7 +304,7 @@ function lucideIconForTool(
   if (hasAny(text, [/composio|integration|registry_app|connecting app|app connection/])) return Plug;
   if (hasAny(text, [/document_guide|coding guide|local app guide|web design guide|_guide\b/])) return BookOpen;
   if (hasAny(text, [/arxiv|domain intel/])) return Search;
-  if (hasAny(text, [/database|stored output|activity history|activity stats/])) return Database;
+  if (hasAny(text, [/read_agent_output|database|stored output|activity history|activity stats/])) return Database;
   if (hasAny(text, [/notify|notification|alert/])) return Bell;
   if (hasAny(text, [/ask_user|asking:/])) return AtSign;
   if (hasAny(text, [/observation|clipboard/])) return ClipboardList;
@@ -491,9 +515,12 @@ export function resolveActivityVisual(input: {
     return imageVisual(iconChat, 'Chat');
   }
 
-  // 6. Lucide fallback for tools without a branded PNG.
+  // 6. Tools that now have dedicated PNGs (resolved via their Lucide mapping so
+  //    the matching logic stays identical — we only swap the rendered glyph).
   const lucide = lucideIconForTool(type, tool, label);
   if (lucide) {
+    const png = LUCIDE_PNG_OVERRIDES.get(lucide);
+    if (png) return imageVisual(png, tool || label || 'tool');
     return { kind: 'lucide', Icon: lucide };
   }
 

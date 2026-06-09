@@ -53,7 +53,6 @@ export function statusInfo(app: UnifiedApp): { label: string; tone: StatusTone }
     if (isComposio) return { label: 'Connected', tone: 'connected' };
     return { label: 'Added', tone: 'added' };
   }
-  if (app.requiresUpgrade) return { label: 'Upgrade', tone: 'upgrade' };
   return { label: 'Available', tone: 'available' };
 }
 

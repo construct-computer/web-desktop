@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Clock, ChevronDown, ChevronRight, CheckCircle2, XCircle, Loader2, Square, Check, Copy } from 'lucide-react';
 import { useAgentTrackerStore, type TrackedSubAgent } from '@/stores/agentTrackerStore';
 import { ActivityIconBadge, MemoryIconBadge } from './ActivityIconBadge';
+import logoPng from '@/assets/logo.png';
 import {
   memoryActivityTitle,
   memoryActivitySummary,
@@ -359,9 +360,10 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
           </span>
         )}
 
-        {/* Branded agent identity icon */}
+        {/* Subagent identity icon (Construct logo; manager keeps agents.png) */}
         <ActivityIconBadge
           type="delegation"
+          iconUrl={logoPng}
           label={agent.goal}
           failed={isFailed || isCancelled}
           size="sm"

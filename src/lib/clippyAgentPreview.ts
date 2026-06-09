@@ -42,7 +42,13 @@ export function isClippyOnlyAgentContent(content: string): boolean {
 
 /** User-visible assistant body with CLIPPY status line removed. */
 export function agentDisplayContent(content: string): string {
-  return stripClippyFromText(content).body;
+  const body = stripClippyFromText(content).body;
+  if (!body) return body;
+  // Defense-in-depth: drop any stray CLIPPY status line that wasn't the exact
+  // leading line (e.g. after markdown, mid-stream, or repeated in the body).
+  // The CLIPPY prefix is only meant for the Clippy widget, never the chat.
+  const cleaned = body.replace(/^[ \t]*CLIPPY:[^\n]*(?:\n|$)/gim, '');
+  return cleaned === body ? body : cleaned.replace(/^\s*\n+/, '');
 }
 
 /** Strip common markdown for compact Clippy previews. */

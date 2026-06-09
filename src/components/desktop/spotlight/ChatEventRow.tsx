@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, FileCode } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { iconFileCreate } from '@/icons';
 import { ActivityIconBadge, MemoryIconBadge } from './ActivityIconBadge';
 import type { ActivityTone } from './activityStyles';
 import type { ChatMessage } from '@/stores/agentStore';
@@ -333,7 +334,7 @@ function CodePreviewCard({ msg, compact = false }: { msg: ChatMessage; compact?:
     <div className={compact ? 'flex items-start gap-2.5 py-[2px]' : 'px-3 sm:px-6 py-2'}>
       <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 w-full">
         <div className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-blue-500/15 text-blue-200/80">
-          <FileCode className="w-3 h-3" />
+          <img src={iconFileCreate} alt="Code" className="w-3 h-3 object-contain shrink-0" />
         </div>
         <div className="min-w-0 flex-1 max-w-3xl rounded-lg border border-white/8 bg-black/10 overflow-hidden">
           <button

@@ -72,7 +72,7 @@ import iconChat from '@/icons/chat.png';
 import iconEmail from '@/icons/email.png';
 import iconSettings from '@/icons/settings.png';
 import iconMemory from '@/icons/memory.png';
-import iconAccessLogs from '@/icons/access-logs.png';
+import iconSearch from '@/icons/search.png';
 import iconAccessControl from '@/icons/access-control.png';
 import iconText from '@/icons/text.png';
 import iconTextEdit from '@/icons/textedit.png';
@@ -183,7 +183,7 @@ export function preloadAllAssets(): void {
       preloadImage(iconEmail),
       preloadImage(iconSettings),
       preloadImage(iconMemory),
-      preloadImage(iconAccessLogs),
+      preloadImage(iconSearch),
       preloadImage(iconAccessControl),
       preloadImage(iconText),
       preloadImage(iconTextEdit),

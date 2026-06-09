@@ -7,6 +7,7 @@ import { ClippyStatusNarrative } from '@/components/desktop/ClippyStatusNarrativ
 import { useClippyActivitySummary, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivityRow';
 import { ActivityIconBadge } from '@/components/desktop/spotlight/ActivityIconBadge';
+import logoPng from '@/assets/logo.png';
 import { Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { openSpotlightSession } from '@/lib/spotlightNav';
@@ -1020,8 +1021,7 @@ function HelperChip({ agent, compact }: {
         type={agent.activityType}
         tool={agent.tool}
         label={line}
-        iconPlatform={agent.iconPlatform}
-        iconUrl={agent.iconUrl}
+        iconUrl={logoPng}
         failed={isFailed}
         size="sm"
         surface="clippy"

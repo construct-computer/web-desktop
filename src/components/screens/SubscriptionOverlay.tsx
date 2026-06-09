@@ -7,34 +7,10 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import {
-  Loader2, ArrowRight, Check, Sparkles,
-  Globe, Terminal, Mail, Calendar, HardDrive,
-  Bot, Search, Code, Cpu, Shield,
-} from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import { useBillingStore } from '@/stores/billingStore';
 import constructLogo from '@/assets/logo.png';
-
-const STARTER_FEATURES = [
-  { icon: Bot, text: 'Fast AI model' },
-  { icon: Search, text: 'Web search & browser' },
-  { icon: Terminal, text: 'Terminal & code execution' },
-  { icon: Calendar, text: 'Calendar & reminders' },
-  { icon: Cpu, text: 'Knowledge & context' },
-  { icon: HardDrive, text: '1 GB cloud storage' },
-  { icon: Code, text: 'BYOK support' },
-];
-
-const PRO_FEATURES = [
-  { icon: Sparkles, text: 'Premium AI model', highlight: true },
-  { icon: Globe, text: 'Web search & browser', highlight: false },
-  { icon: Terminal, text: 'Terminal & code execution' },
-  { icon: Mail, text: 'Construct email inbox', highlight: true },
-  { icon: Calendar, text: 'Calendar & knowledge' },
-  { icon: HardDrive, text: '2 GB cloud storage' },
-  { icon: Bot, text: 'Background tasks & scheduled work', highlight: true },
-  { icon: Shield, text: 'Priority support' },
-];
+import { STARTER_FEATURES, PRO_FEATURES } from './subscriptionPlanCopy';
 
 export function SubscriptionOverlay() {
   const { startCheckout, switchPlan, subscription, fetchSubscription } = useBillingStore();

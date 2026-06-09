@@ -8,7 +8,7 @@ import {
   Search, Loader2, RefreshCw, ChevronLeft, X, Check,
   AlertCircle, ExternalLink, Upload, Wrench, Shield,
   Globe, Download, BadgeCheck, Sparkles,
-  Lock, Package, Link2, Server, Eye, Trash2, Pencil,
+  Package, Link2, Server, Eye, Trash2, Pencil,
 } from 'lucide-react';
 import type { WindowConfig } from '@/types';
 import * as api from '@/services/api';
@@ -484,7 +484,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const showComposioConnect = isComposio
       && !installed
       && !isNoAuthToolkit
-      && !detail.requiresUpgrade
       && detail.connectable !== false
       && !!detail.composioSlug;
 
@@ -538,16 +537,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
               </div>
             </div>
           </InfoCard>
-        )}
-
-        {detail.requiresUpgrade && (
-          <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
-            <Lock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">Upgrade to connect</p>
-              <p className="text-[11px] text-amber-500/70 mt-0.5">This integration requires a Starter or Pro plan. Upgrade to unlock access.</p>
-            </div>
-          </div>
         )}
 
         {isNoAuthToolkit && !installed && (
@@ -775,13 +764,6 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                       </button>
                     )}
                   </>
-                ) : detail.requiresUpgrade ? (
-                  <button
-                    onClick={() => window.location.href = '/?settings=subscription'}
-                    className="px-5 py-1.5 rounded-[8px] text-[12px] font-semibold bg-amber-500/15 text-amber-500 hover:bg-amber-500/20 transition-colors shadow-sm"
-                  >
-                    Upgrade to Starter
-                  </button>
                 ) : showComposioConnect ? (
                   <ComposioConnectHeaderSlot />
                 ) : getAction ? (

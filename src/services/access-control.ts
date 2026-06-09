@@ -119,10 +119,23 @@ export async function removeAccessEntry(id: string): Promise<void> {
 
 // ── Approval Queue API ──
 
-export async function getApprovalQueue(status?: string, platform?: string): Promise<ApprovalQueueEntry[]> {
+/**
+ * Fetch the approval queue. The queue ledger holds two kinds of requests:
+ *   - 'external_access' — people reaching the user's Construct via Slack/email/
+ *     Telegram. This is the ONLY kind the Access Control app should display.
+ *   - 'tool_permission' — inline risk approvals for the agent's own actions,
+ *     surfaced as Approve/Deny cards in the spotlight chat.
+ * Pass `approvalKind` to scope the result; omit it to fetch everything.
+ */
+export async function getApprovalQueue(
+  status?: string,
+  platform?: string,
+  approvalKind?: 'external_access' | 'tool_permission',
+): Promise<ApprovalQueueEntry[]> {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
   if (platform) params.set('platform', platform)
+  if (approvalKind) params.set('approvalKind', approvalKind)
   const qs = params.toString() ? `?${params}` : ''
   const data = await apiCall<{ requests: ApprovalQueueEntry[] }>(`/queue${qs}`)
   return data.requests

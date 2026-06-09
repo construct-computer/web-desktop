@@ -186,6 +186,19 @@ export interface AskUserData {
   fields?: AskUserField[];
   allowCustom: boolean;
   /**
+   * Risk approval card. When true, this card is an inline Approve/Deny prompt
+   * for a risky agent action (financial, destructive, external write, etc.).
+   * It submits the literal values 'allow'/'deny' so the store resolves the
+   * backend tool-permission waiter (not the generic ask_user question path).
+   */
+  permission?: boolean;
+  /** Risk category for the permission card (e.g. 'financial', 'destructive'). */
+  risk?: string;
+  /** Risk level for the permission card (e.g. 'high', 'critical'). */
+  riskLevel?: string;
+  /** Tool name the permission applies to (display only). */
+  tool?: string;
+  /**
    * Set after the user submits — map of questionText/fieldLabel → answer string.
    * For multiSelect questions the answer is a comma-joined list of option labels.
    */
@@ -3136,15 +3149,19 @@ export const useComputerStore = create<ComputerStore>()(
               }
               case 'research:checkpoint':
               case 'research:hard_ceiling': {
-                const reason = (payload.reason as string) || 'checkpoint';
+                let reason = typeof payload.reason === 'string' ? payload.reason : '';
+                if (!reason) {
+                  if (typeof payload.threshold === 'number') reason = `${payload.threshold} research calls`;
+                  else if (typeof payload.timeMs === 'number') reason = `${Math.round(payload.timeMs / 60000)} min`;
+                }
+                const isCeiling = ev.event_type === 'research:hard_ceiling';
+                const base = isCeiling ? 'Research ceiling reached' : 'Research checkpoint';
                 history.push({
                   role: 'activity',
-                  content: ev.event_type === 'research:hard_ceiling'
-                    ? `Research ceiling reached (${reason})`
-                    : `Research checkpoint (${reason})`,
+                  content: reason ? `${base} (${reason})` : base,
                   timestamp: new Date(eventTs),
                   activityType: 'tool',
-                  tool: ev.event_type === 'research:hard_ceiling' ? 'research_ceiling' : 'research_checkpoint',
+                  tool: isCeiling ? 'research_ceiling' : 'research_checkpoint',
                 });
                 break;
               }
@@ -7497,6 +7514,16 @@ export const useComputerStore = create<ComputerStore>()(
               platformAgents: pa,
             };
           });
+          // Desktop notification so the user notices the pause even if the
+          // spotlight chat is hidden — clicking Continue lives on the inline card.
+          useNotificationStore.getState().addNotification({
+            title: 'Max steps reached',
+            body: iterationLimit.canContinue
+              ? 'Construct paused to avoid running indefinitely. Continue or stop from the chat.'
+              : 'Construct reached the step limit for this run.',
+            source: 'Construct',
+            variant: 'info',
+          }, 20_000);
           break;
         }
 
@@ -8312,6 +8339,8 @@ export const useComputerStore = create<ComputerStore>()(
           const permToolCallId = event.data?.toolCallId as string || '';
           const permArgs = event.data?.args as Record<string, unknown> || {};
           const permReason = event.data?.reason as string || `${permTool} requires your approval`;
+          const permRisk = typeof event.data?.risk === 'string' ? event.data.risk as string : undefined;
+          const permRiskLevel = typeof event.data?.riskLevel === 'string' ? event.data.riskLevel as string : undefined;
           const permDetails = JSON.stringify(permArgs).slice(0, 200);
           const permMsg: ChatMessage = {
             role: 'agent',
@@ -8320,6 +8349,14 @@ export const useComputerStore = create<ComputerStore>()(
             askUser: {
               questionId: permToolCallId,
               question: permReason,
+              // Marks this as a risk-approval card so the store resolves the
+              // backend tool-permission waiter via 'allow'/'deny' (not the
+              // generic ask_user question path). Surfaced inline in the
+              // spotlight chat — never routed to the Access Control app.
+              permission: true,
+              tool: permTool,
+              risk: permRisk,
+              riskLevel: permRiskLevel,
               options: [
                 { label: 'Allow', value: 'allow', description: `Let Construct run ${permTool}` },
                 { label: 'Deny', value: 'deny', description: 'Block this action' },
@@ -8328,13 +8365,14 @@ export const useComputerStore = create<ComputerStore>()(
             },
           };
           if (isActiveSession) set({ chatMessages: appendMessage(get().chatMessages, permMsg) });
-          // Also show as toast so user doesn't miss it if chat is scrolled/hidden
+          // Also show as a desktop notification so the user doesn't miss it if
+          // the chat is scrolled or hidden.
           useNotificationStore.getState().addNotification({
-            title: 'Approval needed',
+            title: permRiskLevel ? `Approval needed (${permRiskLevel} risk)` : 'Approval needed',
             body: permReason,
-            source: 'Approvals',
+            source: 'Construct',
             variant: 'info',
-          }, 15_000);
+          }, 20_000);
           break;
         }
 

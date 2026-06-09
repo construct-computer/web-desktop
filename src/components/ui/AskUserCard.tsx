@@ -15,7 +15,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Check, MessageSquare } from 'lucide-react';
+import { Check, MessageSquare, ShieldAlert, ShieldCheck, ShieldX } from 'lucide-react';
 import {
   useComputerStore,
   type AskUserData,
@@ -25,6 +25,71 @@ import {
 
 interface AskUserCardProps {
   data: AskUserData;
+}
+
+/**
+ * Dedicated inline Approve/Deny card for risky agent actions. Submits the
+ * literal 'allow'/'deny' values so the store resolves the backend tool
+ * permission waiter (the generic MCQ path would submit option labels and only
+ * resolve an ask_user question, leaving the action blocked forever).
+ */
+function PermissionCard({ data }: { data: AskUserData }) {
+  const respondToAskUser = useComputerStore(s => s.respondToAskUser);
+  const decided = data.selectedValue === 'allow' || data.selectedValue === 'deny';
+  const allowed = data.selectedValue === 'allow';
+
+  const riskTone = data.riskLevel === 'critical' || data.riskLevel === 'high'
+    ? 'text-red-500'
+    : data.riskLevel === 'medium'
+      ? 'text-amber-500'
+      : 'text-[var(--color-accent)]';
+
+  if (decided) {
+    return (
+      <div className="mt-2 mb-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-bg-secondary)]/40">
+        {allowed
+          ? <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+          : <ShieldX className="w-4 h-4 text-red-500 shrink-0" />}
+        <span className="text-[12px] font-medium text-[var(--color-text)]">
+          {allowed ? 'Approved' : 'Denied'}
+          {data.tool ? ` — ${data.tool}` : ''}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 mb-1 rounded-xl border border-[var(--color-border)]/30 bg-[var(--color-bg-secondary)]/30 p-3">
+      <div className="flex items-start gap-2 mb-2.5">
+        <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${riskTone}`} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-[var(--color-text)]">Approval needed</span>
+            {data.riskLevel && (
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg)]/60 ${riskTone}`}>
+                {data.riskLevel}{data.risk ? ` · ${data.risk}` : ''}
+              </span>
+            )}
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 break-words">{data.question}</p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => respondToAskUser(data.questionId, 'allow')}
+          className="px-4 py-1.5 rounded-lg text-[12px] font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => respondToAskUser(data.questionId, 'deny')}
+          className="px-4 py-1.5 rounded-lg text-[12px] font-semibold bg-[var(--color-bg)]/60 text-[var(--color-text)] hover:bg-red-600 hover:text-white transition-colors"
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const OTHER_VALUE = '__other__';
@@ -63,6 +128,15 @@ function deriveQuestions(data: AskUserData): AskUserQuestion[] {
 }
 
 export function AskUserCard({ data }: AskUserCardProps) {
+  // Risk-approval cards get a dedicated Approve/Deny UI that resolves the
+  // backend tool-permission waiter. Everything else is a standard ask_user MCQ.
+  if (data.permission) {
+    return <PermissionCard data={data} />;
+  }
+  return <AskUserQuestionsCard data={data} />;
+}
+
+function AskUserQuestionsCard({ data }: AskUserCardProps) {
   const respondToAskUser = useComputerStore(s => s.respondToAskUser);
 
   const questions = useMemo(() => deriveQuestions(data), [data]);

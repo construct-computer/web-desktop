@@ -15,7 +15,7 @@ import iconCalendar from '@/icons/calendar.png';
 import iconEmail from '@/icons/email.png';
 import iconSettings from '@/icons/settings.png';
 import iconMemory from '@/icons/memory.png';
-import iconAccessLogs from '@/icons/access-logs.png';
+import iconSearch from '@/icons/search.png';
 import iconAccessControl from '@/icons/access-control.png';
 import iconText from '@/icons/text.png';
 import iconAppStore from '@/icons/app-store.png';
@@ -89,7 +89,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
     id: 'auditlogs',
     label: 'Activity',
     windowType: 'auditlogs',
-    icon: iconAccessLogs,
+    icon: iconSearch,
     category: 'system',
     keywords: ['audit', 'logs', 'history', 'activity', 'security'],
   },
@@ -173,7 +173,7 @@ export const MOBILE_HOME_APP_IDS = ['chat', 'files', 'calendar', 'email', 'app-r
 /** Shared fallback metadata for dynamic system windows. */
 export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string; icon: string }>> = {
   settings: { label: 'Settings', icon: iconSettings },
-  auditlogs: { label: 'Activity', icon: iconAccessLogs },
+  auditlogs: { label: 'Activity', icon: iconSearch },
   'access-control': { label: 'Approvals', icon: iconAccessControl },
   memory: { label: 'Knowledge', icon: iconMemory },
   editor: { label: 'Editor', icon: iconText },

@@ -44,6 +44,19 @@ export interface AskUserData {
   fields?: AskUserField[];
   allowCustom: boolean;
   /**
+   * Risk approval card. When true, this card is an inline Approve/Deny prompt
+   * for a risky agent action (financial, destructive, external write, etc.).
+   * It submits the literal values 'allow'/'deny' so the store resolves the
+   * backend tool-permission waiter (not the generic ask_user question path).
+   */
+  permission?: boolean;
+  /** Risk category for the permission card (e.g. 'financial', 'destructive'). */
+  risk?: string;
+  /** Risk level for the permission card (e.g. 'high', 'critical'). */
+  riskLevel?: string;
+  /** Tool name the permission applies to (display only). */
+  tool?: string;
+  /**
    * Set after the user submits — map of questionText/fieldLabel → answer string.
    * For multiSelect questions the answer is a comma-joined list of option labels.
    */

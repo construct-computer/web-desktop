@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { ListTodo } from 'lucide-react';
 import { enrichActivityIconFields, resolveActivityIconHints, resolveActivityVisual } from './toolActivityIcon';
 import iconAgents from '@/icons/agents.png';
 import iconBrowser from '@/icons/browser.png';
@@ -9,10 +8,15 @@ import iconFiles from '@/icons/files.png';
 import iconMemory from '@/icons/memory.png';
 import iconTerminal from '@/icons/terminal.png';
 import iconAppStore from '@/icons/app-store.png';
-import iconAccessLogs from '@/icons/access-logs.png';
+import iconSearch from '@/icons/search.png';
 import iconChat from '@/icons/chat.png';
 import iconGeneric from '@/icons/generic.png';
 import iconCheckpoint from '@/icons/checkpoint.png';
+import iconNotes from '@/icons/notes.png';
+import iconBooks from '@/icons/books.png';
+import iconAutomator from '@/icons/automator.png';
+import iconDb from '@/icons/db.png';
+import iconSysinfo from '@/icons/sysinfo.png';
 
 describe('toolActivityIcon branded PNG resolution', () => {
   it('uses calendar.png for native schedule tools', () => {
@@ -45,7 +49,7 @@ describe('toolActivityIcon branded PNG resolution', () => {
       kind: 'image', src: iconAppStore, alt: 'app-registry',
     });
     expect(resolveActivityVisual({ tool: 'audit_log', type: 'tool' })).toEqual({
-      kind: 'image', src: iconAccessLogs, alt: 'auditlogs',
+      kind: 'image', src: iconSearch, alt: 'auditlogs',
     });
     expect(resolveActivityVisual({ tool: 'ask_user', type: 'tool' })).toEqual({
       kind: 'image', src: iconChat, alt: 'Chat',
@@ -92,9 +96,21 @@ describe('toolActivityIcon branded PNG resolution', () => {
     });
   });
 
-  it('uses Lucide icons for task tools without branded PNGs', () => {
+  it('uses dedicated PNGs for tools that previously used Lucide icons', () => {
     expect(resolveActivityVisual({ tool: 'task_create', type: 'tool' })).toEqual({
-      kind: 'lucide', Icon: ListTodo,
+      kind: 'image', src: iconNotes, alt: 'task_create',
+    });
+    expect(resolveActivityVisual({ tool: 'document_guide', type: 'tool' })).toEqual({
+      kind: 'image', src: iconBooks, alt: 'document_guide',
+    });
+    expect(resolveActivityVisual({ tool: 'update_plan', type: 'tool' })).toEqual({
+      kind: 'image', src: iconAutomator, alt: 'update_plan',
+    });
+    expect(resolveActivityVisual({ tool: 'read_agent_output', type: 'tool' })).toEqual({
+      kind: 'image', src: iconDb, alt: 'read_agent_output',
+    });
+    expect(resolveActivityVisual({ tool: 'composio', type: 'tool' })).toEqual({
+      kind: 'image', src: iconSysinfo, alt: 'composio',
     });
   });
 
