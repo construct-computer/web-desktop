@@ -1,7 +1,11 @@
 import { STORAGE_KEYS } from '@/lib/constants';
+import { log } from '@/lib/logger';
+import { reportClientError } from '@/lib/observability';
 import * as api from '@/services/api';
 import { registerForNativePushNotifications, clearDeliveredNativeNotifications } from './notifications';
 import { isNativePlatform } from './platform';
+
+const logger = log('PushRegistration');
 
 function getOrCreateDeviceId(): string {
   const existing = localStorage.getItem(STORAGE_KEYS.deviceId)
@@ -42,7 +46,12 @@ export async function syncNativePushRegistration(): Promise<void> {
       localStorage.setItem(STORAGE_KEYS.nativePushToken, registration.token);
     }
   } catch (error) {
-    console.warn('[native] push registration failed:', error);
+    logger.warn('Push registration failed', { error });
+    reportClientError({
+      source: 'PushRegistration',
+      message: 'Native push registration failed',
+      error,
+    });
   }
 }
 
@@ -54,7 +63,7 @@ export async function unregisterCurrentNativePushToken(): Promise<void> {
 
   if (token) {
     await api.unregisterNativePushToken(token).catch((error) => {
-      console.warn('[native] push unregister failed:', error);
+      logger.warn('Push unregister failed', { error });
     });
   }
   await clearDeliveredNativeNotifications().catch(() => undefined);

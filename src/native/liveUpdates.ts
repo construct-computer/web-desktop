@@ -1,6 +1,9 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/config';
+import { log } from '@/lib/logger';
 import { getCurrentDeviceId } from './pushRegistration';
 import { getNativePlatform, isNativePlatform } from './platform';
+
+const logger = log('LiveUpdates');
 
 const DEFAULT_OTA_CHANNEL = import.meta.env.VITE_OTA_CHANNEL || 'production';
 const OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -87,7 +90,7 @@ export async function checkForLiveUpdate(force = false): Promise<void> {
 
     await CapacitorUpdater.next({ id: bundle.id });
   } catch (error) {
-    console.warn('[native] live update check failed', error);
+    logger.warn('Live update check failed', { error });
   } finally {
     checking = false;
   }
@@ -104,7 +107,7 @@ export async function installLiveUpdates(): Promise<void> {
     ]);
 
     await CapacitorUpdater.notifyAppReady().catch((error) => {
-      console.warn('[native] live update ready notification failed', error);
+      logger.warn('Live update ready notification failed', { error });
     });
 
     const deviceId = getCurrentDeviceId();
@@ -122,6 +125,6 @@ export async function installLiveUpdates(): Promise<void> {
       void checkForLiveUpdate();
     });
   } catch (error) {
-    console.warn('[native] live updates unavailable', error);
+    logger.warn('Live updates unavailable', { error });
   }
 }

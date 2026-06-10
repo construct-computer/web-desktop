@@ -3,6 +3,11 @@
  * Connects to Scribe Realtime v2 for streaming transcription.
  */
 
+import { log } from '@/lib/logger';
+import { reportClientError } from '@/lib/observability';
+
+const logger = log('ElevenLabsSTT');
+
 export interface ElevenLabsSTTCallbacks {
   onPartialTranscript: (text: string) => void;
   onCommittedTranscript: (text: string) => void;
@@ -47,32 +52,36 @@ export class ElevenLabsSTTClient {
     }
 
     const url = `${WS_BASE}?${params.toString()}`;
-    console.log('[elevenlabs-stt] Connecting:', url.replace(/token=[^&]+/, 'token=***'));
+    logger.info('Connecting', { url: url.replace(/token=[^&]+/, 'token=***') });
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      console.log('[elevenlabs-stt] WebSocket opened');
+      logger.info('WebSocket opened');
     };
 
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data as string);
-        console.log('[elevenlabs-stt] Received:', msg.message_type, msg.text ? `"${msg.text}"` : '');
+        logger.info('Received message', { type: msg.message_type, text: msg.text || undefined });
         this.handleMessage(msg);
       } catch {
-        console.warn('[elevenlabs-stt] Failed to parse message:', event.data);
+        logger.warn('Failed to parse message', { data: event.data });
       }
     };
 
     this.ws.onerror = (e) => {
-      console.error('[elevenlabs-stt] WebSocket error:', e);
+      logger.error('WebSocket error', { event: e });
       if (!this.closed) {
+        reportClientError({
+          source: 'ElevenLabsSTT',
+          message: 'Connection to transcription service failed',
+        });
         this.callbacks.onError('Connection to transcription service failed');
       }
     };
 
     this.ws.onclose = (e) => {
-      console.log('[elevenlabs-stt] WebSocket closed:', e.code, e.reason);
+      logger.info('WebSocket closed', { code: e.code, reason: e.reason });
       if (!this.closed) {
         this.callbacks.onClose();
       }
@@ -104,7 +113,7 @@ export class ElevenLabsSTTClient {
    */
   finalize(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('[elevenlabs-stt] Finalizing — sending commit');
+      logger.info('Finalizing — sending commit');
       this.sendChunk('', true);
     }
   }
@@ -129,7 +138,7 @@ export class ElevenLabsSTTClient {
 
     switch (type) {
       case 'session_started':
-        console.log('[elevenlabs-stt] Session started, flushing', this.pendingChunks.length, 'buffered chunks');
+        logger.info('Session started, flushing buffered chunks', { bufferedChunks: this.pendingChunks.length });
         this.sessionStarted = true;
         this.flushPendingChunks();
         this.callbacks.onSessionStarted();
@@ -151,15 +160,20 @@ export class ElevenLabsSTTClient {
       case 'input_error':
       case 'chunk_size_exceeded':
       case 'transcriber_error':
-      case 'error':
-        console.error('[elevenlabs-stt] Error:', type, msg.error || msg.description);
-        this.callbacks.onError(
-          (msg.error as string) || (msg.description as string) || `STT error: ${type}`,
-        );
+      case 'error': {
+        const detail = (msg.error as string) || (msg.description as string) || `STT error: ${type}`;
+        logger.error('STT error', { type, detail });
+        reportClientError({
+          source: 'ElevenLabsSTT',
+          message: `STT error: ${type}`,
+          context: { type, detail },
+        });
+        this.callbacks.onError(detail);
         break;
+      }
 
       default:
-        console.log('[elevenlabs-stt] Unknown message type:', type);
+        logger.info('Unknown message type', { type });
     }
   }
 

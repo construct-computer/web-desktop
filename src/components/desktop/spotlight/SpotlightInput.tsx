@@ -12,6 +12,7 @@ import { useSound } from '@/hooks/useSound';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportBottomInset';
 import { hapticLight } from '@/lib/haptics';
+import { log } from '@/lib/logger';
 import { uploadAttachment } from '@/lib/uploadAttachment';
 import { listFiles, downloadContainerFile, getLocalAppSpec, type ConstructAppSpec, type ConstructComponentNode, type LocalApp } from '@/services/api';
 import { VoiceButton } from '@/components/ui/VoiceButton';
@@ -29,6 +30,8 @@ import {
   splitComponentMentionMarkers,
   stripComponentMentionMarkers,
 } from '@/lib/componentMentionMarkup';
+
+const logger = log('SpotlightInput');
 
 const DRAFT_KEY_PREFIX = 'construct:spotlight-draft:';
 const INPUT_HISTORY_PREFIX = 'construct:spotlight-input-history:';
@@ -697,7 +700,7 @@ export function SpotlightInput() {
         setUploadError(`Too large (15 MB max): ${skipped.join(', ')}`);
       }
     } catch (err) {
-      console.error('Upload failed:', err);
+      logger.error('Upload failed', { error: err });
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);

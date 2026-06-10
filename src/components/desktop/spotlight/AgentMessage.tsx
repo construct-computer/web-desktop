@@ -6,6 +6,7 @@ import { AskUserCard } from '@/components/ui/AskUserCard';
 import { ReasoningBlock } from '@/components/ui/ReasoningBlock';
 import { MarkdownRenderer } from '@/components/ui';
 import { downloadContainerFile } from '@/services/api';
+import { log } from '@/lib/logger';
 import { useComputerStore } from '@/stores/agentStore';
 import constructStatic from '@/assets/construct/loader-static.png';
 import { ChatEventRow } from './ChatEventRow';
@@ -13,6 +14,8 @@ import type { ChatMessage } from '@/stores/agentStore';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, workspaceDisplayPath } from '@/lib/workspacePaths';
 import { StepLimitCard } from './StepLimitCard';
 import { agentDisplayContent } from '@/lib/clippyAgentPreview';
+
+const logger = log('AgentMessage');
 
 export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: React.ReactNode }) {
   const isError = msg.isError;
@@ -115,7 +118,7 @@ function AttachmentChip({ filePath }: { filePath: string }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Download failed:', err);
+      logger.error('Download failed', { error: err, filePath });
     } finally {
       setDownloading(false);
     }

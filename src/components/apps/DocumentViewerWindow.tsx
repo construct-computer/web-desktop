@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { retainAgentOpenedWindow, useComputerStore } from '@/stores/agentStore';
 import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, getFileMeta, previewContainerFile, writeFile, type FileMetaResponse } from '@/services/api';
 import { getDocumentType, isTextFile } from '@/lib/utils';
+import { log } from '@/lib/logger';
 import { fileNameFromWorkspacePath } from '@/lib/workspacePaths';
 import {
   getLanguageLabel,
@@ -31,6 +32,8 @@ import {
 } from '@tanstack/react-table';
 
 // ── Types ────────────────────────────────────────────────────────────────
+
+const logger = log('DocumentViewer');
 
 type DocType = ViewerDocType;
 
@@ -962,7 +965,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             });
             setPptxSlides(slidesHtml.length > 0 ? slidesHtml : ['<p style="color:#888;text-align:center;padding:40px;">No slides found in presentation.</p>']);
           } catch (err) {
-            console.error('PPTX parse error:', err);
+            logger.error('PPTX parse error', { error: err });
             setPptxSlides(['<p style="color:#888;text-align:center;padding:40px;">Could not parse PowerPoint file. Use the download button to open externally.</p>']);
           }
           break;

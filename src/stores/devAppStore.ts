@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { agentWS } from '@/services/websocket';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
+import { log } from '@/lib/logger';
+
+const logger = log('DevAppStore');
 
 export interface DevAppTool {
   name: string;
@@ -75,7 +78,7 @@ async function fetchCallToken(appId: string): Promise<CallTokenCache | null> {
       // 503 (gateway_disabled) is expected when CALL_TOKEN_SECRET isn't
       // set — fall back to calling without headers so the app still
       // loads; it just won't be able to use ctx.construct.*.
-      console.warn(`[devApp] mint-call-token returned ${res.status}; ctx.construct will be unavailable.`);
+      logger.warn('mint-call-token returned non-OK; ctx.construct will be unavailable', { status: res.status });
       return null;
     }
     const data = (await res.json()) as { token: string; gatewayUrl: string; expiresAt: number };
@@ -87,7 +90,7 @@ async function fetchCallToken(appId: string): Promise<CallTokenCache | null> {
     tokenCache.set(appId, entry);
     return entry;
   } catch (err) {
-    console.warn('[devApp] mint-call-token failed:', err);
+    logger.warn('mint-call-token failed', { error: err });
     return null;
   }
 }

@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { AudioCaptureService } from '@/services/audioCapture';
 import { ElevenLabsSTTClient } from '@/services/elevenlabsSTT';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
+import { log } from '@/lib/logger';
+
+const logger = log('VoiceStore');
 
 export type STTState = 'idle' | 'requesting' | 'recording' | 'processing';
 
@@ -105,7 +108,7 @@ export const useVoiceStore = create<VoiceStore>()((set, get) => ({
           if (accumulatedTranscript && get().sttState === 'recording') {
             clearSilenceTimer();
             silenceTimer = setTimeout(() => {
-              console.log('[voice] Auto-stopping after silence');
+              logger.info('Auto-stopping after silence');
               get().stopRecording();
             }, SILENCE_AUTO_STOP_MS);
           }

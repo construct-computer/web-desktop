@@ -4,6 +4,11 @@
  * Resamples from the browser's native sample rate if needed.
  */
 
+import { log } from '@/lib/logger';
+import { reportClientError } from '@/lib/observability';
+
+const logger = log('AudioCapture');
+
 export type AudioCaptureState = 'idle' | 'requesting' | 'recording' | 'stopped';
 
 export interface AudioCaptureCallbacks {
@@ -56,7 +61,7 @@ export class AudioCaptureService {
       // Don't force sample rate — let browser use native rate, we'll resample
       this.audioContext = new AudioContext();
       this.nativeSampleRate = this.audioContext.sampleRate;
-      console.log('[audio-capture] Native sample rate:', this.nativeSampleRate);
+      logger.info('Native sample rate', { sampleRate: this.nativeSampleRate });
 
       this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
 
@@ -84,9 +89,14 @@ export class AudioCaptureService {
       this.intervalId = setInterval(() => this.flushBuffer(), CHUNK_INTERVAL_MS);
 
       this.setState('recording');
-      console.log('[audio-capture] Recording started');
+      logger.info('Recording started');
     } catch (err) {
-      console.error('[audio-capture] Init failed:', err);
+      logger.error('Init failed', { error: err });
+      reportClientError({
+        source: 'AudioCapture',
+        message: 'Failed to initialize audio capture',
+        error: err,
+      });
       this.cleanup();
       this.callbacks.onError('Failed to initialize audio capture');
       this.setState('idle');
@@ -94,7 +104,7 @@ export class AudioCaptureService {
   }
 
   stop(): void {
-    console.log('[audio-capture] Stopping');
+    logger.info('Stopping');
     this.flushBuffer();
     this.cleanup();
     this.setState('stopped');

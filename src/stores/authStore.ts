@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as api from '@/services/api';
 import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
+import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
 import { clearSentryUser, identifySentryUser } from '@/lib/sentry';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
@@ -14,6 +15,8 @@ import { setUserWallpaper } from '@/lib/wallpaperPrefs';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
+
+const logger = log('AuthStore');
 
 /**
  * Clear all user-specific data from localStorage and sessionStorage
@@ -29,10 +32,10 @@ function clearStaleUserData(newUserId: string): void {
     return;
   }
 
-  console.log(
+  logger.info(
     previousUserId
-      ? `[auth] User changed (${previousUserId} → ${newUserId}), clearing stale data`
-      : `[auth] First login as ${newUserId}, clearing any stale data`
+      ? `User changed (${previousUserId} → ${newUserId}), clearing stale data`
+      : `First login as ${newUserId}, clearing any stale data`
   );
 
   // Clear all sessionStorage (wizard progress, etc.)
@@ -165,7 +168,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     void openNativeAuthUrl(url).then((openedNative) => {
       if (!openedNative) window.location.href = url;
     }).catch((error) => {
-      console.warn('[auth] native Google auth open failed, falling back to window navigation:', error);
+      logger.warn('Native Google auth open failed, falling back to window navigation', { error });
       window.location.href = url;
     });
   },
@@ -257,7 +260,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Show detailed error in staging for debugging
       if (oauthDetail) {
         errorMsg += `\n\nDebug: ${oauthDetail}`;
-        console.error('[Auth] OAuth error detail:', oauthDetail);
+        logger.error('OAuth error detail', { detail: oauthDetail });
       }
 
       analytics.loginFailed('google', oauthError);
