@@ -207,6 +207,9 @@ export function AuditLogsWindow({ config: _config }: { config: WindowConfig }) {
           setEntries(result.data.entries);
         }
         setTotal(result.data.total);
+      } else if (result.status === 404 || (result.error && /not found/i.test(result.error))) {
+        if (!append) setEntries([]);
+        setTotal(0);
       } else {
         setError(result.error || 'Failed to load audit logs');
       }
