@@ -1661,6 +1661,29 @@ let sessionsRequestSeq = 0;
 const SESSION_LIST_STALE_MS = 10_000;
 /** In-memory cache of chat messages per session for instant switching. */
 const sessionMessageCache = new Map<string, ChatMessage[]>();
+
+const MAX_CACHED_SESSIONS = 50;
+
+function cacheSessionMessages(key: string, messages: ChatMessage[]) {
+  sessionMessageCache.set(key, messages);
+  while (sessionMessageCache.size > MAX_CACHED_SESSIONS) {
+    const oldest = sessionMessageCache.keys().next().value;
+    if (oldest) sessionMessageCache.delete(oldest);
+  }
+}
+
+function cleanZombieActivities(messages: ChatMessage[]): ChatMessage[] {
+  let changed = false;
+  const cleaned = messages.map((msg) => {
+    if (msg.role === 'activity' && msg.activityStatus === 'running') {
+      changed = true;
+      return { ...msg, activityStatus: 'failed' as const };
+    }
+    return msg;
+  });
+  return changed ? cleaned : messages;
+}
+
 /** Guard: collapse concurrent instance provisioning/refresh fetches. */
 let fetchComputerPromise: Promise<void> | null = null;
 /** Tracks which instance already has its desktop runtime bootstrap installed. */
@@ -2567,6 +2590,13 @@ export const useComputerStore = create<ComputerStore>()(
       canvasClearFns.clear();
       tabBlobCache.clear();
 
+      // Clear pending auto-close timers
+      for (const timer of autoCloseTimers.values()) {
+        clearTimeout(timer);
+      }
+      autoCloseTimers.clear();
+      autoOpenedWindowIds.clear();
+
       set({
         browserState: { url: '', title: '', screenshot: null, isLoading: false, connected: false, tabs: [], activeTabId: null, browserStreams: {}, browserSessions: {}, activeBrowserSessionId: null, daemonActiveTabId: null, subagentTabMap: {}, subagentAnnotations: {}, tabsWithFrames: {} },
         agentConnected: false,
@@ -2719,7 +2749,7 @@ export const useComputerStore = create<ComputerStore>()(
             if (!cacheOnly) {
               if (!keepLiveMessages) {
                 set({ chatMessages: [], historyLoadError: null });
-                sessionMessageCache.set(requestedSessionKey, []);
+                cacheSessionMessages(requestedSessionKey, []);
               } else {
                 set({ historyLoadError: null });
               }
@@ -3317,7 +3347,7 @@ export const useComputerStore = create<ComputerStore>()(
           );
         }
         if (!cacheOnly && compactedHistory.length === 0 && liveMessageCount > 0) {
-          sessionMessageCache.set(requestedSessionKey, liveMessagesNow);
+          cacheSessionMessages(requestedSessionKey, liveMessagesNow);
           scheduleHistoryFallbackReload(
             requestedSessionKey,
             () => get().loadChatHistory(),
@@ -3326,7 +3356,7 @@ export const useComputerStore = create<ComputerStore>()(
           return;
         }
         if (!cacheOnly && compactedHistory.length > 0 && liveMessageCount > compactedHistory.length) {
-          sessionMessageCache.set(requestedSessionKey, liveMessagesNow);
+          cacheSessionMessages(requestedSessionKey, liveMessagesNow);
           scheduleHistoryFallbackReload(
             requestedSessionKey,
             () => get().loadChatHistory(),
@@ -3336,7 +3366,7 @@ export const useComputerStore = create<ComputerStore>()(
         }
         markHistorySettled(requestedSessionKey);
         historyRetryAttempted.delete(requestedSessionKey);
-        sessionMessageCache.set(requestedSessionKey, compactedHistory);
+        cacheSessionMessages(requestedSessionKey, compactedHistory);
         if (instanceId) {
           clearInflightAssistantStorage(instanceId, requestedSessionKey);
         }
@@ -4096,11 +4126,11 @@ export const useComputerStore = create<ComputerStore>()(
             };
             if (activeKeyChanged) {
               if (state.activeSessionKey && state.chatMessages.length > 0) {
-                sessionMessageCache.set(state.activeSessionKey, state.chatMessages);
+                cacheSessionMessages(state.activeSessionKey, state.chatMessages);
               }
               invalidateHistoryHydration(activeKey);
-              const cached = sessionMessageCache.get(activeKey);
-              updates.chatMessages = cached || [];
+              const cached = cleanZombieActivities(sessionMessageCache.get(activeKey) || []);
+              updates.chatMessages = cached;
               updates.historyLoadError = null;
               updates.sessionSwitching = !(cached && cached.length > 0)
                 && !historyHydratedKeys.has(activeKey);
@@ -4176,7 +4206,7 @@ export const useComputerStore = create<ComputerStore>()(
             };
           });
           markHistorySettled(session.key);
-          sessionMessageCache.set(session.key, []);
+          cacheSessionMessages(session.key, []);
           await get().loadSessions(true, { preserveActiveKey: session.key });
         }
       } catch (err) {
@@ -4193,7 +4223,7 @@ export const useComputerStore = create<ComputerStore>()(
 
       // Cache current session's messages before switching
       if (!isRefresh && activeSessionKey && chatMessages.length > 0) {
-        sessionMessageCache.set(activeSessionKey, chatMessages);
+        cacheSessionMessages(activeSessionKey, chatMessages);
       }
 
       try {
@@ -4208,13 +4238,13 @@ export const useComputerStore = create<ComputerStore>()(
         const result = await api.activateAgentSession(instanceId, key);
         if (result.success) {
           const isTargetRunning = get().runningSessions.has(key);
-          const cached = sessionMessageCache.get(key);
-          const hasHydratedCache = cached && cached.length > 0;
+          const cached = cleanZombieActivities(sessionMessageCache.get(key) || []);
+          const hasHydratedCache = cached.length > 0;
 
           if (!isRefresh) {
             set(state => ({
               activeSessionKey: key,
-              chatMessages: cached || [],
+              chatMessages: cached,
               replyingTo: null,
               agentThinking: null,
               agentRunning: isTargetRunning,
@@ -4819,7 +4849,7 @@ export const useComputerStore = create<ComputerStore>()(
             // Background session — buffer into its per-session cache so
             // tool-call / activity bubbles don't vanish on switch-back.
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, appendMessage(cached, msg));
+            cacheSessionMessages(eventSessionKey, appendMessage(cached, msg));
           }
           return updates;
         });
@@ -4846,7 +4876,7 @@ export const useComputerStore = create<ComputerStore>()(
             updates.chatMessages = patcher(state.chatMessages, opts);
           } else if (eventSessionKey && eventSessionKey !== 'default') {
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, patcher(cached, opts));
+            cacheSessionMessages(eventSessionKey, patcher(cached, opts));
           }
           return Object.keys(updates).length > 0 ? updates : state;
         });
@@ -4907,7 +4937,7 @@ export const useComputerStore = create<ComputerStore>()(
             updates.chatMessages = next;
           } else if (eventSessionKey && eventSessionKey !== 'default') {
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, patch(cached));
+            cacheSessionMessages(eventSessionKey, patch(cached));
           }
           return updates;
         });
@@ -4932,7 +4962,7 @@ export const useComputerStore = create<ComputerStore>()(
             updates.chatMessages = patcher(state.chatMessages);
           } else if (eventSessionKey && eventSessionKey !== 'default') {
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, patcher(cached));
+            cacheSessionMessages(eventSessionKey, patcher(cached));
           }
           return Object.keys(updates).length > 0 ? updates : state;
         });
@@ -5062,7 +5092,7 @@ export const useComputerStore = create<ComputerStore>()(
             updates.chatMessages = updateList(state.chatMessages);
           } else if (eventSessionKey && eventSessionKey !== 'default') {
             const cached = sessionMessageCache.get(eventSessionKey) || [];
-            sessionMessageCache.set(eventSessionKey, updateList(cached));
+            cacheSessionMessages(eventSessionKey, updateList(cached));
           }
           return updates;
         });
@@ -5740,7 +5770,7 @@ export const useComputerStore = create<ComputerStore>()(
               updates.chatMessages = mergeStreamingStart(state.chatMessages);
             } else if (eventSessionKey && eventSessionKey !== 'default') {
               const cached = sessionMessageCache.get(eventSessionKey) || [];
-              sessionMessageCache.set(eventSessionKey, mergeStreamingStart(cached));
+              cacheSessionMessages(eventSessionKey, mergeStreamingStart(cached));
             }
             return Object.keys(updates).length > 0 ? updates : state;
           });
@@ -6262,7 +6292,7 @@ export const useComputerStore = create<ComputerStore>()(
           });
           const activeKey = get().activeSessionKey;
           if (activeKey && sessionMessageCache.has(activeKey)) {
-            sessionMessageCache.set(activeKey, removeIncidentNotices(sessionMessageCache.get(activeKey) || [], ids));
+            cacheSessionMessages(activeKey, removeIncidentNotices(sessionMessageCache.get(activeKey) || [], ids));
           }
           break;
         }
@@ -6991,7 +7021,7 @@ export const useComputerStore = create<ComputerStore>()(
               set(state => ({ chatMessages: appendMessage(state.chatMessages, approvalNotice) }));
             } else {
               const cached = sessionMessageCache.get(approvalSessionKey) || [];
-              sessionMessageCache.set(approvalSessionKey, appendMessage(cached, approvalNotice));
+              cacheSessionMessages(approvalSessionKey, appendMessage(cached, approvalNotice));
             }
           }
           useNotificationStore.getState().addNotification(

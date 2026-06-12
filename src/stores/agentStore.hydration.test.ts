@@ -35,7 +35,7 @@ describe('hydration loop prevention contract', () => {
 
   it('marks new chats settled immediately on createSession', () => {
     expect(agentStoreSource).toMatch(/createSession:[\s\S]*markHistorySettled\(session\.key\)/);
-    expect(agentStoreSource).toMatch(/sessionMessageCache\.set\(session\.key, \[\]\)/);
+    expect(agentStoreSource).toMatch(/cacheSessionMessages\(session\.key, \[\]\)/);
   });
 
   it('fallback reload is one-shot and bounded, not infinite', () => {

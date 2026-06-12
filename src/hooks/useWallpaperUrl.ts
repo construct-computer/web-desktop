@@ -182,6 +182,7 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
     }
 
     let cancelled = false;
+    let objectUrl: string | null = null;
 
     const resolve = async () => {
       const cached = await resolveCustomWallpaperUrl(targetId, ctx.cacheUserId, ctx.isLoggedOut);
@@ -244,7 +245,9 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
         }
 
         if (!cancelled) {
-          setUrl(URL.createObjectURL(blob));
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = URL.createObjectURL(blob);
+          setUrl(objectUrl);
           setLoading(false);
         }
       } catch {
@@ -259,6 +262,10 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
     void resolve();
     return () => {
       cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
     };
   }, [displayId, wallpaperRev, instanceId, isAuthenticated]);
 

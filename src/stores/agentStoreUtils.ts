@@ -6,8 +6,6 @@
  */
 
 import type { ChatMessage } from './agentStoreTypes';
-import type { WindowType } from '@/types';
-import { routeToolToWindow } from '../lib/toolWindowRouting';
 import { readerMarkdownSnippet } from '../lib/readerMarkdownNormalize';
 import { detectStructuredContent } from '../lib/structuredData';
 import { useWindowStore } from './windowStore';
@@ -122,22 +120,6 @@ export function findWindowForBrowser(subagentId: string): string | undefined {
 export function findWindowForSubagent(subagentId: string): string | undefined {
   const windows = useWindowStore.getState().windows;
   return windows.find(w => w.type === 'browser' && w.metadata?.subagentId === subagentId)?.id;
-}
-
-// ── Chat message helpers ───────────────────────────────────────────────────
-
-import { MAX_CHAT_MESSAGES } from '@/lib/config';
-
-export function appendMessage(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
-  // Deduplicate consecutive identical error messages (e.g. abort errors from multiple sources)
-  if (msg.isError && messages.length > 0) {
-    const last = messages[messages.length - 1];
-    if (last.isError && last.content === msg.content) {
-      return messages;
-    }
-  }
-  const next = [...messages, msg];
-  return next.length > MAX_CHAT_MESSAGES ? next.slice(next.length - MAX_CHAT_MESSAGES) : next;
 }
 
 // ── Tool description mapping ───────────────────────────────────────────────
@@ -715,12 +697,8 @@ export function titleCaseToolkit(name: string): string {
 }
 
 // ── Tool-to-window mapping ─────────────────────────────────────────────────
-// Canonical routing lives in lib/toolWindowRouting. These thin wrappers are
-// re-exported for backward compatibility so callers stay in sync.
-
-export function toolToWindowType(tool: string, params?: Record<string, unknown>): WindowType | null {
-  return routeToolToWindow(tool, params)?.type ?? null;
-}
+// Canonical routing lives in lib/toolWindowRouting. This thin re-export is
+// provided for backward compatibility so callers stay in sync.
 
 export { desktopActionToWindowType } from '../lib/toolWindowRouting';
 
