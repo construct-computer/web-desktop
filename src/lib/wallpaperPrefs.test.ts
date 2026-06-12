@@ -17,10 +17,10 @@ describe('wallpaperPrefs', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns construct when user has no saved preference and no global settings', async () => {
+  it('returns fuji when user has no saved preference and no global settings', async () => {
     installLocalStorage();
     const { getUserWallpaper } = await import('./wallpaperPrefs');
-    expect(getUserWallpaper('user-1')).toBe('construct');
+    expect(getUserWallpaper('user-1')).toBe('fuji');
   });
 
   it('seeds from global settings on first read', async () => {

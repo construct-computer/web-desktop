@@ -33,8 +33,17 @@ declare module 'papaparse' {
 
   export function parse<T = unknown>(input: string, config?: ParseConfig<T>): ParseResult<T>;
 
+  export interface UnparseConfig {
+    delimiter?: string;
+    newline?: string;
+    quotes?: boolean;
+  }
+
+  export function unparse(data: unknown[] | unknown[][], config?: UnparseConfig): string;
+
   const Papa: {
     parse: typeof parse;
+    unparse: typeof unparse;
   };
 
   export default Papa;

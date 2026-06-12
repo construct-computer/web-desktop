@@ -865,6 +865,98 @@ export function patchToolActivitySuccess<T extends {
   ));
 }
 
+type StreamingToolActivity = {
+  role: string;
+  tool?: string;
+  toolCallId?: string;
+  toolCallIndex?: number;
+  activityStatus?: string;
+  activityType?: ChatMessage['activityType'];
+  content: string;
+  streamingArgsPreview?: string;
+  iconPlatform?: string;
+  iconUrl?: string;
+};
+
+export function upsertStreamingToolCallDelta<T extends StreamingToolActivity>(
+  messages: T[],
+  opts: {
+    index: number;
+    name: string;
+    preview: string;
+    content: string;
+    activityType?: ChatMessage['activityType'];
+  },
+): T[] {
+  const { index, name, preview, content, activityType } = opts;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') continue;
+    if (msg.toolCallIndex === index && msg.activityStatus === 'running') {
+      return messages.map((m, idx) => (
+        idx === i
+          ? {
+            ...m,
+            tool: name,
+            content,
+            activityType: activityType || m.activityType,
+            streamingArgsPreview: preview,
+          }
+          : m
+      ));
+    }
+  }
+  return [...messages, {
+    role: 'activity',
+    content,
+    timestamp: new Date(),
+    tool: name,
+    activityType: activityType || 'tool',
+    activityStatus: 'running',
+    toolCallIndex: index,
+    streamingArgsPreview: preview,
+  } as unknown as T];
+}
+
+export function attachStreamingToolCallStart<T extends StreamingToolActivity>(
+  messages: T[],
+  opts: {
+    tool: string;
+    toolCallId?: string;
+    content: string;
+    activityType?: ChatMessage['activityType'];
+    iconPlatform?: string;
+    iconUrl?: string;
+  },
+): { messages: T[]; merged: boolean } {
+  const { tool, toolCallId, content, activityType, iconPlatform, iconUrl } = opts;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'activity') continue;
+    if (msg.activityStatus !== 'running') continue;
+    if (msg.toolCallId) continue;
+    if (msg.tool !== tool) continue;
+    if (msg.toolCallIndex == null && !msg.streamingArgsPreview) continue;
+    return {
+      merged: true,
+      messages: messages.map((m, idx) => (
+        idx === i
+          ? {
+            ...m,
+            tool,
+            content,
+            toolCallId,
+            activityType: activityType || m.activityType,
+            iconPlatform: iconPlatform ?? m.iconPlatform,
+            iconUrl: iconUrl ?? m.iconUrl,
+          }
+          : m
+      )),
+    };
+  }
+  return { merged: false, messages };
+}
+
 /** Mark all trailing browser activity rows as failed after browser:error. */
 export function patchTrailingBrowserActivitiesFailed<T extends {
   role: string;

@@ -34,23 +34,23 @@ function hasAuthToken(): boolean {
 function readPersistedWallpaperId(): string {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.settings);
-    if (!raw) return 'construct';
+    if (!raw) return 'fuji';
     const parsed = JSON.parse(raw) as { state?: { wallpaperId?: string } };
-    return parsed?.state?.wallpaperId ?? 'construct';
+    return parsed?.state?.wallpaperId ?? 'fuji';
   } catch {
-    return 'construct';
+    return 'fuji';
   }
 }
 
 /** Avoid a one-frame builtin flash before zustand persist rehydrates. */
 function resolveEffectiveWallpaperId(wallpaperId: string): string {
-  if (wallpaperId !== 'construct') return wallpaperId;
+  if (wallpaperId !== 'fuji') return wallpaperId;
   const persisted = readPersistedWallpaperId();
-  return persisted !== 'construct' ? persisted : wallpaperId;
+  return persisted !== 'fuji' ? persisted : wallpaperId;
 }
 
 function defaultWallpaperUrl(): string {
-  return getBuiltinWallpaperSrc('construct');
+  return getBuiltinWallpaperSrc('fuji');
 }
 
 export interface WallpaperContext {
@@ -212,7 +212,7 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
       const workspacePath = customWallpaperPath(targetId);
       if (!workspacePath) {
         if (!cancelled) {
-          setUrl(getBuiltinWallpaperSrc('construct'));
+          setUrl(defaultWallpaperUrl());
           setLoading(false);
         }
         return;
@@ -222,7 +222,7 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
         const response = await blobContainerFile(instanceId, workspacePath, 'inline');
         if (!response.ok) {
           if (!cancelled) {
-            setUrl(getBuiltinWallpaperSrc('construct'));
+            setUrl(defaultWallpaperUrl());
             setLoading(false);
           }
           notifyWallpaperFilesChanged();
@@ -249,7 +249,7 @@ export function useWallpaperUrl(wallpaperId: string): { url: string; loading: bo
         }
       } catch {
         if (!cancelled) {
-          setUrl(getBuiltinWallpaperSrc('construct'));
+          setUrl(defaultWallpaperUrl());
           setLoading(false);
         }
         notifyWallpaperFilesChanged();

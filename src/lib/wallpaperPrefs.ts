@@ -22,17 +22,17 @@ function writeMap(map: UserWallpaperMap): void {
 function readGlobalWallpaperId(): string {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.settings);
-    if (!raw) return 'construct';
+    if (!raw) return 'fuji';
     const parsed = JSON.parse(raw) as { state?: { wallpaperId?: string } };
-    return parsed?.state?.wallpaperId ?? 'construct';
+    return parsed?.state?.wallpaperId ?? 'fuji';
   } catch {
-    return 'construct';
+    return 'fuji';
   }
 }
 
 /** Read a user's saved wallpaper preference, seeding from global settings on first access. */
 export function getUserWallpaper(userId: string): string {
-  if (!userId) return 'construct';
+  if (!userId) return 'fuji';
   const map = readMap();
   if (map[userId]) return map[userId];
   return readGlobalWallpaperId();

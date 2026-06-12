@@ -167,7 +167,7 @@ export function warmWallpaperCacheFromSettings(): void {
         const raw = localStorage.getItem(STORAGE_KEYS.settings);
         if (!raw) return;
 
-        const wallpaperId = (JSON.parse(raw) as { state?: { wallpaperId?: string } })?.state?.wallpaperId ?? 'construct';
+        const wallpaperId = (JSON.parse(raw) as { state?: { wallpaperId?: string } })?.state?.wallpaperId ?? 'fuji';
         if (!isCustomWallpaperId(wallpaperId)) return;
 
         const workspacePath = customWallpaperPath(wallpaperId);
