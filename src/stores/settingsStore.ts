@@ -11,6 +11,8 @@ import wpConstructTiny from '@/assets/wallpapers/wallpaper-tiny.jpg';
 import wpDeathStar from '@/assets/wallpapers/deathstar.jpg';
 import wpDeathStarTiny from '@/assets/wallpapers/deathstar-tiny.jpg';
 import wpCatGalaxy from '@/assets/wallpapers/catgalaxy.jpg';
+import wpFuji from '@/assets/wallpapers/fuji.jpg';
+import wpFujiTiny from '@/assets/wallpapers/fuji-tiny.jpg';
 
 export interface WallpaperOption {
   id: string;
@@ -21,6 +23,7 @@ export interface WallpaperOption {
 }
 
 export const WALLPAPERS: WallpaperOption[] = [
+  { id: 'fuji', name: 'Fuji', src: wpFuji, blurSrc: wpFujiTiny },
   { id: 'construct', name: 'Construct', src: wpConstruct, blurSrc: wpConstructTiny },
   { id: 'deathstar', name: 'Death Star', src: wpDeathStar, blurSrc: wpDeathStarTiny },
   { id: 'catgalaxy', name: 'Cat Galaxy', src: wpCatGalaxy },
@@ -33,7 +36,7 @@ export function getBuiltinWallpaperSrc(id: string): string {
   if (isCustomWallpaperId(id) || id === 'custom') {
     return wpConstruct;
   }
-  return BUILTIN_BY_ID.get(id)?.src ?? wpConstruct;
+  return BUILTIN_BY_ID.get(id)?.src ?? wpFuji;
 }
 
 /** @deprecated Use useWallpaperUrl for display. Built-in presets only. */
@@ -74,7 +77,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       soundEnabled: true,
-      wallpaperId: 'construct',
+      wallpaperId: 'fuji',
       wallpaperRev: 0,
       developerMode: false,
       voiceEnabled: true,

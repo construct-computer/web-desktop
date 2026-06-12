@@ -12,6 +12,7 @@ import {
 } from '@/lib/fileTypes';
 import { useEditorStore } from '@/stores/editorStore';
 import { useDocViewerSignalStore } from '@/stores/documentViewerStore';
+import { useWindowStore } from '@/stores/windowStore';
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import { JsonFileViewer } from '@/components/ui/StructuredDataViewer';
 import type { WindowConfig } from '@/types';
@@ -156,9 +157,34 @@ function spreadsheetColumnName(index: number): string {
   return name;
 }
 
-function DataTableViewer({ sheet }: { sheet: SheetData }) {
+function openSpotlightPrompt(draft?: string) {
+  const windowStore = useWindowStore.getState();
+  if (!windowStore.spotlightOpen) windowStore.toggleSpotlight();
+  window.setTimeout(() => {
+    if (draft) {
+      window.dispatchEvent(new CustomEvent('spotlight-set-draft', { detail: { text: draft } }));
+    }
+    window.dispatchEvent(new CustomEvent('spotlight-focus-input'));
+  }, 0);
+}
+
+function serializeDelimitedRows(sheet: SheetData, delimiter: ',' | '\t'): string {
+  return Papa.unparse([sheet.headers, ...sheet.rows], { delimiter, newline: '\n' });
+}
+
+function DataTableViewer({
+  sheet,
+  editable = false,
+  onSheetChange,
+}: {
+  sheet: SheetData;
+  editable?: boolean;
+  onSheetChange?: (sheet: SheetData) => void;
+}) {
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [editingCell, setEditingCell] = useState<{ row: number; col: number } | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const data = useMemo<TableRow[]>(
     () => sheet.rows.map((cells, index) => ({ cells, rowNumber: index + 1 })),
@@ -201,6 +227,24 @@ function DataTableViewer({ sheet }: { sheet: SheetData }) {
   });
 
   const visibleRows = table.getRowModel().rows;
+
+  const commitCellEdit = useCallback(() => {
+    if (!editable || !onSheetChange || !editingCell) return;
+    const nextRows = sheet.rows.map((cells, rowIndex) => {
+      if (rowIndex !== editingCell.row) return cells;
+      return cells.map((cell, colIndex) => (
+        colIndex === editingCell.col ? editValue : cell
+      ));
+    });
+    onSheetChange({ ...sheet, rows: nextRows });
+    setEditingCell(null);
+  }, [editable, editValue, editingCell, onSheetChange, sheet]);
+
+  const startCellEdit = useCallback((row: number, col: number, value: string) => {
+    if (!editable) return;
+    setEditingCell({ row, col });
+    setEditValue(value);
+  }, [editable]);
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -259,13 +303,43 @@ function DataTableViewer({ sheet }: { sheet: SheetData }) {
                 {row.getVisibleCells().map(cell => {
                   const isRowColumn = cell.column.id === '__row';
                   const value = String(cell.getValue() ?? '');
+                  const dataColIndex = cell.column.id.startsWith('col_')
+                    ? Number(cell.column.id.slice(4))
+                    : -1;
+                  const isEditing = editable
+                    && editingCell?.row === row.index
+                    && editingCell?.col === dataColIndex;
                   return (
                     <td
                       key={cell.id}
-                      className={`${isRowColumn ? 'sticky left-0 bg-[var(--color-surface-raised)] text-center text-[var(--color-text-muted)] font-mono' : 'text-[var(--color-text)]'} border border-white/10 px-2 py-0.5 whitespace-nowrap max-w-[320px] truncate`}
-                      title={isRowColumn ? undefined : value}
+                      className={`${isRowColumn ? 'sticky left-0 bg-[var(--color-surface-raised)] text-center text-[var(--color-text-muted)] font-mono' : 'text-[var(--color-text)]'} border border-white/10 px-2 py-0.5 whitespace-nowrap max-w-[320px] ${isEditing ? '' : 'truncate'} ${editable && !isRowColumn ? 'cursor-text hover:bg-white/5' : ''}`}
+                      title={isRowColumn || isEditing ? undefined : value}
+                      onClick={() => {
+                        if (!isRowColumn && editable && dataColIndex >= 0) {
+                          startCellEdit(row.index, dataColIndex, value);
+                        }
+                      }}
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editValue}
+                          onChange={(event) => setEditValue(event.target.value)}
+                          onBlur={commitCellEdit}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitCellEdit();
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setEditingCell(null);
+                            }
+                          }}
+                          className="w-full min-w-[120px] bg-transparent text-[var(--color-text)] outline-none"
+                        />
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
                     </td>
                   );
                 })}
@@ -285,7 +359,15 @@ function DataTableViewer({ sheet }: { sheet: SheetData }) {
   );
 }
 
-function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
+function XlsxViewer({
+  sheets,
+  editable = false,
+  onSheetChange,
+}: {
+  sheets: SheetData[];
+  editable?: boolean;
+  onSheetChange?: (sheet: SheetData, sheetIndex: number) => void;
+}) {
   const [activeSheet, setActiveSheet] = useState(0);
   const sheet = sheets[activeSheet];
   if (!sheet) return <div className="p-4 text-[var(--color-text-muted)]">No data</div>;
@@ -299,7 +381,11 @@ function XlsxViewer({ sheets }: { sheets: SheetData[] }) {
         </div>
       )}
       <div className="flex-1 min-h-0">
-        <DataTableViewer sheet={sheet} />
+        <DataTableViewer
+          sheet={sheet}
+          editable={editable}
+          onSheetChange={onSheetChange ? (nextSheet) => onSheetChange(nextSheet, activeSheet) : undefined}
+        />
       </div>
       <div className="flex items-center gap-4 px-3 py-1 border-t border-[var(--color-border)] surface-toolbar text-[10px] text-[var(--color-text-muted)]">
         <span>{sheet.rows.length} rows</span>
@@ -333,12 +419,65 @@ function MediaViewer({ blobUrl, type, fileName }: { blobUrl: string; type: 'audi
 
 function DiagramViewer({ text, fileName }: { text: string; fileName: string }) {
   const ext = fileName.split('.').pop()?.toLowerCase();
+  const isMermaid = ext === 'mmd' || ext === 'mermaid';
+  const isGraphviz = ext === 'dot' || ext === 'gv';
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [showSource, setShowSource] = useState(!isMermaid);
+
+  useEffect(() => {
+    if (!isMermaid || showSource || !containerRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const mermaid = (await import('mermaid')).default;
+        mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+        const { svg } = await mermaid.render(id, text);
+        if (cancelled || !containerRef.current) return;
+        containerRef.current.innerHTML = svg;
+        setRenderError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setRenderError(err instanceof Error ? err.message : 'Failed to render Mermaid diagram');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [text, isMermaid, showSource]);
+
   return (
     <div className="w-full h-full grid grid-rows-[auto_minmax(0,1fr)]">
-      <div className="px-4 py-2 border-b border-white/[0.06] text-xs text-[var(--color-text-muted)]">
-        {ext === 'dot' || ext === 'gv' ? 'Graphviz source. If Construct generated SVG/PNG/PDF output next to this file, open that artifact for the rendered diagram.' : 'Mermaid source. Rendered SVG/PNG artifacts open as images.'}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] text-xs text-[var(--color-text-muted)]">
+        <span className="flex-1">
+          {isGraphviz
+            ? 'Graphviz source. If Construct generated SVG/PNG/PDF output next to this file, open that artifact for the rendered diagram.'
+            : isMermaid
+              ? 'Mermaid diagram rendered in the viewer.'
+              : 'Diagram source.'}
+        </span>
+        {isMermaid && (
+          <button
+            type="button"
+            onClick={() => setShowSource(v => !v)}
+            className="rounded px-2 py-0.5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)]"
+          >
+            {showSource ? 'Show diagram' : 'Show source'}
+          </button>
+        )}
       </div>
-      <pre className="overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">{text}</pre>
+      {isMermaid && !showSource ? (
+        renderError ? (
+          <div className="overflow-auto p-4 space-y-3">
+            <div className="text-xs text-red-300">{renderError}</div>
+            <pre className="text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">{text}</pre>
+          </div>
+        ) : (
+          <div ref={containerRef} className="overflow-auto p-4 flex items-start justify-center [&_svg]:max-w-full [&_svg]:h-auto" />
+        )
+      ) : (
+        <pre className="overflow-auto p-4 text-xs font-mono text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">{text}</pre>
+      )}
     </div>
   );
 }
@@ -487,6 +626,27 @@ function PptxViewer({ slides }: { slides: string[] }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const slideAreaRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(1);
+  const [isPresenterMode, setIsPresenterMode] = useState(false);
+
+  const togglePresenterMode = useCallback(async () => {
+    const el = slideAreaRef.current;
+    if (!el) return;
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      /* fullscreen may be blocked by browser policy */
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsPresenterMode(document.fullscreenElement === slideAreaRef.current);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   // Compute scale so the 960×540 slide fits the available area
   useEffect(() => {
@@ -555,9 +715,17 @@ function PptxViewer({ slides }: { slides: string[] }) {
       </div>
 
       {/* Main slide + bottom bar */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Slide area */}
-        <div ref={slideAreaRef} className="flex-1 overflow-hidden flex items-center justify-center">
+        <div ref={slideAreaRef} className={`relative flex-1 overflow-hidden flex items-center justify-center ${isPresenterMode ? 'bg-black' : ''}`}>
+          <button
+            type="button"
+            onClick={() => void togglePresenterMode()}
+            className="absolute top-3 right-3 z-10 p-1.5 rounded bg-black/40 text-white/80 hover:bg-black/60 hover:text-white"
+            title={isPresenterMode ? 'Exit presenter mode' : 'Presenter mode'}
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
           <div
             className="bg-white rounded shadow-2xl overflow-hidden"
             style={{ width: 960 * slideScale, height: 540 * slideScale }}
@@ -718,6 +886,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [rawText, setRawText] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<string | null>(null);
+  const [editedSheets, setEditedSheets] = useState<SheetData[] | null>(null);
   const [rawMode, setRawMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [conversionFrames, setConversionFrames] = useState<ConversionFrame[] | null>(null);
@@ -728,7 +897,12 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const showBlockingLoader = loading && !hasDocumentContent;
   const hasRawToggle = fileHasRawToggle(fileName);
   const canEdit = (hasRawToggle || isTextMode) && !driveFileId && !!instanceId && !!filePath;
+  const isTableEditable = (docType === 'csv' || docType === 'tsv') && !driveFileId && !!instanceId && !!filePath;
+  const canEditWithAgent = !driveFileId && !!filePath && (docType === 'docx' || docType === 'xlsx' || docType === 'pptx');
   const isDirtyDoc = editedText !== null && editedText !== rawText;
+  const activeSheets = editedSheets ?? xlsxSheets;
+  const isDirtyTable = editedSheets !== null && xlsxSheets !== null
+    && JSON.stringify(editedSheets) !== JSON.stringify(xlsxSheets);
   const isDirtyText = isTextMode && editorFile ? editorFile.content !== editorFile.savedContent : false;
 
   // Editor cursor/selection tracking
@@ -840,6 +1014,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     setMarkdownText(null);
     setHtmlContent(null);
     setRawText(null);
+    setEditedSheets(null);
     setConversionFrames(null);
     setError(null);
     setLoading(!isTextMode);
@@ -1063,18 +1238,51 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     }
   }, [canEdit, editedText, isDirtyDoc, instanceId, filePath, docType]);
 
+  const handleSaveTable = useCallback(async () => {
+    if (!isTableEditable || !editedSheets || !isDirtyTable || !instanceId || !filePath) return;
+    const delimiter = docType === 'tsv' ? '\t' : ',';
+    const nextText = serializeDelimitedRows(editedSheets[0] || { name: '', headers: [], rows: [] }, delimiter);
+    setSaving(true);
+    try {
+      const result = await writeFile(instanceId, filePath, nextText);
+      if (result.success) {
+        setError(null);
+        setRawText(nextText);
+        setXlsxSheets(editedSheets);
+        setEditedSheets(null);
+      } else {
+        setError(result.status === 409 ? 'File changed on the server. Reload before saving again.' : result.error || 'Save failed');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [isTableEditable, editedSheets, isDirtyTable, instanceId, filePath, docType]);
+
+  const handleEditWithAgent = useCallback(() => {
+    if (!filePath) return;
+    const kind = docType === 'docx' ? 'Word document' : docType === 'xlsx' ? 'spreadsheet' : 'presentation';
+    openSpotlightPrompt(
+      `Edit the ${kind} at ${filePath}. Open it, make the requested changes, and save the updated file back to the same path.`,
+    );
+  }, [docType, filePath]);
+
   // Cmd/Ctrl+S for raw document editing
   useEffect(() => {
-    if (isTextMode) return; // text mode uses Monaco's built-in keybinding
+    if (isTextMode) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's' && canEdit && isDirtyDoc) {
-        e.preventDefault();
-        handleSaveDoc();
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        if (canEdit && isDirtyDoc) {
+          e.preventDefault();
+          handleSaveDoc();
+        } else if (isTableEditable && isDirtyTable) {
+          e.preventDefault();
+          void handleSaveTable();
+        }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isTextMode, canEdit, isDirtyDoc, handleSaveDoc]);
+  }, [isTextMode, canEdit, isDirtyDoc, handleSaveDoc, isTableEditable, isDirtyTable, handleSaveTable]);
 
   // ── Download handler ──
   const handleDownload = useCallback(() => {
@@ -1209,6 +1417,21 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
           </button>
         )}
+        {isTableEditable && isDirtyTable && (
+          <button onClick={() => void handleSaveTable()} disabled={saving} className="p-1 rounded hover:bg-white/10 text-[var(--color-accent)]" title="Save table (⌘S)">
+            <Save className={`w-3.5 h-3.5 ${saving ? 'animate-pulse' : ''}`} />
+          </button>
+        )}
+        {canEditWithAgent && (
+          <button
+            type="button"
+            onClick={handleEditWithAgent}
+            className="text-[10px] px-2 py-0.5 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)] whitespace-nowrap"
+            title="Ask Construct to edit this file"
+          >
+            Edit with agent
+          </button>
+        )}
         <button onClick={() => void loadFile({ silent: hasDocumentContent, force: true })} className="p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Reload">
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
@@ -1262,7 +1485,18 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             {docType === 'image' && blobUrl && <ImageViewer blobUrl={blobUrl} fileName={fileName} />}
             {(docType === 'audio' || docType === 'video') && blobUrl && <MediaViewer blobUrl={blobUrl} type={docType} fileName={fileName} />}
             {docType === 'docx' && docxHtml !== null && <DocxViewer htmlContent={docxHtml} />}
-            {(docType === 'xlsx' || docType === 'csv' || docType === 'tsv') && xlsxSheets !== null && <XlsxViewer sheets={xlsxSheets} />}
+            {(docType === 'xlsx' || docType === 'csv' || docType === 'tsv') && activeSheets !== null && (
+              <XlsxViewer
+                sheets={activeSheets}
+                editable={isTableEditable}
+                onSheetChange={(nextSheet, sheetIndex) => {
+                  setEditedSheets((current) => {
+                    const base = current ?? xlsxSheets ?? [];
+                    return base.map((sheet, index) => (index === sheetIndex ? nextSheet : sheet));
+                  });
+                }}
+              />
+            )}
             {docType === 'pptx' && pptxSlides !== null && <PptxViewer slides={pptxSlides} />}
             {docType === 'markdown' && markdownText !== null && (
               <div className="w-full h-full overflow-auto px-6 py-3">

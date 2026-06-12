@@ -277,6 +277,11 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
                 x{meta.repeatCount}
               </span>
             )}
+            {msg.streamingArgsPreview && msg.activityStatus === 'running' && (
+              <span className="min-w-0 truncate text-[10px] font-mono text-[var(--color-text-muted)]/35">
+                {msg.streamingArgsPreview}
+              </span>
+            )}
             {hasDetails && (
               <button
                 type="button"

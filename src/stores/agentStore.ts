@@ -73,11 +73,12 @@ export { authConnectNotifIds, pendingAuthCards, clearAuthCard, registerFrameRend
 
 import {
   authConnectNotifIds, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns,
-  findWindowForDaemonTab as _findWindowForDaemonTab, findWindowForBrowser as _findWindowForBrowser, findWindowForSubagent as _findWindowForSubagent,
   describeToolCall,
   composioDisplayTool,
   patchToolActivityFailure,
   patchToolActivitySuccess,
+  upsertStreamingToolCallDelta,
+  attachStreamingToolCallStart,
   patchTrailingBrowserActivitiesFailed,
   patchTrailingBrowserActivitiesCompleted,
   buildWebPreviewFromTabPayload,
@@ -265,6 +266,10 @@ export interface ChatMessage {
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** Correlates activity rows with tool_result / terminal_exit events */
   toolCallId?: string;
+  /** Correlates streaming tool_call_delta rows before toolCallId is assigned */
+  toolCallIndex?: number;
+  /** Truncated live preview of tool arguments while the model is still streaming */
+  streamingArgsPreview?: string;
   /** Live execution status for tool activity rows */
   activityStatus?: 'running' | 'completed' | 'failed';
   /** True for error/stopped messages — rendered with event styling */
@@ -5507,6 +5512,38 @@ export const useComputerStore = create<ComputerStore>()(
           break;
         }
 
+        case 'tool_call_delta': {
+          if (!get().runningSessions.has(eventSessionKey)) break;
+          const index = event.data?.index as number | undefined;
+          const name = event.data?.name as string | undefined;
+          const argumentsSoFar = event.data?.argumentsSoFar as string | undefined;
+          if (index == null || !name) break;
+
+          let parsedParams: Record<string, unknown> | undefined;
+          if (argumentsSoFar) {
+            try {
+              const parsed = JSON.parse(argumentsSoFar);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                parsedParams = parsed as Record<string, unknown>;
+              }
+            } catch { /* partial JSON while streaming */ }
+          }
+          const { text: activityText, activityType } = describeToolCall(name, parsedParams);
+          const preview = (argumentsSoFar || '').slice(0, 120);
+
+          patchToolActivityInChat(
+            (msgs) => upsertStreamingToolCallDelta(msgs, {
+              index,
+              name,
+              preview,
+              content: activityText || `Calling ${name}...`,
+              activityType,
+            }),
+            {},
+          );
+          break;
+        }
+
         case 'tool_call': {
           if (!get().runningSessions.has(eventSessionKey)) break;
           const tool = event.data?.tool as string || event.data?.name as string || 'tool';
@@ -5672,7 +5709,41 @@ export const useComputerStore = create<ComputerStore>()(
             toolCallId,
             activityStatus: 'running',
           };
-          appendToAgentChat(toolActivityMsg);
+
+          const mergeStreamingStart = (msgs: ChatMessage[]) => {
+            const attached = attachStreamingToolCallStart(msgs, {
+              tool: displayTool,
+              toolCallId,
+              content: activityText,
+              activityType,
+              iconPlatform: iconHints.iconPlatform,
+              iconUrl: iconHints.iconUrl,
+            });
+            if (attached.merged) return attached.messages;
+            return [...msgs, toolActivityMsg];
+          };
+
+          set(state => {
+            const updates: Partial<typeof state> = {};
+            if (shouldUpdateVisibleDesktopAgent) {
+              const pa = getOrCreateAgent(state);
+              const existing = pa.chatMessages || [];
+              updates.platformAgents = {
+                ...state.platformAgents,
+                [eventPlatform]: {
+                  ...pa,
+                  chatMessages: mergeStreamingStart(existing),
+                },
+              };
+            }
+            if (isActiveSession) {
+              updates.chatMessages = mergeStreamingStart(state.chatMessages);
+            } else if (eventSessionKey && eventSessionKey !== 'default') {
+              const cached = sessionMessageCache.get(eventSessionKey) || [];
+              sessionMessageCache.set(eventSessionKey, mergeStreamingStart(cached));
+            }
+            return Object.keys(updates).length > 0 ? updates : state;
+          });
 
           // For non-desktop: don't update desktop singletons (agentThinking, agentActivity)
           if (isNonDesktopPlatform) {
