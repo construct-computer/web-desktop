@@ -40,7 +40,7 @@ export interface ToolWindowRoute {
 
 /** Window types backed by a real component (mirror of WindowManager). */
 const REAL_WINDOW_TYPES = new Set<WindowType>([
-  'browser', 'terminal', 'files', 'editor', 'document-viewer', 'document-workbench',
+  'browser', 'terminal', 'files', 'editor', 'document-viewer',
   'settings', 'about', 'calendar', 'auditlogs', 'memory', 'email',
   'access-control', 'app-registry', 'app-builder', 'app',
 ]);

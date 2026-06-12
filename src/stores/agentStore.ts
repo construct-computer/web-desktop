@@ -7,7 +7,6 @@ import type { AgentWithConfig, WindowType } from '@/types';
 import { useWindowStore } from './windowStore';
 import { useEditorStore } from './editorStore';
 import { openDocumentViewer } from './documentViewerStore';
-import { useDocumentPreviewStore } from './documentPreviewStore';
 import { useNotificationStore } from './notificationStore';
 import { useBillingStore } from './billingStore';
 import { useTerminalStore } from './terminalStore';
@@ -432,7 +431,6 @@ const WINDOW_CLOSE_GRACE: Record<string, number> = {
   editor: 5000,
   files: 5000,
   'document-viewer': 5000,
-  'document-workbench': 30000,
   email: 10000,
   calendar: 5000,
 };
@@ -7375,7 +7373,6 @@ export const useComputerStore = create<ComputerStore>()(
             data: _chunk,
             timestamp: event.timestamp,
           });
-          useDocumentPreviewStore.getState().appendTerminalOutput(event.data || {});
           break;
         }
 
@@ -7403,37 +7400,6 @@ export const useComputerStore = create<ComputerStore>()(
               variant: 'error',
             }, 5000, { priority: 'default' });
           }
-          break;
-        }
-
-        case 'document_session_started': {
-          const previewId = useDocumentPreviewStore.getState().startSession(event.data || {});
-          useWindowStore.getState().ensureWindowOpen('document-workbench', 'main', { documentSessionId: previewId });
-          break;
-        }
-
-        case 'document_step': {
-          useDocumentPreviewStore.getState().addStep(event.data || {});
-          break;
-        }
-
-        case 'document_preview_frame': {
-          useDocumentPreviewStore.getState().addFrame(event.data || {});
-          break;
-        }
-
-        case 'document_artifact_updated': {
-          useDocumentPreviewStore.getState().updateArtifact(event.data || {});
-          break;
-        }
-
-        case 'document_session_completed': {
-          useDocumentPreviewStore.getState().completeSession(event.data || {});
-          break;
-        }
-
-        case 'document_session_failed': {
-          useDocumentPreviewStore.getState().failSession(event.data || {});
           break;
         }
 

@@ -197,7 +197,6 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
   'app-registry': { title: 'Apps' },
   'app-builder': { title: 'Builder' },
   'document-viewer': { title: 'Document Viewer' },
-  'document-workbench': { title: 'Document Workbench' },
   app: { title: 'App' },
 };
 

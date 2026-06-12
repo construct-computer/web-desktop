@@ -22,7 +22,6 @@ const MemoryWindow = lazy(() => import('@/components/apps/MemoryWindow').then((m
 const EmailWindow = lazy(() => import('@/components/apps/EmailWindow').then((m) => ({ default: m.EmailWindow })));
 const AccessControlWindow = lazy(() => import('../apps/AccessControlWindow').then((m) => ({ default: m.AccessControlWindow })));
 const DocumentViewerWindow = lazy(() => import('../apps/DocumentViewerWindow').then((m) => ({ default: m.DocumentViewerWindow })));
-const DocumentWorkbenchWindow = lazy(() => import('../apps/DocumentWorkbenchWindow').then((m) => ({ default: m.DocumentWorkbenchWindow })));
 const AppRegistryWindow = lazy(() => import('../apps/AppRegistryWindow').then((m) => ({ default: m.AppRegistryWindow })));
 const AppBuilderWindow = lazy(() => import('../apps/AppBuilderWindow').then((m) => ({ default: m.AppBuilderWindow })));
 const AppWindow = lazy(() => import('../apps/AppWindow').then((m) => ({ default: m.AppWindow })));
@@ -35,7 +34,6 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   files: FilesWindow,
   editor: DocumentViewerWindow,
   'document-viewer': DocumentViewerWindow,
-  'document-workbench': DocumentWorkbenchWindow,
   settings: SettingsWindow,
   about: AboutWindow,
   calendar: CalendarWindow,
