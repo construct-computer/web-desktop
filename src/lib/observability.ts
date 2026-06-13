@@ -1,9 +1,8 @@
 /**
- * Client observability bridge — PostHog, Sentry, and backend telemetry ingest.
+ * Client observability bridge — PostHog and backend telemetry ingest.
  */
 
 import { analytics } from '@/lib/analytics';
-import { captureClientException } from '@/lib/sentry';
 
 export interface ClientErrorReport {
   source: string;
@@ -82,7 +81,7 @@ function fingerprint(parts: Array<string | undefined>): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Report a client error to PostHog and Sentry. */
+/** Report a client error to PostHog. */
 export function reportClientError(report: ClientErrorReport): void {
   const route = currentRoute();
   const release = appRelease();
@@ -98,21 +97,6 @@ export function reportClientError(report: ClientErrorReport): void {
   ]);
 
   analytics.errorOccurred(report.message, report.source);
-
-  captureClientException(report.error || new Error(report.message), {
-    source: report.source,
-    correlationId: report.correlationId,
-    errorId: report.errorId,
-    route,
-    fingerprint: fp,
-    extra: {
-      ...report.context,
-      route,
-      release,
-      fingerprint: fp,
-      react_error_code: reactErrorCode,
-    },
-  });
 }
 
 export function createCorrelationIds(): { requestId: string; traceId: string; traceparent: string } {

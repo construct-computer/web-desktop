@@ -4,7 +4,6 @@ import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
-import { clearSentryUser, identifySentryUser } from '@/lib/sentry';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
 import {
   deferWallpaperCacheClearForUser,
@@ -206,7 +205,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       analytics.loginSuccess('magic_link');
       analytics.identify(result.data.user);
-      identifySentryUser(result.data.user);
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -286,7 +284,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       analytics.loginSuccess('google');
       analytics.identify(result.data.user);
-      identifySentryUser(result.data.user);
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -309,7 +306,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     analytics.logout();
-    clearSentryUser();
     void unregisterCurrentNativePushToken();
     api.logout();
 
@@ -328,7 +324,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   handleRemoteLogout: () => {
     analytics.reset();
-    clearSentryUser();
     void unregisterCurrentNativePushToken();
     persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
@@ -360,7 +355,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       // Identify returning user for analytics
       analytics.identify(result.data.user);
-      identifySentryUser(result.data.user);
       set({
         user: result.data.user,
         isAuthenticated: true,

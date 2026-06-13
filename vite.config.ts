@@ -3,23 +3,15 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { execSync } from 'child_process'
-import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { VitePWA } from "vite-plugin-pwa";
 
 const gitHash = execSync('git rev-parse --short HEAD').toString().trim();
-const sentryRelease = process.env.VITE_APP_VERSION || process.env.SENTRY_RELEASE || gitHash;
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const isCapacitorBuild = mode.startsWith('capacitor');
-  const shouldUploadSentrySourcemaps = Boolean(
-    process.env.SENTRY_AUTH_TOKEN &&
-    process.env.SENTRY_ORG &&
-    process.env.SENTRY_PROJECT &&
-    process.env.VITE_SENTRY_DSN
-  );
 
   return {
   define: {
@@ -71,17 +63,6 @@ export default defineConfig(({ mode }) => {
       }
     })
     ,
-    shouldUploadSentrySourcemaps && sentryVitePlugin({
-      org: process.env.SENTRY_ORG,
-      project: process.env.SENTRY_PROJECT,
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-      release: {
-        name: sentryRelease,
-      },
-      sourcemaps: {
-        assets: './dist/**',
-      },
-    })
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -111,7 +92,6 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
-    sourcemap: shouldUploadSentrySourcemaps ? 'hidden' : false,
     rollupOptions: {
       output: {
         manualChunks(id) {

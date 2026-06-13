@@ -4,7 +4,6 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from '@/components/ui'
 import { initAnalytics } from '@/lib/analytics'
-import { initSentry } from '@/lib/sentry'
 import { recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery'
 import { installLiveUpdates, installNativeBridge } from '@/native'
 import { warmWallpaperCacheFromSettings } from '@/lib/wallpaperCache'
@@ -12,8 +11,7 @@ import { warmWallpaperCacheFromSettings } from '@/lib/wallpaperCache'
 // Warm custom wallpaper cache before first paint to avoid default-wallpaper flash.
 warmWallpaperCacheFromSettings();
 
-// Initialize observability before rendering
-initSentry();
+// Initialize analytics before rendering
 initAnalytics();
 void installNativeBridge();
 void installLiveUpdates();

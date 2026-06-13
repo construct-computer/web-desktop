@@ -1069,7 +1069,7 @@ function ErrorsTab({ data, openDrawer }: { data: DashboardData; openDrawer: (dra
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[1fr_.8fr]">
         <Card className="p-4">
-          <SectionHeader title="Errors" subtitle="Persisted errors with Sentry links" action={data.errors?.links?.sentry && <a className="text-xs text-white/70 hover:text-white hover:underline" href={data.errors.links.sentry} target="_blank" rel="noreferrer">Open Sentry</a>} />
+          <SectionHeader title="Errors" subtitle="Persisted errors" action={data.errors?.links?.sentry && <a className="text-xs text-white/70 hover:text-white hover:underline" href={data.errors.links.sentry} target="_blank" rel="noreferrer">Open Sentry</a>} />
           <DataTable
             rows={errors}
             onRow={(row) => openDrawer({ title: row.message, eyebrow: row.source, data: row })}
@@ -1272,8 +1272,7 @@ function HealthTab({ data, openDrawer }: { data: DashboardData; openDrawer: (dra
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="DB" value={data.health?.db?.ok ? 'OK' : 'Issue'} detail="D1 ping" icon={Database} />
-        <MetricCard label="Sentry" value={data.health?.observability?.sentryConfigured ? 'On' : 'Off'} detail="runtime errors" icon={AlertTriangle} />
+        <MetricCard label="GraphQL" value={data.health?.db?.ok ? 'OK' : 'Issue'} detail="D1 ping" icon={Database} />
         <MetricCard label="PostHog" value={data.health?.observability?.posthogConfigured ? 'On' : 'Off'} detail="analytics link-outs" icon={BarChart3} />
         <MetricCard label="Environment" value={data.health?.environment || '-'} detail={data.health?.checkedAt ? formatDate(data.health.checkedAt) : '-'} icon={ShieldCheck} />
       </div>
@@ -1386,7 +1385,7 @@ function ObservabilityTab({ data, openDrawer }: { data: DashboardData; openDrawe
         </div>
       </Card>
       <Card className="p-4">
-        <SectionHeader title="How to Use" subtitle="Use PostHog for product analytics, Sentry for exceptions, Cloudflare for runtime traces, and D1 for durable admin records." />
+        <SectionHeader title="How to Use" subtitle="Use PostHog for product analytics, Cloudflare for runtime traces, and D1 for durable admin records." />
         <div className="grid gap-3 text-xs text-white/55 md:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">Search a `correlation_id` from errors or audit logs to join D1 records with Cloudflare invocation logs.</div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">Use runtime aggregates for route latency and error spikes; use Analytics for funnels, tool success, LLM cost, and behavior.</div>

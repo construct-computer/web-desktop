@@ -66,7 +66,7 @@ export const useErrorStore = create<ErrorStore>((set, get) => ({
       unreadCount: state.panelOpen ? 0 : state.unreadCount + 1,
     }));
 
-    // Mirror to PostHog, Sentry, and worker telemetry (skip server-origin WS errors).
+    // Mirror to PostHog and worker telemetry (skip server-origin WS errors).
     if (entry.source !== 'ws' || !entry.errorId) {
       reportClientError({
         source: entry.source,
