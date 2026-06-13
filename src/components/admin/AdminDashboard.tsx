@@ -1069,7 +1069,7 @@ function ErrorsTab({ data, openDrawer }: { data: DashboardData; openDrawer: (dra
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[1fr_.8fr]">
         <Card className="p-4">
-          <SectionHeader title="Errors" subtitle="Persisted errors" action={data.errors?.links?.sentry && <a className="text-xs text-white/70 hover:text-white hover:underline" href={data.errors.links.sentry} target="_blank" rel="noreferrer">Open Sentry</a>} />
+          <SectionHeader title="Errors" subtitle="Persisted errors" />
           <DataTable
             rows={errors}
             onRow={(row) => openDrawer({ title: row.message, eyebrow: row.source, data: row })}
