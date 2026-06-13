@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { reportClientError } from '@/lib/observability';
+import { log } from '@/lib/logger';
 
 export interface CapturedError {
   id: string;
@@ -58,8 +59,7 @@ export const useErrorStore = create<ErrorStore>((set, get) => ({
       timestamp: new Date(),
     };
 
-    // Also log to console for devtools
-    console.error(`[${error.source}] ${error.message}`, error.context || '', error.stack || '');
+    log('errorStore').error(`[${error.source}] ${error.message}`, error.context || {}, { stack: error.stack });
 
     set((state) => ({
       errors: [error, ...state.errors].slice(0, MAX_ERRORS),

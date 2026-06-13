@@ -4,6 +4,7 @@ import { ConfirmDialog } from '@/components/ui';
 import { registerBrowserTabCloseHandler } from '@/lib/browserTabClose';
 import { terminateLiveBrowserTab } from '@/lib/browserTabSession';
 import { stopBrowserRun } from '@/services/api';
+import { log } from '@/lib/logger';
 import { markBrowserWindowEngaged, useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useWindowTitleBarAccessory } from '@/stores/windowAccessoryStore';
@@ -83,7 +84,7 @@ export function BrowserUnifiedShell({
     try {
       await stopBrowserRun(activeTab.runId);
     } catch (e) {
-      console.error(e);
+      log('browser').error('stop_browser_run_failed', { error: e instanceof Error ? e.message : String(e) });
     } finally {
       setStoppingActive(false);
     }
