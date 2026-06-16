@@ -1275,6 +1275,12 @@ export async function dismissChecklistTask(
   });
 }
 
+export async function clearBlockedChecklistTasks(): Promise<ApiResult<{ ok: boolean; clearedCount: number }>> {
+  return request('/agent/autopilot/checklist-tasks/blocked', {
+    method: 'DELETE',
+  });
+}
+
 export async function retryAutopilotAction(actionId: string): Promise<ApiResult<{
   ok: boolean;
   actionId: string;

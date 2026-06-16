@@ -323,7 +323,7 @@ export function AutopilotPanel() {
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [memories, setMemories] = useState<api.MemoryRecord[]>([]);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
-  const [dismissingChecklistTaskId, setDismissingChecklistTaskId] = useState<number | null>(null);
+  const [clearingBlockedTasks, setClearingBlockedTasks] = useState(false);
   const nextEvent = useUpcomingCalendarEvent();
 
   async function loadSnapshot(isCancelled?: () => boolean) {
@@ -589,9 +589,19 @@ export function AutopilotPanel() {
   const groupedAttentionItems = authAttentionItems.length > 1 ? authAttentionItems : attention ? [attention] : [];
   const hasGroupedAuth = authAttentionItems.length > 1;
   const isWaitingForUser = Boolean(attention && (mode === 'blocked' || combinedPendingActions.length > 0));
-  const blockedChecklistTask = currentTask?.status === 'blocked' ? currentTask : null;
-  const isBlockedByChecklistOnly = mode === 'blocked' && !attention && Boolean(blockedChecklistTask);
-  const copy = isWaitingForUser || isBlockedByChecklistOnly
+  const blockedChecklistTasks = useMemo(
+    () => displayStatus?.tasks.filter((task) => task.status === 'blocked') ?? [],
+    [displayStatus],
+  );
+  const blockedChecklistTask = blockedChecklistTasks[0] ?? null;
+  const blockedChecklistCount = Math.max(
+    displayStatus?.blockedTaskCount ?? 0,
+    blockedChecklistTasks.length,
+  );
+  const showBlockedChecklistClear = mode === 'blocked'
+    && !attention
+    && blockedChecklistCount > 0;
+  const copy = isWaitingForUser || showBlockedChecklistClear
     ? { ...rawCopy, label: 'Needs you', color: '#60a5fa', background: 'rgba(96,165,250,0.14)' }
     : rawCopy;
   const ModeIcon = copy.Icon;
@@ -599,7 +609,7 @@ export function AutopilotPanel() {
     ? hasGroupedAuth
       ? `${authAttentionItems.length} account connections are waiting.`
       : attention.summary
-    : isBlockedByChecklistOnly && blockedChecklistTask
+    : showBlockedChecklistClear && blockedChecklistTask
       ? `Blocked: ${cleanWidgetText(blockedChecklistTask.title, 72)}`
     : hasActiveRun
       ? summary
@@ -614,8 +624,8 @@ export function AutopilotPanel() {
         : displayStatus?.openBlockerCount
           ? `${displayStatus.openBlockerCount} blocker${displayStatus.openBlockerCount === 1 ? '' : 's'}`
         : 'Needs attention'
-    : isBlockedByChecklistOnly && displayStatus?.blockedTaskCount
-      ? `${displayStatus.blockedTaskCount} blocked task${displayStatus.blockedTaskCount === 1 ? '' : 's'}`
+    : showBlockedChecklistClear
+      ? `${blockedChecklistCount} blocked task${blockedChecklistCount === 1 ? '' : 's'}`
     : hasActiveRun && primaryRun
       ? formatDuration(primaryRun.elapsedMs)
       : loading
@@ -963,15 +973,22 @@ export function AutopilotPanel() {
     openWindow('memory', { metadata });
   }, [openWindow, updateWindow, windows]);
 
-  const handleDismissChecklistTask = async (taskId: number) => {
-    setDismissingChecklistTaskId(taskId);
+  const handleClearBlockedChecklistTasks = async () => {
+    setClearingBlockedTasks(true);
     try {
-      const result = await api.dismissChecklistTask(taskId);
+      const result = await api.clearBlockedChecklistTasks();
       if (result.success) {
         await loadSnapshot();
+        return;
+      }
+      if (blockedChecklistTask) {
+        const fallback = await api.dismissChecklistTask(blockedChecklistTask.id);
+        if (fallback.success) {
+          await loadSnapshot();
+        }
       }
     } finally {
-      setDismissingChecklistTaskId(null);
+      setClearingBlockedTasks(false);
     }
   };
 
@@ -1258,7 +1275,7 @@ export function AutopilotPanel() {
       <div className="px-3.5 py-2 flex items-center justify-between gap-2 border-t border-white/[0.06] text-[9px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
         <div className="flex min-w-0 items-center gap-1.5 truncate">
           <span className="truncate">{footerLabel}</span>
-          {isBlockedByChecklistOnly && blockedChecklistTask && (
+          {showBlockedChecklistClear && (
             <>
               <span aria-hidden className="shrink-0 text-white/20">·</span>
               <button
@@ -1267,12 +1284,12 @@ export function AutopilotPanel() {
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void handleDismissChecklistTask(blockedChecklistTask.id);
+                  void handleClearBlockedChecklistTasks();
                 }}
-                disabled={dismissingChecklistTaskId === blockedChecklistTask.id}
+                disabled={clearingBlockedTasks}
                 className="shrink-0 cursor-pointer text-white/40 transition-colors hover:text-white/65 disabled:cursor-default disabled:opacity-50"
               >
-                {dismissingChecklistTaskId === blockedChecklistTask.id ? '…' : 'Clear'}
+                {clearingBlockedTasks ? '…' : 'Clear'}
               </button>
             </>
           )}
