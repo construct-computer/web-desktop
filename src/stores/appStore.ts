@@ -9,6 +9,7 @@ import type { InstalledApp, LocalApp } from '@/services/api';
 import type { AppDefinition } from '@/lib/appRegistry';
 import { log } from '@/lib/logger';
 import iconGeneric from '@/icons/generic.png';
+import { getCachedToolkitDetail as getSharedCachedToolkitDetail } from '@/lib/composioToolkitCache';
 
 /** Global registry of iframe refs for local apps — used for live reload. */
 export const localAppIframeRefs = new Map<string, React.RefObject<HTMLIFrameElement | null>>();
@@ -37,25 +38,10 @@ export function postToLocalAppIframes(appId: string, message: unknown): void {
 }
 
 const logger = log('AppStore');
-const TOOLKIT_DETAIL_TTL_MS = 10 * 60_000;
-const toolkitDetailCache = new Map<string, { fetchedAt: number; detail: { name?: string; description?: string; logo?: string } }>();
 let fetchRunId = 0;
 
 async function getCachedToolkitDetail(toolkit: string) {
-  const cached = toolkitDetailCache.get(toolkit);
-  const now = Date.now();
-  if (cached && now - cached.fetchedAt < TOOLKIT_DETAIL_TTL_MS) return cached.detail;
-  const detail = await api.getComposioToolkitDetail(toolkit);
-  if (detail.success && detail.data) {
-    const slim = {
-      name: detail.data.name,
-      description: detail.data.description,
-      logo: detail.data.logo,
-    };
-    toolkitDetailCache.set(toolkit, { fetchedAt: now, detail: slim });
-    return slim;
-  }
-  return null;
+  return getSharedCachedToolkitDetail(toolkit);
 }
 
 /** A connected Composio toolkit with optional detail metadata. */

@@ -15,7 +15,7 @@ import { composioFinalize, getAppConnection, getComposioAuthUrl, getComposioStat
 import { useComputerStore } from '@/stores/agentStore'
 import { useWindowStore } from '@/stores/windowStore'
 import { PlatformIcon } from './PlatformIcon'
-import { openAuthRedirect } from '@/lib/utils'
+import { openAuthRedirect, openConstructDeepLink } from '@/lib/utils'
 import { formatPlatformDescription, getPlatformColor, getPlatformDisplayName } from '@/lib/platforms'
 import { authShieldStyle, platformIconFrameStyle } from './authActionStyles'
 import { authSourceId } from '@/lib/authRequestState'
@@ -142,7 +142,7 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
         appId: payload.appId,
         sessionKey: payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default',
       })
-      openAuthRedirect(currentUrl)
+      openConstructDeepLink(currentUrl) || openAuthRedirect(currentUrl)
       return
     }
 
@@ -185,7 +185,7 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
               appId: payload.appId,
               sessionKey: payload.sessionKey || useComputerStore.getState().activeSessionKey || 'default',
             })
-            openAuthRedirect(action.actionUrl)
+            openConstructDeepLink(action.actionUrl) || openAuthRedirect(action.actionUrl)
           }
           return
         }

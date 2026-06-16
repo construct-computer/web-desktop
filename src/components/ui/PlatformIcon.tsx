@@ -4,22 +4,34 @@
  */
 
 import { useEffect, useState } from 'react'
-import { getPlatformMeta, getPlatformName } from '@/lib/platforms'
+import { fetchPlatformMeta, getPlatformMeta, getPlatformName } from '@/lib/platforms'
 
 interface PlatformIconProps {
   platform: string
   className?: string
   size?: number
   logoUrl?: string
+  name?: string
 }
 
-export function PlatformIcon({ platform, className = '', size = 20, logoUrl }: PlatformIconProps) {
+export function PlatformIcon({ platform, className = '', size = 20, logoUrl, name }: PlatformIconProps) {
   const [error, setError] = useState(false)
-  const meta = getPlatformMeta(platform, logoUrl)
+  const [resolved, setResolved] = useState(() => getPlatformMeta(platform, logoUrl, name))
 
   useEffect(() => {
     setError(false)
-  }, [platform, meta.logoUrl])
+    setResolved(getPlatformMeta(platform, logoUrl, name))
+    if (logoUrl || name) return
+    let cancelled = false
+    void fetchPlatformMeta(platform).then((meta) => {
+      if (!cancelled) setResolved(meta)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [platform, logoUrl, name])
+
+  const meta = resolved
 
   if (!meta.logoUrl || error) {
     return (

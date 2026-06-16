@@ -25,7 +25,7 @@ import { useDraggableWidget } from '@/hooks/useDraggableWidget';
 import { useUpcomingCalendarEvent } from '@/hooks/useUpcomingCalendarEvent';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { openSpotlightSession } from '@/lib/spotlightNav';
-import { openAuthRedirect } from '@/lib/utils';
+import { openAuthRedirect, openConstructDeepLink } from '@/lib/utils';
 import { PlatformIcon } from '@/components/ui/PlatformIcon';
 import { InfoHint } from '@/components/ui';
 import { authShieldStyle } from '@/components/ui/authActionStyles';
@@ -843,7 +843,7 @@ export function AutopilotPanel() {
               status: action.actionUrl && action.expiresAt && action.expiresAt <= Date.now() ? 'expired' : 'pending',
             });
           }
-          if (action.actionUrl) openAuthRedirect(action.actionUrl);
+          if (action.actionUrl && !openConstructDeepLink(action.actionUrl)) openAuthRedirect(action.actionUrl);
         }
       };
       refresh()
@@ -852,6 +852,10 @@ export function AutopilotPanel() {
     }
     if (item.destination === 'access-control') {
       openWindow('access-control', item.sourceId ? { metadata: { approvalId: item.sourceId } } : undefined);
+      return;
+    }
+    if (item.destination === 'email-setup') {
+      openWindow('email');
       return;
     }
     if (item.destination === 'auth-url' && item.actionUrl) {
@@ -865,6 +869,7 @@ export function AutopilotPanel() {
           sessionKey: item.sessionKey || activeSessionKey || 'default',
         });
       }
+      if (openConstructDeepLink(item.actionUrl)) return;
       openAuthRedirect(item.actionUrl);
       return;
     }
@@ -1081,7 +1086,7 @@ export function AutopilotPanel() {
                     <span className="flex min-h-6 shrink-0 items-center justify-center pl-1.5 pr-0.5 text-current">
                       {isAuth ? (
                         <span className="flex h-[18px] w-[18px] items-center justify-center overflow-hidden bg-transparent">
-                          <PlatformIcon platform={toolkit} size={15} className="bg-transparent" />
+                          <PlatformIcon platform={toolkit} logoUrl={item.logoUrl} name={item.name} size={15} className="bg-transparent" />
                         </span>
                       ) : (
                         <ModeIcon size={12} strokeWidth={2.4} />

@@ -228,9 +228,6 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
               : `${stepCount} step${stepCount !== 1 ? 's' : ''}`}
           </span>
         )}
-        {!isRunning && collapsedPreview?.failed && (
-          <XCircle className="ml-auto shrink-0 w-3.5 h-3.5 text-red-400/70" />
-        )}
         {isRunning && (
           <span className="ml-auto shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         )}
@@ -373,13 +370,7 @@ export function SubAgentEntry({ agent }: { agent: TrackedSubAgent }) {
           {shortGoal}
         </span>
 
-        {/* Trailing run-status indicator */}
-        <span className="shrink-0 flex items-center justify-center">
-          {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-blue-300/70" />
-            : isFailed ? <XCircle className="h-3 w-3 text-red-400/70" />
-            : isCancelled ? <Square className="h-3 w-3 text-[var(--color-text-muted)]/40" />
-            : <CheckCircle2 className="h-3 w-3 text-emerald-400/60" />}
-        </span>
+        <span className="shrink-0 flex items-center justify-center w-3 h-3" aria-hidden />
         {duration && <span className="text-[10px] text-[var(--color-text-muted)]/25 shrink-0 tabular-nums">{duration}</span>}
       </button>
 

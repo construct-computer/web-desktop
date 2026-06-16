@@ -9,12 +9,13 @@ export type AttentionDestination =
   | 'access-control'
   | 'app-registry'
   | 'auth-url'
+  | 'email-setup'
   | 'spotlight-session'
   | 'spotlight';
 
 export interface AttentionItem {
   id: string;
-  kind: 'approval' | 'auth' | 'question' | 'blocker' | 'dead-letter' | 'verification' | 'side-effect' | 'provider' | 'gate';
+  kind: 'approval' | 'auth' | 'question' | 'blocker' | 'dead-letter' | 'verification' | 'side-effect' | 'provider' | 'gate' | 'email-setup';
   title: string;
   summary: string;
   ctaLabel: string;
@@ -23,6 +24,8 @@ export interface AttentionItem {
   actionUrl?: string;
   sourceId?: string;
   search?: string;
+  logoUrl?: string;
+  name?: string;
   createdAt: number;
   expiresAt?: number | null;
   status?: PendingUserAction['status'];
@@ -70,6 +73,33 @@ function actionSummary(action: PendingUserAction): string {
       || 'Construct needs your attention before it can continue.',
     110,
   );
+}
+
+function resolveInAppDestination(actionUrl?: string): Partial<Pick<AttentionItem, 'destination' | 'search'>> {
+  if (!actionUrl) return {};
+  try {
+    const parsed = new URL(actionUrl, typeof window !== 'undefined' ? window.location.origin : 'https://construct.computer');
+    const open = parsed.searchParams.get('open');
+    if (open === 'app-registry') {
+      return { destination: 'app-registry', search: parsed.searchParams.get('search') || undefined };
+    }
+    if (open === 'spotlight') return { destination: 'spotlight' };
+    if (open === 'email') return { destination: 'email-setup' };
+    if (parsed.origin !== (typeof window !== 'undefined' ? window.location.origin : parsed.origin)) {
+      return { destination: 'auth-url' };
+    }
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+function eventLogo(action: PendingUserAction): string | undefined {
+  return textFromMetadata(action, 'logo');
+}
+
+function eventName(action: PendingUserAction): string | undefined {
+  return textFromMetadata(action, 'name');
 }
 
 function openBlockers(status: AutopilotStatus | null | undefined): AutopilotBlockerSnapshot[] {
@@ -179,20 +209,46 @@ export function getAttentionItems(input: {
   const seenAuthSources = new Set<string>();
 
   for (const pending of input.pendingActions ?? []) {
+    if (pending.kind === 'auth' && pending.sourceId === 'native_email_inbox') {
+      items.push({
+        id: pending.id,
+        kind: 'email-setup',
+        title: pending.title || 'Set up agent email',
+        summary: actionSummary(pending),
+        ctaLabel: 'Set up email',
+        destination: 'email-setup',
+        sessionKey: pending.sessionKey,
+        sourceId: pending.sourceId,
+        createdAt: pending.updatedAt || pending.createdAt,
+        status: pending.status,
+      });
+      continue;
+    }
+
     if (pending.kind === 'auth') {
       const name = authDisplayName(pending);
       if (pending.sourceId) seenAuthSources.add(pending.sourceId);
+      const inApp = resolveInAppDestination(pending.actionUrl);
+      const metadataDestination = typeof pending.metadata?.destination === 'string'
+        ? pending.metadata.destination
+        : undefined;
+      const destination = inApp.destination
+        || (metadataDestination === 'app-registry' ? 'app-registry' : undefined)
+        || (metadataDestination === 'email-setup' ? 'email-setup' : undefined)
+        || (pending.actionUrl ? 'auth-url' : 'app-registry');
       items.push({
         id: pending.id,
         kind: 'auth',
         title: `Connect ${name}`,
         summary: `Waiting for ${name} connection.`,
         ctaLabel: `Connect ${name}`,
-        destination: pending.actionUrl ? 'auth-url' : 'app-registry',
+        destination,
         sessionKey: pending.sessionKey,
         actionUrl: pending.actionUrl || undefined,
         sourceId: pending.sourceId,
-        search: name,
+        search: inApp.search || name,
+        logoUrl: eventLogo(pending),
+        name: eventName(pending) || name,
         createdAt: pending.updatedAt || pending.createdAt,
         expiresAt: pending.expiresAt,
         status: pending.status,

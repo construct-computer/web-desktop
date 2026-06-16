@@ -1260,7 +1260,10 @@ function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
 
 const INCIDENT_COLLAPSE_WINDOW_MS = 2 * 60 * 1000;
 
-function formatToolNoticeTitle(message: string, toolName?: string): string {
+function formatToolNoticeTitle(message: string, toolName?: string, noticeKind?: string): string {
+  if (noticeKind === 'incident' && /saved-file tracking skipped|configuration_missing/i.test(message)) {
+    return message.split('\n')[0]?.trim() || message;
+  }
   const failedTool = message.match(/^Tool "([^"]+)" failed\.?$/i)?.[1] || toolName;
   if (failedTool) {
     const label = failedTool
@@ -1424,7 +1427,7 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
     actionTaken ? `Action taken: ${actionTaken}` : '',
     nextStep ? `Next step: ${nextStep}` : '',
   ].filter(Boolean).join('\n');
-  const title = formatToolNoticeTitle(message, toolName);
+  const title = formatToolNoticeTitle(message, toolName, 'incident');
   const signature = [kind, severity, toolName || '', message, actionTaken || '', nextStep || ''].join('|');
 
   return {
@@ -6853,6 +6856,7 @@ export const useComputerStore = create<ComputerStore>()(
           const sourcePreview = acKind === 'app' ? `app:${acAppId || acToolkit}` : `composio:${acToolkit}`;
           const existing = getAuthRequest(sourcePreview);
           const alreadyPending = existing?.status === 'pending' || existing?.status === 'connecting' || existing?.status === 'expired';
+          const isScheduledSession = acSessionKey.startsWith('sched_');
 
           const authRequest = registerAuthRequest({
             kind: acKind,
@@ -6868,7 +6872,7 @@ export const useComputerStore = create<ComputerStore>()(
             createdAt: acCreatedAt,
           });
 
-          if (alreadyPending) {
+          if (alreadyPending && !isScheduledSession) {
             break;
           }
 
@@ -6902,6 +6906,18 @@ export const useComputerStore = create<ComputerStore>()(
           if (notifId) {
             authConnectNotifIds.set(authRequest.sourceId, notifId);
           }
+          break;
+        }
+
+        case 'email_setup_required': {
+          const esSessionKey = (event.data?.sessionKey as string | undefined) || get().activeSessionKey || 'default';
+          const esReason = (event.data?.reason as string | undefined) || 'Set up your Construct email inbox to send and receive mail.';
+          const marker = `<!--EMAIL_SETUP:${JSON.stringify({ sessionKey: esSessionKey, reason: esReason, createdAt: Date.now() })}-->`;
+          appendToAgentChat({
+            role: 'agent',
+            content: `${marker}\n\nSet up your Construct email inbox to send and receive mail from scheduled tasks.`,
+            timestamp: new Date(),
+          });
           break;
         }
 

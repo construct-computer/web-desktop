@@ -112,6 +112,8 @@ const DIRECT_TOOL_WINDOW: Record<string, WindowType> = {
   notify_user: 'settings',
   tool_search: 'app-registry',
   capability: 'app-registry',
+  discover: 'app-registry',
+  execute: 'app-registry',
 };
 
 const TOOL_PLATFORM_SLUG: Record<string, string> = {

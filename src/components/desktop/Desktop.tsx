@@ -219,13 +219,25 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
     const params = new URLSearchParams(window.location.search);
     const target = params.get('open');
     const approvalId = params.get('approval');
-    if (target !== 'access-control' && !approvalId) return;
+    if (!target && !approvalId) return;
 
     deepLinkHandledRef.current = true;
-    openWindow('access-control', approvalId ? { metadata: { approvalId } } : undefined);
+    if (target === 'access-control' || approvalId) {
+      openWindow('access-control', approvalId ? { metadata: { approvalId } } : undefined);
+    } else if (target === 'app-registry') {
+      const search = params.get('search') || undefined;
+      openWindow('app-registry', search ? { metadata: { view: 'integrations', search } } : undefined);
+    } else if (target === 'spotlight') {
+      if (!useWindowStore.getState().spotlightOpen) {
+        useWindowStore.getState().toggleSpotlight();
+      }
+    } else if (target === 'email') {
+      openWindow('email');
+    }
 
     params.delete('open');
     params.delete('approval');
+    params.delete('search');
     const qs = params.toString();
     window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
   }, [openWindow]);

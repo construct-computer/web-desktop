@@ -6,13 +6,11 @@ import {
   lucideIconForActivity,
   resolveActivityVisual,
 } from '@/lib/toolActivityIcon';
-import { iconError, iconInfo, iconWarn } from '@/icons';
 
 function toneStatusIcon(tone: ActivityTone, cls: string) {
-  const className = `object-contain shrink-0 ${cls}`;
-  if (tone === 'error') return <img src={iconError} alt="Error" className={className} />;
-  if (tone === 'warn') return <img src={iconWarn} alt="Warning" className={className} />;
-  return <img src={iconInfo} alt="Info" className={className} />;
+  void tone;
+  void cls;
+  return <span className={`inline-block shrink-0 ${cls}`} aria-hidden />;
 }
 
 function parseIconSize(className: string, fill?: boolean): number {

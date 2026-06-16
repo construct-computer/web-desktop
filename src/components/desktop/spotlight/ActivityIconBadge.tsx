@@ -28,8 +28,8 @@ export function ActivityIconBadge({
   const visual = resolveActivityVisual({ type, tool, label, iconPlatform, iconUrl });
   const branded = isBrandedActivityVisual(visual);
   let frameVariant: ActivityIconFrameVariant = 'default';
-  if (failed || tone === 'error' || tone === 'warn') {
-    frameVariant = surface === 'clippy' ? 'clippy' : 'failed';
+  if (failed && surface !== 'clippy' && tone !== 'error' && tone !== 'warn') {
+    frameVariant = 'failed';
   } else if (surface === 'clippy') {
     frameVariant = 'clippy';
   }

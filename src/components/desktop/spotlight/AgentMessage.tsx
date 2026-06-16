@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react';
 import { FileText, Image as ImageIcon, Download, Loader2 } from 'lucide-react';
 import { AuthConnectCard } from '@/components/ui/AuthConnectCard';
+import { EmailSetupCard } from '@/components/ui/EmailSetupCard';
 import { parseAuthMarker } from '@/components/ui/authConnectMarker';
+import { parseEmailSetupMarker } from '@/components/ui/emailSetupMarker';
 import { AskUserCard } from '@/components/ui/AskUserCard';
 import { ReasoningBlock } from '@/components/ui/ReasoningBlock';
 import { MarkdownRenderer } from '@/components/ui';
@@ -42,6 +44,30 @@ export function AgentMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?:
   const displayContent = agentDisplayContent(msg.content);
   if (!displayContent.trim() && !msg.askUser && !(msg.attachments?.length)) {
     return null;
+  }
+
+  const emailSetup = parseEmailSetupMarker(displayContent);
+  if (emailSetup) {
+    return (
+      <>
+        <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-2" style={{ animation: 'spt-in 150ms ease-out' }}>
+          <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm" />
+          <div className="min-w-0 max-w-full sm:max-w-[90%]">
+            <EmailSetupCard payload={emailSetup.payload} />
+            {!emailSetup.rest && replySlot}
+          </div>
+        </div>
+        {emailSetup.rest && (
+          <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-6 py-1.5" style={{ animation: 'spt-in 150ms ease-out' }}>
+            <img src={constructStatic} alt="" className="w-6 h-6 shrink-0 mt-0.5 drop-shadow-sm opacity-0" />
+            <div className="min-w-0 max-w-full sm:max-w-[90%] text-[13px] text-[var(--color-text-muted)]/80">
+              <MarkdownRenderer content={emailSetup.rest} />
+              {replySlot}
+            </div>
+          </div>
+        )}
+      </>
+    );
   }
 
   const auth = parseAuthMarker(displayContent);

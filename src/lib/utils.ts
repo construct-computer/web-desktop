@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useWindowStore } from '@/stores/windowStore';
 import {
   getFileType,
   getViewerDocType,
@@ -99,4 +100,39 @@ export function openAuthRedirect(url: string): void {
     // Popup blocked — fall back to full-page redirect
     window.location.href = url;
   }
+}
+
+export function parseConstructDeepLink(url: string): {
+  destination: 'app-registry' | 'spotlight' | 'email';
+  search?: string;
+} | null {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin !== window.location.origin) return null;
+    const open = parsed.searchParams.get('open');
+    if (open === 'app-registry') {
+      return { destination: 'app-registry', search: parsed.searchParams.get('search') || undefined };
+    }
+    if (open === 'spotlight') return { destination: 'spotlight' };
+    if (open === 'email') return { destination: 'email' };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function openConstructDeepLink(url: string): boolean {
+  const link = parseConstructDeepLink(url);
+  if (!link) return false;
+  const { openWindow, toggleSpotlight } = useWindowStore.getState();
+  if (link.destination === 'app-registry') {
+    openWindow('app-registry', link.search ? { metadata: { view: 'integrations', search: link.search } } : undefined);
+    return true;
+  }
+  if (link.destination === 'email') {
+    openWindow('email');
+    return true;
+  }
+  if (!useWindowStore.getState().spotlightOpen) toggleSpotlight();
+  return true;
 }

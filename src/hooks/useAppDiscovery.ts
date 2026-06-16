@@ -14,6 +14,7 @@ import {
 } from './appDiscoveryCatalog';
 import { POPULAR_INTEGRATION_GROUPS } from './popularIntegrations';
 import { isComposioToolkitConnected } from '@/lib/composioSlug';
+import { composioIconUrl as reexportComposioIconUrl } from '@/lib/composioToolkitCache';
 import {
   buildBrowseCategoryNav,
   categoryDisplayName,
@@ -149,7 +150,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 // ── Helpers ──
 
 export function composioIconUrl(slug: string, logo?: string): string {
-  return logo || `https://logos.composio.dev/api/${slug}`;
+  return reexportComposioIconUrl(slug, logo);
 }
 
 export function inferCategory(slug: string, name: string, desc: string, curated?: CuratedDef[]): Category {

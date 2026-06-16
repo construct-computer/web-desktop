@@ -359,4 +359,14 @@ describe('autopilot attention helpers', () => {
       pendingActions: [pendingAction({ kind: 'auth', actionUrl: '', title: 'Connect Gmail' })],
     })?.destination).toBe('app-registry');
   });
+
+  it('routes same-origin app-registry action URLs to in-app destination', () => {
+    const item = getPrimaryAttention({
+      pendingActions: [pendingAction({
+        actionUrl: 'https://staging.construct.computer/?open=app-registry&search=agentmail',
+      })],
+    });
+    expect(item?.destination).toBe('app-registry');
+    expect(item?.search).toBe('agentmail');
+  });
 });
