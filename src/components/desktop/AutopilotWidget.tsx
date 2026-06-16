@@ -323,6 +323,7 @@ export function AutopilotPanel() {
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
   const [memories, setMemories] = useState<api.MemoryRecord[]>([]);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
+  const [dismissingChecklistTaskId, setDismissingChecklistTaskId] = useState<number | null>(null);
   const nextEvent = useUpcomingCalendarEvent();
 
   async function loadSnapshot(isCancelled?: () => boolean) {
@@ -588,7 +589,9 @@ export function AutopilotPanel() {
   const groupedAttentionItems = authAttentionItems.length > 1 ? authAttentionItems : attention ? [attention] : [];
   const hasGroupedAuth = authAttentionItems.length > 1;
   const isWaitingForUser = Boolean(attention && (mode === 'blocked' || combinedPendingActions.length > 0));
-  const copy = isWaitingForUser
+  const blockedChecklistTask = currentTask?.status === 'blocked' ? currentTask : null;
+  const isBlockedByChecklistOnly = mode === 'blocked' && !attention && Boolean(blockedChecklistTask);
+  const copy = isWaitingForUser || isBlockedByChecklistOnly
     ? { ...rawCopy, label: 'Needs you', color: '#60a5fa', background: 'rgba(96,165,250,0.14)' }
     : rawCopy;
   const ModeIcon = copy.Icon;
@@ -596,6 +599,8 @@ export function AutopilotPanel() {
     ? hasGroupedAuth
       ? `${authAttentionItems.length} account connections are waiting.`
       : attention.summary
+    : isBlockedByChecklistOnly && blockedChecklistTask
+      ? `Blocked: ${cleanWidgetText(blockedChecklistTask.title, 72)}`
     : hasActiveRun
       ? summary
       : mode === 'idle'
@@ -609,6 +614,8 @@ export function AutopilotPanel() {
         : displayStatus?.openBlockerCount
           ? `${displayStatus.openBlockerCount} blocker${displayStatus.openBlockerCount === 1 ? '' : 's'}`
         : 'Needs attention'
+    : isBlockedByChecklistOnly && displayStatus?.blockedTaskCount
+      ? `${displayStatus.blockedTaskCount} blocked task${displayStatus.blockedTaskCount === 1 ? '' : 's'}`
     : hasActiveRun && primaryRun
       ? formatDuration(primaryRun.elapsedMs)
       : loading
@@ -956,6 +963,18 @@ export function AutopilotPanel() {
     openWindow('memory', { metadata });
   }, [openWindow, updateWindow, windows]);
 
+  const handleDismissChecklistTask = async (taskId: number) => {
+    setDismissingChecklistTaskId(taskId);
+    try {
+      const result = await api.dismissChecklistTask(taskId);
+      if (result.success) {
+        await loadSnapshot();
+      }
+    } finally {
+      setDismissingChecklistTaskId(null);
+    }
+  };
+
   const applyWorkOrderUpdate = (updated: api.AutopilotWorkOrderControlSnapshot) => {
     setStatus((current) => {
       if (!current) return current;
@@ -1236,8 +1255,28 @@ export function AutopilotPanel() {
         )}
       </div>
 
-      <div className="px-3.5 py-2 flex items-center justify-between border-t border-white/[0.06] text-[9px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
-        <span className="truncate">{footerLabel}</span>
+      <div className="px-3.5 py-2 flex items-center justify-between gap-2 border-t border-white/[0.06] text-[9px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+        <div className="flex min-w-0 items-center gap-1.5 truncate">
+          <span className="truncate">{footerLabel}</span>
+          {isBlockedByChecklistOnly && blockedChecklistTask && (
+            <>
+              <span aria-hidden className="shrink-0 text-white/20">·</span>
+              <button
+                type="button"
+                title="Clear blocked task"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleDismissChecklistTask(blockedChecklistTask.id);
+                }}
+                disabled={dismissingChecklistTaskId === blockedChecklistTask.id}
+                className="shrink-0 cursor-pointer text-white/40 transition-colors hover:text-white/65 disabled:cursor-default disabled:opacity-50"
+              >
+                {dismissingChecklistTaskId === blockedChecklistTask.id ? '…' : 'Clear'}
+              </button>
+            </>
+          )}
+        </div>
         <span className="tabular-nums shrink-0">{displayStatus?.generatedAt ? `Updated ${formatAge(displayStatus.generatedAt)}` : loading ? 'Checking' : ''}</span>
       </div>
     </div>

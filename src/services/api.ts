@@ -1267,6 +1267,14 @@ export async function cancelWorkOrder(
   });
 }
 
+export async function dismissChecklistTask(
+  id: number,
+): Promise<ApiResult<{ ok: boolean; task: { id: number; title: string; status: string; updatedAt: number } }>> {
+  return request(`/agent/autopilot/checklist-tasks/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function retryAutopilotAction(actionId: string): Promise<ApiResult<{
   ok: boolean;
   actionId: string;
