@@ -327,12 +327,17 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
   const [loading, setLoading] = useState(true);
   const [defaultsLoading, setDefaultsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>(() => (
-    config.metadata?.tab === 'defaults' ? 'defaults' : 'graph'
-  ));
+  const [view, setView] = useState<ViewMode>(() => {
+    if (config.metadata?.tab === 'defaults') return 'defaults';
+    if (config.metadata?.tab === 'list') return 'list';
+    return 'graph';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(() => {
+    const raw = config.metadata?.highlightMemoryId;
+    return typeof raw === 'string' && raw.trim() ? raw : null;
+  });
   const [expandedPolicyId, setExpandedPolicyId] = useState<number | null>(() => {
     const raw = config.metadata?.highlightPolicyId;
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
@@ -476,11 +481,16 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
 
   useEffect(() => {
     if (config.metadata?.tab === 'defaults') setView('defaults');
-    const raw = config.metadata?.highlightPolicyId;
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      setExpandedPolicyId(raw);
+    else if (config.metadata?.tab === 'list') setView('list');
+    const policyRaw = config.metadata?.highlightPolicyId;
+    if (typeof policyRaw === 'number' && Number.isFinite(policyRaw)) {
+      setExpandedPolicyId(policyRaw);
     }
-  }, [config.metadata?.tab, config.metadata?.highlightPolicyId]);
+    const memoryRaw = config.metadata?.highlightMemoryId;
+    if (typeof memoryRaw === 'string' && memoryRaw.trim()) {
+      setExpandedId(memoryRaw);
+    }
+  }, [config.metadata?.tab, config.metadata?.highlightPolicyId, config.metadata?.highlightMemoryId]);
 
   useEffect(() => {
     if (view !== 'defaults' || expandedPolicyId == null) return;
@@ -489,6 +499,14 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
     }, 120);
     return () => window.clearTimeout(timer);
   }, [view, expandedPolicyId, learnedPolicies.length]);
+
+  useEffect(() => {
+    if (view !== 'list' || !expandedId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`memory-${expandedId}`)?.scrollIntoView({ block: 'nearest' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [view, expandedId, memories.length]);
 
   const switchView = (nextView: ViewMode) => {
     setSelectedNode(null);
@@ -785,7 +803,7 @@ export function MemoryWindow({ config }: { config: WindowConfig }) {
                 const isExpanded = expandedId === memory.id;
                 return (
                   <AnimatedListItem key={key} phase={phase}>
-                  <div>
+                  <div id={`memory-${memory.id}`}>
                     <button
                       className="w-full flex items-start gap-2.5 px-3 py-2.5 hover:bg-[var(--color-accent-muted)] transition-colors text-left"
                       onClick={() => setExpandedId(isExpanded ? null : memory.id)}

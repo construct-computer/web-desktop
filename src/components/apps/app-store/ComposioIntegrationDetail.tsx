@@ -1,9 +1,7 @@
 import { BookOpen, ExternalLink, KeyRound, Wrench } from 'lucide-react';
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 import { getCategoryLabel, prettyAuthLabel } from '@/hooks/useAppDiscovery';
-import { Badge, InfoCard, InfoRow, ToolCard } from '../AppShared';
-
-const PREVIEW_ACTIONS = 6;
+import { Badge, InfoCard, InfoRow } from '../AppShared';
 
 export function ComposioIntegrationDetail({
   detail,
@@ -14,12 +12,11 @@ export function ComposioIntegrationDetail({
 }) {
   if (!detail.composioSlug) return null;
 
-  const toolCount = detail.toolCount ?? detail.tools?.length ?? 0;
+  const toolCount = detail.tools?.length ?? detail.toolCount ?? 0;
   const authLabels = (detail.authSchemes || []).map((s) => prettyAuthLabel(s)).filter(Boolean);
   const categoryBadges = (detail.composioCategories || []).map((c) =>
     getCategoryLabel(c.slug, categoryLabels),
   );
-  const previewTools = detail.tools.slice(0, PREVIEW_ACTIONS);
 
   return (
     <div className="space-y-4">
@@ -72,25 +69,6 @@ export function ComposioIntegrationDetail({
           </div>
         </div>
       </InfoCard>
-
-      {previewTools.length > 0 && (
-        <InfoCard
-          title="What you can do"
-          subtitle={toolCount > previewTools.length
-            ? `Popular actions · ${toolCount} total`
-            : `${toolCount} action${toolCount === 1 ? '' : 's'}`}
-        >
-          <div className="rounded-[8px] border border-black/[0.06] dark:border-white/[0.06] divide-y divide-black/[0.06] dark:divide-white/[0.06] overflow-hidden -mx-0.5">
-            {previewTools.map((tool) => (
-              <ToolCard
-                key={tool.name}
-                tool={{ slug: tool.name, name: tool.name, description: tool.description || undefined }}
-                compact
-              />
-            ))}
-          </div>
-        </InfoCard>
-      )}
     </div>
   );
 }

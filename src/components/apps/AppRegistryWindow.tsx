@@ -170,7 +170,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         setDetail(prev => prev ? {
           ...prev, description: d.description || prev.description,
           icon: d.logo || prev.icon, composioLogo: d.logo || prev.composioLogo,
-          toolCount: d.tools_count || d.tools?.length || prev.toolCount,
+          toolCount: d.tools?.length ?? prev.toolCount,
           tools: d.tools?.map((t) => ({ slug: t.slug || t.name, name: t.name, description: t.description })) || prev.tools,
           composioCategories: d.categories?.map((c: any) => ({
             slug: c.slug || '',
@@ -469,7 +469,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     const installed = isAppInstalled(detail);
     const isPending = !!pendingActions[detail.id] || !!pendingActions[`composio-${detail.composioSlug}`];
     const isComposio = detail.source === 'composio';
-    const toolCount = detail.toolCount ?? detail.tools?.length ?? 0;
+    const toolCount = detail.tools?.length ?? detail.toolCount ?? 0;
 
     const getUninstallTarget = (): string | null => {
       if (detail.installedApp && detail.installedApp.id !== 'app-registry') return detail.installedApp.id;

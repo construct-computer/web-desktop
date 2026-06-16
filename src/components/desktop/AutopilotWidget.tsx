@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Brain,
   CalendarDays,
   CheckCircle2,
   Gauge,
@@ -34,7 +35,11 @@ import {
   getApprovalQueue,
   type ApprovalQueueEntry,
 } from '@/services/access-control';
-import { formatLearnedPolicyDisplay } from '@/lib/learnedPolicyDisplay';
+import {
+  buildRecentKnowledgePreview,
+  formatRecentKnowledgeAge,
+  type RecentKnowledgeItem,
+} from '@/lib/recentKnowledgePreview';
 import { getAttentionItems, getPrimaryAttention, withoutCancelledAuthAttention, withoutPassiveProviderAttention, type AttentionItem } from '@/lib/autopilotAttention';
 import {
   AUTH_REQUEST_CANCELLED_EVENT,
@@ -44,6 +49,7 @@ import {
 } from '@/lib/authRequestState';
 import {
   AGENT_HISTORY_CLEARED_EVENT,
+  MEMORY_CHANGED_EVENT,
   WORK_ORDER_UPDATED_EVENT,
   type AgentHistoryClearedDetail,
   type WorkOrderUpdatedDetail,
@@ -315,8 +321,7 @@ export function AutopilotPanel() {
   const [pendingApproval, setPendingApproval] = useState<ApprovalQueueEntry | null>(null);
   const [pendingActions, setPendingActions] = useState<api.PendingUserAction[]>([]);
   const [refreshingActionId, setRefreshingActionId] = useState<string | null>(null);
-  const [expiringPolicyId, setExpiringPolicyId] = useState<number | null>(null);
-  const [expirePolicyError, setExpirePolicyError] = useState<string | null>(null);
+  const [memories, setMemories] = useState<api.MemoryRecord[]>([]);
   const [cancelledAuthSourceIds, setCancelledAuthSourceIds] = useState<Set<string>>(() => new Set());
   const nextEvent = useUpcomingCalendarEvent();
 
@@ -382,6 +387,28 @@ export function AutopilotPanel() {
     const interval = setInterval(() => void fetchUsage(), 60_000);
     return () => clearInterval(interval);
   }, [fetchUsage]);
+
+  const loadMemories = useCallback(async (isCancelled?: () => boolean) => {
+    const result = await api.getMemories();
+    if (isCancelled?.()) return;
+    if (result.success) {
+      setMemories(result.data.memories || []);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => { void loadMemories(() => cancelled); };
+    poll();
+    const interval = setInterval(poll, 30_000);
+    const onMemoryChanged = () => { void loadMemories(() => cancelled); };
+    window.addEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener(MEMORY_CHANGED_EVENT, onMemoryChanged);
+    };
+  }, [loadMemories]);
 
   useEffect(() => {
     const cancelHandler = (event: Event) => {
@@ -718,15 +745,16 @@ export function AutopilotPanel() {
     summary,
   ]);
 
-  const visibleLearnedPolicies = useMemo(() => (
-    (displayStatus?.learnedPolicies || []).slice(0, 3)
-  ), [displayStatus]);
+  const recentKnowledge = useMemo(() => buildRecentKnowledgePreview(
+    memories,
+    displayStatus?.learnedPolicies || [],
+  ), [memories, displayStatus?.learnedPolicies]);
   const visibleScheduledWork = useMemo(() => (
     (displayStatus?.scheduledWork || [])
       .filter((schedule) => schedule.status === 'active' || schedule.status === 'paused')
       .slice(0, 3)
   ), [displayStatus]);
-  const showOperationalLedger = visibleScheduledWork.length > 0 || visibleLearnedPolicies.length > 0;
+  const showOperationalLedger = visibleScheduledWork.length > 0 || recentKnowledge.items.length > 0;
 
   const isIdleGlance = !attention && !hasActiveRun && mode === 'idle';
   const idleItems = useMemo<IdleGlanceItem[]>(() => {
@@ -906,10 +934,15 @@ export function AutopilotPanel() {
     }
   };
 
-  const openKnowledgeDefaults = useCallback((policyId?: number) => {
+  const openKnowledge = useCallback((options?: {
+    tab?: 'list' | 'defaults';
+    highlightMemoryId?: string;
+    highlightPolicyId?: number;
+  }) => {
     const metadata = {
-      tab: 'defaults',
-      ...(policyId != null ? { highlightPolicyId: policyId } : {}),
+      ...(options?.tab ? { tab: options.tab } : {}),
+      ...(options?.highlightMemoryId ? { highlightMemoryId: options.highlightMemoryId } : {}),
+      ...(options?.highlightPolicyId != null ? { highlightPolicyId: options.highlightPolicyId } : {}),
     };
     const existing = windows.find((window) => window.type === 'memory');
     if (existing) {
@@ -922,29 +955,6 @@ export function AutopilotPanel() {
     }
     openWindow('memory', { metadata });
   }, [openWindow, updateWindow, windows]);
-
-  const handleExpirePolicy = (policy: api.AutopilotLearnedPolicySnapshot) => {
-    if (expiringPolicyId !== null) return;
-    setExpirePolicyError(null);
-    setExpiringPolicyId(policy.id);
-    api.expireLearnedPolicy(policy.id)
-      .then((result) => {
-        if (!result.success) {
-          setExpirePolicyError(result.error || 'Could not forget this default');
-          return;
-        }
-        setStatus((current) => {
-          if (!current) return current;
-          const learnedPolicies = (current.learnedPolicies || []).filter((item) => item.id !== policy.id);
-          return {
-            ...current,
-            learnedPolicies,
-            learnedPolicyCount: Math.max(0, (current.learnedPolicyCount ?? learnedPolicies.length + 1) - 1),
-          };
-        });
-      })
-      .finally(() => setExpiringPolicyId(null));
-  };
 
   const applyWorkOrderUpdate = (updated: api.AutopilotWorkOrderControlSnapshot) => {
     setStatus((current) => {
@@ -1119,79 +1129,61 @@ export function AutopilotPanel() {
 
         {showOperationalLedger && (
           <div className="mt-2 space-y-2 border-t border-white/[0.055] pt-2">
-            {visibleLearnedPolicies.length > 0 && (
+            {recentKnowledge.items.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 text-[9px] font-semibold uppercase tracking-wide text-white/[0.30]">
                   <span className="inline-flex items-center gap-1">
-                    Learned defaults
+                    Recent knowledge
                     <InfoHint side="top" className="text-white/40 hover:text-white/80">
-                      Habits Construct learned from successful scheduled tasks and reports. Forget any default you do not want.
+                      What Construct learned recently. Manage everything in Knowledge.
                     </InfoHint>
                   </span>
-                  <span>{displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length}</span>
+                  <span>{recentKnowledge.totalCount}</span>
                 </div>
-                {expirePolicyError && (
-                  <p className="px-1 text-[9.5px] text-rose-200/80">{expirePolicyError}</p>
-                )}
-                {visibleLearnedPolicies.map((policy) => {
-                  const display = formatLearnedPolicyDisplay(policy);
+                {recentKnowledge.items.map((item: RecentKnowledgeItem) => {
+                  const RowIcon = item.kind === 'fact' ? Brain : Repeat;
+                  const iconClass = item.kind === 'fact'
+                    ? 'text-sky-200/[0.54]'
+                    : 'text-violet-200/[0.54]';
                   return (
-                    <div
-                      key={policy.id}
-                      className="group flex min-h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5"
-                      title={display.description}
+                    <button
+                      key={`${item.kind}-${item.id}`}
+                      type="button"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (item.kind === 'fact') {
+                          openKnowledge({ tab: 'list', highlightMemoryId: item.id });
+                        } else {
+                          openKnowledge({ tab: 'defaults', highlightPolicyId: item.id });
+                        }
+                      }}
+                      className="flex h-[30px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-white/[0.035]"
+                      title={item.text}
                     >
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openKnowledgeDefaults(policy.id);
-                        }}
-                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-                      >
-                        <Repeat size={13} strokeWidth={2.1} className="shrink-0 text-violet-200/[0.54]" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[11px] font-medium text-white/[0.70]">
-                            {cleanWidgetText(display.title, 56)}
-                          </span>
-                          <span className="block truncate text-[9.5px] text-white/[0.38]">
-                            {display.scopeLabel} · {display.strengthText}
-                          </span>
+                      <RowIcon size={13} strokeWidth={2.1} className={`shrink-0 ${iconClass}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-medium text-white/[0.70]">
+                          {cleanWidgetText(item.text, 56)}
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Forget this default: ${display.title}`}
-                        title="Forget this default"
-                        disabled={expiringPolicyId !== null}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleExpirePolicy(policy);
-                        }}
-                        className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/[0.28] opacity-0 transition hover:bg-white/[0.045] hover:text-white/[0.70] group-hover:opacity-100 disabled:cursor-default disabled:opacity-40"
-                      >
-                        {expiringPolicyId === policy.id ? (
-                          <Loader2 size={11} strokeWidth={2.3} className="animate-spin" />
-                        ) : (
-                          <X size={11} strokeWidth={2.4} />
-                        )}
-                      </button>
-                    </div>
+                        <span className="block truncate text-[9.5px] text-white/[0.38]">
+                          {formatRecentKnowledgeAge(item.at)}
+                        </span>
+                      </span>
+                    </button>
                   );
                 })}
-                {(displayStatus?.learnedPolicyCount ?? 0) > visibleLearnedPolicies.length && (
+                {recentKnowledge.totalCount > recentKnowledge.items.length && (
                   <button
                     type="button"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      openKnowledgeDefaults();
+                      openKnowledge();
                     }}
                     className="px-1.5 text-left text-[9.5px] text-white/[0.42] transition hover:text-white/[0.68]"
                   >
-                    View all {displayStatus?.learnedPolicyCount ?? visibleLearnedPolicies.length} defaults in Knowledge
+                    Open Knowledge
                   </button>
                 )}
               </div>
