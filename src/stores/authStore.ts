@@ -4,6 +4,7 @@ import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { log } from '@/lib/logger';
 import analytics from '@/lib/analytics';
+import { setSentryUser } from '@/lib/sentry';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
 import {
   deferWallpaperCacheClearForUser,
@@ -205,6 +206,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       analytics.loginSuccess('magic_link');
       analytics.identify(result.data.user);
+      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -284,6 +286,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       analytics.loginSuccess('google');
       analytics.identify(result.data.user);
+      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -355,6 +358,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearStaleUserData(result.data.user.id);
       // Identify returning user for analytics
       analytics.identify(result.data.user);
+      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,

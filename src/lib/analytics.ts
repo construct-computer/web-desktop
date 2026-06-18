@@ -161,24 +161,6 @@ export function registerSuperProperties(properties: Record<string, unknown>): vo
   client()?.register(properties);
 }
 
-// ── Feature Flags ────────────────────────────────────────────────────────────
-
-/**
- * Check if a feature flag is enabled.
- */
-export function isFeatureEnabled(flag: string): boolean {
-  if (!initialized) return false;
-  return client()?.isFeatureEnabled(flag) ?? false;
-}
-
-/**
- * Get a feature flag's value (for multivariate flags).
- */
-export function getFeatureFlag(flag: string): string | boolean | undefined {
-  if (!initialized) return undefined;
-  return client()?.getFeatureFlag(flag);
-}
-
 // ── Groups ───────────────────────────────────────────────────────────────────
 
 /**
@@ -198,8 +180,6 @@ export const analytics = {
   reset: resetUser,
   track,
   register: registerSuperProperties,
-  isFeatureEnabled,
-  getFeatureFlag,
   setGroup,
 
   // ── Auth Events ──

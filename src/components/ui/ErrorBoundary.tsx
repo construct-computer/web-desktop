@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { log } from '@/lib/logger';
+import { captureException, sentryEnabled } from '@/lib/sentry';
 import { isChunkLoadError, recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery';
 import { useErrorStore } from '@/stores/errorStore';
 
@@ -31,6 +32,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     log(`ErrorBoundary${this.props.label ? `:${this.props.label}` : ''}`).error(error, info.componentStack);
+    // Sentry: capture with the React component stack for symbolicated grouping.
+    if (sentryEnabled()) {
+      captureException(error, {
+        tags: { source: 'react_error_boundary', ...(this.props.label ? { label: this.props.label } : {}) },
+        extra: { componentStack: info.componentStack },
+      });
+    }
     useErrorStore.getState().capture({
       source: 'react',
       message: error.message,

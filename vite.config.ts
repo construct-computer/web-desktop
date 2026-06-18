@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 import { execSync } from 'child_process'
 
@@ -63,6 +64,25 @@ export default defineConfig(({ mode }) => {
       }
     })
     ,
+    // Sentry source-map upload + release tracking. Auth via SENTRY_AUTH_TOKEN,
+    // SENTRY_ORG, SENTRY_PROJECT env vars (set in CI). No-op locally without
+    // the auth token — source maps are still generated (hidden) for the
+    // browser devtools, just not uploaded to Sentry.
+    sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      release: { name: gitHash },
+      sourcemaps: {
+        // Upload JS + source map files from the Vite build output.
+        assets: 'dist/assets/*.js*',
+        // Delete source maps from the build output after upload so they're
+        // not publicly served. Symbolication happens in Sentry.
+        filesToDeleteAfterUpload: 'dist/assets/*.js.map',
+      },
+      // Skip when the auth token is missing (local dev / non-deploy builds).
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+    }),
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -92,6 +112,10 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
+    // Hidden source maps: generated + uploaded to Sentry by the Vite plugin,
+    // but not linked in the bundle (not publicly served). Enables symbolicated
+    // production error stacks in Sentry without exposing source maps.
+    sourcemap: 'hidden',
     rollupOptions: {
       output: {
         manualChunks(id) {

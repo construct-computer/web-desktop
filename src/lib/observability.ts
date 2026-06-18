@@ -1,8 +1,10 @@
 /**
- * Client observability bridge — PostHog and backend telemetry ingest.
+ * Client observability bridge — PostHog (product analytics) + Sentry (error
+ * tracking) + backend correlation via traceparent/x-request-id headers.
  */
 
 import { analytics } from '@/lib/analytics';
+import { captureException, sentryEnabled } from '@/lib/sentry';
 
 export interface ClientErrorReport {
   source: string;
@@ -81,11 +83,11 @@ function fingerprint(parts: Array<string | undefined>): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Report a client error to PostHog. */
+/** Report a client error to Sentry (ops) + PostHog (product analytics). */
 export function reportClientError(report: ClientErrorReport): void {
   const route = currentRoute();
   const release = appRelease();
-  const { code: reactErrorCode } = reactErrorHint(report.message);
+  const { code: reactErrorCode, hint: reactHint } = reactErrorHint(report.message);
 
   const normalizedMessage = reactErrorCode
     ? `react#${reactErrorCode}`
@@ -96,6 +98,33 @@ export function reportClientError(report: ClientErrorReport): void {
     topAppFrame(report.stack),
   ]);
 
+  // Sentry: ops error tracking with full context, fingerprint, and source-mapped
+  // stack (when sourcemaps are uploaded). This is the source of truth for ops.
+  if (sentryEnabled()) {
+    const errorObj = report.error instanceof Error
+      ? report.error
+      : (report.stack ? new Error(report.message) : new Error(normalizedMessage));
+    if (report.stack && !(report.error instanceof Error)) {
+      errorObj.stack = report.stack;
+    }
+    captureException(errorObj, {
+      tags: {
+        source: report.source,
+        fingerprint: fp,
+        ...(reactErrorCode ? { react_error_code: reactErrorCode } : {}),
+      },
+      extra: {
+        route,
+        release,
+        correlation_id: report.correlationId,
+        server_error_id: report.errorId,
+        ...(reactHint ? { react_hint: reactHint } : {}),
+        ...(report.context ?? {}),
+      },
+    });
+  }
+
+  // PostHog: product-analytics mirror (useful for funnels like "error → churn").
   analytics.errorOccurred(report.message, report.source);
 }
 

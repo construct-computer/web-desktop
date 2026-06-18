@@ -15,7 +15,6 @@ import { preloadAllAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useAppStore } from '@/stores/appStore';
-import { installGlobalErrorHandlers } from '@/stores/errorStore';
 import { DebugPanel } from '@/components/desktop/DebugPanel';
 import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tabSingleton';
 import * as api from '@/services/api';
@@ -186,9 +185,8 @@ function WebAppShell() {
   const fetchComputer = useComputerStore((s) => s.fetchComputer);
   const unsubscribeFromComputer = useComputerStore((s) => s.unsubscribeFromComputer);
 
-  // Preload sounds, install global click listener, error handlers, handle OAuth callback, and check auth on mount
+  // Preload sounds, install global click listener, handle OAuth callback, and check auth on mount
   useEffect(() => {
-    installGlobalErrorHandlers();
     preloadAllAssets();
     preloadAllSounds();
     unlockAudio();
