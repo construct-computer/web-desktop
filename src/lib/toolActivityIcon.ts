@@ -20,11 +20,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ChatMessage } from '@/stores/agentStore';
-import { composioDisplayTool } from '@/stores/agentStoreUtils';
+import { composioDisplayTool } from '@/lib/composioDisplay';
 import { getAppByWindowType, SYSTEM_WINDOW_METADATA } from '@/lib/appRegistry';
 import { routeToolToWindow } from '@/lib/toolWindowRouting';
 import {
   iconAgents,
+  iconAppStore,
   iconAutomator,
   iconBooks,
   iconChat,
@@ -37,6 +38,7 @@ import {
   iconSearch,
   iconSysinfo,
 } from '@/icons';
+import { integrationActivityIconHints, MCP_APP_FALLBACK_ICON } from '@/lib/integrationDisplay';
 import { normalizePlatformSlug } from '@/lib/platforms';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
@@ -80,6 +82,16 @@ const AGENT_PNG_TOOLS = new Set([
   'background_task',
   'mailbox_received',
 ]);
+
+const INTEGRATION_PLANE_TOOLS = new Set(['app', 'discover', 'execute', 'capability']);
+
+export function mcpAppFallbackIcon(): string {
+  return MCP_APP_FALLBACK_ICON;
+}
+
+export function mcpIntegrationFallbackIcon(): string {
+  return iconSysinfo;
+}
 
 const AGENT_PNG_TYPES = new Set([
   'delegation',
@@ -210,7 +222,9 @@ function resolveWindowTypeForTool(
   if (rawTool === 'memory' || rawTool === 'knowledge') return 'memory';
 
   const direct = DIRECT_TOOL_WINDOW[rawTool];
-  if (direct) return direct;
+  if (direct && !(['capability', 'discover', 'execute'].includes(rawTool) && hasIntegrationLeafParams(rawTool, params))) {
+    return direct;
+  }
 
   const route = routeToolToWindow(rawTool, params);
   if (route) return route.type;
@@ -237,6 +251,15 @@ function connectedToolkitLogo(slug: string): string | undefined {
 function installedAppIcon(appId: string): string | undefined {
   const app = useAppStore.getState().installedApps.find((a) => a.id === appId);
   return app?.icon_url;
+}
+
+function hasIntegrationLeafParams(tool: string, params?: Record<string, unknown>): boolean {
+  if (!params) return false;
+  if (tool === 'capability') return typeof params.name === 'string' || typeof params.capability === 'string';
+  if (tool === 'discover') return typeof params.action === 'string';
+  if (tool === 'execute') return Array.isArray(params.calls) && params.calls.length > 0;
+  if (tool === 'app') return params.action === 'call';
+  return false;
 }
 
 function hasAny(value: string, patterns: RegExp[]): boolean {
@@ -354,6 +377,7 @@ export function enrichActivityIconFields(input: {
   label?: string;
   iconPlatform?: string;
   iconUrl?: string;
+  params?: Record<string, unknown>;
   memoryActivity?: ChatMessage['memoryActivity'];
   policyActivity?: ChatMessage['policyActivity'];
 }): {
@@ -367,6 +391,7 @@ export function enrichActivityIconFields(input: {
     policyActivity,
     label,
     activityType,
+    params,
   } = input;
   let { tool, iconPlatform, iconUrl } = input;
 
@@ -389,7 +414,7 @@ export function enrichActivityIconFields(input: {
   }
 
   if (tool) {
-    const hints = resolveActivityIconHints(tool);
+    const hints = resolveActivityIconHints(tool, params);
     if (hints.iconUrl) {
       return {
         tool,
@@ -434,9 +459,26 @@ export function resolveActivityIconHints(
   }
 
   const appId = (params?.appId ?? params?.app_id) as string | undefined;
-  if (rawTool === 'apps' && appId) {
+  const integrationHints = integrationActivityIconHints(rawTool, params);
+  if (integrationHints.iconUrl || integrationHints.iconPlatform) {
+    return {
+      iconPlatform: integrationHints.iconPlatform,
+      iconUrl: integrationHints.iconUrl || (
+        rawTool === 'app' ? mcpAppFallbackIcon() : mcpIntegrationFallbackIcon()
+      ),
+    };
+  }
+
+  if ((rawTool === 'app' || rawTool === 'apps') && appId) {
     const iconUrl = installedAppIcon(appId);
-    return { iconPlatform: appId, iconUrl: iconUrl || undefined };
+    return { iconPlatform: appId, iconUrl: iconUrl || mcpAppFallbackIcon() };
+  }
+
+  if (INTEGRATION_PLANE_TOOLS.has(rawTool)) {
+    return {
+      iconUrl: rawTool === 'app' ? mcpAppFallbackIcon() : mcpIntegrationFallbackIcon(),
+      iconPlatform: rawTool,
+    };
   }
 
   const slug = TOOL_PLATFORM_SLUG[rawTool];
@@ -473,14 +515,22 @@ export function resolveActivityVisual(input: {
     return imageVisual(iconUrl, iconPlatform);
   }
 
-  // 2. Connected integration logos (Composio / toolkit).
+  if (iconPlatform?.startsWith('url-')) {
+    return imageVisual(mcpAppFallbackIcon(), iconPlatform);
+  }
+
+  // 2. Connected integration logos (Composio / toolkit) — skip url-* MCP app slugs.
   const platform =
     iconPlatform
     || (tool && TOOL_PLATFORM_SLUG[tool.toLowerCase()])
     || parseToolkitFromActivityLabel(label || '')
-    || (tool && normalizePlatformSlug(tool));
+    || (tool && !tool.startsWith('url-') ? normalizePlatformSlug(tool) : undefined);
 
-  if (iconPlatform || iconUrl || (tool && connectedToolkitLogo(tool))) {
+  if (
+    (iconPlatform && !iconPlatform.startsWith('url-'))
+    || iconUrl
+    || (tool && connectedToolkitLogo(tool))
+  ) {
     const slug = platform || tool || 'tool';
     const logoUrl = iconUrl || connectedToolkitLogo(slug) || connectedToolkitLogo(tool || '');
     if (logoUrl) {
@@ -524,6 +574,13 @@ export function resolveActivityVisual(input: {
     const png = LUCIDE_PNG_OVERRIDES.get(lucide);
     if (png) return imageVisual(png, tool || label || 'tool');
     return { kind: 'lucide', Icon: lucide };
+  }
+
+  if (rawTool && INTEGRATION_PLANE_TOOLS.has(rawTool)) {
+    return imageVisual(
+      rawTool === 'app' ? mcpAppFallbackIcon() : mcpIntegrationFallbackIcon(),
+      tool || label || rawTool,
+    );
   }
 
   // 7. Last resort: generic Construct app icon.

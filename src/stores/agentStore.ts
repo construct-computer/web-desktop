@@ -21,6 +21,18 @@ import {
 } from './chatTurnSync';
 import { isTriggeredSessionKey } from './agentSessionKeys';
 
+function parseToolCallMetadata(data: Record<string, unknown> | undefined): ToolCallDisplayMetadata | undefined {
+  const raw = data?.metadata;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const meta = raw as Record<string, unknown>;
+  const appDisplayName = typeof meta.appDisplayName === 'string' ? meta.appDisplayName.trim() : undefined;
+  const appId = typeof meta.appId === 'string' ? meta.appId.trim() : undefined;
+  const iconUrl = typeof meta.iconUrl === 'string' ? meta.iconUrl.trim() : undefined;
+  const toolName = typeof meta.toolName === 'string' ? meta.toolName.trim() : undefined;
+  if (!appDisplayName && !appId && !iconUrl && !toolName) return undefined;
+  return { appDisplayName, appId, iconUrl, toolName };
+}
+
 function stripScheduleDeliveryBlock(prompt: string): string {
   const trimmed = (prompt || '').trim();
   if (!trimmed) return '';
@@ -64,6 +76,7 @@ import {
   upsertComponentMentionForSession,
 } from '@/lib/componentMentions';
 import { agentDisplayContent } from '@/lib/clippyAgentPreview';
+import type { ToolCallDisplayMetadata } from '@/lib/integrationDisplay';
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 // Utility functions extracted to reduce this file's size.
@@ -73,9 +86,11 @@ export { authConnectNotifIds, pendingAuthCards, clearAuthCard, registerFrameRend
 import {
   authConnectNotifIds, loadAuthCards, getTabBlobCache, getFrameRenderers, getCanvasClearFns,
   describeToolCall,
-  composioDisplayTool,
+  resolveToolActivityPresentation,
   patchToolActivityFailure,
   patchToolActivitySuccess,
+  supersedeAllIntegrationFailedActivities,
+  finalizeRunningActivities,
   upsertStreamingToolCallDelta,
   attachStreamingToolCallStart,
   patchTrailingBrowserActivitiesFailed,
@@ -93,7 +108,6 @@ import {
 import { useBrowserTabStore, isBrowserWebTool } from './browserTabStore';
 import { isAgentUserCancelErrorMessage } from '@/lib/agentUserCancel';
 import { formatPlatformDescription, getPlatformDisplayName } from '@/lib/platforms';
-import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
 import {
   coerceExternalAccess,
   coerceExternalSource,
@@ -257,6 +271,8 @@ export interface ChatMessage {
   timestamp: Date;
   /** For activity messages: which tool triggered it */
   tool?: string;
+  /** Raw integration-plane tool name (app, discover, …) for result correlation */
+  integrationTool?: string;
   /** Branded icon: platform slug for PlatformIcon / Composio logos */
   iconPlatform?: string;
   /** Branded icon: explicit logo URL (builtin PNG, connected toolkit, registry app) */
@@ -1353,6 +1369,45 @@ function removeIncidentNotices(messages: ChatMessage[], incidentIds: string[]): 
     }];
   });
   return changed || next.length !== messages.length ? next : messages;
+}
+
+const INTEGRATION_PLANE_TOOLS = new Set(['app', 'discover', 'execute', 'capability', 'composio']);
+
+const integrationSucceededBySession = new Map<string, boolean>();
+
+function resetIntegrationSucceeded(sessionKey: string) {
+  integrationSucceededBySession.delete(sessionKey);
+}
+
+function markIntegrationSucceeded(sessionKey: string) {
+  integrationSucceededBySession.set(sessionKey, true);
+}
+
+function hasIntegrationSucceeded(sessionKey: string): boolean {
+  return integrationSucceededBySession.get(sessionKey) === true;
+}
+
+function removeIntegrationIncidentNotices(messages: ChatMessage[]): ChatMessage[] {
+  const next = messages.filter((msg) => !(
+    msg.role === 'notice'
+    && msg.noticeKind === 'incident'
+    && msg.noticeToolName
+    && INTEGRATION_PLANE_TOOLS.has(msg.noticeToolName)
+  ));
+  return next.length === messages.length ? messages : next;
+}
+
+function clearTurnSettlementForSession(messages: ChatMessage[]): ChatMessage[] {
+  return supersedeAllIntegrationFailedActivities(removeIntegrationIncidentNotices(messages));
+}
+
+function latestAgentMessageIsSuccessful(messages: ChatMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'agent') return !msg.isError && !msg.isStopped;
+    if (msg.role === 'user') return false;
+  }
+  return false;
 }
 
 function clearWatchdogNotices(messages: ChatMessage[]): ChatMessage[] {
@@ -3068,13 +3123,17 @@ export const useComputerStore = create<ComputerStore>()(
                 // "Asking..." activity without a usable response card.
                 if (tool === 'ask_user') continue;
 
-                const { text, activityType } = describeToolCall(tool, params);
+                const presentation = resolveToolActivityPresentation(tool, params);
                 history.push({
                   role: 'activity',
-                  content: text,
+                  content: presentation.text,
                   timestamp: new Date(msg.created_at),
-                  tool,
-                  activityType,
+                  tool: presentation.displayTool,
+                  integrationTool: INTEGRATION_PLANE_TOOLS.has(tool) ? tool : undefined,
+                  activityType: presentation.activityType,
+                  iconPlatform: presentation.iconPlatform,
+                  iconUrl: presentation.iconUrl,
+                  activityStatus: 'completed',
                 });
               }
             }
@@ -3530,6 +3589,7 @@ export const useComputerStore = create<ComputerStore>()(
           : {}),
       };
       clearInflightAssistantStorage(instanceId, activeSessionKey);
+      resetIntegrationSucceeded(activeSessionKey);
       set(state => {
         const pa = state.platformAgents.desktop;
         const nextChatMessages = appendUserMessageForNewTurn(state.chatMessages, userMsg);
@@ -4899,6 +4959,7 @@ export const useComputerStore = create<ComputerStore>()(
       const patchToolActivitySuccessInChat = (opts: {
         toolCallId?: string;
         tool?: string;
+        supersedeFailedForTool?: string;
       }) => {
         patchToolActivityInChat(patchToolActivitySuccess, opts);
       };
@@ -5144,6 +5205,7 @@ export const useComputerStore = create<ComputerStore>()(
               : false;
             // Skip if the last user message already matches (optimistic add from desktop input)
             if (!hasSameClientId && (!lastUser || lastUser.content !== displayContent)) {
+              resetIntegrationSucceeded(eventSessionKey);
               const sourceMeta = coerceExternalSource(event.data?.sourceMeta);
               const access = coerceExternalAccess(event.data?.access);
               const attachments = normalizeAttachmentPaths(event.data?.attachments as string[] | undefined);
@@ -5508,6 +5570,29 @@ export const useComputerStore = create<ComputerStore>()(
             dispatchMemoryChanged({ items: items.filter((item) => item.event === 'ADD' || item.event === 'UPDATE') as Array<{ id: string; event: 'ADD' | 'UPDATE'; memory: string }> });
           }
           if (!isRecall && operationId && resolveMemoryActivityMessage(operationId, memoryMessage)) break;
+
+          const upsertRecall = (messages: ChatMessage[]): ChatMessage[] => {
+            const recallKey = operationId
+              || (items.length > 0 ? `memory:items:${items.map((item) => item.id).sort().join(',')}` : null);
+            if (!recallKey) return appendMessage(messages, memoryMessage);
+            const idx = messages.findIndex((m) => {
+              if (m.tool !== 'memory' || !m.memoryActivity) return false;
+              if (operationId && m.memoryActivity.operationId === operationId) return true;
+              const ids = m.memoryActivity.items.map((item) => item.id).sort().join(',');
+              return recallKey === `memory:items:${ids}`;
+            });
+            if (idx >= 0) {
+              const next = [...messages];
+              next[idx] = memoryMessage;
+              return next;
+            }
+            return appendMessage(messages, memoryMessage);
+          };
+
+          if (isRecall) {
+            patchChatMessages(upsertRecall);
+            break;
+          }
           appendToAgentChat(memoryMessage);
           break;
         }
@@ -5586,32 +5671,29 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Track tool activity for ALL agents using the defensive helper
           const toolPlatform = event.data?.platform as string | undefined;
-          // For composio, show the toolkit name instead of "composio" in the currentTool pill
-          const currentToolDisplay = tool === 'composio'
-            ? composioDisplayTool(params)
-            : tool;
+          const toolMetadata = parseToolCallMetadata(event.data as Record<string, unknown>);
+          const presentation = resolveToolActivityPresentation(tool, params, toolMetadata);
           if (!toolSubagentId) {
             updateAgent(pa => {
               const history = (pa.toolHistory || []).slice(-19);
-              history.push({ tool: currentToolDisplay, timestamp: Date.now(), sessionKey: eventSessionKey });
-              return { currentTool: currentToolDisplay, toolHistory: history };
+              history.push({ tool: presentation.displayTool, timestamp: Date.now(), sessionKey: eventSessionKey });
+              return { currentTool: presentation.displayTool, toolHistory: history };
             });
           }
 
-          // Build descriptive activity message
-          const { text: activityText, activityType } = describeToolCall(tool, params);
+          const activityText = presentation.text;
+          const activityType = presentation.activityType;
 
           // If this tool call belongs to a subagent, route it to the tracker
           // store instead of the main chat feed.
           if (toolSubagentId) {
-            const subIconHints = resolveActivityIconHints(tool, params);
             useAgentTrackerStore.getState().addSubAgentActivity(toolSubagentId, {
               text: activityText,
               activityType: activityType || 'tool',
               timestamp: Date.now(),
-              tool: tool === 'composio' ? composioDisplayTool(params) : tool,
-              iconPlatform: subIconHints.iconPlatform,
-              iconUrl: subIconHints.iconUrl,
+              tool: presentation.displayTool,
+              iconPlatform: presentation.iconPlatform,
+              iconUrl: presentation.iconUrl,
             });
             // Auto-open the relevant window even for subagent tool calls
             // (e.g. open the browser window when a subagent navigates).
@@ -5725,15 +5807,17 @@ export const useComputerStore = create<ComputerStore>()(
 
           // Append tool activity to the correct agent's per-agent chat feed
           // For composio, show the toolkit name instead of "composio" as the tool badge
-          const displayTool = tool === 'composio'
-            ? composioDisplayTool(params)
-            : tool;
-          const iconHints = resolveActivityIconHints(tool, params);
+          const displayTool = presentation.displayTool;
+          const iconHints = {
+            iconPlatform: presentation.iconPlatform,
+            iconUrl: presentation.iconUrl,
+          };
           const toolActivityMsg: ChatMessage = {
             role: 'activity' as const,
             content: activityText,
             timestamp: new Date(),
             tool: displayTool,
+            integrationTool: INTEGRATION_PLANE_TOOLS.has(tool) ? tool : undefined,
             iconPlatform: iconHints.iconPlatform,
             iconUrl: iconHints.iconUrl,
             activityType,
@@ -5744,6 +5828,7 @@ export const useComputerStore = create<ComputerStore>()(
           const mergeStreamingStart = (msgs: ChatMessage[]) => {
             const attached = attachStreamingToolCallStart(msgs, {
               tool: displayTool,
+              integrationTool: INTEGRATION_PLANE_TOOLS.has(tool) ? tool : undefined,
               toolCallId,
               content: activityText,
               activityType,
@@ -5816,7 +5901,35 @@ export const useComputerStore = create<ComputerStore>()(
           }
 
           if (!resultSubagentId && success !== false) {
-            patchToolActivitySuccessInChat({ toolCallId, tool });
+            if (tool && INTEGRATION_PLANE_TOOLS.has(tool) && eventSessionKey) {
+              markIntegrationSucceeded(eventSessionKey);
+            }
+            const supersedeFailedForTool = tool && INTEGRATION_PLANE_TOOLS.has(tool) ? tool : undefined;
+            patchToolActivitySuccessInChat({ toolCallId, tool, supersedeFailedForTool });
+            if (tool && INTEGRATION_PLANE_TOOLS.has(tool)) {
+              set(state => {
+                const updates: Partial<typeof state> = {};
+                if (shouldUpdateVisibleDesktopAgent) {
+                  const pa = getOrCreateAgent(state);
+                  const nextChat = removeIntegrationIncidentNotices(pa.chatMessages || []);
+                  if (nextChat !== pa.chatMessages) {
+                    updates.platformAgents = {
+                      ...state.platformAgents,
+                      [eventPlatform]: { ...pa, chatMessages: nextChat },
+                    };
+                  }
+                }
+                if (isActiveSession) {
+                  const nextChat = removeIntegrationIncidentNotices(state.chatMessages);
+                  if (nextChat !== state.chatMessages) updates.chatMessages = nextChat;
+                } else if (eventSessionKey && eventSessionKey !== 'default') {
+                  const cached = sessionMessageCache.get(eventSessionKey) || [];
+                  const nextChat = removeIntegrationIncidentNotices(cached);
+                  if (nextChat !== cached) cacheSessionMessages(eventSessionKey, nextChat);
+                }
+                return Object.keys(updates).length > 0 ? updates : state;
+              });
+            }
           }
 
           // Refresh file windows after successful file tool completion
@@ -5990,18 +6103,41 @@ export const useComputerStore = create<ComputerStore>()(
                 typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
               );
             }
+            const settleMessages = (messages: ChatMessage[]) => {
+              if (status !== 'idle' || !latestAgentMessageIsSuccessful(messages)) return messages;
+              return finalizeRunningActivities(clearTurnSettlementForSession(messages));
+            };
             if (isActiveSession) {
-              const cleared = clearWatchdogNotices(state.chatMessages);
-              if (cleared.length !== state.chatMessages.length) updates.chatMessages = cleared;
+              const clearedWatchdog = clearWatchdogNotices(state.chatMessages);
+              const settled = settleMessages(clearedWatchdog);
+              if (settled.length !== state.chatMessages.length || settled !== state.chatMessages) {
+                updates.chatMessages = settled;
+              } else if (clearedWatchdog.length !== state.chatMessages.length) {
+                updates.chatMessages = clearedWatchdog;
+              }
             }
             const pa = state.platformAgents[eventPlatform];
             if (pa?.chatMessages?.length) {
               const clearedAgentMessages = clearWatchdogNotices(pa.chatMessages);
-              if (clearedAgentMessages.length !== pa.chatMessages.length) {
+              const settledAgent = settleMessages(clearedAgentMessages);
+              if (settledAgent !== pa.chatMessages) {
+                updates.platformAgents = {
+                  ...state.platformAgents,
+                  [eventPlatform]: { ...pa, chatMessages: settledAgent },
+                };
+              } else if (clearedAgentMessages.length !== pa.chatMessages.length) {
                 updates.platformAgents = {
                   ...state.platformAgents,
                   [eventPlatform]: { ...pa, chatMessages: clearedAgentMessages },
                 };
+              }
+            }
+            if (status === 'idle') {
+              resetIntegrationSucceeded(eventSessionKey);
+              if (eventSessionKey && sessionMessageCache.has(eventSessionKey)) {
+                const cached = sessionMessageCache.get(eventSessionKey) || [];
+                const settledCache = settleMessages(cached);
+                if (settledCache !== cached) cacheSessionMessages(eventSessionKey, settledCache);
               }
             }
             return updates;
@@ -6246,6 +6382,11 @@ export const useComputerStore = create<ComputerStore>()(
           }
           const notice = incidentNoticeFromPayload(event.data || {}, Date.now());
           if (notice) {
+            const isIntegrationIncident = notice.noticeToolName
+              && INTEGRATION_PLANE_TOOLS.has(notice.noticeToolName);
+            if (isIntegrationIncident && hasIntegrationSucceeded(eventSessionKey)) {
+              break;
+            }
             appendToAgentChat(notice);
             const messages = isActiveSession
               ? get().chatMessages

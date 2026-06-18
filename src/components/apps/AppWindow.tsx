@@ -31,6 +31,7 @@ import { useDevAppStore } from '@/stores/devAppStore';
 import { AuthSchemesPanel } from './AuthSchemesPanel';
 import { ComposioAuthPanel } from './ComposioAuthPanel';
 import { AppShell, AppHeroHeader, HeaderIconButton, InfoCard, InfoRow, ToolsList, PanelLoading } from './AppShared';
+import { mapInstalledAppToolsToDisplay, faviconUrlForHost } from '@/lib/integrationDisplay';
 import { formatDate, prettyAuthLabel } from '@/hooks/useAppDiscovery';
 
 const logger = log('AppWindow');
@@ -885,11 +886,7 @@ function GenericAppPanel({
     return <PanelLoading label="Loading app..." />;
   }
 
-  const tools = (appData.tools || []).map((t) => ({
-    slug: t.name,
-    name: t.name,
-    description: t.description,
-  }));
+  const tools = mapInstalledAppToolsToDisplay(appData.tools || [], appData.name);
 
   // Derive host label from the base_url (e.g. devtools-hys57e.apps.construct.computer)
   const hostLabel = (() => {
@@ -898,7 +895,8 @@ function GenericAppPanel({
     } catch { return appData.base_url; }
   })();
 
-  const iconUrl = registryDetail?.icon_url || appData.icon_url;
+  const iconUrl = registryDetail?.icon_url || appData.icon_url
+    || (appData.registry_linked === false ? faviconUrlForHost(hostLabel) : undefined);
   const author = registryDetail?.author?.name;
   const version = registryDetail?.latest_version;
   const category = registryDetail?.category;
@@ -941,6 +939,18 @@ function GenericAppPanel({
 
       <InfoCard title="Details">
         <InfoRow icon={<Globe className="w-3 h-3" />} label="Hosted at" value={hostLabel} mono copyable />
+        {appData.registry_linked === false && (
+          <>
+            <InfoRow
+              icon={<Globe className="w-3 h-3" />}
+              label="MCP endpoint"
+              value={`${appData.base_url.replace(/\/+$/, '')}${appData.mcp_path || '/mcp'}`}
+              mono
+              copyable
+            />
+            <InfoRow icon={<Hash className="w-3 h-3" />} label="App id" value={appData.id} mono copyable />
+          </>
+        )}
         {version && <InfoRow icon={<Hash className="w-3 h-3" />} label="Version" value={version} />}
         {appData.installed_at && (
           <InfoRow

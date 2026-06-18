@@ -369,4 +369,30 @@ describe('autopilot attention helpers', () => {
     expect(item?.destination).toBe('app-registry');
     expect(item?.search).toBe('agentmail');
   });
+
+  it('routes unresolved side effects to the originating session with tool-specific copy', () => {
+    const item = getPrimaryAttention({
+      status: autopilotStatus({
+        unresolvedSideEffectCount: 1,
+        latestUnresolvedSideEffect: {
+          id: 9,
+          sessionKey: 'polar-chat',
+          toolCallId: 'call_1',
+          toolName: 'app',
+          riskKind: 'external_write',
+          riskLevel: 'medium',
+          status: 'uncertain',
+          summary: 'app.call polar',
+          confirmation: null,
+          createdAt: NOW - 1000,
+          updatedAt: NOW - 500,
+        },
+      }),
+    });
+
+    expect(item?.kind).toBe('side-effect');
+    expect(item?.sessionKey).toBe('polar-chat');
+    expect(item?.destination).toBe('spotlight-session');
+    expect(item?.summary).toContain('Verify app outcome');
+  });
 });

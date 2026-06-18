@@ -23,6 +23,7 @@ import {
   getComposioToolkitDetail,
 } from '@/services/api';
 import { ComposioAuthPanel } from '../ComposioAuthPanel';
+import { SavedCredentialsPanel } from './SavedCredentialsPanel';
 import { getTimezoneOptions, getDetectedTimezone } from '@/lib/timezones';
 import {
   SectionPanel, SettingsCard, SettingsRow, SettingsSubsection,
@@ -1070,6 +1071,8 @@ function ConstructConnectionsPanel() {
           </>
         );
       })()}
+
+      <SavedCredentialsPanel />
     </>
   );
 }

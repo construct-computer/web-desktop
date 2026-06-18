@@ -19,6 +19,7 @@ import { useWindowStore } from '@/stores/windowStore';
 import {
   AppHeroHeader, AppStatsStrip, HeaderIconButton, InfoCard, InfoRow, ToolsList
 } from './AppShared';
+import { mapInstalledAppToolsToDisplay } from '@/lib/integrationDisplay';
 import {
   AppStoreCategoryPills,
   AppStoreCategorySidebar,
@@ -40,6 +41,8 @@ import {
   ComposioConnectModalSlot,
   ComposioConnectProvider,
 } from './app-store/ComposioConnectProvider';
+import { McpUrlAuthModal } from './app-store/McpUrlAuthModal';
+import { McpUrlAuthPanel } from './app-store/McpUrlAuthPanel';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
 import { useAppDiscovery, getCategoryLabel, getHostname, prettyAuthLabel } from '@/hooks/useAppDiscovery';
@@ -114,6 +117,11 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   const [lastInstalledName, setLastInstalledName] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [installingUrl, setInstallingUrl] = useState(false);
+  const [urlAuthRequired, setUrlAuthRequired] = useState(false);
+  const [urlAuthConnected, setUrlAuthConnected] = useState(false);
+  const [pendingAppId, setPendingAppId] = useState<string | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'connect' | 'rotate'>('connect');
   const probeSeqRef = useRef(0);
 
   // Detail view
@@ -233,9 +241,39 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     setProbeTools(null);
     setProbeMeta(null);
     setProbeAttempted(false);
+    setUrlAuthRequired(false);
+    setUrlAuthConnected(false);
+    setPendingAppId(null);
   };
 
-  const runProbeFromUrl = useCallback(async (mode: 'auto' | 'manual' = 'manual') => {
+  const applyProbeSuccess = (data: {
+    origin?: string;
+    mcp_path?: string;
+    transport?: 'json' | 'sse';
+    content_type?: string;
+    has_ui_guess?: boolean;
+    tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+    app_id?: string;
+    connected?: boolean;
+  }) => {
+    const origin = data.origin || '';
+    setProbeMeta({
+      origin,
+      mcp_path: data.mcp_path || '/mcp',
+      transport: data.transport,
+      content_type: data.content_type,
+      has_ui_guess: data.has_ui_guess,
+    });
+    setProbeTools((data.tools || []).map((t) => ({ name: t.name, description: t.description || undefined })));
+    if (data.has_ui_guess) setFromHasUi(true);
+    setFromDisplayName(prev => prev.trim() ? prev : getHostname(origin || fromUrl.trim()));
+    if (data.app_id) setPendingAppId(data.app_id);
+    if (data.connected) setUrlAuthConnected(true);
+    setUrlAuthRequired(false);
+    setError(null);
+  };
+
+  const runProbeFromUrl = useCallback(async (mode: 'auto' | 'manual' = 'manual', opts?: { use_stored_auth?: boolean }) => {
     if (!fromUrl.trim()) {
       if (mode === 'manual') setError('Enter a URL first.');
       return false;
@@ -245,28 +283,36 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
       return false;
     }
     const seq = ++probeSeqRef.current;
-    setError(null);
+    if (!opts?.use_stored_auth) {
+      setError(null);
+    }
     setProbeAttempted(true);
-    setProbeTools(null);
-    setProbeMeta(null);
+    if (!opts?.use_stored_auth) {
+      setProbeTools(null);
+      setProbeMeta(null);
+    }
     setProbing(true);
     try {
-      const res = await api.probeMcpFromUrl(fromUrl.trim(), fromMcpPath.trim() || '/mcp');
+      const res = await api.probeMcpFromUrl(fromUrl.trim(), fromMcpPath.trim() || '/mcp', {
+        use_stored_auth: opts?.use_stored_auth,
+      });
       if (seq !== probeSeqRef.current) return false;
       if (res.success && res.data?.ok) {
-        const origin = res.data.origin || '';
-        setProbeMeta({
-          origin,
-          mcp_path: res.data.mcp_path || '/mcp',
-          transport: res.data.transport,
-          content_type: res.data.content_type,
-          has_ui_guess: res.data.has_ui_guess,
-        });
-        setProbeTools((res.data.tools || []).map((t) => ({ name: t.name, description: t.description || undefined })));
-        if (res.data.has_ui_guess) setFromHasUi(true);
-        setFromDisplayName(prev => prev.trim() ? prev : getHostname(origin || fromUrl.trim()));
+        applyProbeSuccess(res.data);
         if (seq === probeSeqRef.current) setProbing(false);
         return true;
+      }
+      if (res.success && res.data?.auth_required) {
+        setUrlAuthRequired(true);
+        setUrlAuthConnected(false);
+        if (res.data.app_id) setPendingAppId(res.data.app_id);
+        if (mode === 'auto') {
+          setAuthModalMode('connect');
+          setAuthModalOpen(true);
+        }
+        if (mode === 'manual') {
+          setError('This MCP server requires authentication.');
+        }
       } else {
         const msg =
           (res.success && res.data && 'error' in res.data && (res.data as { error?: string }).error) ||
@@ -598,12 +644,34 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
           </InfoCard>
         )}
 
-        {isCustomUrlInstall && (
-          <InfoCard title="About this install" subtitle="MCP connection">
-            <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-              Apps added by URL are not listed in Apps, so Construct cannot show built-in sign-in flows for them.
-              Construct can still use actions if the MCP connection is reachable and does not require stored user credentials.
-            </p>
+        {isCustomUrlInstall && detail.installedApp && (
+          <InfoCard title="Custom MCP endpoint" subtitle="Installed from URL">
+            <InfoRow
+              icon={<Globe className="w-3 h-3" />}
+              label="Endpoint"
+              value={`${(detail.installedApp.base_url || '').replace(/\/+$/, '')}${detail.installedApp.mcp_path || '/mcp'}`}
+              mono
+              copyable
+            />
+            <InfoRow icon={<Link2 className="w-3 h-3" />} label="Technical id" value={detail.installedApp.id} mono copyable />
+          </InfoCard>
+        )}
+
+        {isCustomUrlInstall && detail.installedApp && (
+          <InfoCard title="Authentication" subtitle="MCP credentials">
+            <McpUrlAuthPanel
+              appId={detail.installedApp.id}
+              url={detail.installedApp.base_url || ''}
+              mcpPath={detail.installedApp.mcp_path || '/mcp'}
+              displayName={detail.name}
+              onUpdateClick={() => {
+                setFromUrl(detail.installedApp?.base_url || '');
+                setFromMcpPath(detail.installedApp?.mcp_path || '/mcp');
+                setPendingAppId(detail.installedApp?.id || null);
+                setAuthModalMode('rotate');
+                setAuthModalOpen(true);
+              }}
+            />
           </InfoCard>
         )}
 
@@ -666,7 +734,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     );
 
     const detailSecondary = !detailLoading && (toolCount > 0 || detail.tools.length > 0) ? (
-      <ToolsList tools={detail.tools.map(t => ({ slug: t.slug || t.name, name: t.name, description: t.description || undefined }))} />
+      <ToolsList tools={mapInstalledAppToolsToDisplay(detail.tools.map(t => ({ name: t.slug || t.name, description: t.description })), detail.name)} />
     ) : null;
     const detailBodyLoading = detailLoading;
 
@@ -808,6 +876,20 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         </div>
 
         <ComposioConnectModalSlot />
+
+        <McpUrlAuthModal
+          open={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          name={fromDisplayName.trim() || detail?.name || getHostname(fromUrl) || 'MCP server'}
+          url={fromUrl || detail?.installedApp?.base_url || ''}
+          mcpPath={fromMcpPath || detail?.installedApp?.mcp_path || '/mcp'}
+          appId={pendingAppId || detail?.installedApp?.id}
+          mode={authModalMode}
+          onSuccess={() => {
+            setUrlAuthConnected(true);
+            void runProbeFromUrl('manual', { use_stored_auth: true });
+          }}
+        />
       </div>
     );
 
@@ -831,7 +913,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
   // ── List view ──
 
   return (
-    <div className="app-store-window flex flex-col h-full min-h-0 text-[var(--color-text)] select-none">
+    <div className="app-store-window relative flex flex-col h-full min-h-0 text-[var(--color-text)] select-none">
       {/* Header — same surface as category sidebar (Files-style chrome) */}
       <div className="app-store-chrome surface-sidebar border-b border-black/[0.06] dark:border-white/[0.06] px-5 pt-4 pb-0">
         <div className="flex items-center justify-between mb-3 gap-2">
@@ -1083,16 +1165,30 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
               <UrlCheckCard
                 icon={<Server className="w-4 h-4" />}
                 title="Reachable"
-                tone={probeMeta ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
-                value={probeMeta ? 'App responded' : probing ? 'Checking connection' : probeAttempted ? 'Needs attention' : 'Waiting for URL'}
-                detail={probeMeta ? `${probeMeta.origin}${probeMeta.mcp_path}` : 'Construct calls this from the cloud. Private IPs and localhost are blocked.'}
+                tone={probeMeta ? 'emerald' : urlAuthRequired ? 'amber' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
+                value={
+                  probeMeta ? 'App responded'
+                    : urlAuthRequired ? 'Authentication required'
+                      : probing ? 'Checking connection'
+                        : probeAttempted ? 'Needs attention' : 'Waiting for URL'
+                }
+                detail={probeMeta ? `${probeMeta.origin}${probeMeta.mcp_path}` : urlAuthRequired ? 'Add credentials to connect to this MCP server.' : 'Construct calls this from the cloud. Private IPs and localhost are blocked.'}
+                action={urlAuthRequired && !probeMeta ? (
+                  <button
+                    type="button"
+                    onClick={() => { setAuthModalMode('connect'); setAuthModalOpen(true); }}
+                    className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                  >
+                    Add credentials
+                  </button>
+                ) : undefined}
               />
               <UrlCheckCard
                 icon={<Wrench className="w-4 h-4" />}
                 title="MCP actions"
-                tone={probeTools?.length ? 'emerald' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
-                value={probeTools ? `${probeTools.length} found` : probing ? 'Listing actions' : 'Not checked yet'}
-                detail={probeMeta ? 'Connection verified.' : 'Construct checks available actions before install.'}
+                tone={probeTools?.length ? 'emerald' : urlAuthRequired ? 'amber' : probing ? 'blue' : probeAttempted ? 'red' : 'gray'}
+                value={probeTools ? `${probeTools.length} found` : urlAuthRequired ? 'Needs auth' : probing ? 'Listing actions' : 'Not checked yet'}
+                detail={probeMeta ? 'Connection verified.' : urlAuthRequired ? 'Authenticate first to list actions.' : 'Construct checks available actions before install.'}
               />
               <UrlCheckCard
                 icon={<Eye className="w-4 h-4" />}
@@ -1145,12 +1241,26 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
                   {probeMeta.content_type.split(';')[0]}
                 </span>
               )}
+              {urlAuthConnected && !probeMeta && (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-md bg-emerald-500/10">
+                  Credentials saved
+                </span>
+              )}
+              {urlAuthConnected && (
+                <button
+                  type="button"
+                  onClick={() => { setAuthModalMode('rotate'); setAuthModalOpen(true); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-[12px] font-semibold bg-black/[0.06] dark:bg-white/[0.1] hover:bg-black/[0.1] dark:hover:bg-white/[0.14] transition-colors"
+                >
+                  Update credentials
+                </button>
+              )}
             </div>
 
             {probeMeta && probeTools && (
               <InfoCard title="Action preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} action(s)`}>
                 {probeTools.length > 0 ? (
-                  <ToolsList tools={probeTools.map((t) => ({ slug: t.name, name: t.name, description: t.description }))} />
+                  <ToolsList tools={mapInstalledAppToolsToDisplay(probeTools.map((t) => ({ name: t.name, description: t.description })), detail?.name)} />
                 ) : (
                   <p className="text-[11px] text-[var(--color-text-muted)]">No actions returned by this app.</p>
                 )}
@@ -1256,6 +1366,20 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
         </div>
         </div>
       </div>
+
+      <McpUrlAuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        name={fromDisplayName.trim() || getHostname(fromUrl) || 'MCP server'}
+        url={fromUrl}
+        mcpPath={fromMcpPath}
+        appId={pendingAppId || undefined}
+        mode={authModalMode}
+        onSuccess={() => {
+          setUrlAuthConnected(true);
+          void runProbeFromUrl('manual', { use_stored_auth: true });
+        }}
+      />
     </div>
   );
 }
@@ -1269,12 +1393,13 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-type CheckTone = 'emerald' | 'blue' | 'red' | 'gray';
+type CheckTone = 'emerald' | 'blue' | 'red' | 'gray' | 'amber';
 
 const CHECK_TONE_CLASS: Record<CheckTone, string> = {
   emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/15',
   blue: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/15',
   red: 'text-red-500 bg-red-500/10 border-red-500/15',
+  amber: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/15',
   gray: 'text-[var(--color-text-muted)] bg-black/[0.03] dark:bg-white/[0.04] border-black/[0.06] dark:border-white/[0.06]',
 };
 

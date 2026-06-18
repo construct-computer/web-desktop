@@ -13,6 +13,9 @@ import { useWindowStore } from './windowStore';
 // ── Auth card persistence ──────────────────────────────────────────────────
 
 import { STORAGE_KEYS } from '@/lib/config';
+import { formatIntegrationActivity, type ToolCallDisplayMetadata } from '@/lib/integrationDisplay';
+import { composioDisplayTool, formatComposioSlug, titleCaseToolkit } from '@/lib/composioDisplay';
+import { resolveActivityIconHints } from '@/lib/toolActivityIcon';
 
 const AUTH_CARDS_STORAGE_KEY = STORAGE_KEYS.authConnectCards;
 
@@ -201,6 +204,14 @@ function defaultToolActivity(tool: string, p: Record<string, unknown>): { text: 
 
 /** Build a human-readable activity description from a tool_call event */
 export function describeToolCall(tool: string, params?: Record<string, unknown>): { text: string; activityType: ChatMessage['activityType'] } {
+  const integrationTools = new Set(['app', 'discover', 'execute', 'capability']);
+  if (integrationTools.has(tool)) {
+    const formatted = formatIntegrationActivity({ tool: tool as 'app' | 'discover' | 'execute' | 'capability', params });
+    if (formatted.label && formatted.label !== tool) {
+      return { text: formatted.label, activityType: 'tool' };
+    }
+  }
+
   const p = params || {};
 
   // Browser tools
@@ -483,16 +494,13 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     const appId = p.app_id as string | undefined;
     const toolName = p.tool_name as string | undefined;
     switch (action) {
-      case 'list': return { text: 'Listing apps', activityType: 'tool' };
-      case 'call': return { text: `App call${appId ? ` (${appId})` : ''}${toolName ? `: ${toolName}` : ''}`, activityType: 'tool' };
-      case 'search': return { text: `Searching app registry: ${truncateActivityText((p.query as string) || '…', 48)}`, activityType: 'tool' };
       case 'create_declarative': return { text: `Creating app: ${truncateActivityText((p.name as string) || appId || 'app', 48)}`, activityType: 'tool' };
       case 'update_declarative': return { text: `Updating app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
       case 'patch_component': return { text: `Updating component${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
       case 'delete_local': return { text: `Deleting app: ${truncateActivityText(appId || '…', 48)}`, activityType: 'tool' };
       case 'get_app_state': return { text: `Reading app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
       case 'set_app_state': return { text: `Updating app state${appId ? `: ${appId}` : ''}`, activityType: 'tool' };
-      default: return { text: `Apps: ${action || 'action'}`, activityType: 'tool' };
+      default: break;
     }
   }
 
@@ -660,41 +668,38 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
   return defaultToolActivity(tool, p);
 }
 
-/** Convert a Composio slug like NOTION_CREATE_A_NEW_PAGE → "Notion: create a new page" */
-export function formatComposioSlug(slug: string): string {
-  const idx = slug.indexOf('_');
-  if (idx === -1) return slug;
-  const toolkitRaw = slug.slice(0, idx).toLowerCase();
-  const actionRaw = slug.slice(idx + 1).toLowerCase().replace(/_/g, ' ');
-  return `${titleCaseToolkit(toolkitRaw)}: ${actionRaw}`;
-}
-
-/** Extract a display-friendly tool name from composio params */
-export function composioDisplayTool(params?: Record<string, unknown>): string {
-  if (!params) return 'composio';
-  const slug = params.tool_slug as string | undefined;
-  if (slug) {
-    const idx = slug.indexOf('_');
-    return idx > 0 ? slug.slice(0, idx).toLowerCase() : slug.toLowerCase();
-  }
-  const toolkit = params.toolkit as string | undefined;
-  if (toolkit) return toolkit.toLowerCase();
-  return 'composio';
-}
-
-/** Title-case a toolkit name with known brand casing */
-export function titleCaseToolkit(name: string): string {
-  const lower = name.toLowerCase();
-  const brands: Record<string, string> = {
-    github: 'GitHub', hubspot: 'HubSpot', linkedin: 'LinkedIn',
-    clickup: 'ClickUp', googlecalendar: 'Google Calendar',
-    googledrive: 'Google Drive', googlesheets: 'Google Sheets',
-    googledocs: 'Google Docs', mongodb: 'MongoDB', postgresql: 'PostgreSQL',
-    bitbucket: 'Bitbucket', gmail: 'Gmail',
-    microsoft_teams: 'Microsoft Teams', dropbox: 'Dropbox',
+export function resolveToolActivityPresentation(
+  tool: string,
+  params?: Record<string, unknown>,
+  metadata?: ToolCallDisplayMetadata,
+): {
+  text: string;
+  activityType: ChatMessage['activityType'];
+  displayTool: string;
+  iconPlatform?: string;
+  iconUrl?: string;
+} {
+  const { text, activityType } = describeToolCall(tool, params);
+  const integrationFormat = ['app', 'discover', 'execute', 'capability'].includes(tool)
+    ? formatIntegrationActivity({ tool: tool as 'app' | 'discover' | 'execute' | 'capability', params }, metadata)
+    : null;
+  const displayTool = tool === 'composio'
+    ? composioDisplayTool(params)
+    : integrationFormat?.displayTool || tool;
+  const iconHints = integrationFormat?.iconUrl || integrationFormat?.iconPlatform
+    ? { iconPlatform: integrationFormat.iconPlatform, iconUrl: integrationFormat.iconUrl }
+    : resolveActivityIconHints(tool, params);
+  return {
+    text,
+    activityType,
+    displayTool,
+    iconPlatform: iconHints.iconPlatform,
+    iconUrl: iconHints.iconUrl,
   };
-  return brands[lower] || (lower.charAt(0).toUpperCase() + lower.slice(1));
 }
+
+/** @deprecated import from @/lib/composioDisplay */
+export { composioDisplayTool, formatComposioSlug, titleCaseToolkit };
 
 // ── Tool-to-window mapping ─────────────────────────────────────────────────
 // Canonical routing lives in lib/toolWindowRouting. This thin re-export is
@@ -762,9 +767,41 @@ export type ToolActivityPatch = {
   error?: string;
 };
 
+const INTEGRATION_PLANE_TOOL_NAMES = new Set(['app', 'discover', 'execute', 'capability', 'composio']);
+
+function activityMatchesIntegrationTool(
+  msg: { tool?: string; integrationTool?: string },
+  tool?: string,
+  integrationTool?: string,
+): boolean {
+  if (integrationTool && msg.integrationTool === integrationTool) return true;
+  if (tool && msg.tool === tool) return true;
+  if (integrationTool && msg.tool === integrationTool) return true;
+  return false;
+}
+
+export function supersedeAllIntegrationFailedActivities<T extends {
+  role: string;
+  tool?: string;
+  integrationTool?: string;
+  activityStatus?: string;
+  isError?: boolean;
+}>(messages: T[]): T[] {
+  let changed = false;
+  const next = messages.map((msg) => {
+    if (msg.role !== 'activity' || msg.activityStatus !== 'failed') return msg;
+    const raw = msg.integrationTool;
+    if (!raw || !INTEGRATION_PLANE_TOOL_NAMES.has(raw)) return msg;
+    changed = true;
+    return { ...msg, activityStatus: 'completed' as const, isError: false };
+  });
+  return changed ? next : messages;
+}
+
 export function patchToolActivityFailure<T extends {
   role: string;
   tool?: string;
+  integrationTool?: string;
   toolCallId?: string;
   activityType?: string;
   activityStatus?: string;
@@ -784,7 +821,7 @@ export function patchToolActivityFailure<T extends {
       matchIndex = i;
       break;
     }
-    if (!toolCallId && tool && msg.tool === tool && msg.activityStatus !== 'failed') {
+    if (!toolCallId && tool && activityMatchesIntegrationTool(msg, tool, tool)) {
       matchIndex = i;
       break;
     }
@@ -811,41 +848,100 @@ export function patchToolActivityFailure<T extends {
 export function patchToolActivitySuccess<T extends {
   role: string;
   tool?: string;
+  integrationTool?: string;
   toolCallId?: string;
+  toolCallIndex?: number;
+  streamingArgsPreview?: string;
   activityStatus?: string;
+  isError?: boolean;
 }>(
   messages: T[],
-  opts: { toolCallId?: string; tool?: string },
+  opts: { toolCallId?: string; tool?: string; supersedeFailedForTool?: string },
 ): T[] {
-  const { toolCallId, tool } = opts;
-  if (!toolCallId && !tool) return messages;
+  const { toolCallId, tool, supersedeFailedForTool } = opts;
+  if (!toolCallId && !tool && !supersedeFailedForTool) return messages;
 
-  let matchIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
+  let next = messages;
+  let changed = false;
+
+  const completeIndices = new Set<number>();
+  for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     if (msg.role !== 'activity') continue;
     if (msg.activityStatus === 'failed' || msg.activityStatus === 'completed') continue;
     if (toolCallId && msg.toolCallId === toolCallId) {
-      matchIndex = i;
-      break;
+      completeIndices.add(i);
+      continue;
     }
-    if (!toolCallId && tool && msg.tool === tool) {
-      matchIndex = i;
-      break;
+    if (tool && activityMatchesIntegrationTool(msg, tool, tool)) {
+      completeIndices.add(i);
     }
   }
-  if (matchIndex < 0) return messages;
 
-  return messages.map((msg, index) => (
-    index === matchIndex
-      ? { ...msg, activityStatus: 'completed' as const }
-      : msg
-  ));
+  if (completeIndices.size > 0) {
+    next = next.map((msg, index) => (
+      completeIndices.has(index)
+        ? { ...msg, activityStatus: 'completed' as const }
+        : msg
+    ));
+    changed = true;
+  }
+
+  const failedIntegrationTool = supersedeFailedForTool || (tool && INTEGRATION_PLANE_TOOL_NAMES.has(tool) ? tool : undefined);
+  if (failedIntegrationTool) {
+    next = next.map((msg) => {
+      if (msg.role !== 'activity' || msg.activityStatus !== 'failed') return msg;
+      if (!activityMatchesIntegrationTool(msg, tool, failedIntegrationTool)) return msg;
+      changed = true;
+      return { ...msg, activityStatus: 'completed' as const, isError: false };
+    });
+  }
+
+  if (changed && tool && INTEGRATION_PLANE_TOOL_NAMES.has(tool)) {
+    const hasSettledIntegrationCall = next.some((msg) => (
+      msg.role === 'activity'
+      && !!msg.toolCallId
+      && msg.activityStatus === 'completed'
+      && activityMatchesIntegrationTool(msg, tool, tool)
+    ));
+    if (hasSettledIntegrationCall) {
+      const filtered = next.filter((msg) => {
+        if (msg.role !== 'activity') return true;
+        if (msg.toolCallId) return true;
+        if (msg.toolCallIndex == null && !msg.streamingArgsPreview) return true;
+        if (!activityMatchesIntegrationTool(msg, tool, tool)) return true;
+        return false;
+      });
+      if (filtered.length !== next.length) {
+        next = filtered;
+        changed = true;
+      }
+    }
+  }
+
+  return changed ? next : messages;
+}
+
+/** Mark in-flight activity rows completed when the agent turn settles successfully. */
+export function finalizeRunningActivities<T extends {
+  role: string;
+  activityStatus?: string;
+}>(messages: T[]): T[] {
+  let changed = false;
+  const next = messages.map((msg) => {
+    if (msg.role === 'activity' && msg.activityStatus === 'running') {
+      changed = true;
+      return { ...msg, activityStatus: 'completed' as const };
+    }
+    return msg;
+  });
+  return changed ? next : messages;
 }
 
 type StreamingToolActivity = {
   role: string;
   tool?: string;
+  integrationTool?: string;
   toolCallId?: string;
   toolCallIndex?: number;
   activityStatus?: string;
@@ -867,6 +963,7 @@ export function upsertStreamingToolCallDelta<T extends StreamingToolActivity>(
   },
 ): T[] {
   const { index, name, preview, content, activityType } = opts;
+  const integrationTool = INTEGRATION_PLANE_TOOL_NAMES.has(name) ? name : undefined;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role !== 'activity') continue;
@@ -877,6 +974,7 @@ export function upsertStreamingToolCallDelta<T extends StreamingToolActivity>(
             ...m,
             tool: name,
             content,
+            integrationTool: integrationTool ?? m.integrationTool,
             activityType: activityType || m.activityType,
             streamingArgsPreview: preview,
           }
@@ -889,6 +987,7 @@ export function upsertStreamingToolCallDelta<T extends StreamingToolActivity>(
     content,
     timestamp: new Date(),
     tool: name,
+    integrationTool,
     activityType: activityType || 'tool',
     activityStatus: 'running',
     toolCallIndex: index,
@@ -900,6 +999,7 @@ export function attachStreamingToolCallStart<T extends StreamingToolActivity>(
   messages: T[],
   opts: {
     tool: string;
+    integrationTool?: string;
     toolCallId?: string;
     content: string;
     activityType?: ChatMessage['activityType'];
@@ -907,14 +1007,22 @@ export function attachStreamingToolCallStart<T extends StreamingToolActivity>(
     iconUrl?: string;
   },
 ): { messages: T[]; merged: boolean } {
-  const { tool, toolCallId, content, activityType, iconPlatform, iconUrl } = opts;
+  const { tool, integrationTool, toolCallId, content, activityType, iconPlatform, iconUrl } = opts;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role !== 'activity') continue;
     if (msg.activityStatus !== 'running') continue;
     if (msg.toolCallId) continue;
-    if (msg.tool !== tool) continue;
-    if (msg.toolCallIndex == null && !msg.streamingArgsPreview) continue;
+
+    const matchesDisplay = msg.tool === tool;
+    const matchesIntegration = integrationTool && (
+      msg.tool === integrationTool
+      || msg.integrationTool === integrationTool
+    );
+    const hasStreamingMarker = msg.toolCallIndex != null || !!msg.streamingArgsPreview;
+    if (!matchesDisplay && !matchesIntegration) continue;
+    if (!hasStreamingMarker && !matchesIntegration) continue;
+
     return {
       merged: true,
       messages: messages.map((m, idx) => (
@@ -924,9 +1032,11 @@ export function attachStreamingToolCallStart<T extends StreamingToolActivity>(
             tool,
             content,
             toolCallId,
+            integrationTool: integrationTool ?? m.integrationTool,
             activityType: activityType || m.activityType,
             iconPlatform: iconPlatform ?? m.iconPlatform,
             iconUrl: iconUrl ?? m.iconUrl,
+            streamingArgsPreview: undefined,
           }
           : m
       )),

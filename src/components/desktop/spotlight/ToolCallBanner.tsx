@@ -321,6 +321,7 @@ export function ToolCallBanner({ activities, operationId, isActive }: { activiti
                     activityStatus={act.activityStatus}
                     duration={dur}
                     repeatCount={repeat}
+                    toolCallId={act.toolCallId}
                     className="hover:bg-white/[0.025]"
                   />
                 );
@@ -449,6 +450,7 @@ function FlatActivityLine({
       failed={activity.activityStatus === 'failed' || activity.isError}
       activityStatus={activity.activityStatus}
       repeatCount={repeatCount}
+      toolCallId={activity.toolCallId}
       className="hover:bg-white/[0.025] text-[var(--color-text-muted)]/50"
     />
   );

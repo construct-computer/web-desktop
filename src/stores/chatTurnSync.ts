@@ -1,4 +1,5 @@
 import type { ChatMessage } from './agentStore';
+import { activityDedupeKey } from '@/components/desktop/spotlight/browserActivityUtils';
 
 function messageTimestampMs(message: ChatMessage): number {
   const ts = message.timestamp;
@@ -100,6 +101,18 @@ export function liveAssistantTailAheadOfHistory(live: ChatMessage[], history: Ch
   }
   if (lastLiveUserIdx < 0) return [];
 
+  const historyActivityKeys = new Set(
+    history
+      .filter((m) => m.role === 'activity')
+      .map((m) => activityDedupeKey(m))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const historyToolCallIds = new Set(
+    history
+      .filter((m) => m.role === 'activity' && m.toolCallId)
+      .map((m) => m.toolCallId as string),
+  );
+
   const tail: ChatMessage[] = [];
   for (let i = lastLiveUserIdx + 1; i < live.length; i++) {
     const message = live[i];
@@ -112,6 +125,9 @@ export function liveAssistantTailAheadOfHistory(live: ChatMessage[], history: Ch
       continue;
     }
     if (message.role === 'activity') {
+      if (message.toolCallId && historyToolCallIds.has(message.toolCallId)) continue;
+      const key = activityDedupeKey(message);
+      if (key && historyActivityKeys.has(key)) continue;
       tail.push(message);
       continue;
     }

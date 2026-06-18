@@ -13,6 +13,7 @@ import { OperationCard } from './OperationCard';
 import { UserMessage } from './UserMessage';
 import { AgentMessage } from './AgentMessage';
 import { ChatEventRow } from './ChatEventRow';
+import { SideEffectNotice } from './SideEffectNotice';
 
 /** Stable empty array for the alerts selector — avoids creating a new array
  *  per render which would defeat zustand's referential-equality bail-out. */
@@ -380,6 +381,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
           })}
         </div>
       )}
+      {activeKey && <SideEffectNotice sessionKey={activeKey} />}
       {renderGroups.map(({ key, node }) => (
         <div key={key}>{node}</div>
       ))}

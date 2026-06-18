@@ -362,14 +362,23 @@ export function getAttentionItems(input: {
   }
 
   if ((input.status?.unresolvedSideEffectCount ?? 0) > 0) {
+    const latest = input.status?.latestUnresolvedSideEffect
+      ?? input.status?.workSideEffects?.find((item) => (
+        item.status === 'started' || item.status === 'uncertain'
+      ))
+      ?? null;
+    const toolLabel = latest?.toolName?.replace(/[_-]/g, ' ').trim() || 'recent action';
     items.push({
       id: 'side-effect',
       kind: 'side-effect',
       title: 'Check recent action',
-      summary: 'Construct needs confirmation before retrying.',
+      summary: latest?.sessionKey
+        ? `Verify ${toolLabel} outcome before retrying.`
+        : 'Construct needs confirmation before retrying.',
       ctaLabel: 'Open chat',
-      destination: 'spotlight',
-      createdAt: input.status?.generatedAt ?? Date.now(),
+      destination: 'spotlight-session',
+      sessionKey: latest?.sessionKey,
+      createdAt: latest?.updatedAt ?? latest?.createdAt ?? input.status?.generatedAt ?? Date.now(),
     });
   }
 

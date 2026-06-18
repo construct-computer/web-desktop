@@ -1,3 +1,4 @@
+import { faviconUrlForHost } from '@/lib/integrationDisplay';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '@/services/api';
 import type { InstalledApp, LocalApp } from '@/services/api';
@@ -306,9 +307,15 @@ export function composioSearchToUnified(
 
 export function installedToUnified(app: InstalledApp): UnifiedApp {
   const fromCustomUrl = app.registry_linked === false;
+  let icon = app.icon_url;
+  if (!icon && fromCustomUrl) {
+    try {
+      icon = faviconUrlForHost(new URL(app.base_url).hostname);
+    } catch { /* ignore */ }
+  }
   return {
     id: app.id, name: app.name || app.id, description: app.description || '',
-    icon: app.icon_url, category: 'productivity',
+    icon, category: 'productivity',
     tags: fromCustomUrl ? ['mcp', 'from-url'] : ['mcp'],
     source: 'installed', tools: app.tools || [], hasUi: !!app.has_ui,
     status: 'installed', installedApp: app,

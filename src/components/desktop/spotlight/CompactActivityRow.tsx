@@ -4,6 +4,7 @@ import { enrichActivityIconFields } from '@/lib/toolActivityIcon';
 import { ActivityIconBadge } from './ActivityIconBadge';
 import { formatRepeatBadge } from './browserActivityUtils';
 import { formatActivityLine } from './formatActivityLine';
+import { CachedToolOutputLink } from './CachedToolOutputLink';
 
 function middleEllipsis(text: string, max = 42): string {
   if (text.length <= max) return text;
@@ -25,6 +26,7 @@ export function CompactActivityRow({
   dense,
   clippy,
   className = '',
+  toolCallId,
 }: {
   content: string;
   activityType?: ChatMessage['activityType'];
@@ -38,6 +40,7 @@ export function CompactActivityRow({
   dense?: boolean;
   clippy?: boolean;
   className?: string;
+  toolCallId?: string;
 }) {
   const line = formatActivityLine(content, { activityType });
   const isTerminal = activityType === 'terminal' || tool === 'terminal' || tool === 'exec';
@@ -51,9 +54,10 @@ export function CompactActivityRow({
   });
 
   return (
-    <div
-      className={`flex min-w-0 items-center gap-1.5 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'} ${className}`}
-    >
+    <div className={`min-w-0 ${className}`}>
+      <div
+        className={`flex min-w-0 items-center gap-1.5 rounded-md px-0.5 ${dense ? 'py-[1px]' : 'py-[2px]'}`}
+      >
       <ActivityIconBadge
         type={iconFields.activityType ?? activityType}
         tool={iconFields.tool ?? tool}
@@ -89,6 +93,8 @@ export function CompactActivityRow({
       {duration && (
         <span className="shrink-0 text-[10px] tabular-nums text-white/40">{duration}</span>
       )}
+      </div>
+      <CachedToolOutputLink toolCallId={toolCallId} content={content} />
     </div>
   );
 }

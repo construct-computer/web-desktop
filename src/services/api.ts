@@ -725,6 +725,25 @@ export async function getTerminalRunOutput(toolCallId: string): Promise<ApiResul
   return request(`/agent/terminal/runs/${encodeURIComponent(toolCallId)}/output`);
 }
 
+export async function getToolResultOutput(toolCallId: string): Promise<ApiResult<{
+  tool_call_id: string;
+  output: string;
+  truncated?: boolean;
+  total_chars?: number;
+}>> {
+  return request(`/agent/tool-results/${encodeURIComponent(toolCallId)}/output`);
+}
+
+export async function confirmWorkSideEffect(
+  sideEffectId: number,
+  input: { sessionKey: string; summary?: string },
+): Promise<ApiResult<{ ok: boolean }>> {
+  return request(`/agent/autopilot/work-side-effects/${sideEffectId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export interface SessionInfo {
   key: string;
   title: string;
@@ -1157,6 +1176,7 @@ export interface AutopilotStatus {
   deadLetterCount: number;
   verificationPendingCount: number;
   unresolvedSideEffectCount: number;
+  latestUnresolvedSideEffect?: AutopilotWorkSideEffectSnapshot | null;
   blockedToolProviderCount: number;
   degradedToolProviderCount: number;
   activeDecisionCount: number;
@@ -2034,10 +2054,38 @@ export interface AppConnection {
   id: string;
   appId: string;
   appName: string;
+  source?: 'registry_app' | 'custom_mcp' | 'composio' | 'byok';
+  authType?: string;
+  authLabel?: string;
   activeScheme: string;
   status: string;
+  configuredAt?: number;
   connectedAt: number;
   updatedAt: number;
+  endpoint?: string;
+}
+
+export type UrlAppAuthScheme = 'bearer' | 'api_key' | 'basic';
+
+export interface UrlAppConnectionStatus {
+  connected: boolean;
+  connectionId?: string;
+  activeScheme?: string;
+  authLabel?: string;
+  connectedAt?: number;
+  updatedAt?: number;
+  schemes: Array<{ type: string; label: string; available: boolean }>;
+}
+
+export interface ConnectUrlAppResult {
+  connected: boolean;
+  connectionId?: string;
+  activeScheme?: string;
+  appId?: string;
+  connectedAt?: number;
+  probeOk?: boolean;
+  error?: string;
+  auth_required?: boolean;
 }
 
 /**
@@ -2751,6 +2799,7 @@ export interface InstalledApp {
   /** false = installed from custom URL (not Construct registry); omit/true = registry-linked */
   registry_linked?: boolean;
   mcp_path?: string;
+  connection_id?: string | null;
   /** false = app is installed but disabled (hidden from agent). Default true. */
   enabled?: boolean;
 }
@@ -2774,11 +2823,16 @@ export async function listInstalledApps(): Promise<ApiResult<{ apps: InstalledAp
 export async function probeMcpFromUrl(
   url: string,
   mcp_path?: string,
+  opts?: { use_stored_auth?: boolean },
 ): Promise<
   ApiResult<{
     ok: boolean;
     origin?: string;
     mcp_path?: string;
+    app_id?: string;
+    auth_required?: boolean;
+    status?: number;
+    connected?: boolean;
     tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
     tool_count?: number;
     transport?: 'json' | 'sse';
@@ -2789,7 +2843,37 @@ export async function probeMcpFromUrl(
 > {
   return request('/apps/mcp-probe', {
     method: 'POST',
-    body: JSON.stringify({ url, mcp_path: mcp_path || undefined }),
+    body: JSON.stringify({
+      url,
+      mcp_path: mcp_path || undefined,
+      use_stored_auth: opts?.use_stored_auth || undefined,
+    }),
+  });
+}
+
+/** Connect / rotate credentials for a custom URL MCP app. */
+export async function connectUrlApp(opts: {
+  url: string;
+  mcp_path?: string;
+  scheme: UrlAppAuthScheme;
+  fields: Record<string, string>;
+  app_id?: string;
+}): Promise<ApiResult<ConnectUrlAppResult>> {
+  return request('/apps/connect-url', {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  });
+}
+
+/** Get connection status for a custom URL MCP app (metadata only). */
+export async function getUrlAppConnection(appId: string): Promise<ApiResult<UrlAppConnectionStatus>> {
+  return request(`/apps/connect-url/${encodeURIComponent(appId)}`);
+}
+
+/** Disconnect credentials for a custom URL MCP app. */
+export async function disconnectUrlApp(appId: string): Promise<ApiResult<{ success: boolean }>> {
+  return request(`/apps/connect-url/${encodeURIComponent(appId)}/disconnect`, {
+    method: 'POST',
   });
 }
 
