@@ -112,7 +112,7 @@ export function resolveInstalledAppDisplay(appId: string): {
   const local = localApps.find((a) => a.id === appId);
   if (local) {
     return {
-      displayName: local.manifest?.name || local.name || appId,
+      displayName: local.manifest?.name || appId,
       canonicalId: appId,
       isLocal: true,
     };

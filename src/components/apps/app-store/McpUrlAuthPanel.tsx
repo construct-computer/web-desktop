@@ -4,9 +4,9 @@ import * as api from '@/services/api';
 
 export function McpUrlAuthPanel({
   appId,
-  url,
-  mcpPath,
-  displayName,
+  url: _url,
+  mcpPath: _mcpPath,
+  displayName: _displayName,
   onUpdateClick,
   onStatusChange,
 }: {

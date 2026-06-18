@@ -734,7 +734,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     );
 
     const detailSecondary = !detailLoading && (toolCount > 0 || detail.tools.length > 0) ? (
-      <ToolsList tools={mapInstalledAppToolsToDisplay(detail.tools.map(t => ({ name: t.slug || t.name, description: t.description })), detail.name)} />
+      <ToolsList tools={mapInstalledAppToolsToDisplay(detail.tools.map(t => ({ name: t.slug || t.name, description: t.description ?? undefined })), detail.name)} />
     ) : null;
     const detailBodyLoading = detailLoading;
 
@@ -1260,7 +1260,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
             {probeMeta && probeTools && (
               <InfoCard title="Action preview" subtitle={`${probeMeta.origin}${probeMeta.mcp_path} · ${probeTools.length} action(s)`}>
                 {probeTools.length > 0 ? (
-                  <ToolsList tools={mapInstalledAppToolsToDisplay(probeTools.map((t) => ({ name: t.name, description: t.description })), detail?.name)} />
+                  <ToolsList tools={mapInstalledAppToolsToDisplay(probeTools, fromDisplayName.trim() || undefined)} />
                 ) : (
                   <p className="text-[11px] text-[var(--color-text-muted)]">No actions returned by this app.</p>
                 )}
