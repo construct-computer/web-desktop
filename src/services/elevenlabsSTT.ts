@@ -4,7 +4,6 @@
  */
 
 import { log } from '@/lib/logger';
-import { reportClientError } from '@/lib/observability';
 
 const logger = log('ElevenLabsSTT');
 
@@ -72,10 +71,6 @@ export class ElevenLabsSTTClient {
     this.ws.onerror = (e) => {
       logger.error('WebSocket error', { event: e });
       if (!this.closed) {
-        reportClientError({
-          source: 'ElevenLabsSTT',
-          message: 'Connection to transcription service failed',
-        });
         this.callbacks.onError('Connection to transcription service failed');
       }
     };
@@ -163,11 +158,6 @@ export class ElevenLabsSTTClient {
       case 'error': {
         const detail = (msg.error as string) || (msg.description as string) || `STT error: ${type}`;
         logger.error('STT error', { type, detail });
-        reportClientError({
-          source: 'ElevenLabsSTT',
-          message: `STT error: ${type}`,
-          context: { type, detail },
-        });
         this.callbacks.onError(detail);
         break;
       }

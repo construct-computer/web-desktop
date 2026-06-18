@@ -22,7 +22,6 @@ import { useBillingStore } from '@/stores/billingStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
 import { checkAgentEmailAvailability } from '@/services/api';
-import analytics from '@/lib/analytics';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 import { stagingAgentEmailUsername } from '@/lib/agentEmail';
 import { log } from '@/lib/logger';
@@ -159,7 +158,6 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
   // ── Upgrade handler (free → paid) ──
   const handleUpgrade = async (plan: 'starter' | 'pro') => {
     setUpgrading(plan);
-    analytics.setupStepCompleted('upgrade_clicked', { plan, from: 'email_app' });
     try {
       if (isNonProdEnv) {
         await switchPlan(plan);
@@ -193,7 +191,6 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
     try {
       const result = await updateComputer({ agentmailInboxUsername: trimmed });
       if (result.success) {
-        analytics.setupStepCompleted('email_inbox_created', { from: 'email_app' });
         dispatchAgentEmailConfigured();
         onConfigured?.();
       } else {

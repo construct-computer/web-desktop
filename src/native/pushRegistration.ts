@@ -1,6 +1,5 @@
 import { STORAGE_KEYS } from '@/lib/constants';
 import { log } from '@/lib/logger';
-import { reportClientError } from '@/lib/observability';
 import * as api from '@/services/api';
 import { registerForNativePushNotifications, clearDeliveredNativeNotifications } from './notifications';
 import { isNativePlatform } from './platform';
@@ -47,11 +46,6 @@ export async function syncNativePushRegistration(): Promise<void> {
     }
   } catch (error) {
     logger.warn('Push registration failed', { error });
-    reportClientError({
-      source: 'PushRegistration',
-      message: 'Native push registration failed',
-      error,
-    });
   }
 }
 

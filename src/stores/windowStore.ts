@@ -4,7 +4,6 @@ import { shallow } from 'zustand/shallow';
 import type { WindowConfig, WindowType, WindowBounds, Workspace, WorkspacePlatform, MenuBarPanelType } from '@/types';
 import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
-import analytics from '@/lib/analytics';
 import { useAuthStore } from '@/stores/authStore';
 import { hasAgentAccess } from '@/lib/plans';
 
@@ -296,7 +295,6 @@ export const useWindowStore = create<WindowStore>()(
       if (id === activeWorkspaceId) return;
       if (!workspaces.some(w => w.id === id)) return;
       const targetWs = workspaces.find(w => w.id === id);
-      analytics.workspaceSwitched(id, targetWs?.platform);
 
       const focusTopInWorkspace = (wsId: string) => {
         const wsWindows = get().windows.filter(w => w.workspaceId === wsId && w.state !== 'minimized');
@@ -561,7 +559,6 @@ export const useWindowStore = create<WindowStore>()(
       // Persist open app windows so they survive refresh
       if (type === 'app') savePersistedAppWindows(newWindows);
 
-      analytics.windowOpened(type);
 
       // Notify backend so this window type is restored on next refresh.
       // Only track windows in the main workspace — subagent/platform windows
@@ -607,7 +604,6 @@ export const useWindowStore = create<WindowStore>()(
     closeWindow: (id) => {
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
-      if (closing) analytics.windowClosed(closing.type);
       const newWindows = windows.filter((w) => w.id !== id);
 
       // If we closed the focused window, focus the next highest z-index window

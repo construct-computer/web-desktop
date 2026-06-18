@@ -56,7 +56,6 @@ import {
 } from './agentStateCleanup';
 import { postToLocalAppIframes, reloadLocalAppIframes, useAppStore } from './appStore';
 import { log } from '@/lib/logger';
-import analytics from '@/lib/analytics';
 import {
   dispatchAgentCalendarRefresh,
   dispatchAgentEmailRefresh,
@@ -2021,7 +2020,6 @@ export const useComputerStore = create<ComputerStore>()(
             isLoading: false,
           });
 
-          analytics.computerProvisioned();
 
           // Auto-connect WebSockets if computer is running
           if (instance.status === 'running') {
@@ -2543,10 +2541,6 @@ export const useComputerStore = create<ComputerStore>()(
         set({
           agentConnected: connected,
           agentConnecting: !connected && Boolean(get().instanceId),
-        });
-        void import('@/lib/analytics').then(({ analytics }) => {
-          if (connected) analytics.agentConnected();
-          else analytics.agentDisconnected();
         });
         if (connected) {
           import('@/services/api').then(({ getActiveAgentSessions }) => {

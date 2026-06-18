@@ -51,38 +51,12 @@ export function useLatency(active: boolean): LatencyData {
 
     measure();
     intervalRef.current = setInterval(measure, POLL_INTERVAL_MS);
-    let lastReportAt = 0;
-
-    const reportIfDue = (snapshot: LatencyData) => {
-      const now = Date.now();
-      if (now - lastReportAt < 60_000) return;
-      lastReportAt = now;
-      const http = snapshot.http;
-      const agentWs = snapshot.agentWs;
-      if (http == null && agentWs == null) return;
-      void import('@/lib/observability').then(({ reportClientTiming }) => {
-        if (http != null) {
-          reportClientTiming({ category: 'latency', action: 'http_probe', durationMs: http });
-        }
-        if (agentWs != null) {
-          reportClientTiming({ category: 'latency', action: 'agent_ws_ping', durationMs: agentWs });
-        }
-      });
-    };
-
-    const reportInterval = setInterval(() => {
-      setData((snapshot) => {
-        reportIfDue(snapshot);
-        return snapshot;
-      });
-    }, 60_000);
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      clearInterval(reportInterval);
     };
   }, [active, measure]);
 

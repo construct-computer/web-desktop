@@ -21,7 +21,6 @@ import { providerCopy, TONE_CLASSES } from '@/lib/providerCopy';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { agentWS } from '@/services/websocket';
 import { useSound } from '@/hooks/useSound';
-import analytics from '@/lib/analytics';
 import type { WindowConfig } from '@/types';
 
 /** Typing indicator (staggered bouncing dots) or scrollable thinking text. */
@@ -572,7 +571,6 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
   const handleSend = () => {
     if (!message.trim() || !isConnected) return;
     play('click');
-    analytics.chatMessageSent({ sessionKey: activeSessionKey, messageLength: message.trim().length });
     sendChatMessage(message);
     setMessage('');
     // Reset textarea height
@@ -586,7 +584,6 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
 
   const handleStop = () => {
     play('click');
-    analytics.chatStopped();
     stopChatSession();
   };
 
@@ -599,7 +596,6 @@ export function LegacyChatWindow({ config }: ChatWindowProps) {
 
   const handleNewChat = () => {
     play('click');
-    analytics.chatSessionCreated();
     createSession();
   };
 
@@ -877,7 +873,6 @@ export function ChatWindow(props: ChatWindowProps) {
 
   const handleNewChat = useCallback(() => {
     play('click');
-    analytics.chatSessionCreated();
     createSession();
   }, [createSession, play]);
 

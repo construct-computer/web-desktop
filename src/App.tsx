@@ -18,7 +18,6 @@ import { useAppStore } from '@/stores/appStore';
 import { DebugPanel } from '@/components/desktop/DebugPanel';
 import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tabSingleton';
 import * as api from '@/services/api';
-import analytics from '@/lib/analytics';
 import { hasAgentAccess } from '@/lib/plans';
 import { getCurrentDeviceId, getNativePlatform, isNativePlatform, syncNativePushRegistration } from '@/native';
 
@@ -30,10 +29,6 @@ const MiniApp = lazy(() =>
 // Device link page — lazy loaded, only for /link route
 const DeviceLinkPage = lazy(() =>
   import('@/components/auth/DeviceLinkPage').then((m) => ({ default: m.DeviceLinkPage })),
-);
-
-const AdminDashboard = lazy(() =>
-  import('@/components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })),
 );
 
 type RebootStatus = 'stopping' | 'updating' | 'starting' | 'done' | 'error';
@@ -96,14 +91,6 @@ function App() {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
         <DeviceLinkPage />
-      </Suspense>
-    );
-  }
-
-  if (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/')) {
-    return (
-      <Suspense fallback={<div className="fixed inset-0 bg-[#05070b]" />}>
-        <AdminDashboard />
       </Suspense>
     );
   }

@@ -1,7 +1,6 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import type { ApiResult, User, AgentWithConfig } from '@/types';
 import { Capacitor } from '@capacitor/core';
-import { createCorrelationIds, reportClientTiming } from '@/lib/observability';
 
 type ApiRequestOptions = RequestInit & {
   /** Disable error-store capture for background polling where transient failures are expected. */
@@ -60,26 +59,24 @@ async function request<T>(
     ...fetchOptions
   } = options;
   const token = getToken();
-  const startedAt = performance.now();
-  const correlation = createCorrelationIds();
-  
+  const requestId = crypto.randomUUID();
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    'x-request-id': correlation.requestId,
-    traceparent: correlation.traceparent,
+    'x-request-id': requestId,
     ...fetchOptions.headers,
   };
-  
+
   if (token) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
-  
+
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...fetchOptions,
       headers,
     });
-    
+
     // On 401, attempt a single token refresh (unless this IS the retry).
     // Uses a shared promise so concurrent 401s only trigger one refresh (M17).
     if (response.status === 401 && token && !_isRetry) {
@@ -90,37 +87,23 @@ async function request<T>(
       }
       // Refresh failed — fall through to normal error handling
     }
-    
+
     // Try to parse as JSON, handle non-JSON responses gracefully
     let data: Record<string, unknown>;
     const contentType = response.headers.get('content-type');
-    
+
     if (contentType?.includes('application/json')) {
       data = await response.json();
     } else {
       // Non-JSON response - try to get text for error message
       const text = await response.text();
       if (!response.ok) {
-        reportClientTiming({
-          category: 'api',
-          action: endpoint,
-          durationMs: Math.round(performance.now() - startedAt),
-          success: false,
-          properties: {
-            endpoint,
-            method: fetchOptions.method || 'GET',
-            status: response.status,
-            request_id: correlation.requestId,
-            trace_id: correlation.traceId,
-            retry: _isRetry,
-          },
-        });
         return { success: false, error: text || `Request failed (${response.status})`, status: response.status };
       }
       // If somehow OK but not JSON, treat as empty
       data = {};
     }
-    
+
     if (!response.ok) {
       const errorMsg = (data.error as string) || `Request failed (${response.status})`;
       // Capture API errors in the debug store
@@ -134,44 +117,15 @@ async function request<T>(
               endpoint,
               status: response.status,
               response: data,
-              correlationId: correlation.traceId,
-              requestId: correlation.requestId,
+              requestId,
               kind: 'http',
             },
           });
         } catch { /* errorStore not loaded yet during startup */ }
       }
-      reportClientTiming({
-        category: 'api',
-        action: endpoint,
-        durationMs: Math.round(performance.now() - startedAt),
-        success: false,
-        properties: {
-          endpoint,
-          method: fetchOptions.method || 'GET',
-          status: response.status,
-          request_id: correlation.requestId,
-          trace_id: correlation.traceId,
-          retry: _isRetry,
-        },
-      });
       return { success: false, error: errorMsg, status: response.status, data };
     }
 
-    reportClientTiming({
-      category: 'api',
-      action: endpoint,
-      durationMs: Math.round(performance.now() - startedAt),
-      success: true,
-      properties: {
-        endpoint,
-        method: fetchOptions.method || 'GET',
-        status: response.status,
-        request_id: correlation.requestId,
-        trace_id: correlation.traceId,
-        retry: _isRetry,
-      },
-    });
     return { success: true, data: data as T };
   } catch (error) {
     if (retryNetwork && !_isRetry) {
@@ -189,29 +143,13 @@ async function request<T>(
           stack: error instanceof Error ? error.stack : undefined,
           context: {
             endpoint,
-            correlationId: correlation.traceId,
-            requestId: correlation.requestId,
+            requestId,
             kind: 'network',
             online: navigator.onLine,
           },
         });
       } catch { /* errorStore not loaded yet during startup */ }
     }
-    reportClientTiming({
-      category: 'api',
-      action: endpoint,
-      durationMs: Math.round(performance.now() - startedAt),
-      success: false,
-      properties: {
-        endpoint,
-        method: fetchOptions.method || 'GET',
-        request_id: correlation.requestId,
-        trace_id: correlation.traceId,
-        retry: _isRetry,
-        online: navigator.onLine,
-        failure_kind: 'network',
-      },
-    });
     return { success: false, error: errorMsg };
   }
 }

@@ -38,3 +38,5 @@ ios/**/xcuserdata/
 !.dev.vars.example
 .env*
 !.env.example
+
+dev-dist

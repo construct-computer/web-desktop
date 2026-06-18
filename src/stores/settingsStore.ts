@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/constants';
-import analytics from '@/lib/analytics';
 import { isCustomWallpaperId } from '@/lib/wallpapers';
 import { getUserWallpaper, setUserWallpaper } from '@/lib/wallpaperPrefs';
 
@@ -86,12 +85,10 @@ export const useSettingsStore = create<SettingsState>()(
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
 
       toggleSound: () => set((state) => {
-        analytics.soundToggled(!state.soundEnabled);
         return { soundEnabled: !state.soundEnabled };
       }),
 
       setWallpaper: (id) => {
-        analytics.wallpaperChanged(id);
         try {
           const userId = localStorage.getItem(STORAGE_KEYS.userId);
           if (userId) setUserWallpaper(userId, id);

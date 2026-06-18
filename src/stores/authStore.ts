@@ -3,8 +3,6 @@ import * as api from '@/services/api';
 import type { User } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { log } from '@/lib/logger';
-import analytics from '@/lib/analytics';
-import { setSentryUser } from '@/lib/sentry';
 import { openNativeAuthUrl, unregisterCurrentNativePushToken } from '@/native';
 import {
   deferWallpaperCacheClearForUser,
@@ -163,7 +161,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   magicLinkEmail: null,
 
   loginWithGoogle: () => {
-    analytics.loginStarted('google');
     const url = api.getGoogleAuthUrl();
     void openNativeAuthUrl(url).then((openedNative) => {
       if (!openedNative) window.location.href = url;
@@ -174,7 +171,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   sendMagicLink: async (email: string) => {
-    analytics.loginStarted('magic_link');
     set({ magicLinkState: 'sending', error: null, magicLinkEmail: email });
 
     const result = await api.sendMagicLink(email);
@@ -182,7 +178,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (result.success) {
       set({ magicLinkState: 'sent' });
     } else {
-      analytics.loginFailed('magic_link', result.error);
       set({
         magicLinkState: 'error',
         error: result.error || 'Failed to send magic link.',
@@ -204,9 +199,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (result.success) {
       api.setToken(result.data.token);
       clearStaleUserData(result.data.user.id);
-      analytics.loginSuccess('magic_link');
-      analytics.identify(result.data.user);
-      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -216,7 +208,6 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: null,
       });
     } else {
-      analytics.loginFailed('magic_link', result.error);
       // Stay in 'sent' state so user can retry OTP (don't reset to 'error' which hides the OTP input)
       set({
         magicLinkState: 'sent',
@@ -263,7 +254,6 @@ export const useAuthStore = create<AuthState>((set) => ({
         logger.error('OAuth error detail', { detail: oauthDetail });
       }
 
-      analytics.loginFailed('google', oauthError);
       set({
         error: errorMsg,
         isLoading: false,
@@ -284,9 +274,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
-      analytics.loginSuccess('google');
-      analytics.identify(result.data.user);
-      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -295,7 +282,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       return true;
     } else {
-      analytics.loginFailed('google', 'profile_fetch_failed');
       api.clearToken();
       set({
         user: null,
@@ -308,7 +294,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    analytics.logout();
     void unregisterCurrentNativePushToken();
     api.logout();
 
@@ -326,7 +311,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   handleRemoteLogout: () => {
-    analytics.reset();
     void unregisterCurrentNativePushToken();
     persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
@@ -356,9 +340,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
-      // Identify returning user for analytics
-      analytics.identify(result.data.user);
-      setSentryUser({ id: result.data.user.id, email: result.data.user.email });
       set({
         user: result.data.user,
         isAuthenticated: true,

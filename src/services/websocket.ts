@@ -8,17 +8,12 @@ import {
   WS_KEEPALIVE_PING_INTERVAL_MS,
 } from '@/lib/config';
 import { log } from '@/lib/logger';
-import { reportWsDisconnect, reportWsReconnect } from '@/lib/observability';
 
 const browserLog = log('BrowserWS');
 const terminalLog = log('TerminalWS');
 const agentLog = log('AgentWS');
 
 type WsClientKind = 'agent' | 'browser' | 'terminal';
-
-function logWsDisconnect(client: WsClientKind, code?: number, reason?: string): void {
-  reportWsDisconnect({ client, code, reason });
-}
 
 function scheduleWsReconnect(
   client: WsClientKind,
@@ -32,7 +27,6 @@ function scheduleWsReconnect(
   const attempt = reconnectAttempts + 1;
   const logFn = client === 'agent' ? agentLog : client === 'terminal' ? terminalLog : browserLog;
   logFn.warn(`Reconnecting in ${Math.round(delayMs)}ms (attempt ${attempt})`);
-  reportWsReconnect({ client, attempt, delayMs: Math.round(delayMs) });
   const timeout = setTimeout(onFire, delayMs);
   return { delayMs, attempt, timeout };
 }
@@ -150,10 +144,9 @@ class BrowserWSClient {
         }
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = (_event) => {
         browserLog.info('Disconnected');
         this.connectionHandler?.(false);
-        logWsDisconnect('browser', event.code, event.reason);
         this.scheduleReconnect();
       };
 
@@ -386,10 +379,9 @@ export class TerminalWSClient {
         }
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = (_event) => {
         terminalLog.info('Disconnected');
         this.connectionHandler?.(false);
-        logWsDisconnect('terminal', event.code, event.reason);
         this.scheduleReconnect();
       };
 
@@ -612,7 +604,6 @@ class AgentWSClient {
         agentLog.info('Disconnected');
         this.connectionHandler?.(false);
         this.stopPresenceHeartbeat();
-        logWsDisconnect('agent', event.code, event.reason);
         if (event.code === 4001) {
           window.dispatchEvent(new CustomEvent('construct:auth-revoked', {
             detail: { reason: event.reason || 'session_revoked' },

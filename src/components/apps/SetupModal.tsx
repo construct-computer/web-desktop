@@ -15,7 +15,6 @@ import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { checkAgentEmailAvailability } from '@/services/api';
 import { getEmailStatus } from '@/services/agentmail';
-import analytics from '@/lib/analytics';
 import { log } from '@/lib/logger';
 import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
 import { stagingAgentEmailUsername } from '@/lib/agentEmail';
@@ -173,7 +172,6 @@ export function SetupModal() {
   // Inline upgrade CTA — stays inside the setup modal, returns here post-checkout.
   const handleUpgrade = async (plan: 'starter' | 'pro') => {
     setUpgrading(plan);
-    analytics.setupStepCompleted('upgrade_clicked', { plan, from: 'setup_modal_email' });
     if (isNonProdEnv) {
       await switchPlan(plan);
       await fetchSubscription();
@@ -224,14 +222,12 @@ export function SetupModal() {
         }
         return;
       }
-      analytics.setupStepCompleted('profile_email', { emailChanged });
 
       if (emailChanged) {
         dispatchAgentEmailConfigured();
       }
 
       await markSetupDone();
-      analytics.setupCompleted();
 
       // Tell the guided tour to advance past the setup step
       window.dispatchEvent(new Event('construct:setup-saved'));

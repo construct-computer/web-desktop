@@ -5,7 +5,6 @@
  */
 
 import { log } from '@/lib/logger';
-import { reportClientError } from '@/lib/observability';
 
 const logger = log('AudioCapture');
 
@@ -92,11 +91,6 @@ export class AudioCaptureService {
       logger.info('Recording started');
     } catch (err) {
       logger.error('Init failed', { error: err });
-      reportClientError({
-        source: 'AudioCapture',
-        message: 'Failed to initialize audio capture',
-        error: err,
-      });
       this.cleanup();
       this.callbacks.onError('Failed to initialize audio capture');
       this.setState('idle');

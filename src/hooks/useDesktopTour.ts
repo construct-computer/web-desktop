@@ -8,7 +8,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
-import analytics from '@/lib/analytics';
 import { useWindowStore } from '@/stores/windowStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 
@@ -330,10 +329,8 @@ export function useDesktopTour() {
         // re-trigger on next page load until step 1 (email) is done.
         if (!skipped) {
           try { localStorage.setItem(TOUR_SEEN_KEY, '1'); } catch {}
-          analytics.tourCompleted();
         } else {
           try { localStorage.setItem(TOUR_SKIPPED_KEY, '1'); } catch {}
-          analytics.tourSkipped();
         }
         // Signal Clippy to show the welcome greeting now that onboarding is done
         window.dispatchEvent(new Event('construct:onboarding-done'));
@@ -347,7 +344,6 @@ export function useDesktopTour() {
     };
     window.addEventListener('construct:setup-saved', onSetupSaved, { once: true });
 
-    analytics.tourStarted();
     driverObj.drive();
     }, 500);
   }, []);

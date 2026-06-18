@@ -11,7 +11,6 @@
  */
 
 import { create } from 'zustand';
-import { reportClientError } from '@/lib/observability';
 import { log } from '@/lib/logger';
 
 export interface CapturedError {
@@ -65,18 +64,6 @@ export const useErrorStore = create<ErrorStore>((set, get) => ({
       errors: [error, ...state.errors].slice(0, MAX_ERRORS),
       unreadCount: state.panelOpen ? 0 : state.unreadCount + 1,
     }));
-
-    // Mirror to PostHog and worker telemetry (skip server-origin WS errors).
-    if (entry.source !== 'ws' || !entry.errorId) {
-      reportClientError({
-        source: entry.source,
-        message: entry.message,
-        stack: entry.stack,
-        correlationId: typeof entry.context?.correlationId === 'string' ? entry.context.correlationId : undefined,
-        errorId: entry.errorId,
-        context: entry.context,
-      });
-    }
   },
 
   togglePanel: () => {
