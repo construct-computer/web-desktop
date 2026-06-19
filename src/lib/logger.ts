@@ -1,3 +1,5 @@
+import { shipClientLog } from './client-log-ship';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -75,8 +77,27 @@ export function log(module: string): Logger {
 
     if (level === 'debug') console.debug(JSON.stringify(payload));
     else if (level === 'info') console.log(JSON.stringify(payload));
-    else if (level === 'warn') console.warn(JSON.stringify(payload));
-    else if (level === 'error') console.error(JSON.stringify(payload));
+    else if (level === 'warn') {
+      console.warn(JSON.stringify(payload));
+      shipClientLog({
+        level: 'warn',
+        event: String(payload.event),
+        module,
+        message: message,
+        extra: extra as Record<string, unknown> | undefined,
+      });
+    } else if (level === 'error') {
+      console.error(JSON.stringify(payload));
+      const errObj = args.find((a) => a instanceof Error) as Error | undefined;
+      shipClientLog({
+        level: 'error',
+        event: String(payload.event),
+        module,
+        message: message ?? errObj?.message,
+        stack: errObj?.stack ?? (typeof payload.stack === 'string' ? payload.stack : undefined),
+        extra: extra as Record<string, unknown> | undefined,
+      });
+    }
   }
 
   return {

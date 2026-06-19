@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { log } from '@/lib/logger';
+import { shipClientLog } from '@/lib/client-log-ship';
 
 export interface CapturedError {
   id: string;
@@ -59,6 +60,19 @@ export const useErrorStore = create<ErrorStore>((set, get) => ({
     };
 
     log('errorStore').error(`[${error.source}] ${error.message}`, error.context || {}, { stack: error.stack });
+
+    shipClientLog({
+      level: 'error',
+      event: 'client_error',
+      module: 'errorStore',
+      message: error.message,
+      stack: error.stack,
+      extra: {
+        source: error.source,
+        error_id: error.errorId,
+        ...error.context,
+      },
+    });
 
     set((state) => ({
       errors: [error, ...state.errors].slice(0, MAX_ERRORS),
