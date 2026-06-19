@@ -244,7 +244,19 @@ export function LoginScreen() {
             <div className="w-full mb-6 p-2.5 text-sm rounded-xl font-medium text-center
                             surface-card
                             text-red-700 dark:text-red-100 border border-red-500/20 dark:border-red-500/30 shadow-lg">
-              {error}
+              <p className="whitespace-pre-wrap">{error}</p>
+              {error.includes('Google sign-in failed') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearError();
+                    handleGoogleLogin();
+                  }}
+                  className="login-auth-button login-auth-button--solid mt-3 px-4 py-1.5 text-xs font-semibold rounded-full"
+                >
+                  Try again
+                </button>
+              )}
             </div>
           )}
 

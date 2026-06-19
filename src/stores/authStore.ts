@@ -161,6 +161,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   magicLinkEmail: null,
 
   loginWithGoogle: () => {
+    set({ isLoading: true, error: null });
     const url = api.getGoogleAuthUrl();
     void openNativeAuthUrl(url).then((openedNative) => {
       if (!openedNative) window.location.href = url;
