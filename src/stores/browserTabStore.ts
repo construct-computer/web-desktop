@@ -4,10 +4,13 @@
 
 import { create } from 'zustand';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
+import { formatSearchError } from '@/lib/jinaSearchErrors';
+import { retryWebFetch, retryWebSearch } from '@/lib/webClient';
 import { normalizeReaderMarkdown, splitReaderPreviewAtSections } from '@/lib/readerMarkdownNormalize';
 import { detectStructuredContent } from '@/lib/structuredData';
 
 const MAX_DISMISSED_TABS = 300;
+const MAX_TAB_RETRIES = 3;
 
 function loadDismissedTabIds(): Set<string> {
   try {
@@ -115,6 +118,7 @@ export interface BrowserTab {
 
   payload?: unknown;
   error?: string;
+  retryCount?: number;
 }
 
 function hostFromUrl(raw: string): string {
@@ -425,6 +429,7 @@ interface BrowserTabStore {
   openTabFromEvent: (data: Record<string, unknown>) => string;
   updateTabFromEvent: (data: Record<string, unknown>) => void;
   failTab: (toolCallId: string | undefined, error: string) => void;
+  retryTab: (tabId: string, opts?: { simplify?: boolean }) => Promise<void>;
   setActiveTab: (tabId: string) => void;
   setFetchView: (tabId: string, view: 'site' | 'reader') => void;
   setDataView: (tabId: string, view: 'visual' | 'json') => void;
@@ -566,6 +571,86 @@ export const useBrowserTabStore = create<BrowserTabStore>((set, get) => ({
         tab.id === id ? { ...tab, status: 'error', error } : tab,
       ),
     }));
+  },
+
+  retryTab: async (tabId, opts) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    if (!tab || tab.status === 'loading') return;
+    const retries = tab.retryCount ?? 0;
+    if (retries >= MAX_TAB_RETRIES) return;
+
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId
+          ? { ...t, status: 'loading' as const, error: undefined, retryCount: retries + 1 }
+          : t,
+      ),
+      activeTabId: tabId,
+    }));
+
+    try {
+      if (tab.mode === 'search') {
+        const query = tab.query || tab.title;
+        if (!query) throw new Error('No search query to retry');
+        const res = await retryWebSearch({
+          query,
+          country: tab.searchCountry,
+          simplify: opts?.simplify,
+        });
+        if (!res.ok) {
+          const formatted = formatSearchError(res.error);
+          set((state) => ({
+            tabs: state.tabs.map((t) =>
+              t.id === tabId ? { ...t, status: 'error', error: formatted.body } : t,
+            ),
+          }));
+          return;
+        }
+        const payload = {
+          query: res.data.query,
+          results: res.data.results,
+          resultCount: res.data.resultCount,
+          country: res.data.country,
+        };
+        set((state) => ({
+          tabs: state.tabs.map((t) => (t.id === tabId ? applyPayload(t, payload) : t)),
+        }));
+        return;
+      }
+
+      if (tab.mode === 'fetch') {
+        const url = tab.url;
+        if (!url) throw new Error('No URL to retry');
+        const res = await retryWebFetch({ url });
+        if (!res.ok) {
+          set((state) => ({
+            tabs: state.tabs.map((t) =>
+              t.id === tabId ? { ...t, status: 'error', error: res.error } : t,
+            ),
+          }));
+          return;
+        }
+        const payload = {
+          url: res.data.url,
+          title: res.data.title,
+          content: res.data.content,
+          ...(res.data.publishedTime ? { publishedTime: res.data.publishedTime } : {}),
+          ...(res.data.description ? { description: res.data.description } : {}),
+          ...(res.data.truncated ? { truncated: true } : {}),
+          ...(res.data.contentFormat ? { contentFormat: res.data.contentFormat } : {}),
+        };
+        set((state) => ({
+          tabs: state.tabs.map((t) => (t.id === tabId ? applyPayload(t, payload) : t)),
+        }));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId ? { ...t, status: 'error', error: msg } : t,
+        ),
+      }));
+    }
   },
 
   setActiveTab: (tabId) => set({ activeTabId: tabId }),

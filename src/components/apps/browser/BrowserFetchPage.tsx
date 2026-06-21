@@ -1,5 +1,5 @@
-import { memo, useEffect, useState } from 'react';
-import { AlertTriangle, Globe, Loader2 } from 'lucide-react';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Globe, Loader2, RefreshCw } from 'lucide-react';
 import { ReaderMarkdown } from './ReaderMarkdown';
 import { FetchReaderHeader } from './FetchReaderHeader';
 import { StructuredDataViewer } from '@/components/ui/StructuredDataViewer';
@@ -141,6 +141,38 @@ function SitePreview({
   );
 }
 
+function FetchErrorState({ tab }: { tab: BrowserTab }) {
+  const retryTab = useBrowserTabStore((s) => s.retryTab);
+  const botHint = tab.error?.toLowerCase().includes('bot');
+  const canRetry = (tab.retryCount ?? 0) < 3;
+  const onRetry = useCallback(() => { void retryTab(tab.id); }, [retryTab, tab.id]);
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-8 text-center max-w-md mx-auto bg-[var(--color-surface)]">
+      <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 border border-red-500/20">
+        <AlertTriangle className="w-6 h-6 text-red-400" />
+      </div>
+      <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">Could not read this page</h3>
+      <p className="text-xs text-[var(--color-text-muted)] leading-relaxed mb-4">{tab.error}</p>
+      {botHint && (
+        <div className="px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400/90 leading-relaxed mb-4">
+          Hint: Ask Construct to use the <strong>interactive browser</strong> (Browser Use) for sites that block automated text readers.
+        </div>
+      )}
+      {canRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/25 hover:bg-[var(--color-accent)]/25 transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 export const BrowserFetchPage = memo(function BrowserFetchPage({
   tab,
   fetchView,
@@ -151,21 +183,7 @@ export const BrowserFetchPage = memo(function BrowserFetchPage({
   dataView?: 'visual' | 'json';
 }) {
   if (tab.status === 'error') {
-    const botHint = tab.error?.toLowerCase().includes('bot');
-    return (
-      <div className="flex flex-col items-center justify-center h-full px-8 text-center max-w-md mx-auto bg-[var(--color-surface)]">
-        <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 border border-red-500/20">
-          <AlertTriangle className="w-6 h-6 text-red-400" />
-        </div>
-        <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">Could not read this page</h3>
-        <p className="text-xs text-[var(--color-text-muted)] leading-relaxed mb-4">{tab.error}</p>
-        {botHint && (
-          <div className="px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400/90 leading-relaxed">
-            Hint: Ask Construct to use the <strong>interactive browser</strong> (Browser Use) for sites that block automated text readers.
-          </div>
-        )}
-      </div>
-    );
+    return <FetchErrorState tab={tab} />;
   }
 
   if (tab.status === 'loading') {
