@@ -77,13 +77,6 @@ async function request<T>(
       headers,
     });
 
-    const respTraceId = response.headers.get('x-trace-id');
-    if (respTraceId) {
-      void import('@/lib/client-log-ship').then(({ setClientTraceContext }) => {
-        setClientTraceContext({ requestId, traceId: respTraceId });
-      });
-    }
-
     // On 401, attempt a single token refresh (unless this IS the retry).
     // Uses a shared promise so concurrent 401s only trigger one refresh (M17).
     if (response.status === 401 && token && !_isRetry) {

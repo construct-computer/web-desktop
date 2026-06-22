@@ -1,5 +1,3 @@
-import { shipClientLog } from './client-log-ship';
-
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -30,13 +28,7 @@ function stringifyArgs(args: unknown[]): unknown[] {
   });
 }
 
-/**
- * Create a scoped logger for a module. Logs structured JSON.
- *
- *   const logger = log('WebSocket')
- *   logger.info('Connected')
- *   logger.info({ event: 'connection_established', peer: 'server' })
- */
+/** Create a scoped console-only logger for a module. */
 export function log(module: string): Logger {
   const base = {
     app: 'construct-frontend',
@@ -77,27 +69,8 @@ export function log(module: string): Logger {
 
     if (level === 'debug') console.debug(JSON.stringify(payload));
     else if (level === 'info') console.log(JSON.stringify(payload));
-    else if (level === 'warn') {
-      console.warn(JSON.stringify(payload));
-      shipClientLog({
-        level: 'warn',
-        event: String(payload.event),
-        module,
-        message: message,
-        extra: extra as Record<string, unknown> | undefined,
-      });
-    } else if (level === 'error') {
-      console.error(JSON.stringify(payload));
-      const errObj = args.find((a) => a instanceof Error) as Error | undefined;
-      shipClientLog({
-        level: 'error',
-        event: String(payload.event),
-        module,
-        message: message ?? errObj?.message,
-        stack: errObj?.stack ?? (typeof payload.stack === 'string' ? payload.stack : undefined),
-        extra: extra as Record<string, unknown> | undefined,
-      });
-    }
+    else if (level === 'warn') console.warn(JSON.stringify(payload));
+    else console.error(JSON.stringify(payload));
   }
 
   return {
