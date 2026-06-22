@@ -10,6 +10,9 @@ import {
   Loader2, Check, Sparkles, AlertCircle, Lock, Mail, ArrowRight,
 } from 'lucide-react';
 import { Button, Input, Label } from '@/components/ui';
+import constructLogo from '@/assets/logo.png';
+import { ConstructSetupWindow } from '@/components/boot/ConstructSetupWindow';
+import { OnboardingFooter } from '@/components/onboarding/OnboardingFooter';
 import { useComputerStore } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
@@ -243,33 +246,28 @@ export function SetupModal() {
     && (emailLocked || !isPaid || (selectedEmailUsername.length > 0 && emailAvailable === true && !emailChecking));
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-scrim">
-      <div data-tour="setup" className="w-full max-w-md soft-popover rounded-2xl shadow-2xl shadow-black/18 dark:shadow-black/32 border border-black/10 dark:border-white/15 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-        {/* Header */}
-        <div className="text-center px-8 pt-7 pb-2 space-y-2">
-          {user?.avatarUrl ? (
-            <img
-              src={user.avatarUrl}
-              alt=""
-              className="w-16 h-16 rounded-full mx-auto shadow-md drop-shadow-sm border border-black/10 dark:border-white/10"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-16 h-16 mx-auto bg-black/5 dark:bg-white/10 rounded-full flex items-center justify-center shadow-inner">
-              <Sparkles className="w-8 h-8 text-black/40 dark:text-white/40 drop-shadow-sm" />
-            </div>
-          )}
-          <h2 className="text-xl font-semibold tracking-tight">Set Up Construct</h2>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            Set your profile and Construct email to get started.
-          </p>
-        </div>
-
-        {/* Form */}
-        <div className="px-8 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+    <ConstructSetupWindow
+      title="Set up Construct"
+      icon={constructLogo}
+      footer={
+        <OnboardingFooter
+          onContinue={() => void handleSave()}
+          continueLabel={isSaving ? 'Saving…' : 'Save & continue'}
+          canContinue={canSave && !isSaving}
+          loading={isSaving}
+        />
+      }
+    >
+        <div data-tour="setup" className="flex-1 px-6 py-5 md:px-8 space-y-4 overflow-y-auto min-h-0">
+          <div className="space-y-1 mb-2">
+            <h2 className="text-xl font-semibold tracking-tight">Your profile</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Set your name and Construct email to get started.
+            </p>
+          </div>
           {/* Name */}
           <div className="space-y-1">
-            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Your Name</Label>
+            <Label className="text-sm font-medium text-[var(--color-text-muted)] ml-1">Your name</Label>
             <Input
               type="text"
               value={ownerName}
@@ -283,8 +281,8 @@ export function SetupModal() {
 
           {/* Email (read-only from auth) */}
           <div className="space-y-1">
-            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1 flex items-center gap-1.5">
-              Your Email
+            <Label className="text-sm font-medium text-[var(--color-text-muted)] ml-1 flex items-center gap-1.5">
+              Your email
               {user?.email && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
             </Label>
             <Input
@@ -300,7 +298,7 @@ export function SetupModal() {
 
           {/* Construct Name */}
           <div className="space-y-1">
-            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Construct Name</Label>
+            <Label className="text-sm font-medium text-[var(--color-text-muted)] ml-1">Construct name</Label>
             <Input
               type="text"
               value={agentName}
@@ -315,9 +313,9 @@ export function SetupModal() {
 
           {/* Construct Email */}
           <div className="space-y-1">
-            <Label className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1 flex items-center gap-1.5">
+            <Label className="text-sm font-medium text-[var(--color-text-muted)] ml-1 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5" />
-              Construct Email Address
+              Construct email address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
               {!emailLocked && !isPaid && (
                 <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-black/5 dark:bg-white/10 text-[var(--color-text-muted)] font-semibold tracking-wide uppercase normal-case ml-1">Optional</span>
@@ -403,21 +401,7 @@ export function SetupModal() {
             )}
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="px-8 py-4 border-t border-[var(--color-border)] flex justify-end">
-          <Button
-            variant="primary"
-            className="px-8"
-            onClick={handleSave}
-            disabled={!canSave || isSaving}
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-            {isSaving ? 'Saving...' : 'Save & Get Started'}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </ConstructSetupWindow>
   );
 }
 

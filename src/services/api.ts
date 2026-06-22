@@ -338,6 +338,72 @@ export async function markSetupComplete(): Promise<ApiResult<{ user: User }>> {
   return request('/auth/setup-complete', { method: 'POST' });
 }
 
+export interface OnboardingState {
+  onboardingCompleted: boolean;
+  profile: import('@/lib/onboarding').OnboardingProfile;
+  progress: import('@/lib/onboarding').OnboardingProgress;
+}
+
+export async function getOnboarding(): Promise<ApiResult<OnboardingState>> {
+  return request('/auth/onboarding');
+}
+
+export async function patchOnboarding(body: {
+  profile?: Partial<import('@/lib/onboarding').OnboardingProfile>;
+  progress?: Partial<import('@/lib/onboarding').OnboardingProgress>;
+}): Promise<ApiResult<OnboardingState>> {
+  return request('/auth/onboarding', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function completeOnboarding(body: {
+  profile: import('@/lib/onboarding').OnboardingProfile;
+  progress: import('@/lib/onboarding').OnboardingProgress;
+}): Promise<ApiResult<{
+  user: User;
+  profile: import('@/lib/onboarding').OnboardingProfile;
+  progress: import('@/lib/onboarding').OnboardingProgress;
+}>> {
+  return request('/auth/onboarding/complete', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function trackOnboardingEvent(body: {
+  event: string;
+  step?: number;
+  demoId?: string;
+  integration?: string;
+}): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/auth/onboarding/event', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function recommendOnboardingIntegrations(
+  profile: import('@/lib/onboarding').OnboardingProfile,
+): Promise<ApiResult<{
+  candidates: Array<{
+    slug: string;
+    label: string;
+    tagline: string;
+    logo: string;
+    auth_schemes?: string[];
+  }>;
+  rankedPool: string[];
+  cached?: boolean;
+  catalog_size?: number;
+}>> {
+  return request('/auth/onboarding/integration-recommendations', {
+    method: 'POST',
+    body: JSON.stringify({ profile }),
+  });
+}
+
 export interface NativePushTokenRecord {
   id: string;
   platform: 'ios' | 'android' | 'web';
@@ -1930,6 +1996,32 @@ export interface ComposioAccountDetail {
 
 export async function getComposioAccount(toolkit: string): Promise<ApiResult<ComposioAccountDetail>> {
   return request(`/composio/${encodeURIComponent(toolkit)}/account`);
+}
+
+export type ComposioToolkitAuthMeta = {
+  slug: string;
+  name: string;
+  description: string;
+  logo: string;
+  auth_schemes: string[];
+  auth_config?: Array<{
+    mode: string;
+    fields: Array<{ name: string; displayName: string; description?: string; required: boolean }>;
+  }>;
+  composio_managed_schemes?: string[];
+};
+
+export async function getComposioToolkitAuthMeta(toolkit: string): Promise<ApiResult<ComposioToolkitAuthMeta>> {
+  return request(`/composio/${encodeURIComponent(toolkit)}/auth-meta`);
+}
+
+export async function batchGetComposioToolkitAuthMeta(slugs: string[]): Promise<ApiResult<{
+  toolkits: ComposioToolkitAuthMeta[];
+}>> {
+  return request('/composio/toolkits/auth-meta', {
+    method: 'POST',
+    body: JSON.stringify({ slugs }),
+  });
 }
 
 export async function getComposioToolkitDetail(toolkit: string): Promise<ApiResult<{

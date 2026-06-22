@@ -3,6 +3,10 @@ import { Desktop } from '@/components/desktop';
 import { LoginScreen } from '@/components/auth';
 import { ReturningUserScreen } from '@/components/screens/ReturningUserScreen';
 import { DuplicateTabScreen } from '@/components/screens/DuplicateTabScreen';
+import { FirstRunScene } from '@/components/boot/FirstRunScene';
+import { BOOT_EVENTS, type BootPhase } from '@/hooks/useBootPhase';
+import { computeWallpaperBlur, LOCK_SCREEN_EASING, LOCK_SCREEN_TRANSITION_MS, shouldHideDesktopChrome, shouldShowDesktop } from '@/lib/desktopReveal';
+import { handleOAuthCallbackParams } from '@/lib/oauthCallback';
 // SubscriptionGate replaced by SubscribeWindow (app window instead of full-screen overlay)
 import { useAuthStore } from '@/stores/authStore';
 import { useComputerStore } from '@/stores/agentStore';
@@ -155,6 +159,9 @@ function WebAppShell() {
   const [lockScreenGone, setLockScreenGone] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [slidingDown, setSlidingDown] = useState(false);
+  const [bootPhase, setBootPhase] = useState<BootPhase>('lock');
+  const [firstRunExiting, setFirstRunExiting] = useState(false);
+  const [desktopEntering, setDesktopEntering] = useState(false);
 
   // Tab singleton state: 'checking' | 'leader' | 'duplicate'
   const [tabStatus, setTabStatus] = useState<'checking' | 'leader' | 'duplicate'>('checking');
@@ -171,6 +178,13 @@ function WebAppShell() {
   const computerError = useComputerStore((s) => s.error);
   const fetchComputer = useComputerStore((s) => s.fetchComputer);
   const unsubscribeFromComputer = useComputerStore((s) => s.unsubscribeFromComputer);
+
+  const firstRunDone = Boolean(user?.setupCompleted && user?.onboardingCompleted);
+  const needsFirstRun = isAuthenticated && hasAccess && !firstRunDone;
+  const computerReady = Boolean(computer || !hasAccess);
+  const showDesktop = shouldShowDesktop(isAuthenticated, computerReady);
+  const wallpaperBlur = computeWallpaperBlur(lockScreenGone);
+  const chromeHidden = shouldHideDesktopChrome(lockScreenGone, slidingUp);
 
   // Preload sounds, install global click listener, handle OAuth callback, and check auth on mount
   useEffect(() => {
@@ -196,6 +210,7 @@ function WebAppShell() {
 
     // Check if this is an OAuth callback (token or error in URL)
     void finishOAuthReturn();
+    handleOAuthCallbackParams();
 
     const onNativeUrlOpen = () => {
       void finishOAuthReturn();
@@ -304,15 +319,51 @@ function WebAppShell() {
   // Skip when the user has explicitly locked the screen (isLocked).
   useEffect(() => {
     const canSlide = isAuthenticated && authChecked && !lockScreenGone && !slidingUp && !isLocked;
-    const ready = computer || !hasAccess; // blocked users go straight to desktop
+    const ready = computer || !hasAccess;
     if (canSlide && ready) {
       const timer = setTimeout(() => {
         setSlidingUp(true);
-        setTimeout(() => setLockScreenGone(true), 700);
+        if (!needsFirstRun) {
+          setBootPhase('desktop');
+        }
+        setTimeout(() => {
+          setLockScreenGone(true);
+          if (needsFirstRun) {
+            setBootPhase('first_run');
+          } else {
+            window.dispatchEvent(new Event(BOOT_EVENTS.desktopRevealed));
+          }
+        }, LOCK_SCREEN_TRANSITION_MS);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, hasAccess, computer, authChecked, lockScreenGone, slidingUp, isLocked]);
+  }, [isAuthenticated, hasAccess, computer, authChecked, lockScreenGone, slidingUp, isLocked, needsFirstRun]);
+
+  useEffect(() => {
+    const onOnboardingComplete = () => {
+      setFirstRunExiting(true);
+      window.setTimeout(() => {
+        setFirstRunExiting(false);
+        setBootPhase('desktop_enter');
+        setDesktopEntering(true);
+      }, 320);
+    };
+    window.addEventListener(BOOT_EVENTS.onboardingComplete, onOnboardingComplete);
+    return () => window.removeEventListener(BOOT_EVENTS.onboardingComplete, onOnboardingComplete);
+  }, []);
+
+  const handleDesktopEnterComplete = useCallback(() => {
+    setBootPhase('desktop');
+    setDesktopEntering(false);
+    window.dispatchEvent(new Event(BOOT_EVENTS.desktopRevealed));
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authChecked || !lockScreenGone || !computerReady) return;
+    if (needsFirstRun && bootPhase !== 'desktop_enter' && bootPhase !== 'desktop') {
+      setBootPhase('first_run');
+    }
+  }, [isAuthenticated, authChecked, lockScreenGone, computerReady, needsFirstRun, bootPhase]);
 
   // loginKey forces LoginScreen to remount (replay hello animation) on logout
   const [loginKey, setLoginKey] = useState(0);
@@ -320,7 +371,10 @@ function WebAppShell() {
   const handleLogout = useCallback(() => {
     setLockScreenGone(false);
     setSlidingUp(false);
-    setLoginKey(k => k + 1); // remount LoginScreen to replay hello animation
+    setBootPhase('lock');
+    setFirstRunExiting(false);
+    setDesktopEntering(false);
+    setLoginKey(k => k + 1);
     logout();
   }, [logout]);
 
@@ -353,11 +407,19 @@ function WebAppShell() {
   const handleUnlock = useCallback(() => {
     setSlidingDown(false);
     setSlidingUp(true);
+    if (!needsFirstRun) {
+      setBootPhase('desktop');
+    }
     setTimeout(() => {
       setLockScreenGone(true);
       setIsLocked(false);
-    }, 700);
-  }, []);
+      if (needsFirstRun) {
+        setBootPhase('first_run');
+      } else {
+        window.dispatchEvent(new Event(BOOT_EVENTS.desktopRevealed));
+      }
+    }, LOCK_SCREEN_TRANSITION_MS);
+  }, [needsFirstRun]);
 
   // ── Clear all frontend state for a fresh session ──
   const resetAllStores = useCallback(() => {
@@ -393,16 +455,23 @@ function WebAppShell() {
 
   return (
     <>
-      {/* Layer 1: App shell (bottom) — when authenticated (active plan with agent, or blocked with subscription overlay) */}
-      {isAuthenticated && (computer || !hasAccess) && (
+      {showDesktop && (
         <div className="fixed inset-0">
           <Desktop
             onLogout={handleLogout}
             onLockScreen={handleLockScreen}
             onReconnect={forceReconnect}
             isConnected={isConnected}
+            entering={desktopEntering}
+            wallpaperBlur={wallpaperBlur}
+            chromeHidden={chromeHidden}
+            onEnterComplete={handleDesktopEnterComplete}
           />
         </div>
+      )}
+
+      {(bootPhase === 'first_run' || firstRunExiting) && lockScreenGone && (
+        <FirstRunScene exiting={firstRunExiting} />
       )}
 
       {/* Layer 2: Lock screen — slides up when container is ready */}
@@ -417,9 +486,9 @@ function WebAppShell() {
                 ? 'translateY(-100%)'
                 : 'translateY(0)',
             transition: slidingUp
-              ? 'transform 0.7s cubic-bezier(0.4, 0.0, 0.2, 1)'
+              ? `transform ${LOCK_SCREEN_TRANSITION_MS}ms ${LOCK_SCREEN_EASING}`
               : slidingDown
-                ? 'transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1)'
+                ? `transform 500ms ${LOCK_SCREEN_EASING}`
                 : 'none',
           }}
         >
@@ -429,6 +498,7 @@ function WebAppShell() {
                 isProvisioning={hasAccess && (computerLoading || (!computer && !computerError))}
                 provisionError={hasAccess ? computerError : null}
                 onRetry={fetchComputer}
+                variant={needsFirstRun ? 'first_run' : 'returning'}
               />
           ) : (
             <LoginScreen key={loginKey} />

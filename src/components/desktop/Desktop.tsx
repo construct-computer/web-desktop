@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react';
 import { Wallpaper } from './Wallpaper';
 import { MenuBar } from './MenuBar';
 import { Dock } from './Dock';
@@ -12,17 +12,16 @@ import { NotificationCenter } from './NotificationCenter';
 import { Toasts } from '@/components/ui';
 import { WindowManager } from '@/components/window';
 import { useWindowStore } from '@/stores/windowStore';
-import { useNotificationStore } from '@/stores/notificationStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
-import { SetupModal } from '@/components/apps/SetupModal';
+import { BOOT_EVENTS } from '@/hooks/useBootPhase';
 import { PromoCodeModal } from '@/components/apps/PromoCodeModal';
 import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
-import { getSlackStatus, validateDiscountCode } from '@/services/api';
+import { validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { hasAgentAccess } from '@/lib/plans';
@@ -39,9 +38,38 @@ interface DesktopProps {
   onLockScreen?: () => void;
   onReconnect?: () => void;
   isConnected?: boolean;
+  entering?: boolean;
+  wallpaperBlur?: number;
+  chromeHidden?: boolean;
+  onEnterComplete?: () => void;
 }
 
-export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: DesktopProps) {
+/** Instant hide while lock overlay covers desktop — no slide animation. */
+export function chromeVisibilityStyle(chromeHidden: boolean): CSSProperties {
+  return chromeHidden
+    ? { visibility: 'hidden', pointerEvents: 'none' }
+    : {};
+}
+
+export function wallpaperContainerStyle(wallpaperBlur: number): CSSProperties {
+  if (wallpaperBlur <= 0) return {};
+  return {
+    filter: `blur(${wallpaperBlur}px) saturate(1.25)`,
+    transform: 'scale(1.02)',
+    transition: 'filter 700ms ease-out, transform 700ms ease-out',
+  };
+}
+
+export function Desktop({
+  onLogout,
+  onLockScreen,
+  onReconnect,
+  isConnected,
+  entering = false,
+  wallpaperBlur = 0,
+  chromeHidden = false,
+  onEnterComplete,
+}: DesktopProps) {
   const { openWindow } = useWindowStore();
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
@@ -49,6 +77,12 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
   const isMobile = useIsMobile();
   const topBarHeight = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
+
+  useEffect(() => {
+    if (!entering) return;
+    window.dispatchEvent(new Event(BOOT_EVENTS.postOnboardingDesktopReady));
+    onEnterComplete?.();
+  }, [entering, onEnterComplete]);
 
   // ── Workspace slide animation ──────────────────────────────────────
   // The sliding container wraps WindowManager. During a workspace transition,
@@ -97,122 +131,8 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
     slideTranslateX = workspaceTransition.direction === 'left' ? -screenWidth : screenWidth;
   }
 
-  // Handle OAuth callback redirect (e.g. ?drive=connected)
-  const addNotification = useNotificationStore((s) => s.addNotification);
-  const oauthHandledRef = useRef(false);
+  // Deep links (?open=spotlight, etc.)
   const deepLinkHandledRef = useRef(false);
-
-  useEffect(() => {
-    if (oauthHandledRef.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const calendarResult = params.get('calendar');
-    const driveResult = params.get('drive');
-    const slackResult = params.get('slack');
-    const composioConnected = params.get('composio_connected');
-    const composioError = params.get('composio_error');
-    if (!calendarResult && !driveResult && !slackResult && !composioConnected && !composioError) return;
-
-    oauthHandledRef.current = true;
-    window.history.replaceState({}, '', window.location.pathname);
-
-    // Google Calendar OAuth result
-    if (calendarResult === 'connected') {
-      addNotification({
-        title: 'Google Calendar connected',
-        body: 'Your Calendar is now linked',
-        source: 'Google Calendar',
-        variant: 'success',
-      });
-    } else if (calendarResult === 'denied' || calendarResult === 'error') {
-      addNotification({
-        title: 'Google Calendar connection failed',
-        body: calendarResult === 'denied' ? 'Access was denied' : 'An error occurred',
-        source: 'Google Calendar',
-        variant: 'error',
-      });
-    }
-
-    // Google Drive OAuth result
-    if (driveResult === 'connected') {
-      addNotification({
-        title: 'Google Drive connected',
-        body: 'Your Drive is now linked',
-        source: 'Google Drive',
-        variant: 'success',
-      });
-    } else if (driveResult === 'denied' || driveResult === 'error') {
-      addNotification({
-        title: 'Google Drive connection failed',
-        body: driveResult === 'denied' ? 'Access was denied' : 'An error occurred',
-        source: 'Google Drive',
-        variant: 'error',
-      });
-    }
-
-    // Slack OAuth result
-    if (slackResult === 'connected') {
-      getSlackStatus().then((result) => {
-        const teamName = result.success ? result.data.teamName : undefined;
-        addNotification({
-          title: 'Slack connected',
-          body: teamName ? `Added to ${teamName}` : 'Your Slack workspace is now linked',
-          source: 'Slack',
-          variant: 'success',
-        });
-      });
-    } else if (slackResult === 'denied' || slackResult === 'error') {
-      const slackError = params.get('slack_error');
-      let body = slackResult === 'denied' ? 'Access was denied' : 'An error occurred';
-      if (slackError) {
-        // Make Slack API error codes more readable
-        const friendlyErrors: Record<string, string> = {
-          bad_redirect_uri: 'Redirect URI mismatch — check SLACK_REDIRECT_URI matches the Slack app settings',
-          invalid_code: 'Authorization code expired — please try again',
-          access_denied: 'Access was denied by the user',
-          workspace_already_linked: 'This Slack workspace is already connected to another account',
-        };
-        body = friendlyErrors[slackError] || slackError.replace(/_/g, ' ');
-      }
-      addNotification({
-        title: 'Slack connection failed',
-        body,
-        source: 'Slack',
-        variant: 'error',
-      });
-    }
-
-    // Composio universal OAuth callback
-    if (composioConnected) {
-      const toolkitNames: Record<string, string> = {
-        googlecalendar: 'Google Calendar',
-        googledrive: 'Google Drive',
-      };
-      const name = toolkitNames[composioConnected] || composioConnected;
-      addNotification({
-        title: `${name} connected`,
-        body: `Your ${name} account is now linked.`,
-        source: name,
-        variant: 'success',
-      });
-    }
-    if (composioError) {
-      const toolkitNames: Record<string, string> = {
-        googlecalendar: 'Google Calendar',
-        googledrive: 'Google Drive',
-      };
-      const name = toolkitNames[composioError] || composioError;
-      addNotification({
-        title: `${name} connection failed`,
-        body: 'An error occurred during authorization.',
-        source: name,
-        variant: 'error',
-      });
-    }
-
-    // (Setup wizard session storage handling removed — SetupModal is now
-    // rendered as a permanent overlay, no window re-open needed.)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (deepLinkHandledRef.current) return;
@@ -297,28 +217,40 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
     return () => { cancelled = true; };
   }, []);
 
-  // Guided tour: auto-starts when setup hasn't been completed (always),
-  // or on first visit if the user hasn't completed/skipped the tour yet.
+  // Guided tour: auto-starts after setup + onboarding are complete.
   // Force-start from the menubar always works regardless of flags.
-  // Skip for blocked users — they see the subscription overlay instead.
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
   const tourTriggered = useRef(false);
-  useEffect(() => {
+  const startTourWhenReady = useCallback(() => {
     if (tourTriggered.current || !user || !hasAccess) return;
+    if (!user.setupCompleted || !user.onboardingCompleted) return;
 
-    const needsSetup = !user.setupCompleted;
     const tourDone = localStorage.getItem('construct:tour-completed') === '1';
     const tourSkipped = localStorage.getItem('construct:tour-skipped') === '1';
-
-    // Always show tour during setup; otherwise respect completed/skipped flags
-    if (!needsSetup && (tourDone || tourSkipped)) return;
+    if (tourDone || tourSkipped) return;
 
     tourTriggered.current = true;
-    // Short delay to let the UI settle (SetupModal renders, dock mounts, etc.)
-    setTimeout(() => {
+    window.setTimeout(() => {
       window.dispatchEvent(new Event('construct:start-tour'));
     }, 600);
   }, [user, hasAccess]);
+
+  const TOUR_SETTLE_MS = 2000;
+
+  useEffect(() => {
+    const onRevealed = () => {
+      window.setTimeout(() => startTourWhenReady(), TOUR_SETTLE_MS);
+    };
+
+    window.addEventListener(BOOT_EVENTS.desktopRevealed, onRevealed);
+    return () => window.removeEventListener(BOOT_EVENTS.desktopRevealed, onRevealed);
+  }, [startTourWhenReady]);
+
+  // Returning users: desktop mounts without reveal event — start tour normally.
+  useEffect(() => {
+    if (entering) return;
+    startTourWhenReady();
+  }, [entering, startTourWhenReady, user, hasAccess]);
 
   // Request browser notification permission early so it's available
   // when the agent sends notifications while the tab is in the background.
@@ -350,7 +282,10 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
   return (
     <div className="relative w-full h-full overflow-hidden">
       {/* Wallpaper — two copies slide in/out during workspace transitions */}
-      <div className="absolute inset-0 overflow-hidden">
+      <div
+        className="absolute inset-0 overflow-hidden"
+        style={{ opacity: 1, ...wallpaperContainerStyle(wallpaperBlur) }}
+      >
         <div
           style={{
             position: 'absolute',
@@ -381,18 +316,20 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
       </div>
 
       {/* Menu bar (top) */}
-      <MenuBar
-        onLogout={onLogout}
-        onLockScreen={onLockScreen}
-        onReconnect={onReconnect}
-        isConnected={isConnected}
-        isMobile={isMobile}
-      />
+      <div style={chromeVisibilityStyle(chromeHidden)}>
+        <MenuBar
+          onLogout={onLogout}
+          onLockScreen={onLockScreen}
+          onReconnect={onReconnect}
+          isConnected={isConnected}
+          isMobile={isMobile}
+        />
+      </div>
 
       {/* Scrim — darkens wallpaper during Workspaces view.
            Rendered here (not in the portal) so it shares the same stacking context
            as windows, letting windows (z≥100) sit above the scrim (z=90). */}
-      <MissionControlScrim />
+      {!chromeHidden && <MissionControlScrim />}
 
       {/* Window area - between menu bar and bottom bar.
            In normal mode, NO z-index so it doesn't create a stacking context —
@@ -407,6 +344,7 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
           bottom: isMobile ? MOBILE_APP_BAR_HEIGHT : 0,
           overflow: workspaceTransition ? 'hidden' : undefined,
           zIndex: missionControlActive ? Z_INDEX.missionControlScrim + 1 : undefined,
+          ...chromeVisibilityStyle(chromeHidden),
         }}
         onClick={(e) => {
           if (missionControlActive && !(e.target as HTMLElement).closest?.('[data-window-id]')) {
@@ -436,34 +374,38 @@ export function Desktop({ onLogout, onLockScreen, onReconnect, isConnected }: De
 
 
       {/* Agent desktop surface — only for active plans (need agent connection). */}
-      {hasAccess && <AgentGraphWidget showAutopilot={!isMobile} />}
-      {hasAccess && <ClippyWidget />}
+      <div style={chromeVisibilityStyle(chromeHidden)}>
+        {hasAccess && <AgentGraphWidget showAutopilot={!isMobile} />}
+        {hasAccess && <ClippyWidget />}
+      </div>
 
       {/* Dock (desktop) / App bar (mobile) */}
-      {isMobile ? <MobileAppBar /> : <Dock />}
+      <div
+        className={isMobile ? undefined : 'contents'}
+        style={chromeVisibilityStyle(chromeHidden)}
+      >
+        {isMobile ? <MobileAppBar /> : <Dock />}
+      </div>
 
       {/* Workspaces overlay */}
-      {!isMobile && <MissionControl />}
+      {!chromeHidden && !isMobile && <MissionControl />}
 
       {/* Launchpad fullscreen overlay */}
-      <Launchpad />
+      {!chromeHidden && <Launchpad />}
 
       {/* Spotlight command bar */}
-      <Spotlight />
+      {!chromeHidden && <Spotlight />}
 
       {/* Notification system */}
-      <Toasts />
-      <NotificationCenter />
+      {!chromeHidden && <Toasts />}
+      {!chromeHidden && <NotificationCenter />}
 
       {/* Subscription overlay — permanent until user subscribes */}
-      {user && !hasAccess && <SubscriptionOverlay />}
-
-      {/* Setup modal — permanent overlay until user completes initial setup (only for active plans) */}
-      {user && !user.setupCompleted && hasAccess && <SetupModal />}
+      {user && !hasAccess && !chromeHidden && <SubscriptionOverlay />}
 
       {/* Promo code modal — shown once after onboarding if the user landed
           via ?code=XXX and isn't already on Pro. Also shown to unsubscribed users immediately. */}
-      {(user?.setupCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
+      {!chromeHidden && (user?.onboardingCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
         <PromoCodeModal code={promoCode} onDismiss={() => setPromoDismissed(true)} />
       )}
     </div>

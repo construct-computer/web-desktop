@@ -898,7 +898,7 @@ interface ComputerStore {
   refreshActiveChatHistory: (options?: { force?: boolean }) => Promise<void>;
   /** Prefetch /history into session cache for a background session (e.g. scheduled task). */
   prefetchSessionHistory: (sessionKey: string) => Promise<void>;
-  sendChatMessage: (content: string, attachments?: string[], opts?: { componentMentions?: ComponentMention[] }) => void;
+  sendChatMessage: (content: string, attachments?: string[], opts?: { componentMentions?: ComponentMention[]; frontendContext?: Record<string, unknown> }) => void;
   addComponentMention: (mention: ComponentMention) => void;
   removeComponentMention: (appId: string, componentId: string) => void;
   clearComponentMentions: () => void;
@@ -3643,6 +3643,7 @@ export const useComputerStore = create<ComputerStore>()(
 
       const frontendContext = {
         ...buildFrontendContext(normalizedAttachments),
+        ...(opts?.frontendContext ?? {}),
         ...(componentMentions.length > 0 ? { componentMentions } : {}),
       };
       const sent = agentWS.sendChat(

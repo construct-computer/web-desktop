@@ -1,10 +1,14 @@
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, Globe, Terminal, FileSearch, AlertTriangle, AlertCircle } from 'lucide-react';
+import { ArrowDown, AlertTriangle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ChatMessage, type OverseerAlert } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useOnboardingStore } from '@/stores/onboardingStore';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform, isExternalSessionKey } from '@/lib/externalPlatforms';
+import { buildStarterPrompts, starterPromptHeader } from '@/lib/onboarding-prompts';
+import type { OnboardingDemoId } from '@/lib/onboarding-demos';
 import { getChatRenderKind, groupMessages, type MessageGroup } from './utils';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { ActivityGroup } from './ActivityGroup';
@@ -40,13 +44,13 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
       <button
         type="button"
         onClick={onReply}
-        className="text-[11px] font-medium text-[var(--color-text-muted)]/70 hover:text-[var(--color-text-muted)] active:text-[var(--color-text)] py-0.5"
+        className="text-[11px] font-medium text-text-muted/70 hover:text-text-muted active:text-text py-0.5"
         aria-label="Reply to this message"
       >
         Reply
       </button>
       {label && (
-        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none">
+        <span className="text-[9px] text-text-muted/30rap select-none">
           {label}
         </span>
       )}
@@ -62,13 +66,13 @@ function MessageTouchReply({ timestamp, onReply }: { timestamp?: Date; onReply: 
       <button
         type="button"
         onClick={onReply}
-        className="text-[11px] font-medium text-[var(--color-text-muted)]/70 active:text-[var(--color-text)] py-0.5"
+        className="text-[11px] font-medium text-text-muted/70 active:text-text py-0.5"
         aria-label="Reply to this message"
       >
         Reply
       </button>
       {label && (
-        <span className="text-[9px] text-[var(--color-text-muted)]/30 whitespace-nowrap select-none">
+        <span className="text-[9px] text-text-muted/30 whitespace-nowrap select-none">
           {label}
         </span>
       )}
@@ -246,14 +250,34 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
   const loadChatHistory = useComputerStore(s => s.loadChatHistory);
 
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
+  const onboardingCompleted = useAuthStore((s) => s.user?.onboardingCompleted);
+  const onboardingProfile = useOnboardingStore((s) => s.profile);
+  const onboardingProgress = useOnboardingStore((s) => s.progress);
+  const fetchOnboarding = useOnboardingStore((s) => s.fetch);
+  const onboardingLoaded = useOnboardingStore((s) => s.loaded);
+
+  useEffect(() => {
+    if (onboardingCompleted && !onboardingLoaded) {
+      void fetchOnboarding();
+    }
+  }, [onboardingCompleted, onboardingLoaded, fetchOnboarding]);
+
+  const starterPrompts = useMemo(
+    () => buildStarterPrompts(
+      onboardingProfile,
+      onboardingProgress.requiredDemoCompleted as OnboardingDemoId | undefined,
+    ),
+    [onboardingProfile, onboardingProgress.requiredDemoCompleted],
+  );
+  const promptHeader = useMemo(() => starterPromptHeader(onboardingProfile), [onboardingProfile]);
 
   if (sessionSwitching || (historyLoading && !hasContent)) {
     return (
       <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col gap-3 p-4 pt-6">
-        <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-4/5 max-w-md mx-auto motion-safe:animate-pulse" />
-        <div className="h-4 bg-white/10 dark:bg-white/[0.08] rounded-md w-2/3 max-w-sm mx-auto motion-safe:animate-pulse" />
-        <div className="h-3 bg-white/[0.08] dark:bg-white/[0.05] rounded-md w-1/2 max-w-xs mx-auto motion-safe:animate-pulse" />
-        <p className="text-center text-[12px] text-[var(--color-text-muted)]/50 mt-4">
+        <div className="h-4 bg-white/10 dark:bg-white/8 rounded-md w-4/5 max-w-md mx-auto motion-safe:animate-pulse" />
+        <div className="h-4 bg-white/10 dark:bg-white/8 rounded-md w-2/3 max-w-sm mx-auto motion-safe:animate-pulse" />
+        <div className="h-3 bg-white/8 dark:bg-white/5 rounded-md w-1/2 max-w-xs mx-auto motion-safe:animate-pulse" />
+        <p className="text-center text-[12px] text-text-muted/50 mt-4">
           {sessionSwitching ? 'Switching chat…' : 'Loading chat…'}
         </p>
       </div>
@@ -265,12 +289,12 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
       <div className="flex-1 min-h-0 w-full min-w-0 flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400/60" />
-          <p className="text-[15px] font-light text-[var(--color-text)]/70">Could not load chat history</p>
-          <p className="text-[12px] text-[var(--color-text-muted)]/50 mt-2">{historyLoadError}</p>
+          <p className="text-[15px] font-light text-text/70">Could not load chat history</p>
+          <p className="text-[12px] text-text-muted/50 mt-2">{historyLoadError}</p>
           <button
             type="button"
             onClick={() => { void loadChatHistory(); }}
-            className="mt-4 px-4 py-2 rounded-lg text-[12px] font-medium text-[var(--color-text)] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] transition-colors"
+            className="mt-4 px-4 py-2 rounded-lg text-[12px] font-medium text-text bg-white/6 hover:bg-white/10 border border-white/8 transition-colors"
           >
             Retry
           </button>
@@ -298,6 +322,9 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
         <div className="flex-1 min-h-0 flex items-center justify-center px-4 sm:px-8">
           <div className="text-center w-full max-w-lg mx-auto">
             <p className="text-[18px] font-light text-[var(--color-text)]/60">What can I help you with?</p>
+            {promptHeader && (
+              <p className="text-[12px] text-[var(--color-text-muted)]/45 mt-1">{promptHeader}</p>
+            )}
             <p className="text-[13px] text-[var(--color-text-muted)]/30 mt-2">Use @ to reference files, attach images, or just ask anything</p>
             {!isMobile && (
               <p className="text-[11px] text-[var(--color-text-muted)]/25 mt-1">Press <span className="text-[var(--color-text-muted)]/45">Ctrl/Alt+Space</span> to open Construct anytime</p>
@@ -308,11 +335,7 @@ export function MessageList({ paddingTopClass }: { paddingTopClass?: string } = 
                 isMobile ? 'grid grid-cols-1 max-w-md mx-auto' : 'flex flex-wrap justify-center',
               )}
             >
-              {[
-                { icon: <Globe className="w-3.5 h-3.5 shrink-0" />, label: 'Research a topic', prompt: 'Help me research a topic. First ask me for the topic/industry, audience, deadline, and desired output format if I have not provided them; do not guess missing details.' },
-                { icon: <FileSearch className="w-3.5 h-3.5 shrink-0" />, label: 'Draft an email', prompt: 'Help me draft a professional email. First ask for the recipient, goal, tone, and key points if they are missing; do not invent meeting details.' },
-                { icon: <Terminal className="w-3.5 h-3.5 shrink-0" />, label: 'Summarize my files', prompt: 'Look through my workspace files and summarize only what you can verify from accessible files. Note unknowns separately and list any action items you find.' },
-              ].map(({ icon, label, prompt }) => (
+              {starterPrompts.map(({ icon, label, prompt }) => (
                 <button
                   key={label}
                   type="button"

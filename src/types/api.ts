@@ -5,6 +5,7 @@ export interface User {
   avatarUrl: string | null;
   displayName: string | null;
   setupCompleted: boolean;
+  onboardingCompleted: boolean;
   plan: string;
   createdAt: string;
 }

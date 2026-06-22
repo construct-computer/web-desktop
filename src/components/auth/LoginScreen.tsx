@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useEffectiveWallpaperId, useWallpaperBlurUrl } from '@/hooks/useWallpaperUrl';
 import { CrossfadeWallpaper } from '@/components/desktop/CrossfadeWallpaper';
+import { CinematicText } from '@/components/boot/CinematicText';
 import { useSound } from '@/hooks/useSound';
 import { detectActivePromoCode } from '@/lib/constants';
 import circleAppearGif from '@/assets/construct/circle-appear.gif';
@@ -29,8 +30,6 @@ export function LoginScreen() {
   // ── Phases: power → hello → login ──
   const [poweredOn, setPoweredOn] = useState(false);
   const [powerFading, setPowerFading] = useState(false);
-  const [helloIn, setHelloIn] = useState(false);
-  const [helloOut, setHelloOut] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
 
   const handlePowerOn = () => {
@@ -42,22 +41,6 @@ export function LoginScreen() {
       setPoweredOn(true);
     }, 600);
   };
-
-  // Animation sequence after power-on
-  useEffect(() => {
-    if (!poweredOn) return;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const t = (fn: () => void, ms: number) => { timers.push(setTimeout(fn, ms)); };
-
-    // Phase 1: "hello" appears
-    t(() => setHelloIn(true), 200);
-
-    // Phase 2: "hello" fades out, login fades in
-    t(() => setHelloOut(true), 2200);
-    t(() => setShowLogin(true), 2600);
-
-    return () => timers.forEach(clearTimeout);
-  }, [poweredOn]);
 
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState('');
@@ -108,6 +91,10 @@ export function LoginScreen() {
   const dateStr = time.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
   const ease = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+  const handleHelloFadeStart = useCallback(() => {
+    window.setTimeout(() => setShowLogin(true), 400);
+  }, []);
 
   return (
     <div className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden">
@@ -171,38 +158,13 @@ export function LoginScreen() {
         </div>
       )}
 
-      {/* ── Phase 1: "hello" text (absolutely centered on screen) ── */}
       {poweredOn && !showLogin && (
-        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-          <h1
-            className="hello-cursive select-none"
-          style={{
-            fontSize: 'clamp(5rem, 15vw, 13rem)',
-            lineHeight: 1.2,
-            letterSpacing: '-0.01em',
-            padding: '0.15em 0.1em',
-            background: 'linear-gradient(90deg, #EF4444 0%, #FB923C 20%, #EF4444 38%, #FB923C 48%, #C4A030 55%, #39FF14 65%, #00FF66 75%, #39FF14 88%, #00FF66 100%)',
-            backgroundSize: '250% 100%',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            ...(helloIn ? {
-              WebkitMaskImage: 'linear-gradient(to right, black calc(var(--hello-reveal) - 6%), transparent var(--hello-reveal))',
-              maskImage: 'linear-gradient(to right, black calc(var(--hello-reveal) - 6%), transparent var(--hello-reveal))',
-            } : {}),
-            animation: helloIn
-              ? 'hello-gradient 7s ease-out forwards, hello-write 1.8s cubic-bezier(0.4, 0, 0.2, 1) forwards'
-              : 'none',
-            opacity: helloOut ? 0 : helloIn ? 1 : 0,
-            transform: helloOut ? 'translateY(-24px)' : 'none',
-            transition: helloOut
-              ? `opacity 0.5s ease-in, transform 0.5s ${ease}`
-              : 'opacity 0.15s ease-out',
-          }}
-          >
-            hello
-          </h1>
-        </div>
+        <CinematicText
+          variant="hello"
+          embedded
+          showWallpaper={false}
+          onFadeStart={handleHelloFadeStart}
+        />
       )}
 
       {/* ── Login content (fades in after hello) ── */}

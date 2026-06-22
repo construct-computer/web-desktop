@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { openSpotlightSession } from '@/lib/spotlightNav';
 import { DOCK_HEIGHT, MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX } from '@/lib/constants';
+import { BOOT_EVENTS } from '@/hooks/useBootPhase';
 import avatarSrc from '@/assets/widget.png';
 import constructGif from '@/assets/construct/loader.gif';
 import constructStatic from '@/assets/construct/loader-static.png';
@@ -367,6 +368,7 @@ export function ClippyWidget() {
   const agentConnected = useComputerStore(s => s.agentConnected);
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
+  const onboardingCompleted = useAuthStore(s => s.user?.onboardingCompleted);
   const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
   // ── Position (ratio-based, driven by visible app-window state) ──
@@ -445,10 +447,21 @@ export function ClippyWidget() {
   const welcomeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const welcomeDelayRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
-    if (!setupCompleted) return;
+    if (!setupCompleted || !onboardingCompleted) return;
     welcomeDelayRef.current = setTimeout(() => setWelcomeMsg(pickWelcome()), 1000);
     return () => clearTimeout(welcomeDelayRef.current);
-  }, [setupCompleted]);
+  }, [setupCompleted, onboardingCompleted]);
+
+  useEffect(() => {
+    const showFirstTimeGreeting = () => {
+      clearTimeout(welcomeTimerRef.current);
+      setWelcomeMsg(pickFirstTimeWelcome());
+    };
+    window.addEventListener(BOOT_EVENTS.postOnboardingDesktopReady, showFirstTimeGreeting);
+    return () => {
+      window.removeEventListener(BOOT_EVENTS.postOnboardingDesktopReady, showFirstTimeGreeting);
+    };
+  }, []);
   useEffect(() => {
     if (!welcomeMsg) return;
     welcomeTimerRef.current = setTimeout(() => setWelcomeMsg(null), 6000);
@@ -459,19 +472,17 @@ export function ClippyWidget() {
     if (isActive && welcomeMsg) setWelcomeMsg(null);
   }, [isActive, welcomeMsg]);
 
-  // Re-trigger welcome after onboarding finishes.
-  // Two events: tour done (if setup already completed) or setup saved (if tour already skipped).
+  // Re-trigger welcome after onboarding + tour finish.
   useEffect(() => {
     const showGreeting = () => {
-      if (!useAuthStore.getState().user?.setupCompleted) return;
+      const user = useAuthStore.getState().user;
+      if (!user?.setupCompleted || !user?.onboardingCompleted) return;
       clearTimeout(welcomeTimerRef.current);
       setWelcomeMsg(pickFirstTimeWelcome());
     };
     window.addEventListener('construct:onboarding-done', showGreeting);
-    window.addEventListener('construct:setup-saved', showGreeting);
     return () => {
       window.removeEventListener('construct:onboarding-done', showGreeting);
-      window.removeEventListener('construct:setup-saved', showGreeting);
     };
   }, []);
 

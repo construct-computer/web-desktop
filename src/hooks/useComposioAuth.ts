@@ -71,9 +71,13 @@ export function useComposioAuth(
     }
   }, [slug, prefetch?.authSchemes, prefetch?.authConfig, prefetch?.composioManagedSchemes]);
 
+  const hasPrefetch = Boolean(prefetch?.authSchemes?.length);
+
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!hasPrefetch) {
+      void refresh();
+    }
+  }, [refresh, hasPrefetch]);
 
   useEffect(() => () => {
     if (popupTimerRef.current !== null) window.clearInterval(popupTimerRef.current);

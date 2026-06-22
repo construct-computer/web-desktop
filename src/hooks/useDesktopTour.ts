@@ -1,14 +1,13 @@
 /**
  * Guided tour of the desktop UI.
  *
- * Uses driver.js to spotlight key UI elements one by one. On first boot,
- * the tour runs to introduce the user to key features of the desktop.
+ * Uses driver.js to spotlight key UI elements one by one. Runs after setup
+ * and onboarding are complete (or on demand from the menu).
  */
 
 import { useEffect, useRef, useCallback } from 'react';
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
-import { useWindowStore } from '@/stores/windowStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 
 import tourChat from '@/assets/tour/tour-chat.gif';
@@ -28,10 +27,6 @@ function gifTag(src: string, aspectRatio: string, alt = ''): string {
   return `<img class="tour-gif" src="${src}" alt="${alt}" style="aspect-ratio: ${aspectRatio};" />`;
 }
 
-/**
- * Build a container with two stacked `<img>` slots that crossfade between
- * clips. Slots are wired up at runtime by `setupGifCarousel`.
- */
 function gifCarouselTag(aspectRatio: string): string {
   const slotStyle = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 600ms ease;margin:0;';
   return `<div class="tour-gif-carousel" style="position:relative;aspect-ratio:${aspectRatio};width:100%;overflow:hidden;border-radius:8px;">`
@@ -40,13 +35,6 @@ function gifCarouselTag(aspectRatio: string): string {
     + `</div>`;
 }
 
-/**
- * Wire up a `.tour-gif-carousel` container with a shuffled playlist that
- * crossfades between GIF clips on a fixed interval. GIFs don't expose
- * duration/progress, so we pick a cycle time matching roughly the clip
- * length. Safe to call repeatedly — a dataset flag guards against double
- * init on popover re-renders.
- */
 function setupGifCarousel(container: HTMLElement, srcs: string[]): void {
   if (container.dataset.carouselStarted === '1') return;
   if (srcs.length === 0) return;
@@ -75,19 +63,6 @@ function setupGifCarousel(container: HTMLElement, srcs: string[]): void {
 }
 
 const steps: DriveStep[] = [
-  {
-    element: '[data-tour="setup"]',
-    popover: {
-      title: 'Welcome to Construct',
-      description: 'Fill in your name and Construct details, then hit <strong>Save</strong> to get started.',
-      side: 'left',
-      align: 'center',
-      showButtons: ['next'],
-      // Next is blocked until the user saves — the construct:setup-saved
-      // event listener (below) calls driverObj.moveNext() automatically.
-      onNextClick: () => {},
-    },
-  },
   {
     element: '[data-tour="chat"]',
     popover: {
@@ -136,17 +111,13 @@ export function useDesktopTour() {
   const startTour = useCallback((force = false) => {
     if (started.current) return;
 
-    // Don't auto-start if already completed or skipped (but allow forced re-runs from menu)
     if (!force) {
       try {
         if (localStorage.getItem(TOUR_SEEN_KEY) === '1') return;
         if (localStorage.getItem(TOUR_SKIPPED_KEY) === '1') return;
       } catch {}
 
-      // Disable auto-tour on mobile devices as the layout is primarily for desktop
-      if (window.innerWidth < 768) {
-        return;
-      }
+      if (window.innerWidth < 768) return;
     }
 
     started.current = true;
@@ -154,23 +125,11 @@ export function useDesktopTour() {
     setTimeout(() => {
     let skipped = false;
 
-    // Filter steps based on context
-    const setupVisible = !!document.querySelector('[data-tour="setup"]');
-    const activeSteps = steps.filter(s => {
-      if (s.element === '[data-tour="setup"]' && !setupVisible) return false;
-      return true;
-    });
+    const activeSteps = [...steps];
 
-    // Declare ahead so step callbacks can reference the driver instance
     let driverObj: ReturnType<typeof driver>;
-    
-    // Store ID of the sample notification so we can clean it up
     let sampleNotificationId: string | null = null;
 
-    // ── Pre-create the menu overlay element so driver.js can find it ──
-    // The menu dropdown is portaled outside the menubar, so we need a
-    // synthetic overlay that spans both the button and the open dropdown.
-    // It must exist in the DOM before driver.js tries to resolve the step.
     let menuOverlayEl = document.getElementById('tour-menu-overlay');
     if (!menuOverlayEl) {
       const menuBtn = document.querySelector<HTMLElement>('[data-tour="menu"]');
@@ -189,7 +148,6 @@ export function useDesktopTour() {
       document.body.appendChild(menuOverlayEl);
     }
 
-    // ── Patch steps to auto-open/close the notifications panel ──
     const notifIdx = activeSteps.findIndex(s => s.element === '#notification-center-drawer');
     const menuIdx = activeSteps.findIndex(s => s.element === '#tour-menu-overlay');
 
@@ -220,8 +178,7 @@ export function useDesktopTour() {
         onHighlightStarted: () => {
           const ns = useNotificationStore.getState();
           if (!ns.drawerOpen) ns.toggleDrawer();
-          
-          // Inject an informative sample notification for the tour
+
           sampleNotificationId = ns.addNotification(
             {
               variant: 'info',
@@ -240,10 +197,8 @@ export function useDesktopTour() {
       activeSteps[menuIdx] = {
         ...activeSteps[menuIdx],
         onHighlightStarted: () => {
-          // Open the Apple menu via custom event (reliable, no click simulation)
           window.dispatchEvent(new Event('construct:open-apple-menu'));
 
-          // After the dropdown portal renders, expand overlay to encompass both
           setTimeout(() => {
             const menuBtn = document.querySelector<HTMLElement>('[data-tour="menu"]');
             const dropdown = document.getElementById('menu-dropdown-portal');
@@ -265,9 +220,6 @@ export function useDesktopTour() {
       };
     }
 
-    // Track whether setup step has the Next button blocked
-    const setupStepIdx = activeSteps.findIndex(s => s.element === '[data-tour="setup"]');
-
     driverObj = driver({
       showProgress: true,
       animate: true,
@@ -282,8 +234,7 @@ export function useDesktopTour() {
       prevBtnText: 'Back',
       doneBtnText: 'Let\u2019s go',
       steps: activeSteps,
-      onPopoverRender: (popover, { state }) => {
-        // Inject a "fuck it, we ball" link in the top-right corner
+      onPopoverRender: (popover) => {
         const skipLink = document.createElement('a');
         skipLink.textContent = 'fuck it, we ball';
         skipLink.className = 'tour-skip-link';
@@ -293,56 +244,30 @@ export function useDesktopTour() {
 
         const carousel = popover.wrapper.querySelector<HTMLElement>('.tour-gif-carousel');
         if (carousel) setupGifCarousel(carousel, DOCK_TOUR_VIDEOS);
-
-        // Replace the blocked Next button with a passive hint on the setup
-        // step, so the tour doesn't look like it has a broken button.
-        if (setupStepIdx >= 0 && state.activeIndex === setupStepIdx) {
-          const nextBtn = popover.nextButton;
-          if (nextBtn) {
-            nextBtn.textContent = 'Save on the right to continue';
-            nextBtn.setAttribute('aria-disabled', 'true');
-            nextBtn.classList.add('tour-passive-next-label');
-          }
-        }
       },
       onDestroyed: () => {
         started.current = false;
-        // Close panels if they were left open during the tour
         const ns = useNotificationStore.getState();
         if (ns.drawerOpen) ns.toggleDrawer();
-        
-        // Clean up sample notification if user skipped while panel was open
+
         if (sampleNotificationId) {
           ns.removeNotification(sampleNotificationId);
           sampleNotificationId = null;
         }
 
-        // Close menu if it was left open using the custom event
         window.dispatchEvent(new Event('construct:close-apple-menu'));
-        
-        // Clean up the invisible union overlay
+
         const overlay = document.getElementById('tour-menu-overlay');
         if (overlay) overlay.remove();
-        
-        // Only mark tour as completed if the user went through all steps.
-        // Skipping via "fuck it, we ball" does NOT count — the tour will
-        // re-trigger on next page load until step 1 (email) is done.
+
         if (!skipped) {
           try { localStorage.setItem(TOUR_SEEN_KEY, '1'); } catch {}
         } else {
           try { localStorage.setItem(TOUR_SKIPPED_KEY, '1'); } catch {}
         }
-        // Signal Clippy to show the welcome greeting now that onboarding is done
         window.dispatchEvent(new Event('construct:onboarding-done'));
       },
     });
-
-    // Auto-advance past setup step when user clicks Save
-    const onSetupSaved = () => {
-      // Small delay to let the SetupModal unmount, then move to next step
-      setTimeout(() => driverObj.moveNext(), 400);
-    };
-    window.addEventListener('construct:setup-saved', onSetupSaved, { once: true });
 
     driverObj.drive();
     }, 500);
@@ -352,7 +277,6 @@ export function useDesktopTour() {
     const handleStart = () => startTour(false);
     const handleForce = () => startTour(true);
 
-    // Expose globally for testing: window.tour()
     (window as any).tour = handleForce;
 
     window.addEventListener(TOUR_EVENT, handleStart);
