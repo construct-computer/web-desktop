@@ -24,6 +24,7 @@ import { checkIsLeader, cleanupTabSingleton, onLeadershipYield } from '@/lib/tab
 import * as api from '@/services/api';
 import { hasAgentAccess } from '@/lib/plans';
 import { getCurrentDeviceId, getNativePlatform, isNativePlatform, syncNativePushRegistration } from '@/native';
+import { capturePageview, track } from '@/lib/analytics';
 
 // Telegram Mini App — lazy loaded only when running inside Telegram.
 const MiniApp = lazy(() =>
@@ -85,7 +86,7 @@ function App() {
   if (isTelegramMiniApp() || isTelegramOAuthReturn()) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
-        <MiniApp />
+        <MiniAppWithAnalytics />
       </Suspense>
     );
   }
@@ -94,12 +95,26 @@ function App() {
   if (window.location.pathname === '/link') {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
-        <DeviceLinkPage />
+        <DeviceLinkWithAnalytics />
       </Suspense>
     );
   }
 
   return <WebAppShell />;
+}
+
+function MiniAppWithAnalytics() {
+  useEffect(() => {
+    capturePageview('mini', { boot_phase: 'mini' });
+  }, []);
+  return <MiniApp />;
+}
+
+function DeviceLinkWithAnalytics() {
+  useEffect(() => {
+    capturePageview('device_link', { boot_phase: 'device_link' });
+  }, []);
+  return <DeviceLinkPage />;
 }
 
 function WebAppShell() {
@@ -170,7 +185,11 @@ function WebAppShell() {
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const fetchUsage = useBillingStore((s) => s.fetchUsage);
   const prefetchApps = useAppStore((s) => s.fetchApps);
-  const { isConnected, forceReconnect } = useWebSocket();
+  const { isConnected, forceReconnect: wsForceReconnect } = useWebSocket();
+  const forceReconnect = useCallback(() => {
+    track('ws_reconnect', { manual: true });
+    wsForceReconnect();
+  }, [wsForceReconnect]);
   const hasAccess = hasAgentAccess(user?.plan);
 
   const computer = useComputerStore((s) => s.computer);
@@ -365,6 +384,38 @@ function WebAppShell() {
     }
   }, [isAuthenticated, authChecked, lockScreenGone, computerReady, needsFirstRun, bootPhase]);
 
+  useEffect(() => {
+    if (!authChecked) return;
+
+    let screen = 'login';
+    let bootPhaseLabel = bootPhase;
+
+    if (!isAuthenticated) {
+      screen = 'login';
+    } else if (!lockScreenGone) {
+      screen = needsFirstRun ? 'onboarding' : 'provisioning';
+      bootPhaseLabel = 'lock';
+    } else if (bootPhase === 'first_run' || firstRunExiting) {
+      screen = 'onboarding';
+    } else if (bootPhase === 'desktop_enter' || bootPhase === 'desktop') {
+      screen = 'desktop';
+    }
+
+    capturePageview(screen, {
+      boot_phase: bootPhaseLabel,
+      authenticated: isAuthenticated,
+      has_access: hasAccess,
+    });
+  }, [
+    authChecked,
+    isAuthenticated,
+    lockScreenGone,
+    bootPhase,
+    firstRunExiting,
+    needsFirstRun,
+    hasAccess,
+  ]);
+
   // loginKey forces LoginScreen to remount (replay hello animation) on logout
   const [loginKey, setLoginKey] = useState(0);
 
@@ -385,6 +436,9 @@ function WebAppShell() {
     const billingStatus = params.get('billing_status');
     if (billingStatus === 'success' || billingStatus === 'portal_return') {
       window.history.replaceState({}, '', '/');
+      if (billingStatus === 'success') {
+        track('billing_subscription_active');
+      }
       void Promise.allSettled([checkAuth(), fetchSubscription(), fetchUsage()]);
     }
   }, [checkAuth, fetchSubscription, fetchUsage]);

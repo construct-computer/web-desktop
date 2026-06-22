@@ -20,6 +20,7 @@ import {
   sortChatMessagesByTimestamp,
 } from './chatTurnSync';
 import { isTriggeredSessionKey } from './agentSessionKeys';
+import { hashSessionKey, track } from '@/lib/analytics';
 
 function parseToolCallMetadata(data: Record<string, unknown> | undefined): ToolCallDisplayMetadata | undefined {
   const raw = data?.metadata;
@@ -3676,6 +3677,11 @@ export const useComputerStore = create<ComputerStore>()(
         );
         agentWS.forceReconnect();
       } else {
+        track('chat_message_sent', {
+          session_key_hash: hashSessionKey(activeSessionKey),
+          has_attachments: normalizedAttachments.length > 0,
+          inject_while_running: injectWhileAgentRunning,
+        });
         set(state => {
           const bySession = clearComponentMentionsForSession(
             clearComponentMentionsForSession(state.pendingComponentMentionsBySession, activeSessionKey),
@@ -3791,6 +3797,7 @@ export const useComputerStore = create<ComputerStore>()(
         'default',
       ].filter(Boolean));
       markRecentUserStops(stoppedSessionKeys);
+      track('agent_stop');
       const sent = agentWS.sendAbort();
       const browserStopKeys = new Set<string>([
         ...stopSnapshot.runningSessions,
@@ -3983,6 +3990,9 @@ export const useComputerStore = create<ComputerStore>()(
         : undefined;
       const sent = agentWS.sendInterrupt({ sessionKey, message, clientId, frontendContext });
       void api.stopAllBrowserForSession(sessionKey).catch(() => {});
+      if (sent) {
+        track('agent_interrupt', { session_key_hash: hashSessionKey(sessionKey), has_message: Boolean(message?.trim()) });
+      }
       if (sent && message?.trim()) {
         // Clear the matching soft-queued bubble immediately on force-inject so
         // the UI matches a normal sent message; `injection_acknowledged` can

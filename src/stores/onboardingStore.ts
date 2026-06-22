@@ -8,6 +8,7 @@ import {
   writeOnboardingDraft,
 } from '@/lib/onboardingDraftCache';
 import { log } from '@/lib/logger';
+import { track } from '@/lib/analytics';
 
 const logger = log('OnboardingStore');
 
@@ -86,10 +87,16 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
     const { profile } = get();
     set({ step, progress });
     persistDraft(profile, progress, step);
+    track('onboarding_step_completed', { step });
     void api.trackOnboardingEvent({ event: 'onboarding_step_viewed', step });
   },
 
   trackEvent: (event, extra) => {
+    if (event === 'onboarding_completed') {
+      track('onboarding_completed');
+    } else if (event === 'onboarding_integration_connected') {
+      track('integration_connected', { integration: extra?.integration });
+    }
     void api.trackOnboardingEvent({
       event,
       step: get().step,

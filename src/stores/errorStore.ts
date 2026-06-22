@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { log } from '@/lib/logger';
+import { captureClientError } from '@/lib/analytics';
 
 export interface CapturedError {
   id: string;
@@ -59,6 +60,12 @@ export const useErrorStore = create<ErrorStore>((set, get) => ({
     };
 
     log('errorStore').error(`[${error.source}] ${error.message}`, error.context || {}, { stack: error.stack });
+
+    captureClientError(error.stack ? new Error(error.message) : error.message, {
+      source: error.source,
+      error_id: error.errorId,
+      ...error.context,
+    });
 
     set((state) => ({
       errors: [error, ...state.errors].slice(0, MAX_ERRORS),

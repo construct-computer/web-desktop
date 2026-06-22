@@ -6,6 +6,7 @@ import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import { useAuthStore } from '@/stores/authStore';
 import { hasAgentAccess } from '@/lib/plans';
+import { track } from '@/lib/analytics';
 
 /** Window types unsubscribed users can open in preview mode. */
 const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
@@ -555,6 +556,10 @@ export const useWindowStore = create<WindowStore>()(
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
+
+      if (type === 'app' && metadata?.appId) {
+        track('app_opened', { app_id: String(metadata.appId) });
+      }
 
       // Persist open app windows so they survive refresh
       if (type === 'app') savePersistedAppWindows(newWindows);

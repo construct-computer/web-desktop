@@ -11,6 +11,7 @@ import {
 import { saveSessionWallpaper } from '@/lib/wallpaperSession';
 import { setUserWallpaper } from '@/lib/wallpaperPrefs';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { identifyUser, resetAnalytics, track } from '@/lib/analytics';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
 
@@ -200,6 +201,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (result.success) {
       api.setToken(result.data.token);
       clearStaleUserData(result.data.user.id);
+      identifyUser(result.data.user);
+      track('auth_login_completed', { method: 'magic_link', plan: result.data.user.plan });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -275,6 +278,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
+      identifyUser(result.data.user);
+      track('auth_login_completed', { method: 'oauth', plan: result.data.user.plan });
       set({
         user: result.data.user,
         isAuthenticated: true,
@@ -300,6 +305,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
+    resetAnalytics();
 
     set({
       user: null,
@@ -315,6 +321,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     void unregisterCurrentNativePushToken();
     persistWallpaperSessionBeforeLogout();
     clearLocalSessionData();
+    resetAnalytics();
     set({
       user: null,
       isAuthenticated: false,
@@ -341,6 +348,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (result.data.token) api.setToken(result.data.token);
       // Clear stale data if this is a different user than last time
       clearStaleUserData(result.data.user.id);
+      identifyUser(result.data.user);
       set({
         user: result.data.user,
         isAuthenticated: true,

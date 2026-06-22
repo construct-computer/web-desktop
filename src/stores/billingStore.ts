@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand';
+import { track } from '@/lib/analytics';
 import { openSettingsToSection } from '@/lib/settingsNav';
 import {
   getSubscription,
@@ -245,6 +246,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
     const result = await createCheckout(plan, finalCoupon);
     if (result.success) {
+      track('billing_checkout_started', { plan });
       return result.data.checkoutUrl;
     }
     return null;

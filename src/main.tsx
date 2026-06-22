@@ -7,9 +7,11 @@ import { recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery'
 import { installGlobalErrorHandlers } from '@/stores/errorStore'
 import { installLiveUpdates, installNativeBridge } from '@/native'
 import { warmWallpaperCacheFromSettings } from '@/lib/wallpaperCache'
+import { initPostHog } from '@/lib/analytics'
 
 // Warm custom wallpaper cache before first paint to avoid default-wallpaper flash.
 warmWallpaperCacheFromSettings();
+initPostHog();
 
 // Initialize before rendering
 void installNativeBridge();
