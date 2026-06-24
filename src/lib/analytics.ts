@@ -36,6 +36,7 @@ export function initPostHog(): void {
   const key = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
   if (!key) return;
 
+  // Ingest via Construct reverse proxy (same as worker POSTHOG_HOST default).
   const host = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://x.construct.computer';
   const uiHost = import.meta.env.VITE_PUBLIC_POSTHOG_UI_HOST || 'https://eu.posthog.com';
 

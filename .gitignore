@@ -40,3 +40,4 @@ ios/**/xcuserdata/
 !.env.example
 
 dev-dist
+.env
