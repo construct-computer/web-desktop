@@ -558,7 +558,12 @@ export const useWindowStore = create<WindowStore>()(
       });
 
       if (type === 'app' && metadata?.appId) {
-        track('app_opened', { app_id: String(metadata.appId) });
+        track('window_opened', {
+          window_type: type,
+          app_id: String(metadata.appId),
+        });
+      } else if (wsId === 'main') {
+        track('window_opened', { window_type: type });
       }
 
       // Persist open app windows so they survive refresh
@@ -626,6 +631,15 @@ export const useWindowStore = create<WindowStore>()(
       }
       
       set({ windows: newWindows, focusedWindowId: newFocusedId });
+
+      if (closing?.workspaceId === 'main') {
+        track('window_closed', {
+          window_type: closing.type,
+          ...(closing.type === 'app' && closing.metadata?.appId
+            ? { app_id: String(closing.metadata.appId) }
+            : {}),
+        });
+      }
       
       // Stage Manager: if we closed the active window, promote next from strip
       const sm = get();

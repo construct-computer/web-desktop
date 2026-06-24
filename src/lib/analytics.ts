@@ -39,6 +39,9 @@ export function initPostHog(): void {
   const host = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://x.construct.computer';
   const uiHost = import.meta.env.VITE_PUBLIC_POSTHOG_UI_HOST || 'https://eu.posthog.com';
 
+  // Session replay + autocapture (heatmaps) are on by default. Replay sampling is
+  // controlled in PostHog project settings. Virtual $pageview paths (see capturePageview)
+  // group SPA screens for paths/heatmaps — see docs/posthog-events.md.
   posthog.init(key, {
     api_host: host,
     ui_host: uiHost,
@@ -89,6 +92,7 @@ export function track(event: string, props?: Record<string, unknown>): void {
   posthog.capture(event, props);
 }
 
+/** Virtual screen path for SPA boot phases (not the browser URL). Used for paths + heatmaps. */
 export function capturePageview(
   virtualPath: string,
   props?: Record<string, unknown>,

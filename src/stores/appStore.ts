@@ -8,7 +8,6 @@ import * as api from '@/services/api';
 import type { InstalledApp, LocalApp } from '@/services/api';
 import type { AppDefinition } from '@/lib/appRegistry';
 import { log } from '@/lib/logger';
-import { track } from '@/lib/analytics';
 import iconGeneric from '@/icons/generic.png';
 import { getCachedToolkitDetail as getSharedCachedToolkitDetail } from '@/lib/composioToolkitCache';
 
@@ -161,7 +160,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     try {
       const result = await api.installApp(appId, opts);
       if (result.success) {
-        track('app_installed', { app_id: appId });
         await get().fetchApps();
         return { ok: true };
       }

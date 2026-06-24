@@ -436,9 +436,6 @@ function WebAppShell() {
     const billingStatus = params.get('billing_status');
     if (billingStatus === 'success' || billingStatus === 'portal_return') {
       window.history.replaceState({}, '', '/');
-      if (billingStatus === 'success') {
-        track('billing_subscription_active');
-      }
       void Promise.allSettled([checkAuth(), fetchSubscription(), fetchUsage()]);
     }
   }, [checkAuth, fetchSubscription, fetchUsage]);

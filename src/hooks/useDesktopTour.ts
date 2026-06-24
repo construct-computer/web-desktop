@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { track } from '@/lib/analytics';
 
 import tourChat from '@/assets/tour/tour-chat.gif';
 import tourEmail from '@/assets/tour/tour-email.gif';
@@ -121,6 +122,7 @@ export function useDesktopTour() {
     }
 
     started.current = true;
+    track('tour_started', { forced: force });
 
     setTimeout(() => {
     let skipped = false;
@@ -262,8 +264,10 @@ export function useDesktopTour() {
 
         if (!skipped) {
           try { localStorage.setItem(TOUR_SEEN_KEY, '1'); } catch {}
+          track('tour_completed');
         } else {
           try { localStorage.setItem(TOUR_SKIPPED_KEY, '1'); } catch {}
+          track('tour_skipped');
         }
         window.dispatchEvent(new Event('construct:onboarding-done'));
       },

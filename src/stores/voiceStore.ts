@@ -3,6 +3,7 @@ import { AudioCaptureService } from '@/services/audioCapture';
 import { ElevenLabsSTTClient } from '@/services/elevenlabsSTT';
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import { log } from '@/lib/logger';
+import { track } from '@/lib/analytics';
 
 const logger = log('VoiceStore');
 
@@ -91,6 +92,7 @@ export const useVoiceStore = create<VoiceStore>()((set, get) => ({
       {
         onSessionStarted: () => {
           set({ sttState: 'recording' });
+          track('voice_recording_started');
         },
         onPartialTranscript: (text) => {
           // New speech detected — cancel any pending auto-stop
@@ -168,6 +170,9 @@ export const useVoiceStore = create<VoiceStore>()((set, get) => ({
 
     clearSilenceTimer();
     set({ sttState: 'processing' });
+    if (accumulatedTranscript) {
+      track('voice_recording_completed', { transcript_length: accumulatedTranscript.length });
+    }
 
     // Stop mic
     captureService?.stop();

@@ -8,6 +8,7 @@
 
 import { checkFileExists, uploadContainerFile, createDirectory } from '@/services/api';
 import { normalizeWorkspacePath } from '@/lib/workspacePaths';
+import { track } from '@/lib/analytics';
 
 const UPLOADS_DIR = 'uploads';
 
@@ -73,6 +74,11 @@ export async function uploadAttachment(
   if (!uploadResult.success) {
     throw new Error(uploadResult.error || 'Upload failed');
   }
+
+  track('file_uploaded', {
+    file_size_bytes: file.size,
+    file_type: file.type || 'unknown',
+  });
 
   return { path: normalizeWorkspacePath(uploadResult.data?.path || targetPath), name: file.name, deduplicated: false };
 }

@@ -3,6 +3,7 @@ import { Loader2, Check, AlertCircle, Save } from 'lucide-react';
 import { Input } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { SectionPanel, SettingsCard, SettingsRow } from './SettingsPrimitives';
+import { track } from '@/lib/analytics';
 
 export function AccountSection() {
   const { user, updateProfile } = useAuthStore();
@@ -32,6 +33,7 @@ export function AccountSection() {
     try {
       const profileOk = await updateProfile({ displayName: displayName.trim() });
       if (profileOk) {
+        track('profile_updated');
         setSaved(true);
       } else {
         setError('Failed to save profile');

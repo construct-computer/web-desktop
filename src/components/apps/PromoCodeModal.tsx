@@ -10,6 +10,7 @@ import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { STORAGE_KEYS } from '@/lib/constants';
+import { track } from '@/lib/analytics';
 
 interface PromoCodeModalProps {
   code: string;
@@ -27,7 +28,8 @@ export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
   // close so the user doesn't lose state.
   useEffect(() => {
     minimizeAll();
-  }, [minimizeAll]);
+    track('promo_code_viewed', { code });
+  }, [minimizeAll, code]);
 
   const handleUpgrade = useCallback(async () => {
     setLoading(true);
@@ -43,10 +45,11 @@ export function PromoCodeModal({ code, onDismiss }: PromoCodeModalProps) {
   }, [startCheckout, code]);
 
   const handleDismiss = useCallback(() => {
+    track('promo_code_dismissed', { code });
     // Session-scoped so the modal re-appears on every hard refresh.
     try { sessionStorage.setItem(STORAGE_KEYS.promoSeen, '1'); } catch { /* */ }
     onDismiss();
-  }, [onDismiss]);
+  }, [onDismiss, code]);
 
   return (
     <div

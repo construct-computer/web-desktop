@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '@/services/api';
+import { track } from '@/lib/analytics';
 import { openAuthPopup } from '@/lib/utils';
 import type { AuthScheme, ComposioAuthDetail } from '@/components/apps/composioAuthUtils';
 import {
@@ -35,6 +36,11 @@ export function useComposioAuth(
   const oauthConnIdRef = useRef<string | null>(null);
   const onConnectedRef = useRef(onConnected);
   useEffect(() => { onConnectedRef.current = onConnected; }, [onConnected]);
+
+  const notifyConnected = useCallback(() => {
+    track('integration_connected', { integration_slug: slug });
+    onConnectedRef.current?.();
+  }, [slug]);
 
   const refresh = useCallback(async () => {
     if (!slug) {
@@ -92,7 +98,7 @@ export function useComposioAuth(
         api.composioFinalize(connId).finally(() => {
           oauthConnIdRef.current = null;
           setBusyScheme(null);
-          onConnectedRef.current?.();
+          notifyConnected();
         });
       }
     };
@@ -140,7 +146,7 @@ export function useComposioAuth(
           try { await api.composioFinalize(connId); } catch { /* ignore */ }
           oauthConnIdRef.current = null;
           setBusyScheme(null);
-          onConnectedRef.current?.();
+          notifyConnected();
         }
       }, 800) as unknown as number;
     } catch (e) {
@@ -156,7 +162,7 @@ export function useComposioAuth(
       const r = await api.composioConnect(slug, scheme, credentials);
       if (r.success && r.data?.ok) {
         setCredentials({});
-        onConnectedRef.current?.();
+        notifyConnected();
         setBusyScheme(null);
         return true;
       }
@@ -175,7 +181,7 @@ export function useComposioAuth(
     try {
       const r = await api.composioConnect(slug, 'NO_AUTH', {});
       if (r.success && r.data?.ok) {
-        onConnectedRef.current?.();
+        notifyConnected();
       } else {
         const raw = (r.success && r.data?.error) || (!r.success && r.error) || '';
         setError(prettifyConnectError(slug, raw));

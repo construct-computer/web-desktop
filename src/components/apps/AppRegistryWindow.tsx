@@ -46,6 +46,7 @@ import { McpUrlAuthPanel } from './app-store/McpUrlAuthPanel';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner } from '@/components/ui';
 import { useFreshness } from '@/hooks/useFreshness';
 import { useAppDiscovery, getCategoryLabel, getHostname, prettyAuthLabel } from '@/hooks/useAppDiscovery';
+import { track } from '@/lib/analytics';
 import type { UnifiedApp } from '@/hooks/useAppDiscovery';
 import type { RegistryAppDetail } from '@/services/api';
 
@@ -457,6 +458,7 @@ export function AppRegistryWindow({ config }: { config: WindowConfig }) {
     try {
       const res = await api.disconnectComposio(toolkit);
       if (res.success) {
+        track('integration_disconnected', { integration_slug: toolkit });
         await fetchConnected();
         setDetail(prev => prev?.composioSlug === toolkit ? { ...prev, status: 'available' } : prev);
       } else { setError('Disconnect failed: ' + res.error); }

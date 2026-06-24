@@ -246,7 +246,6 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
     const result = await createCheckout(plan, finalCoupon);
     if (result.success) {
-      track('billing_checkout_started', { plan });
       return result.data.checkoutUrl;
     }
     return null;
@@ -277,6 +276,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   openPortal: async () => {
     const result = await createPortalSession();
     if (result.success) {
+      track('billing_portal_opened');
       return { url: result.data.portalUrl };
     }
 
@@ -293,6 +293,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   buyTopup: async (amount: number) => {
     const result = await createTopupCheckout(amount);
     if (result.success) {
+      track('billing_topup_started', { amount_usd: amount });
       return result.data.checkoutUrl;
     }
     return null;
@@ -321,6 +322,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
 
   deleteByokKey: async () => {
     await deleteByokKey();
+    track('byok_key_deleted');
     // Re-fetch to get server-canonical state (mode reset to 'off', keyPreview null, etc).
     await get().fetchByok();
   },
@@ -328,6 +330,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   setByokMode: async (mode: ByokMode) => {
     const res = await updateByokSettings({ mode });
     if (res.success) {
+      track('byok_mode_changed', { mode });
       set({ byok: res.data });
       return { ok: true };
     }
