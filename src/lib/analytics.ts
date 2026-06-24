@@ -41,7 +41,7 @@ export function initPostHog(): void {
 
   // Session replay + autocapture (heatmaps) are on by default. Replay sampling is
   // controlled in PostHog project settings. Virtual $pageview paths (see capturePageview)
-  // group SPA screens for paths/heatmaps — see docs/posthog-events.md.
+  // group SPA screens for paths/heatmaps — see posthog-events.md at repo root.
   posthog.init(key, {
     api_host: host,
     ui_host: uiHost,
