@@ -38,6 +38,15 @@ export function hasUserRunningSessions(runningSessions: Set<string>): boolean {
   return false;
 }
 
+export function isSessionRunning(
+  sessionKey: string,
+  runningSessions: Set<string>,
+  activeSessions: Record<string, { status?: string } | undefined>,
+): boolean {
+  const activeSession = activeSessions[sessionKey];
+  return runningSessions.has(sessionKey) || Boolean(activeSession && activeSession.status !== 'idle');
+}
+
 export function shouldClearViewedAgentState(input: {
   activeSessionKey: string;
   liveSessionKeys: Set<string>;

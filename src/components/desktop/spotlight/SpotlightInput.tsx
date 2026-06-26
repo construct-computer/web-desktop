@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } fr
 import { Blocks, Send, FileText, Folder, Loader2, Paperclip, Square, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { Tooltip } from '@/components/ui';
 import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
+import { isSessionRunning } from '@/stores/agentStateCleanup';
 import { useAppStore } from '@/stores/appStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -292,7 +293,6 @@ export function SpotlightInput() {
   const sendChatMessage = useComputerStore(s => s.sendChatMessage);
   const stopChatSession = useComputerStore(s => s.stopChatSession);
   const addComponentMention = useComputerStore(s => s.addComponentMention);
-  const agentRunning = useComputerStore(s => s.agentRunning);
   const computer = useComputerStore(s => s.computer);
   const agentConnected = useComputerStore(s => s.agentConnected);
   const agentConnecting = useComputerStore(s => s.agentConnecting);
@@ -304,7 +304,7 @@ export function SpotlightInput() {
   const localApps = useAppStore(s => s.localApps);
   const appsFetched = useAppStore(s => s.fetched);
   const fetchApps = useAppStore(s => s.fetchApps);
-  const activeSessionStatus = useComputerStore(s => s.activeSessions[s.activeSessionKey]);
+  const activeSessionRunning = useComputerStore(s => isSessionRunning(s.activeSessionKey, s.runningSessions, s.activeSessions));
   const queuedCount = useComputerStore(s => {
     let n = 0;
     for (const m of s.chatMessages) if (m.role === 'user' && m.pendingInjection) n++;
@@ -316,12 +316,11 @@ export function SpotlightInput() {
   const replyingTo = useComputerStore(s => s.replyingTo);
   const setReplyingTo = useComputerStore(s => s.setReplyingTo);
   /**
-   * Running here means "there is a loop actively working this session". We
-   * combine the legacy `agentRunning` flag (desktop-lane compat) with the
-   * per-session `activeSessions` map so the Stop/Interrupt controls also show
-   * up for non-desktop platform chats (Slack, Telegram, email, etc.).
+   * Running here means "there is a loop actively working this session". Keep
+   * this scoped to the viewed session so another active chat does not make an
+   * old idle chat look interruptible.
    */
-  const sessionRunning = agentRunning || Boolean(activeSessionStatus && activeSessionStatus.status !== 'idle');
+  const sessionRunning = activeSessionRunning;
 
   const voiceEnabled = useSettingsStore(s => s.voiceEnabled);
   const voiceAutoSend = useSettingsStore(s => s.voiceAutoSend);

@@ -3,6 +3,7 @@ import {
   clearDesktopAgentRuntime,
   hasUserRunningSessions,
   isSubagentSessionKey,
+  isSessionRunning,
   pruneStaleBackgroundRunningSessions,
   shouldClearViewedAgentState,
   stripSubagentSessions,
@@ -27,6 +28,13 @@ describe('subagent session keys', () => {
     expect([...stripped]).toEqual(['desktop']);
     expect(hasUserRunningSessions(mixed)).toBe(true);
     expect(hasUserRunningSessions(new Set(['child_a', 'child_b']))).toBe(false);
+  });
+
+  it('checks running state for the requested session only', () => {
+    expect(isSessionRunning('old_chat', new Set(['current_chat']), {})).toBe(false);
+    expect(isSessionRunning('old_chat', new Set(['old_chat']), {})).toBe(true);
+    expect(isSessionRunning('old_chat', new Set(), { old_chat: { status: 'thinking' } })).toBe(true);
+    expect(isSessionRunning('old_chat', new Set(), { old_chat: { status: 'idle' } })).toBe(false);
   });
 });
 

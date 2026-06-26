@@ -49,6 +49,7 @@ import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
   hasUserRunningSessions,
+  isSessionRunning,
   isSubagentSessionKey,
   pruneStaleBackgroundRunningSessions,
   shouldClearViewedAgentState,
@@ -1745,7 +1746,7 @@ let fetchComputerPromise: Promise<void> | null = null;
 /** Tracks which instance already has its desktop runtime bootstrap installed. */
 let subscribedInstanceId: string | null = null;
 
-function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial<ComputerStore>) => void) {
+function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial<ComputerStore>) => void, sessionKey?: string) {
   if (agentRunningTimer) clearTimeout(agentRunningTimer);
   agentRunningTimer = setTimeout(() => {
     agentRunningTimer = null;
@@ -1759,7 +1760,7 @@ function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial
       );
       if (hasLiveSubagents) {
         // Subagents are still working — reschedule instead of resetting
-        resetAgentRunningTimer(get, set);
+        resetAgentRunningTimer(get, set, sessionKey);
         return;
       }
       // Also check if the orchestrator is waiting for child agents
@@ -1767,14 +1768,29 @@ function resetAgentRunningTimer(get: () => ComputerStore, set: (partial: Partial
       const pa = get().platformAgents?.['desktop'];
       const currentTool = pa?.currentTool;
       if (currentTool === 'wait_for_agents' || currentTool === 'spawn_agent') {
-        resetAgentRunningTimer(get, set);
+        resetAgentRunningTimer(get, set, sessionKey);
         return;
       }
       logger.warn('Agent running timeout — resetting state');
+      const state = get();
+      const activeSessionKey = sessionKey || state.activeSessionKey;
+      const nextRunning = new Set(state.runningSessions);
+      nextRunning.delete(activeSessionKey);
+      const nextActive = { ...state.activeSessions };
+      delete nextActive[activeSessionKey];
+      const hasOtherUserSessions = hasUserRunningSessions(nextRunning);
+      const desktop = !hasOtherUserSessions
+        ? clearDesktopAgentRuntime(state.platformAgents.desktop, Date.now())
+        : undefined;
       set({
         agentThinking: null,
         agentRunning: false,
         agentActivity: {},
+        activeSessions: nextActive,
+        runningSessions: nextRunning,
+        ...(!hasOtherUserSessions && desktop
+          ? { platformAgents: { ...state.platformAgents, desktop } }
+          : {}),
       });
     }
   }, AGENT_RUNNING_TIMEOUT_MS);
@@ -3546,7 +3562,6 @@ export const useComputerStore = create<ComputerStore>()(
         );
         return;
       }
-      const injectWhileAgentRunning = get().agentRunning;
       const clientId = createClientId('chat');
 
       // Auto-create a session if none exist (e.g. user deleted all chats)
@@ -3555,6 +3570,13 @@ export const useComputerStore = create<ComputerStore>()(
         activeSessionKey = get().activeSessionKey;
         chatMessages = get().chatMessages;
       }
+
+      const runtimeState = get();
+      const injectWhileAgentRunning = isSessionRunning(
+        activeSessionKey,
+        runtimeState.runningSessions,
+        runtimeState.activeSessions,
+      );
 
       // If this is the first user message in the session, show an immediate
       // placeholder title. The worker persists the first-message fallback and
@@ -3656,16 +3678,25 @@ export const useComputerStore = create<ComputerStore>()(
         fileAttachments,
       );
       if (!sent) {
-        set(state => ({
-          chatMessages: appendMessage(state.chatMessages, {
-            role: 'agent',
-            content: 'Not connected to Construct. Please wait for the connection and try again.',
-            timestamp: new Date(),
-            isError: true,
-          }),
-          agentThinking: null,
-          agentRunning: false,
-        }));
+        set(state => {
+          const nextRunning = new Set(state.runningSessions);
+          nextRunning.delete(activeSessionKey);
+          const nextActive = { ...state.activeSessions };
+          delete nextActive[activeSessionKey];
+          const agentRunningForActiveView = nextRunning.has(state.activeSessionKey);
+          return {
+            chatMessages: appendMessage(state.chatMessages, {
+              role: 'agent',
+              content: 'Not connected to Construct. Please wait for the connection and try again.',
+              timestamp: new Date(),
+              isError: true,
+            }),
+            agentThinking: null,
+            agentRunning: agentRunningForActiveView,
+            runningSessions: nextRunning,
+            activeSessions: nextActive,
+          };
+        });
         useNotificationStore.getState().addNotification(
           {
             title: 'Construct reconnecting',
@@ -3694,7 +3725,7 @@ export const useComputerStore = create<ComputerStore>()(
         });
         // Start a safety timeout — if no agent events arrive within the
         // timeout window, reset agentRunning so the UI doesn't get stuck.
-        resetAgentRunningTimer(get, set);
+        resetAgentRunningTimer(get, set, activeSessionKey);
       }
     },
 
@@ -4100,7 +4131,7 @@ export const useComputerStore = create<ComputerStore>()(
             : {}),
         };
       });
-      resetAgentRunningTimer(get, set);
+      resetAgentRunningTimer(get, set, targetSessionKey);
     },
 
     setReplyingTo: (msg: ChatMessage | null) => { set({ replyingTo: msg }); },
@@ -5168,7 +5199,7 @@ export const useComputerStore = create<ComputerStore>()(
       // Any event from the agent proves it's alive — reset the safety
       // timeout so we don't falsely reset agentRunning mid-task.
       if (get().agentRunning) {
-        resetAgentRunningTimer(get, set);
+        resetAgentRunningTimer(get, set, eventSessionKey);
       }
 
       switch (event.type) {
@@ -6226,7 +6257,7 @@ export const useComputerStore = create<ComputerStore>()(
           if (status !== 'idle') {
             if (isActiveSession) {
               if (!get().agentRunning) {
-                resetAgentRunningTimer(get, set);
+                resetAgentRunningTimer(get, set, eventSessionKey);
               }
               set({ agentStatusLabel: status });
             }
