@@ -15,7 +15,6 @@ import { useAgentTrackerStore } from '@/stores/agentTrackerStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { preloadAllSounds, installGlobalClickSound, unlockAudio } from '@/lib/sounds';
-import { preloadAllAssets } from '@/lib/preload';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useAppStore } from '@/stores/appStore';
@@ -243,9 +242,8 @@ function WebAppShell() {
   const wallpaperBlur = computeWallpaperBlur(lockScreenGone);
   const chromeHidden = shouldHideDesktopChrome(lockScreenGone, slidingUp);
 
-  // Preload sounds, install global click listener, handle OAuth callback, and check auth on mount
+  // Install sound handling, handle OAuth callback, and check auth on mount.
   useEffect(() => {
-    preloadAllAssets();
     preloadAllSounds();
     unlockAudio();
     const cleanup = installGlobalClickSound(() => useSettingsStore.getState().soundEnabled);
@@ -309,15 +307,6 @@ function WebAppShell() {
       fetchComputer();
     }
   }, [isAuthenticated, hasAccess, tabStatus, computer, computerLoading, computerError, fetchComputer]);
-
-  // Preload desktop assets (wallpaper, dock icons) while the user waits
-  // on the lock/provisioning screen. By the time the desktop renders,
-  // everything is already in the browser cache.
-  useEffect(() => {
-    if (isAuthenticated) {
-      preloadAllAssets();
-    }
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || !authChecked || !user?.id) return;

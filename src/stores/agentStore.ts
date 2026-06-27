@@ -5347,7 +5347,7 @@ export const useComputerStore = create<ComputerStore>()(
             };
             if (reasoningBuf) updates.agentReasoningBuffer = '';
 
-            // Desktop singleton: keep backward compat for ChatWindow.
+            // Desktop singleton feed.
             // Do not gate on chatHistoryLoading — the fetch can overlap streaming;
             // loadChatHistory merges the in-flight assistant row back in.
             if (isActiveSession) {

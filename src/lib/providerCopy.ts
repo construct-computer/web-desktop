@@ -1,9 +1,8 @@
 /**
  * Single source of truth for provider-state UI copy.
  *
- * Every surface (StatusWidget, SpotlightInput, ChatWindow banner, toasts,
- * mobile settings screen) reads from this map so copy changes live in one
- * place.
+ * Every active surface (SpotlightInput, toasts, mobile settings) reads from
+ * this map so copy changes live in one place.
  *
  * Note: all platform tiers currently use the same primary model (kimi-k2.6),
  * so we do not surface a separate `platform-lite` state. If a tier-specific
@@ -26,7 +25,7 @@ export interface ProviderCopy {
   toastTitle: string | null;
   toastBody: string | null;
   toastVariant: 'info' | 'success' | 'error' | null;
-  /** Widget primary label (e.g. replaces "Weekly" in StatusWidget). */
+  /** Compact label for surfaces that only have room for a badge. */
   widgetLabel: string;
   tone: ProviderTone;
   /** Settings nav target for click-through CTAs. Null means no action. */

@@ -1,6 +1,4 @@
 export { AppStoreCard } from './AppStoreCard';
-export { AppStoreTile } from './AppStoreTile';
-export { AppStoreFeaturedCard } from './AppStoreFeaturedCard';
 export { AppStoreFeaturedStrip } from './AppStoreFeaturedStrip';
 export { AppStoreSection } from './AppStoreSection';
 export { AppStoreGrid, AppStoreList, AppStoreListRow } from './AppStoreGrid';

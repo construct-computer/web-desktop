@@ -39,5 +39,14 @@ export function sessionInfoFromEvent(data: Record<string, unknown> | undefined, 
   const platformRef = data.platformRef && typeof data.platformRef === 'object' && !Array.isArray(data.platformRef)
     ? data.platformRef as Record<string, unknown>
     : null;
-  return { key: sessionKey, title, platform, readOnly, origin, platformRef, created, lastActivity };
+  return {
+    key: sessionKey,
+    title,
+    ...(platform ? { platform } : {}),
+    ...(readOnly !== undefined ? { readOnly } : {}),
+    ...(origin ? { origin } : {}),
+    ...(platformRef ? { platformRef } : {}),
+    created,
+    lastActivity,
+  };
 }

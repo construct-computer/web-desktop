@@ -109,7 +109,6 @@ export default defineConfig(({ mode }) => {
             || id.includes('/katex/')
             || id.includes('/highlight.js/')
           ) return 'markdown-vendor';
-          if (id.includes('/recharts/')) return 'chart-vendor';
           if (id.includes('/lucide-react/')) return 'icons-vendor';
           return undefined;
         },
