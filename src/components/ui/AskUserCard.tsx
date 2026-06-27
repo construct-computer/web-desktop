@@ -132,6 +132,12 @@ export function AskUserCard({ data }: AskUserCardProps) {
   const activeSessionKey = useComputerStore(s => s.activeSessionKey);
   const externalPlatform = inferExternalPlatform(activeSessionKey);
   const isAnswered = !!data.answers || data.selectedValue !== undefined;
+  // Risk approvals must remain actionable even when the session itself is a
+  // read-only external-platform transcript. They resolve the backend tool
+  // permission waiter, not a normal ask_user question.
+  if (data.permission) {
+    return <PermissionCard data={data} />;
+  }
   if (externalPlatform && !isAnswered) {
     return (
       <div className="mt-2 mb-1 rounded-xl border border-[var(--color-border)]/30 bg-[var(--color-bg-secondary)]/30 p-3">
@@ -146,11 +152,6 @@ export function AskUserCard({ data }: AskUserCardProps) {
         </div>
       </div>
     );
-  }
-  // Risk-approval cards get a dedicated Approve/Deny UI that resolves the
-  // backend tool-permission waiter. Everything else is a standard ask_user MCQ.
-  if (data.permission) {
-    return <PermissionCard data={data} />;
   }
   return <AskUserQuestionsCard data={data} />;
 }
