@@ -224,7 +224,9 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
             {(() => {
               const meta = getSessionDisplayMeta(session.key);
               const Icon = meta.icon;
-              return (
+              return meta.iconUrl ? (
+                <img src={meta.iconUrl} alt="" className="w-3 h-3 rounded-sm shrink-0 opacity-85" />
+              ) : (
                 <Icon
                   className={`w-3 h-3 shrink-0 ${meta.kind === 'desktop' ? 'opacity-40' : ''}`}
                   style={meta.kind === 'desktop' ? undefined : { color: meta.color, opacity: 0.85 }}

@@ -40,6 +40,7 @@ import {
 } from '@/icons';
 import { integrationActivityIconHints, MCP_APP_FALLBACK_ICON } from '@/lib/integrationDisplay';
 import { normalizePlatformSlug } from '@/lib/platforms';
+import { platformAppIcon } from '@/lib/platformAppIcons';
 import { useAppStore } from '@/stores/appStore';
 import type { WindowType } from '@/types';
 
@@ -131,6 +132,7 @@ const DIRECT_TOOL_WINDOW: Record<string, WindowType> = {
 const TOOL_PLATFORM_SLUG: Record<string, string> = {
   slack: 'slack',
   telegram: 'telegram',
+  discord: 'discord',
   github: 'github',
   gmail: 'gmail',
   email: 'gmail',
@@ -483,6 +485,8 @@ export function resolveActivityIconHints(
 
   const slug = TOOL_PLATFORM_SLUG[rawTool];
   if (slug) {
+    const firstParty = platformAppIcon(slug);
+    if (firstParty) return { iconPlatform: slug, iconUrl: firstParty };
     const logo = connectedToolkitLogo(slug);
     if (logo) return { iconPlatform: slug, iconUrl: logo };
   }

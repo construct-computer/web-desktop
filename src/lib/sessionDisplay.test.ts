@@ -11,7 +11,10 @@ describe('sessionDisplay', () => {
     expect(getSessionDisplayMeta('slack_team_1').kind).toBe('slack');
     expect(getSessionDisplayMeta('telegram_42').kind).toBe('telegram');
     expect(getSessionDisplayMeta('email_thr_1').kind).toBe('email');
+    expect(getSessionDisplayMeta('discord_guild_channel_msg').kind).toBe('discord');
+    expect(getSessionDisplayMeta('discord_guild_channel_msg').iconUrl).toContain('discord');
     expect(isReadOnlySessionKey('slack_team_1')).toBe(true);
+    expect(isReadOnlySessionKey('discord_guild_channel_msg')).toBe(true);
   });
 
   it('maps scheduled and calendar reminder keys', () => {

@@ -17,6 +17,7 @@ import { openAuthRedirect } from '@/lib/utils';
 import {
   getSlackConfigured, getSlackInstallUrl, getSlackStatus, disconnectSlack,
   getTelegramStatus, getTelegramLinkUrl, getTelegramBotInfo, telegramLoginWidget, disconnectTelegram,
+  getDiscordInstallUrl, getDiscordStatus, disconnectDiscord,
   checkAgentEmailAvailability,
   getAgentConfig, updateAgentConfig,
   getComposioConnected, composioFinalize, disconnectComposio, searchComposioToolkits,
@@ -68,7 +69,7 @@ const DEFAULT_COMPOSIO_INTEGRATIONS: ConnectionDef[] = [
 
 /** Toolkits we offer through built-in integrations — hide them from composio results
  *  so users don't try to connect them via composio's managed OAuth (which doesn't exist). */
-const BUILTIN_COMPOSIO_SLUGS = new Set(['slack', 'telegram']);
+const BUILTIN_COMPOSIO_SLUGS = new Set(['slack', 'telegram', 'discord']);
 
 /** Check if a toolkit is available for the user's plan. */
 function isToolkitAvailableForPlan(slug: string, plan: string): boolean {
@@ -459,6 +460,16 @@ function ConstructConnectionsPanel() {
   const [telegramLinking, setTelegramLinking] = useState(false);
   const telegramWidgetRef = useRef<HTMLDivElement>(null);
 
+  // Discord state
+  const [discordConnected, setDiscordConnected] = useState(false);
+  const [discordConfigured, setDiscordConfigured] = useState(false);
+  const [discordBotName, setDiscordBotName] = useState('');
+  const [discordGuildCount, setDiscordGuildCount] = useState(0);
+  const [discordError, setDiscordError] = useState('');
+  const [discordLoading, setDiscordLoading] = useState(true);
+  const [discordConnecting, setDiscordConnecting] = useState(false);
+  const [discordDisconnecting, setDiscordDisconnecting] = useState(false);
+
   // Composio state
   const [composioConnected, setComposioConnected] = useState<Set<string>>(new Set());
   const [composioLoading, setComposioLoading] = useState(true);
@@ -516,6 +527,20 @@ function ConstructConnectionsPanel() {
       setTelegramLoading(false);
     })();
 
+    (async () => {
+      try {
+        const res = await getDiscordStatus();
+        if (res.success) {
+          setDiscordConfigured(res.data.configured);
+          setDiscordConnected(res.data.connected);
+          setDiscordGuildCount(res.data.guildCount || 0);
+          setDiscordBotName(res.data.bot?.global_name || res.data.bot?.username || '');
+          setDiscordError(res.data.error || '');
+        }
+      } catch { /* ignore */ }
+      setDiscordLoading(false);
+    })();
+
     refreshComposio();
   }, [refreshComposio]);
 
@@ -546,8 +571,29 @@ function ConstructConnectionsPanel() {
       setSlackConnecting(false);
     };
 
+    const refreshDiscord = () => {
+      getDiscordStatus().then(r => {
+        if (r.success) {
+          setDiscordConfigured(r.data.configured);
+          setDiscordConnected(r.data.connected);
+          setDiscordGuildCount(r.data.guildCount || 0);
+          setDiscordBotName(r.data.bot?.global_name || r.data.bot?.username || '');
+          setDiscordError(r.data.error || '');
+        }
+      });
+      setDiscordConnecting(false);
+    };
+
     const handleOAuthCallback = (params: Record<string, string>) => {
       if (params.slack === 'connected') refreshSlack();
+      if (params.discord === 'connected') refreshDiscord();
+      if (params.discord === 'error') {
+        setDiscordConnecting(false);
+        const message = params.discord_error === 'guild_already_connected'
+          ? 'That Discord server is already connected to another Construct account.'
+          : `Discord connection failed${params.discord_error ? `: ${params.discord_error}` : ''}`;
+        setError(message);
+      }
       if (params.telegram === 'connected') {
         getTelegramStatus().then(r => {
           if (r.success) setTelegramConnected(r.data.connected);
@@ -579,7 +625,10 @@ function ConstructConnectionsPanel() {
     };
 
     // Focus listener (fallback: refresh when popup closes)
-    const focusHandler = () => refreshSlack();
+    const focusHandler = () => {
+      refreshSlack();
+      refreshDiscord();
+    };
 
     window.addEventListener('message', messageHandler);
     window.addEventListener('focus', focusHandler);
@@ -698,6 +747,27 @@ function ConstructConnectionsPanel() {
     setTelegramWidgetReady(false);
   };
 
+  const handleDiscordConnect = async () => {
+    setError(null);
+    setDiscordConnecting(true);
+    const result = await getDiscordInstallUrl();
+    setDiscordConnecting(false);
+    if (result.success && result.data.url) {
+      openAuthRedirect(result.data.url);
+    } else {
+      setError(result.success ? (result.data.error || 'Unknown Discord install error') : result.error);
+    }
+  };
+
+  const handleDiscordDisconnect = async () => {
+    setDiscordDisconnecting(true);
+    await disconnectDiscord();
+    setDiscordDisconnecting(false);
+    setDiscordConnected(false);
+    setDiscordGuildCount(0);
+    setDiscordBotName('');
+  };
+
   // Composio handlers
   const runComposioSearch = useCallback(async (q: string) => {
     if (q.trim().length < 2) {
@@ -806,7 +876,6 @@ function ConstructConnectionsPanel() {
           isLoading={telegramLoading}
           onConnect={handleTelegramConnect}
           onDisconnect={handleTelegramDisconnect}
-          isLast
           expanded={
             !telegramConnected && (telegramWidgetReady || telegramLinkUrl) ? (
               <TelegramExpanded
@@ -818,6 +887,26 @@ function ConstructConnectionsPanel() {
               />
             ) : null
           }
+        />
+
+        {/* Discord row */}
+        <ConnectionRow
+          icon={<PlatformIcon platform="discord" size={20} />}
+          name="Discord"
+          description={
+            discordConnected
+              ? `Bot ${discordBotName || 'connected'} is in ${discordGuildCount} server${discordGuildCount === 1 ? '' : 's'}`
+              : discordConfigured
+                ? (discordError || 'Discord bot token configured, but no enabled servers are usable for this user.')
+                : 'Add DISCORD_BOT_TOKEN to enable native Discord bot actions.'
+          }
+          authType="oauth"
+          isConnected={discordConnected}
+          isPending={discordConnecting || discordDisconnecting}
+          isLoading={discordLoading}
+          onConnect={handleDiscordConnect}
+          onDisconnect={handleDiscordDisconnect}
+          isLast
         />
       </SettingsCard>
 
@@ -855,7 +944,7 @@ function ConstructConnectionsPanel() {
           type="text"
           value={searchQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search for more integrations (Notion, Linear, Discord...)"
+          placeholder="Search for more integrations (Notion, Linear, HubSpot...)"
           className="w-full text-[12px] pl-9 pr-3 py-2 rounded-[8px] bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] focus:outline-none placeholder:text-[var(--color-text-muted)]"
         />
       </div>

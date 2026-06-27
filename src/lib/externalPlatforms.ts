@@ -2,7 +2,7 @@
 // message card to render their task-context first bubble. It is never inferred
 // from a session-key prefix (see inferExternalPlatform), so scheduled sessions
 // stay interactive desktop chats.
-export type ExternalPlatform = 'slack' | 'telegram' | 'email' | 'scheduled';
+export type ExternalPlatform = 'slack' | 'telegram' | 'email' | 'discord' | 'scheduled';
 export type ExternalAccessRole = 'OWNER' | 'TRUSTED' | 'GUEST' | 'BLOCKED' | 'ONE_OFF';
 
 export interface ExternalSourceMeta {
@@ -41,6 +41,7 @@ export const EXTERNAL_PLATFORM_META: Record<ExternalPlatform, {
   slack: { label: 'Slack', color: '#4A154B', accentClass: 'text-purple-300 bg-purple-500/10 border-purple-400/20' },
   telegram: { label: 'Telegram', color: '#2AABEE', accentClass: 'text-sky-300 bg-sky-500/10 border-sky-400/20' },
   email: { label: 'Email', color: '#EA4335', accentClass: 'text-rose-300 bg-rose-500/10 border-rose-400/20' },
+  discord: { label: 'Discord', color: '#5865F2', accentClass: 'text-indigo-300 bg-indigo-500/10 border-indigo-400/20' },
   scheduled: { label: 'Scheduled task', color: '#6366F1', accentClass: 'text-indigo-300 bg-indigo-500/10 border-indigo-400/20' },
 };
 
@@ -49,6 +50,7 @@ export function inferExternalPlatform(sessionKey?: string | null): ExternalPlatf
   if (sessionKey.startsWith('slack_')) return 'slack';
   if (sessionKey.startsWith('telegram_')) return 'telegram';
   if (sessionKey.startsWith('email_')) return 'email';
+  if (sessionKey.startsWith('discord_')) return 'discord';
   return null;
 }
 
@@ -57,7 +59,7 @@ export function isExternalSessionKey(sessionKey?: string | null): boolean {
 }
 
 export function isExternalPlatform(value: unknown): value is ExternalPlatform {
-  return value === 'slack' || value === 'telegram' || value === 'email' || value === 'scheduled';
+  return value === 'slack' || value === 'telegram' || value === 'email' || value === 'discord' || value === 'scheduled';
 }
 
 export function coerceExternalSource(value: unknown): ExternalSourceMeta | undefined {

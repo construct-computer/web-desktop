@@ -1908,11 +1908,18 @@ export async function composioConnect(
   });
 }
 
+const composioFinalizeInflight = new Map<string, Promise<ApiResult<{ ok: boolean; finalized?: number }>>>();
+
 export async function composioFinalize(connectedAccountId?: string): Promise<ApiResult<{ ok: boolean; finalized?: number }>> {
-  return request('/composio/finalize', {
+  const key = connectedAccountId || '__all__';
+  const existing = composioFinalizeInflight.get(key);
+  if (existing) return existing;
+  const run = request<{ ok: boolean; finalized?: number }>('/composio/finalize', {
     method: 'POST',
     body: JSON.stringify(connectedAccountId ? { connected_account_id: connectedAccountId } : {}),
-  });
+  }).finally(() => composioFinalizeInflight.delete(key));
+  composioFinalizeInflight.set(key, run);
+  return run;
 }
 
 export async function getComposioStatus(toolkit: string): Promise<ApiResult<{ connected: boolean; configured?: boolean }>> {
@@ -2366,6 +2373,38 @@ export async function getTelegramLinkUrl(): Promise<ApiResult<{ url: string; cod
 
 export async function disconnectTelegram(): Promise<ApiResult<{ status: string }>> {
   return request('/telegram/disconnect', { method: 'DELETE' });
+}
+
+// ============================================================================
+// Discord API (global bot model)
+// ============================================================================
+
+export interface DiscordStatus {
+  configured: boolean;
+  connected: boolean;
+  guildCount: number;
+  bot: { id: string; username: string; global_name?: string | null } | null;
+  guilds: Array<{ id: string; name: string; permissions?: string; installedAt?: number; installerUsername?: string }>;
+  error?: string;
+}
+
+export async function getDiscordConfigured(): Promise<ApiResult<{ configured: boolean }>> {
+  return request('/discord/configured');
+}
+
+export async function getDiscordStatus(): Promise<ApiResult<DiscordStatus>> {
+  return request('/discord/status');
+}
+
+export async function getDiscordInstallUrl(): Promise<ApiResult<{ url?: string; error?: string }>> {
+  const redirectOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const qs = redirectOrigin ? `?redirect_origin=${encodeURIComponent(redirectOrigin)}` : '';
+  return request(`/discord/install${qs}`);
+}
+
+export async function disconnectDiscord(guildId?: string): Promise<ApiResult<{ status: string }>> {
+  const qs = guildId ? `?guild_id=${encodeURIComponent(guildId)}` : '';
+  return request(`/discord/disconnect${qs}`, { method: 'DELETE' });
 }
 
 /**

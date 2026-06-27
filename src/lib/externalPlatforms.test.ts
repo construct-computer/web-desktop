@@ -14,6 +14,7 @@ describe('external platform helpers', () => {
     expect(inferExternalPlatform('slack_T1_123')).toBe('slack');
     expect(inferExternalPlatform('telegram_42')).toBe('telegram');
     expect(inferExternalPlatform('email_thr_1')).toBe('email');
+    expect(inferExternalPlatform('discord_guild_channel_msg')).toBe('discord');
     expect(inferExternalPlatform('default')).toBeNull();
     expect(isExternalSessionKey('email_msg_1')).toBe(true);
   });

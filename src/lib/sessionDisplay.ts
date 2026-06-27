@@ -1,13 +1,15 @@
 import type { LucideIcon } from 'lucide-react';
-import { CalendarClock, Hash, Mail, MessageSquare, Send } from 'lucide-react';
+import { CalendarClock, Hash, Mail, MessageSquare, Send, Gamepad2 } from 'lucide-react';
 import { EXTERNAL_PLATFORM_META, inferExternalPlatform } from '@/lib/externalPlatforms';
 import { isTriggeredSessionKey } from '@/stores/agentSessionKeys';
+import { platformAppIcon } from '@/lib/platformAppIcons';
 
 export type SessionDisplayKind =
   | 'desktop'
   | 'slack'
   | 'telegram'
   | 'email'
+  | 'discord'
   | 'scheduled'
   | 'calendar'
   | 'legacy_scheduled'
@@ -17,6 +19,7 @@ export interface SessionDisplayMeta {
   kind: SessionDisplayKind;
   label: string;
   icon: LucideIcon;
+  iconUrl?: string;
   color: string;
   readOnly: boolean;
   legacy?: boolean;
@@ -70,6 +73,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       kind: 'slack',
       label: EXTERNAL_PLATFORM_META.slack.label,
       icon: Hash,
+      iconUrl: platformAppIcon('slack'),
       color: EXTERNAL_PLATFORM_META.slack.color,
       readOnly: true,
     };
@@ -79,6 +83,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       kind: 'telegram',
       label: EXTERNAL_PLATFORM_META.telegram.label,
       icon: Send,
+      iconUrl: platformAppIcon('telegram'),
       color: EXTERNAL_PLATFORM_META.telegram.color,
       readOnly: true,
     };
@@ -89,6 +94,16 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       label: EXTERNAL_PLATFORM_META.email.label,
       icon: Mail,
       color: EXTERNAL_PLATFORM_META.email.color,
+      readOnly: true,
+    };
+  }
+  if (external === 'discord') {
+    return {
+      kind: 'discord',
+      label: EXTERNAL_PLATFORM_META.discord.label,
+      icon: Gamepad2,
+      iconUrl: platformAppIcon('discord'),
+      color: EXTERNAL_PLATFORM_META.discord.color,
       readOnly: true,
     };
   }

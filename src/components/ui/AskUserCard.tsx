@@ -22,6 +22,7 @@ import {
   type AskUserOption,
   type AskUserQuestion,
 } from '@/stores/agentStore';
+import { inferExternalPlatform } from '@/lib/externalPlatforms';
 
 interface AskUserCardProps {
   data: AskUserData;
@@ -128,6 +129,24 @@ function deriveQuestions(data: AskUserData): AskUserQuestion[] {
 }
 
 export function AskUserCard({ data }: AskUserCardProps) {
+  const activeSessionKey = useComputerStore(s => s.activeSessionKey);
+  const externalPlatform = inferExternalPlatform(activeSessionKey);
+  const isAnswered = !!data.answers || data.selectedValue !== undefined;
+  if (externalPlatform && !isAnswered) {
+    return (
+      <div className="mt-2 mb-1 rounded-xl border border-[var(--color-border)]/30 bg-[var(--color-bg-secondary)]/30 p-3">
+        <div className="flex items-start gap-2">
+          <MessageSquare className="w-4 h-4 shrink-0 mt-0.5 text-[var(--color-accent)]" />
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold text-[var(--color-text)]">Input needed</div>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 break-words">
+              Answer this in {externalPlatform}. This Construct view is read-only for external chats.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   // Risk-approval cards get a dedicated Approve/Deny UI that resolves the
   // backend tool-permission waiter. Everything else is a standard ask_user MCQ.
   if (data.permission) {

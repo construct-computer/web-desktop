@@ -28,4 +28,10 @@ describe('MCP icon fallbacks', () => {
     const hints = resolveActivityIconHints('discover', { action: 'search', query: 'polar' });
     expect(hints.iconUrl).toBe(iconSysinfo);
   });
+
+  it('uses first-party app icons for native messaging tools', () => {
+    expect(resolveActivityIconHints('discord').iconUrl).toContain('discord');
+    expect(resolveActivityIconHints('slack').iconUrl).toContain('slack');
+    expect(resolveActivityIconHints('telegram').iconUrl).toContain('telegram');
+  });
 });

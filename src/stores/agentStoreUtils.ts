@@ -564,6 +564,37 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     }
   }
 
+  if (tool === 'discord') {
+    const action = p.action as string | undefined;
+    const channel = (p.channel || p.channel_id) as string | undefined;
+    switch (action) {
+      case 'status': return { text: 'Checking Discord status', activityType: 'tool' };
+      case 'list_guilds': return { text: 'Listing Discord servers', activityType: 'tool' };
+      case 'list_channels': return { text: 'Listing Discord channels', activityType: 'tool' };
+      case 'send_message': return { text: `Sending Discord message${channel ? ` to ${channel}` : ''}`, activityType: 'tool' };
+      case 'read_messages': return { text: `Reading Discord messages${channel ? ` in ${channel}` : ''}`, activityType: 'tool' };
+      case 'edit_message': return { text: 'Editing Discord message', activityType: 'tool' };
+      case 'delete_message': return { text: 'Deleting Discord message', activityType: 'tool' };
+      case 'bulk_delete_messages': return { text: 'Bulk deleting Discord messages', activityType: 'tool' };
+      case 'add_reaction': return { text: 'Adding Discord reaction', activityType: 'tool' };
+      case 'remove_reaction': return { text: 'Removing Discord reaction', activityType: 'tool' };
+      case 'timeout_member': return { text: 'Timing out Discord member', activityType: 'tool' };
+      case 'search_members': return { text: 'Searching Discord members', activityType: 'tool' };
+      case 'kick_member': return { text: 'Kicking Discord member', activityType: 'tool' };
+      case 'ban_member': return { text: 'Banning Discord member', activityType: 'tool' };
+      case 'unban_member': return { text: 'Unbanning Discord member', activityType: 'tool' };
+      case 'create_channel': return { text: 'Creating Discord channel', activityType: 'tool' };
+      case 'edit_channel': return { text: 'Editing Discord channel', activityType: 'tool' };
+      case 'delete_channel': return { text: 'Deleting Discord channel', activityType: 'tool' };
+      case 'create_role': return { text: 'Creating Discord role', activityType: 'tool' };
+      case 'edit_role': return { text: 'Editing Discord role', activityType: 'tool' };
+      case 'delete_role': return { text: 'Deleting Discord role', activityType: 'tool' };
+      case 'assign_role': return { text: 'Assigning Discord role', activityType: 'tool' };
+      case 'remove_role': return { text: 'Removing Discord role', activityType: 'tool' };
+      default: return { text: `Discord: ${action || 'operation'}`, activityType: 'tool' };
+    }
+  }
+
   if (tool === 'audit_log') {
     const action = p.action as string | undefined;
     switch (action) {

@@ -110,7 +110,9 @@ function SessionItem({
           {(() => {
             const plat = getSessionDisplayMeta(session.key);
             const Icon = plat.icon;
-            return (
+            return plat.iconUrl ? (
+              <img src={plat.iconUrl} alt="" className="w-3.5 h-3.5 rounded-sm opacity-85" />
+            ) : (
               <Icon
                 className={`w-3.5 h-3.5 ${plat.kind === 'desktop' ? 'opacity-40' : ''}`}
                 style={plat.kind === 'desktop' ? undefined : { color: plat.color, opacity: 0.8 }}

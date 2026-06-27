@@ -90,8 +90,6 @@ export function useAgentStateLabel(): {
   const activeSessions = useComputerStore(s => s.activeSessions);
   const operations = useAgentTrackerStore(s => s.operations);
 
-  const hasAnyRunningOps = Object.values(operations).some(isRunningOp);
-  const hasAnyPlatformRunning = Object.values(platformAgents).some((p) => p.running);
   const runningSessionCount = useMemo(() => {
     let count = 0;
     for (const key of runningSessions) {
@@ -99,6 +97,10 @@ export function useAgentStateLabel(): {
     }
     return count;
   }, [runningSessions]);
+  const hasLiveActiveSession = Object.values(activeSessions).some((s) => s.status === 'thinking' || s.status === 'stuck');
+  const hasAnyRunningOps = Object.values(operations).some(isRunningOp);
+  const hasAnyPlatformRunning = (runningSessionCount > 0 || hasLiveActiveSession)
+    && Object.values(platformAgents).some((p) => p.running);
   const isActive = runningSessionCount > 0 || hasAnyPlatformRunning || hasAnyRunningOps;
 
   const lastActiveLogRef = useRef(0);

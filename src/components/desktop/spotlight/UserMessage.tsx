@@ -16,6 +16,7 @@ import {
 import { fileNameFromWorkspacePath, stripAttachedWorkspaceReferences, workspaceDisplayPath } from '@/lib/workspacePaths';
 import { ComponentMentionToken } from './ComponentMentionToken';
 import { splitComponentMentionMarkers } from '@/lib/componentMentionMarkup';
+import { platformAppIcon } from '@/lib/platformAppIcons';
 
 interface PlatformMessage {
   platform: string;
@@ -28,8 +29,8 @@ interface PlatformMessage {
  * Parse external platform message content to extract user, subject, and body.
  * Only called when msg.source confirms this is genuinely from an external platform.
  */
-function parsePlatformContent(source: 'telegram' | 'slack' | 'email', content: string): PlatformMessage | null {
-  if (source === 'telegram' || source === 'slack') {
+function parsePlatformContent(source: 'telegram' | 'slack' | 'email' | 'discord', content: string): PlatformMessage | null {
+  if (source === 'telegram' || source === 'slack' || source === 'discord') {
     // Format: [Platform | @user | ROLE | metadata]: message
     const bracketMatch = content.match(/^\[(\w+)\s*\|\s*@?([^\]|]+?)(?:\s*\|[^\]]*)*\]:\s*([\s\S]*)$/);
     if (bracketMatch) {
@@ -73,6 +74,7 @@ const PLATFORM_COLORS: Record<string, string> = {
   Telegram: '#2AABEE',
   Slack: '#4A154B',
   Email: '#EA4335',
+  Discord: '#5865F2',
   App: '#6366F1',
 };
 
@@ -80,6 +82,7 @@ const PLATFORM_ICONS: Record<string, typeof Send> = {
   Telegram: Send,
   Slack: Hash,
   Email: Mail,
+  Discord: Hash,
   App: Blocks,
   'Scheduled task': Clock,
 };
@@ -156,7 +159,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
   // Only parse as platform message when the backend confirms a parseable
   // text-prefixed source. Scheduled-task cards carry structured sourceMeta and
   // a clean body, so they skip the bracket parser.
-  const parsed = msg.source === 'telegram' || msg.source === 'slack' || msg.source === 'email'
+  const parsed = msg.source === 'telegram' || msg.source === 'slack' || msg.source === 'email' || msg.source === 'discord'
     ? parsePlatformContent(msg.source, msg.content)
     : null;
   const externalPlatform = msg.sourceMeta?.platform || msg.source;
@@ -186,6 +189,7 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
     const platformName = EXTERNAL_PLATFORM_META[externalPlatform]?.label || parsed?.platform || externalPlatform;
     const color = EXTERNAL_PLATFORM_META[externalPlatform]?.color || PLATFORM_COLORS[parsed?.platform || ''] || 'var(--color-accent)';
     const Icon = PLATFORM_ICONS[platformName] || Send;
+    const iconUrl = platformAppIcon(externalPlatform);
     const sender = sourceLabel(msg.sourceMeta) || parsed?.user || 'Unknown sender';
     const context = sourceContext(msg.sourceMeta) || parsed?.subject;
     const body = parsed?.message || msg.content;
@@ -196,8 +200,8 @@ export function UserMessage({ msg, replySlot }: { msg: ChatMessage; replySlot?: 
         <div className="flex max-w-[95%] sm:max-w-[80%] min-w-0 flex-col items-end gap-0.5">
           <div className="w-fit max-w-full self-end rounded-[18px] rounded-br-md shadow-sm overflow-hidden" style={{ background: color }}>
             <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-white/60" style={{ background: 'rgba(0,0,0,0.15)' }}>
-              {appIcon ? (
-                <img src={appIcon} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
+              {appIcon || iconUrl ? (
+                <img src={appIcon || iconUrl} alt="" className="w-3.5 h-3.5 rounded-[3px]" />
               ) : (
                 <Icon className="w-2.5 h-2.5" />
               )}

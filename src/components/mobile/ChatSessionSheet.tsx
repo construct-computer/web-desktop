@@ -91,10 +91,14 @@ export function ChatSessionSheet({ open, onClose }: ChatSessionSheetProps) {
                   isActive ? 'bg-white/10' : ''
                 }`}
               >
-                <Icon
-                  className="w-4 h-4 shrink-0"
-                  style={meta.kind === 'desktop' ? { opacity: 0.45 } : { color: meta.color, opacity: 0.9 }}
-                />
+                {meta.iconUrl ? (
+                  <img src={meta.iconUrl} alt="" className="w-4 h-4 shrink-0 rounded-sm opacity-90" />
+                ) : (
+                  <Icon
+                    className="w-4 h-4 shrink-0"
+                    style={meta.kind === 'desktop' ? { opacity: 0.45 } : { color: meta.color, opacity: 0.9 }}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div
                     className={`text-[14px] truncate ${hasUnread ? 'font-semibold' : 'font-medium'}`}

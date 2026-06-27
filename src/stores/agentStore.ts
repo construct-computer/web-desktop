@@ -303,7 +303,7 @@ export interface ChatMessage {
   /** Structured local-app component mentions selected from App Builder or edit mode. */
   componentMentions?: ComponentMention[];
   /** Source platform for external messages (used to render platform-specific UI). */
-  source?: 'telegram' | 'slack' | 'email' | 'scheduled';
+  source?: 'telegram' | 'slack' | 'email' | 'discord' | 'scheduled';
   /** Structured source details for external-platform messages. */
   sourceMeta?: ExternalSourceMeta;
   /** Access role/grant that allowed this external-platform message. */
@@ -5229,6 +5229,7 @@ export const useComputerStore = create<ComputerStore>()(
             const isInboundPlatformMsg = msgSource === 'telegram'
               || msgSource === 'slack'
               || msgSource === 'email'
+              || msgSource === 'discord'
               || msgSource === 'scheduled';
             if (!isInboundPlatformMsg && !isActiveSession) break;
 
@@ -6140,8 +6141,11 @@ export const useComputerStore = create<ComputerStore>()(
               );
             }
             const settleMessages = (messages: ChatMessage[]) => {
-              if (status !== 'idle' || !latestAgentMessageIsSuccessful(messages)) return messages;
-              return finalizeRunningActivities(clearTurnSettlementForSession(messages));
+              if (status !== 'idle') return messages;
+              const cleared = clearTurnSettlementForSession(messages);
+              if (inferExternalPlatform(eventSessionKey)) return finalizeRunningActivities(cleared);
+              if (!latestAgentMessageIsSuccessful(cleared)) return messages;
+              return finalizeRunningActivities(cleared);
             };
             if (isActiveSession) {
               const clearedWatchdog = clearWatchdogNotices(state.chatMessages);

@@ -82,4 +82,8 @@ describe('hydration loop prevention contract', () => {
   it('successful history load calls markHistorySettled', () => {
     expect(agentStoreSource).toMatch(/markHistorySettled\(requestedSessionKey\)/);
   });
+
+  it('external sessions finalize running activity on idle without desktop success heuristics', () => {
+    expect(agentStoreSource).toMatch(/if \(inferExternalPlatform\(eventSessionKey\)\) return finalizeRunningActivities\(cleared\)/);
+  });
 });

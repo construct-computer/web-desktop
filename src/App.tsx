@@ -82,6 +82,10 @@ function isTelegramOAuthReturn(): boolean {
 }
 
 function App() {
+  if (window.location.pathname === '/oauth/callback') {
+    return <OAuthCallbackCloser />;
+  }
+
   // Telegram Mini App — keep Telegram auth/linking, then render the mobile-optimized desktop.
   if (isTelegramMiniApp() || isTelegramOAuthReturn()) {
     return (
@@ -117,6 +121,40 @@ function DeviceLinkWithAnalytics() {
   return <DeviceLinkPage />;
 }
 
+function OAuthCallbackCloser() {
+  const params = new URLSearchParams(window.location.search);
+  const isError = params.get('discord') === 'error' || params.has('composio_error');
+  const error = params.get('discord_error') || params.get('composio_error') || 'OAuth failed';
+
+  useEffect(() => {
+    const payload = { type: 'construct:oauth-callback', params: Object.fromEntries(params) };
+    try {
+      const ch = new BroadcastChannel('construct:oauth');
+      ch.postMessage(payload);
+      ch.close();
+    } catch { /* not supported */ }
+    if (window.opener) {
+      try { window.opener.postMessage(payload, '*'); } catch { /* cross-origin */ }
+    }
+    window.close();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-[#0f1117] text-white">
+      <div className="text-center space-y-3">
+        <div className="text-sm font-medium">{isError ? `OAuth failed: ${error}` : 'Connected. You can close this window.'}</div>
+        <button
+          type="button"
+          onClick={() => window.close()}
+          className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15"
+        >
+          Close this window
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function WebAppShell() {
   // Capture a promo/referral code from the URL (?code=XXX) and stash it in
   // localStorage so we can offer it to the user once they finish onboarding.
@@ -146,7 +184,7 @@ function WebAppShell() {
   // (some browsers clear it during multi-page OAuth redirects).
   {
     const params = new URLSearchParams(window.location.search);
-    const hasCallback = params.has('slack') || params.has('drive') || params.has('calendar') ||
+    const hasCallback = params.has('slack') || params.has('discord') || params.has('drive') || params.has('calendar') ||
       params.has('composio_connected') || params.has('composio_error');
     if (hasCallback) {
       // Notify parent via BroadcastChannel (works even without window.opener)
