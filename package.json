@@ -29,7 +29,8 @@
     "preview": "pnpm build && wrangler dev",
     "wallpaper": "bash scripts/convert-wallpaper.sh",
     "encode-alpha": "bash scripts/encode-alpha-gif.sh",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy": "pnpm build && wrangler deploy",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.0",

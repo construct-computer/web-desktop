@@ -58,7 +58,7 @@ function SessionItem({
   onRename,
   onDelete,
 }: {
-  session: { key: string; title: string; lastActivity: number };
+  session: { key: string; title: string; lastActivity: number; platform?: string | null; readOnly?: boolean | null };
   isActive: boolean;
   hasUnread: boolean;
   sessionStatus?: ActiveSessionStatus;
@@ -108,7 +108,7 @@ function SessionItem({
         {/* Platform or default icon */}
         <div className="relative shrink-0">
           {(() => {
-            const plat = getSessionDisplayMeta(session.key);
+            const plat = getSessionDisplayMeta(session.key, session);
             const Icon = plat.icon;
             return plat.iconUrl ? (
               <img src={plat.iconUrl} alt="" className="w-3.5 h-3.5 rounded-sm opacity-85" />
@@ -299,6 +299,24 @@ export function SpotlightSidebar() {
       )
     : sorted;
 
+  const grouped = useMemo(() => {
+    const order = ['desktop', 'discord', 'slack', 'telegram', 'email', 'scheduled', 'calendar'];
+    const byKind = new Map<string, { kind: string; label: string; sessions: typeof filtered }>();
+    for (const session of filtered) {
+      const meta = getSessionDisplayMeta(session.key, session);
+      const kind = meta.kind === 'legacy_scheduled' || meta.kind === 'legacy_reminders' ? 'scheduled' : meta.kind;
+      const label = kind === 'desktop' ? 'Web chats' : meta.label;
+      const group = byKind.get(kind) || { kind, label, sessions: [] as typeof filtered };
+      group.sessions.push(session);
+      byKind.set(kind, group);
+    }
+    return [...byKind.values()].sort((a, b) => {
+      const ai = order.indexOf(a.kind);
+      const bi = order.indexOf(b.kind);
+      return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+    });
+  }, [filtered]);
+
   return (
     <div className="w-full min-w-[240px] shrink-0 flex flex-col h-full min-h-0 surface-sidebar border-r border-white/[0.08]">
       {/* New Chat — sidebar close lives in the Spotlight header */}
@@ -332,36 +350,38 @@ export function SpotlightSidebar() {
       {/* Session list + bottom upgrade (list scrolls; upgrade stays pinned) */}
       <div className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none px-2 pb-2">
-          {filtered.length > 0 && (
-            <div className="px-1 pt-2 pb-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/30">
-                Recents
-              </span>
-            </div>
-          )}
           <div className="flex flex-col gap-0.5">
-            {filtered.map(session => {
-              const hasAttention = isAttentionSession(session);
-              return (
-              <SessionItem
-                key={session.key}
-                session={session}
-                isActive={session.key === activeKey}
-                hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
-                sessionStatus={activeSessions[session.key]}
-                hasAttention={hasAttention}
-                canManage
-                canRename={!hasAttention}
-                onSwitch={async () => {
-                  await switchSession(session.key, {
-                    force: session.key !== activeKey || shouldForceSessionRefresh(session.key),
-                  });
-                }}
-                onRename={(title) => renameSession(session.key, title)}
-                onDelete={() => { void handleDeleteSession(session.key); }}
-              />
-              );
-            })}
+            {grouped.map(group => (
+              <div key={group.kind} className="contents">
+                <div className="px-1 pt-3 pb-1.5 first:pt-2">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]/30">
+                    {group.label}
+                  </span>
+                </div>
+                {group.sessions.map(session => {
+                  const hasAttention = isAttentionSession(session);
+                  return (
+                    <SessionItem
+                      key={session.key}
+                      session={session}
+                      isActive={session.key === activeKey}
+                      hasUnread={session.lastActivity > (lastReadMap[session.key] || 0) && session.key !== activeKey}
+                      sessionStatus={activeSessions[session.key]}
+                      hasAttention={hasAttention}
+                      canManage
+                      canRename={!hasAttention}
+                      onSwitch={async () => {
+                        await switchSession(session.key, {
+                          force: session.key !== activeKey || shouldForceSessionRefresh(session.key),
+                        });
+                      }}
+                      onRename={(title) => renameSession(session.key, title)}
+                      onDelete={() => { void handleDeleteSession(session.key); }}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
           {filtered.length === 0 && searchQuery ? (
             <div className="px-3 py-8 text-center text-[12px] text-[var(--color-text-muted)]/30">

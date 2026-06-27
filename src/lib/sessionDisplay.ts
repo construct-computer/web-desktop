@@ -25,9 +25,21 @@ export interface SessionDisplayMeta {
   legacy?: boolean;
 }
 
+export interface SessionDisplaySource {
+  platform?: string | null;
+  readOnly?: boolean | null;
+}
+
 const SCHEDULED_COLOR = EXTERNAL_PLATFORM_META.scheduled.color;
 
-export function getSessionDisplayMeta(sessionKey?: string | null): SessionDisplayMeta {
+function externalFromMeta(meta?: SessionDisplaySource): ReturnType<typeof inferExternalPlatform> {
+  const platform = meta?.platform;
+  return platform === 'slack' || platform === 'telegram' || platform === 'email' || platform === 'discord'
+    ? platform
+    : null;
+}
+
+export function getSessionDisplayMeta(sessionKey?: string | null, meta?: SessionDisplaySource): SessionDisplayMeta {
   const key = sessionKey || '';
   if (key === 'scheduled_tasks') {
     return {
@@ -67,7 +79,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       readOnly: false,
     };
   }
-  const external = inferExternalPlatform(key);
+  const external = externalFromMeta(meta) || inferExternalPlatform(key);
   if (external === 'slack') {
     return {
       kind: 'slack',
@@ -75,7 +87,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       icon: Hash,
       iconUrl: platformAppIcon('slack'),
       color: EXTERNAL_PLATFORM_META.slack.color,
-      readOnly: true,
+      readOnly: meta?.readOnly ?? true,
     };
   }
   if (external === 'telegram') {
@@ -85,7 +97,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       icon: Send,
       iconUrl: platformAppIcon('telegram'),
       color: EXTERNAL_PLATFORM_META.telegram.color,
-      readOnly: true,
+      readOnly: meta?.readOnly ?? true,
     };
   }
   if (external === 'email') {
@@ -94,7 +106,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       label: EXTERNAL_PLATFORM_META.email.label,
       icon: Mail,
       color: EXTERNAL_PLATFORM_META.email.color,
-      readOnly: true,
+      readOnly: meta?.readOnly ?? true,
     };
   }
   if (external === 'discord') {
@@ -104,7 +116,7 @@ export function getSessionDisplayMeta(sessionKey?: string | null): SessionDispla
       icon: Gamepad2,
       iconUrl: platformAppIcon('discord'),
       color: EXTERNAL_PLATFORM_META.discord.color,
-      readOnly: true,
+      readOnly: meta?.readOnly ?? true,
     };
   }
   return {

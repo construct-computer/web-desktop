@@ -75,6 +75,12 @@ describe('hydration loop prevention contract', () => {
     expect(spotlightSidebarSource).not.toMatch(/switchSession\(session\.key, \{ force: true \}\)/);
   });
 
+  it('sidebar groups conversations by platform', () => {
+    expect(spotlightSidebarSource).toMatch(/const grouped = useMemo/);
+    expect(spotlightSidebarSource).toMatch(/Web chats/);
+    expect(spotlightSidebarSource).toMatch(/getSessionDisplayMeta\(session\.key, session\)/);
+  });
+
   it('openSpotlightSession still force-refreshes notification targets', () => {
     expect(spotlightNavSource).toMatch(/switchSession\(sessionKey, \{ force: true \}\)/);
   });

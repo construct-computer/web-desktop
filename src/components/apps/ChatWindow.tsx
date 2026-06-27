@@ -222,7 +222,7 @@ function SessionDropdown({ anchorRect, onClose }: SessionDropdownProps) {
             onClick={() => handleSwitch(session.key)}
           >
             {(() => {
-              const meta = getSessionDisplayMeta(session.key);
+              const meta = getSessionDisplayMeta(session.key, session);
               const Icon = meta.icon;
               return meta.iconUrl ? (
                 <img src={meta.iconUrl} alt="" className="w-3 h-3 rounded-sm shrink-0 opacity-85" />

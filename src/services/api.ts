@@ -751,6 +751,10 @@ export async function confirmWorkSideEffect(
 export interface SessionInfo {
   key: string;
   title: string;
+  platform?: string;
+  readOnly?: boolean;
+  origin?: Record<string, unknown> | null;
+  platformRef?: Record<string, unknown> | null;
   created: number;
   lastActivity: number;
 }

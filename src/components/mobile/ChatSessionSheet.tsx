@@ -74,7 +74,7 @@ export function ChatSessionSheet({ open, onClose }: ChatSessionSheetProps) {
 
         <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
           {sorted.map((session) => {
-            const meta = getSessionDisplayMeta(session.key);
+            const meta = getSessionDisplayMeta(session.key, session);
             const Icon = meta.icon;
             const isActive = session.key === activeSessionKey;
             const hasUnread = session.lastActivity > (lastReadMap[session.key] || 0) && !isActive;

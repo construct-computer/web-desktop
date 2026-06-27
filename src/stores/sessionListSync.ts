@@ -31,5 +31,13 @@ export function sessionInfoFromEvent(data: Record<string, unknown> | undefined, 
   const created = typeof data.created === 'number' ? data.created : now;
   const lastActivity = typeof data.lastActivity === 'number' ? data.lastActivity : created;
   const title = typeof data.title === 'string' && data.title.trim() ? data.title : fallbackTitle;
-  return { key: sessionKey, title, created, lastActivity };
+  const platform = typeof data.platform === 'string' ? data.platform : undefined;
+  const readOnly = typeof data.readOnly === 'boolean' ? data.readOnly : undefined;
+  const origin = data.origin && typeof data.origin === 'object' && !Array.isArray(data.origin)
+    ? data.origin as Record<string, unknown>
+    : null;
+  const platformRef = data.platformRef && typeof data.platformRef === 'object' && !Array.isArray(data.platformRef)
+    ? data.platformRef as Record<string, unknown>
+    : null;
+  return { key: sessionKey, title, platform, readOnly, origin, platformRef, created, lastActivity };
 }

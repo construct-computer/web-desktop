@@ -14,7 +14,7 @@ export function SpotlightHeader() {
 
   if (!session) return null;
 
-  const plat = getSessionDisplayMeta(session.key);
+  const plat = getSessionDisplayMeta(session.key, session);
 
   return (
     <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/[0.06] shrink-0">

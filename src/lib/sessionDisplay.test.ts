@@ -17,6 +17,11 @@ describe('sessionDisplay', () => {
     expect(isReadOnlySessionKey('discord_guild_channel_msg')).toBe(true);
   });
 
+  it('prefers backend platform metadata over key inference fallback', () => {
+    expect(getSessionDisplayMeta('legacy-key', { platform: 'discord', readOnly: true }).kind).toBe('discord');
+    expect(getSessionDisplayMeta('legacy-key', { platform: 'discord', readOnly: false }).readOnly).toBe(false);
+  });
+
   it('maps scheduled and calendar reminder keys', () => {
     expect(getSessionDisplayMeta('sched_sch_1_occ_1').kind).toBe('scheduled');
     expect(getSessionDisplayMeta('sched_evt_evt1').kind).toBe('scheduled');
