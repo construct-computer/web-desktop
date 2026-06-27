@@ -3,8 +3,8 @@
  * Falls back to a colored initial badge if the image fails to load.
  */
 
-import { useEffect, useState } from 'react'
-import { fetchPlatformMeta, getPlatformMeta, getPlatformName } from '@/lib/platforms'
+import { useEffect, useRef, useState } from 'react'
+import { fetchPlatformMeta, getPlatformMeta } from '@/lib/platforms'
 
 interface PlatformIconProps {
   platform: string
@@ -16,22 +16,28 @@ interface PlatformIconProps {
 
 export function PlatformIcon({ platform, className = '', size = 20, logoUrl, name }: PlatformIconProps) {
   const [error, setError] = useState(false)
-  const [resolved, setResolved] = useState(() => getPlatformMeta(platform, logoUrl, name))
+  const [fetched, setFetched] = useState<ReturnType<typeof getPlatformMeta> | null>(null)
+  const key = JSON.stringify([platform, logoUrl, name])
+  const prevKeyRef = useRef(key)
+
+  if (key !== prevKeyRef.current) {
+    prevKeyRef.current = key
+    setError(false)
+    setFetched(null)
+  }
 
   useEffect(() => {
-    setError(false)
-    setResolved(getPlatformMeta(platform, logoUrl, name))
     if (logoUrl || name) return
     let cancelled = false
     void fetchPlatformMeta(platform).then((meta) => {
-      if (!cancelled) setResolved(meta)
+      if (!cancelled) setFetched(meta)
     })
     return () => {
       cancelled = true
     }
   }, [platform, logoUrl, name])
 
-  const meta = resolved
+  const meta = fetched ?? getPlatformMeta(platform, logoUrl, name)
 
   if (!meta.logoUrl || error) {
     return (
@@ -55,5 +61,3 @@ export function PlatformIcon({ platform, className = '', size = 20, logoUrl, nam
     />
   )
 }
-
-export { getPlatformName }

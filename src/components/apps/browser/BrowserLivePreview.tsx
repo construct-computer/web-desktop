@@ -115,7 +115,7 @@ function BrowserPreviewEmpty({
       return {
         title: 'Browser run failed',
         body: session.error || 'Check Details for run logs.',
-        icon: <AlertTriangle className="w-10 h-10 text-red-400 opacity-40 animate-bounce" />,
+        icon: <AlertTriangle className="w-10 h-10 text-red-400 opacity-40" />,
       };
     }
     return {

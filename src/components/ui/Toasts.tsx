@@ -108,8 +108,16 @@ function ToastBanner({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
+      role="button"
+      tabIndex={0}
       onClick={() => {
         if (suppressClickRef.current) return;
+        if (n.onClick) n.onClick();
+        onDismiss();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
         if (n.onClick) n.onClick();
         onDismiss();
       }}
@@ -152,6 +160,7 @@ function ToastBanner({
           <div className="flex items-center gap-2 mt-1.5">
             {isLongBody && (
               <button
+                type="button"
                 onClick={handleToggleExpand}
                 className="cursor-pointer text-[10px] font-medium text-[var(--color-accent)] hover:underline"
               >
@@ -159,6 +168,7 @@ function ToastBanner({
               </button>
             )}
             <button
+              type="button"
               onClick={handleCopy}
               className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-black/40 transition-colors hover:text-black/60 dark:text-white/40 dark:hover:text-white/60"
             >
@@ -207,13 +217,35 @@ export function Toasts() {
   const dismissToast = useNotificationStore((s) => s.dismissToast);
   const { play } = useSound();
   const prevCountRef = useRef(0);
+  const leavingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>> | null>(null);
+  const leavingIdsRef = useRef<Set<string> | null>(null);
+  if (!leavingTimersRef.current) leavingTimersRef.current = new Map();
+  if (!leavingIdsRef.current) leavingIdsRef.current = new Set();
 
   // Track IDs that are animating out
   const [leavingIds, setLeavingIds] = useState<Set<string>>(new Set());
   // Keep previous active set to detect removals
   const prevActiveRef = useRef<string[]>([]);
-  // IDs still visible (active + leaving)
-  const [visibleIds, setVisibleIds] = useState<string[]>([]);
+
+  const scheduleLeavingRemoval = useCallback((id: string, afterStoreDismiss = false) => {
+    const timers = leavingTimersRef.current!;
+    const ids = leavingIdsRef.current!;
+    if (timers.has(id)) return;
+    ids.add(id);
+    setLeavingIds(new Set(ids));
+    const timer = setTimeout(() => {
+      if (afterStoreDismiss) dismissToast(id);
+      timers.delete(id);
+      ids.delete(id);
+      setLeavingIds(new Set(ids));
+    }, SLIDE_OUT_MS);
+    timers.set(id, timer);
+  }, [dismissToast]);
+
+  useEffect(() => () => {
+    for (const timer of leavingTimersRef.current!.values()) clearTimeout(timer);
+    leavingTimersRef.current!.clear();
+  }, []);
 
   // Detect toasts removed from the store and start their exit animation
   useEffect(() => {
@@ -221,41 +253,19 @@ export function Toasts() {
     const curr = new Set(activeToasts);
 
     // Newly removed — start slide-out
-    const removed = [...prev].filter((id) => !curr.has(id) && !leavingIds.has(id));
-    if (removed.length > 0) {
-      setLeavingIds((s) => {
-        const next = new Set(s);
-        removed.forEach((id) => next.add(id));
-        return next;
-      });
-      // After animation, fully remove
-      setTimeout(() => {
-        setLeavingIds((s) => {
-          const next = new Set(s);
-          removed.forEach((id) => next.delete(id));
-          return next;
-        });
-      }, SLIDE_OUT_MS);
-    }
+    const removed = [...prev].filter((id) => !curr.has(id) && !leavingIdsRef.current!.has(id));
+    removed.forEach((id) => scheduleLeavingRemoval(id));
 
     prevActiveRef.current = activeToasts;
-
-    // Visible = active + currently leaving
-    setVisibleIds([...new Set([...activeToasts, ...leavingIds, ...removed])]);
-  }, [activeToasts, leavingIds]);
+  }, [activeToasts, scheduleLeavingRemoval]);
 
   // Manual dismiss: start exit animation then remove from store
   const handleDismiss = useCallback((id: string) => {
-    setLeavingIds((s) => new Set(s).add(id));
-    setTimeout(() => {
-      dismissToast(id);
-      setLeavingIds((s) => {
-        const next = new Set(s);
-        next.delete(id);
-        return next;
-      });
-    }, SLIDE_OUT_MS);
-  }, [dismissToast]);
+    scheduleLeavingRemoval(id, true);
+  }, [scheduleLeavingRemoval]);
+
+  // Visible = active + currently leaving
+  const visibleIds = [...new Set([...activeToasts, ...leavingIds])];
 
   // Resolve visible IDs to notification objects
   const toastNotifications = visibleIds

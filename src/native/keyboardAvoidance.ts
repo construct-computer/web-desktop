@@ -110,6 +110,6 @@ export function installKeyboardAvoidance(Keyboard: KeyboardPlugin): void {
     scheduleKeepFocusedElementVisible();
   });
 
-  window.visualViewport?.addEventListener('resize', scheduleKeepFocusedElementVisible);
-  window.visualViewport?.addEventListener('scroll', scheduleKeepFocusedElementVisible);
+  window.visualViewport?.addEventListener('resize', scheduleKeepFocusedElementVisible, { passive: true });
+  window.visualViewport?.addEventListener('scroll', scheduleKeepFocusedElementVisible, { passive: true });
 }

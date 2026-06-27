@@ -8,25 +8,30 @@ import { useEffect, useState } from 'react';
  * @returns An object containing shouldRender (whether to keep rendering) and isClosing (whether the exit animation is active).
  */
 export function useDelayUnmount(open: boolean, delayTime: number) {
+  const [prevOpen, setPrevOpen] = useState(open);
   const [shouldRender, setShouldRender] = useState(open);
   const [isClosing, setIsClosing] = useState(false);
 
-  useEffect(() => {
-    let timeoutId: number;
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setShouldRender(true);
       setIsClosing(false);
     } else if (shouldRender) {
       setIsClosing(true);
-      timeoutId = window.setTimeout(() => {
-        setShouldRender(false);
-        setIsClosing(false);
-      }, delayTime);
     }
+  }
+
+  useEffect(() => {
+    if (!isClosing) return;
+    const timeoutId = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+    }, delayTime);
     return () => {
-      if (timeoutId) window.clearTimeout(timeoutId);
+      window.clearTimeout(timeoutId);
     };
-  }, [open, shouldRender, delayTime]);
+  }, [isClosing, delayTime]);
 
   return { shouldRender, isClosing };
 }

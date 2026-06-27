@@ -42,9 +42,9 @@ export function ActivityIcon({
   fill?: boolean;
 }) {
   const cls = className || 'w-3 h-3';
+  const [imgFailed, setImgFailed] = useState(false);
   if (tone === 'error' || tone === 'warn' || tone === 'info') return toneStatusIcon(tone, cls);
 
-  const [imgFailed, setImgFailed] = useState(false);
   const visual = resolveActivityVisual({ type, tool, label, iconPlatform, iconUrl });
   const size = parseIconSize(cls, fill);
 

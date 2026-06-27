@@ -21,9 +21,9 @@ export function useVisualViewportBottomInset(): number {
     };
 
     update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    globalThis.window.addEventListener('resize', update);
+    vv.addEventListener('resize', update, { passive: true });
+    vv.addEventListener('scroll', update, { passive: true });
+    globalThis.window.addEventListener('resize', update, { passive: true });
     return () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);

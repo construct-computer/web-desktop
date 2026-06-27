@@ -28,12 +28,9 @@ type AppState = 'loading' | 'not_linked' | 'error' | 'ready';
 export function MiniApp() {
   // ── Browser fallback: /mini opened in a regular browser after OAuth ──
   // Show a "Return to Telegram" page instead of the "Not running inside Telegram" error.
-  if (!window.Telegram?.WebApp) {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('token') || params.has('linked') || params.has('auth_error')) {
-      return <OAuthBrowserReturnScreen />;
-    }
-  }
+  const params = new URLSearchParams(window.location.search);
+  const showOAuthBrowserReturn = !window.Telegram?.WebApp
+    && (params.has('token') || params.has('linked') || params.has('auth_error'));
 
   const [state, setState] = useState<AppState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -49,6 +46,7 @@ export function MiniApp() {
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (!tg) {
+      if (showOAuthBrowserReturn) return;
       setErrorMsg('Not running inside Telegram');
       setState('error');
       return;
@@ -56,7 +54,7 @@ export function MiniApp() {
     tg.ready?.();
     tg.expand?.();
     applyTelegramTheme();
-  }, []);
+  }, [showOAuthBrowserReturn]);
 
   // ── 2. Authentication ──
   useEffect(() => {
@@ -200,6 +198,8 @@ export function MiniApp() {
   const bgColor = bg();
   const txtColor = textColor();
 
+  if (showOAuthBrowserReturn) return <OAuthBrowserReturnScreen />;
+
   if (state === 'loading') {
     return (
       <div className="fixed inset-0 flex items-center justify-center" style={{ backgroundColor: bgColor, color: txtColor }}>
@@ -220,7 +220,7 @@ export function MiniApp() {
           <div className="text-4xl mb-4">⚠️</div>
           <h2 className="text-lg font-semibold mb-2">Something went wrong</h2>
           <p className="text-sm opacity-60 mb-4">{errorMsg}</p>
-          <button onClick={() => window.Telegram?.WebApp?.close?.()} className="px-4 py-2 rounded-lg text-sm font-medium bg-white/10 active:bg-white/20">Close</button>
+          <button type="button" onClick={() => window.Telegram?.WebApp?.close?.()} className="px-4 py-2 rounded-lg text-sm font-medium bg-white/10 active:bg-white/20">Close</button>
         </div>
       </div>
     );
@@ -431,6 +431,7 @@ function NotLinkedScreen({ bgColor, textColor, onLinked }: {
         {mode === 'choose' && (
           <div className="flex flex-col gap-3">
             <button
+              type="button"
               onClick={handleGoogleSignIn}
               className="w-full flex items-center justify-center gap-3 py-3 px-4 text-[14px] font-medium rounded-xl transition-all active:scale-[0.98]"
               style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: textColor, border: '1px solid rgba(255,255,255,0.1)' }}
@@ -444,6 +445,7 @@ function NotLinkedScreen({ bgColor, textColor, onLinked }: {
               Sign in with Google
             </button>
             <button
+              type="button"
               onClick={() => { setError(''); setMode('email'); }}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-[13px] font-medium rounded-xl transition-all active:scale-[0.98]"
               style={{ color: textColor, opacity: 0.6 }}
@@ -459,10 +461,10 @@ function NotLinkedScreen({ bgColor, textColor, onLinked }: {
           <form onSubmit={handleSendMagicLink} className="flex flex-col gap-3">
             <input
               type="email"
+              aria-label="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              autoFocus
               required
               className="w-full py-3 px-4 text-[14px] rounded-xl border outline-none"
               style={inputStyle}
@@ -491,13 +493,13 @@ function NotLinkedScreen({ bgColor, textColor, onLinked }: {
             </div>
             <input
               type="text"
+              aria-label="One-time code"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="000000"
-              autoFocus
               className="w-[180px] py-3 text-center text-[22px] font-bold tracking-[8px] rounded-xl border outline-none"
               style={inputStyle}
             />
@@ -524,6 +526,7 @@ function NotLinkedScreen({ bgColor, textColor, onLinked }: {
               Sign in with Google in your browser,<br />then return here.
             </p>
             <button
+              type="button"
               onClick={() => {
                 if (pollingRef.current) clearInterval(pollingRef.current);
                 pollingRef.current = null;

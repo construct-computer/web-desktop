@@ -29,7 +29,7 @@ export function AppStoreSection({
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] min-w-0 truncate">
           {title}
         </h2>
-        {headerCount && (
+        {headerCount !== null && (
           <span className="text-[10px] font-medium text-[var(--color-text-muted)] opacity-70 flex-shrink-0 tabular-nums">
             {headerCount}
           </span>

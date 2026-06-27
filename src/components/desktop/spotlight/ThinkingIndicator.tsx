@@ -11,7 +11,7 @@ function TypingDots() {
           className="block w-[5px] h-[5px] rounded-full bg-[var(--color-text-muted)]"
           style={{
             opacity: 0.45,
-            animation: 'typing-dot 1.4s ease-in-out infinite',
+            animation: 'typing-dot 900ms ease-in-out infinite',
             animationDelay: `${i * 0.2}s`,
           }}
         />
