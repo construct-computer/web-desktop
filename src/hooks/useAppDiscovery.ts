@@ -247,7 +247,7 @@ export function registryToUnified(app: RegistryApp, installed: boolean): Unified
   };
 }
 
-export function composioToUnified(def: CuratedDef, connected: boolean, _plan: string = 'free'): UnifiedApp {
+export function composioToUnified(def: CuratedDef, connected: boolean, _plan: string = 'unsubscribed'): UnifiedApp {
   return {
     id: `composio-${def.slug}`, name: def.name, description: def.description,
     icon: composioIconUrl(def.slug), category: mapLegacyCategoryToComposio(def.category),
@@ -385,7 +385,7 @@ export function useAppDiscovery() {
   const [localApps, setLocalApps] = useState<LocalApp[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [connectedToolkits, setConnectedToolkits] = useState<Set<string>>(new Set());
-  const [userPlan, setUserPlan] = useState<string>('free');
+  const [userPlan, setUserPlan] = useState<string>('unsubscribed');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);

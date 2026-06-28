@@ -1,11 +1,7 @@
 /**
- * Marketing copy for the subscription overlay plan cards.
+ * Marketing copy for the subscribe window plan cards.
  *
- * Keep these in sync with worker/src/config/tiers.ts (TIER_LIMITS). Construct
- * runs the same model quality on every plan — paid plans buy more usage, steps,
- * runtime, parallelism, and storage plus email/background tasks. This is a
- * standalone content module (no React/store deps) so the copy can be unit
- * tested against the canonical tier limits.
+ * Keep these in sync with worker/src/config/tiers.ts (TIER_LIMITS).
  */
 
 import {
@@ -19,19 +15,28 @@ export interface PlanFeature {
   highlight?: boolean;
 }
 
+export const LITE_FEATURES: PlanFeature[] = [
+  { icon: Zap, text: 'Public $9/mo plan', highlight: true },
+  { icon: Footprints, text: '50 steps per task' },
+  { icon: Clock, text: '5 min command runtime' },
+  { icon: Layers, text: '2 tasks in parallel' },
+  { icon: HardDrive, text: '100 MB cloud storage' },
+  { icon: Mail, text: 'No agent email' },
+  { icon: Bot, text: 'No background tasks' },
+];
+
 export const STARTER_FEATURES: PlanFeature[] = [
-  { icon: Zap, text: '4\u00d7 the usage of Free' },
+  { icon: Zap, text: '6× the usage of Lite' },
   { icon: Footprints, text: '150 steps per task' },
   { icon: Clock, text: '30 min command runtime' },
   { icon: Layers, text: '5 tasks in parallel' },
   { icon: Mail, text: 'Agent email address' },
   { icon: Bot, text: 'Background & scheduled tasks' },
   { icon: HardDrive, text: '1 GB cloud storage' },
-  { icon: Key, text: 'BYOK support' },
 ];
 
 export const PRO_FEATURES: PlanFeature[] = [
-  { icon: Zap, text: '24\u00d7 the usage of Free', highlight: true },
+  { icon: Zap, text: '32× the usage of Lite', highlight: true },
   { icon: Footprints, text: '1,000 steps per task', highlight: true },
   { icon: Clock, text: '1 hr command runtime' },
   { icon: Layers, text: 'Unlimited parallel tasks', highlight: true },

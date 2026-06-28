@@ -21,8 +21,8 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
 import { useComputerStore, shouldRefreshChatHistory } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
-import { openSettingsToSection } from '@/lib/settingsNav';
-import { hasAgentAccess } from '@/lib/plans';
+import { openSubscribeWindow } from '@/lib/settingsNav';
+import { hasAgentAccess, hasPaidAccess } from '@/lib/plans';
 import { WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
 import { buildTransformOpacityTransition } from '@/lib/panelAnimation';
 import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
@@ -300,7 +300,7 @@ export function Spotlight() {
 
   const closeAndOpenSubscription = useCallback(() => {
     requestClose();
-    queueMicrotask(() => openSettingsToSection('billing'));
+    queueMicrotask(openSubscribeWindow);
   }, [requestClose]);
 
   const onDesktopResizePointerDown = useCallback(
@@ -615,12 +615,12 @@ export function Spotlight() {
                     >
                       {sessionTitle}
                     </span>
-                    {(!userPlan || userPlan === 'free') && (
+                    {!hasPaidAccess(userPlan) && (
                       <button
                         type="button"
                         onClick={closeAndOpenSubscription}
                         className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2 text-amber-600 transition-all active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                        aria-label="Upgrade plan (opens settings)"
+                        aria-label="Upgrade plan (opens subscription window)"
                       >
                         <span
                           className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
@@ -661,13 +661,13 @@ export function Spotlight() {
                     >
                       {sessionTitle}
                     </span>
-                    {(!userPlan || userPlan === 'free') && (
+                    {!hasPaidAccess(userPlan) && (
                       <Tooltip content="Upgrade plan" side="bottom">
                         <button
                           type="button"
                           onClick={closeAndOpenSubscription}
                           className="relative flex h-8 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-amber-500/30 surface-control pl-2 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/10 active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                          aria-label="Upgrade plan (opens settings)"
+                           aria-label="Upgrade plan (opens subscription window)"
                         >
                           <span
                             className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"

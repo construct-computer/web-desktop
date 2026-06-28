@@ -1,13 +1,18 @@
 import { lazy, Suspense, useMemo } from 'react';
+import { Lock } from 'lucide-react';
 import { useWindowStore } from '@/stores/windowStore';
 import { Window } from './Window';
 import { MobileWindow } from './MobileWindow';
 import { ErrorBoundary } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import { log } from '@/lib/logger';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH } from '@/lib/constants';
 import { MC_WORKSPACE_BAR_HEIGHT } from '@/components/desktop/MissionControl';
 import type { WindowConfig, WindowType } from '@/types';
+import { hasPaidAccess } from '@/lib/plans';
+import { openSubscribeWindow } from '@/lib/settingsNav';
+import { useAuthStore } from '@/stores/authStore';
 
 const logger = log('WindowManager');
 
@@ -24,7 +29,36 @@ const AccessControlWindow = lazy(() => import('../apps/AccessControlWindow').the
 const DocumentViewerWindow = lazy(() => import('../apps/DocumentViewerWindow').then((m) => ({ default: m.DocumentViewerWindow })));
 const AppRegistryWindow = lazy(() => import('../apps/AppRegistryWindow').then((m) => ({ default: m.AppRegistryWindow })));
 const AppBuilderWindow = lazy(() => import('../apps/AppBuilderWindow').then((m) => ({ default: m.AppBuilderWindow })));
+const SubscribeWindow = lazy(() => import('../screens/SubscribeWindow').then((m) => ({ default: m.SubscribeWindow })));
 const AppWindow = lazy(() => import('../apps/AppWindow').then((m) => ({ default: m.AppWindow })));
+
+const PAID_ONLY_WINDOW_TYPES: Set<WindowType> = new Set([
+  'browser',
+  'terminal',
+  'files',
+  'editor',
+  'document-viewer',
+  'calendar',
+  'auditlogs',
+  'memory',
+  'email',
+  'access-control',
+  'app',
+]);
+
+const WINDOW_LOCK_BULLETS: Partial<Record<WindowType, readonly string[]>> = {
+  browser: ['Browse the web inside Construct', 'Keep OAuth and live sites in the workspace', 'Use the browser once you subscribe'],
+  terminal: ['Run shell commands and scripts', 'Keep CLI work next to your windows', 'Use the terminal once you subscribe'],
+  files: ['Manage workspace files in one place', 'Upload, rename, and organize documents', 'Use Files once you subscribe'],
+  editor: ['Edit workspace documents directly', 'Work on files without leaving Construct', 'Use the editor once you subscribe'],
+  'document-viewer': ['Preview documents in the workspace', 'Open files without leaving the desktop', 'Use the viewer once you subscribe'],
+  calendar: ['Track scheduling in the workspace', 'See meetings and task timing together', 'Use Calendar once you subscribe'],
+  auditlogs: ['Review agent activity and history', 'Inspect changes and actions as they happen', 'Use Audit Logs once you subscribe'],
+  memory: ['Store persistent notes and context', 'Recall previous work across sessions', 'Use Memory once you subscribe'],
+  email: ['Send and read agent email', 'Keep inboxes tied to the workspace', 'Use Email once you subscribe'],
+  'access-control': ['Manage permissions and access', 'Review sensitive changes in one place', 'Use Access Control once you subscribe'],
+  app: ['Open connected apps and integrations', 'Keep third-party tools inside Construct', 'Use connected apps once you subscribe'],
+};
 
 // Map window types to their content components.
 // Chat and Tracker are NOT standalone windows — they live as MenuBar dropdown panels only.
@@ -43,6 +77,7 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   'access-control': AccessControlWindow,
   'app-registry': AppRegistryWindow,
   'app-builder': AppBuilderWindow,
+  subscribe: SubscribeWindow,
   app: AppWindow,
 };
 
@@ -132,6 +167,7 @@ function computeMissionControlLayout(
 
 export function WindowManager() {
   const windows = useWindowStore((s) => s.windows);
+  const userPlan = useAuthStore((s) => s.user?.plan);
   const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
@@ -150,8 +186,10 @@ export function WindowManager() {
     }
     // Stage Manager: show ALL workspace windows (active + strip) — strip windows
     // are rendered as real scaled-down windows via CSS transforms, not placeholders.
-    return windows.filter((w) => w.workspaceId === activeWorkspaceId && w.state !== 'minimized');
+      return windows.filter((w) => w.workspaceId === activeWorkspaceId && w.state !== 'minimized');
   }, [windows, activeWorkspaceId, workspaceTransition]);
+
+  const lockedByPlan = !hasPaidAccess(userPlan);
 
   // Compute grid targets when MC is active
   const mcTargets = useMemo(() => {
@@ -294,6 +332,8 @@ export function WindowManager() {
         const stageTarget = stageTargets?.get(config.id) ?? null;
         const wsActives = stageManagerActiveIds[config.workspaceId] || [];
         const isStageStrip = stageManagerActive && !wsActives.includes(config.id) && stageTarget !== null;
+        const showPlanLock = lockedByPlan && PAID_ONLY_WINDOW_TYPES.has(config.type);
+        const lockBullets = WINDOW_LOCK_BULLETS[config.type] ?? ['Subscribe to unlock this window.', 'The preview stays visible while controls are disabled.'];
 
         // During workspace transition, offset the destination workspace's windows
         // by ±screenWidth so they sit off-screen until the container slides.
@@ -314,7 +354,42 @@ export function WindowManager() {
           >
             <ErrorBoundary inline label={config.title}>
               <Suspense fallback={<WindowContentFallback title={config.title} />}>
-                <ContentComponent config={config} />
+                <div className="relative flex h-full w-full overflow-hidden">
+                  <div className={showPlanLock ? 'h-full w-full pointer-events-none select-none opacity-60' : 'h-full w-full'}>
+                    <ContentComponent config={config} />
+                  </div>
+
+                  {showPlanLock && (
+                    <div className="absolute inset-0 z-20">
+                      <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-black/5 to-transparent dark:from-black/25 dark:via-black/10" />
+                      <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-[320px] pointer-events-auto">
+                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-[var(--color-surface)]/92 backdrop-blur-md p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                            <Lock className="h-3.5 w-3.5" />
+                            Preview only
+                          </div>
+                          <h2 className="mt-2 text-[15px] font-semibold text-[var(--color-text)]">
+                            Unlock {config.title}
+                          </h2>
+                          <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-muted)]">
+                            You can see the app here, but interaction stays disabled until you subscribe.
+                          </p>
+                          <ul className="mt-3 space-y-2">
+                            {lockBullets.map((bullet) => (
+                              <li key={bullet} className="flex items-start gap-2 text-[12px] leading-snug text-[var(--color-text-muted)]">
+                                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent)]/70" />
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <Button className="mt-4 w-full" variant="primary" onClick={openSubscribeWindow}>
+                            Open Subscribe
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </Suspense>
             </ErrorBoundary>
           </Window>

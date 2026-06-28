@@ -974,7 +974,7 @@ function ConstructConnectionsPanel() {
                   const at = inferAuthType(r.auth_schemes, r.no_auth);
                   const isItemExpanded = expandedComposio === r.slug;
                   const isConnecting = connectingSlug === r.slug && !composioConnected.has(r.slug);
-                  const isAvailable = isToolkitAvailableForPlan(r.slug, userPlan || 'free');
+                   const isAvailable = isToolkitAvailableForPlan(r.slug, userPlan || 'unsubscribed');
                   return (
                     <ConnectionRow
                       key={r.slug}
@@ -1068,7 +1068,7 @@ function ConstructConnectionsPanel() {
                 composioList.map((def, i) => {
                   const isItemExpanded = expandedComposio === def.slug;
                   const isConnecting = connectingSlug === def.slug && !composioConnected.has(def.slug);
-                  const isAvailable = isToolkitAvailableForPlan(def.slug, userPlan || 'free');
+                   const isAvailable = isToolkitAvailableForPlan(def.slug, userPlan || 'unsubscribed');
                   return (
                     <ConnectionRow
                       key={def.slug}

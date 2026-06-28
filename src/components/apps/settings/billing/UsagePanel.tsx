@@ -65,12 +65,13 @@ export function UsagePanel() {
   const [tweetUrl, setTweetUrl] = useState('');
   const [tweetSubmitting, setTweetSubmitting] = useState(false);
   const [tweetMessage, setTweetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const hasBonusCredits = !!(usage?.hasBonusCredits ?? subscription?.hasBonusCredits ?? tweetStatus?.hasBonusCredits);
   const usingBonus = !!usage?.usingBonus;
   const allTweetsRedeemed = !!tweetStatus && tweetStatus.tweetsRemaining <= 0;
   const cooldownUntil = tweetStatus?.nextEligibleAt ?? null;
-  const onCooldown = !!cooldownUntil && cooldownUntil > Date.now();
+  const onCooldown = !!cooldownUntil && cooldownUntil > now;
 
   const fetchTweetStatus = useCallback(() => {
     api.getTweetStatus().then(r => { if (r.success && r.data) setTweetStatus(r.data); });
@@ -126,6 +127,7 @@ export function UsagePanel() {
   const [sessionTimeLeft, setSessionTimeLeft] = useState('');
   useEffect(() => {
     const update = () => {
+      setNow(Date.now());
       if (usage?.monthlyResetsAt) setMonthlyTimeLeft(formatTimeRemaining(usage.monthlyResetsAt));
       if (usage?.sessionResetsAt) {
         setSessionTimeLeft(formatTimeRemaining(usage.sessionResetsAt));
@@ -139,156 +141,159 @@ export function UsagePanel() {
   const monthlyPercent = usage?.monthlyPercentUsed ?? 0;
   const sessionPercent = usage?.sessionPercentUsed ?? 0;
   const storagePercent = storage ? (storage.bytesUsed / storage.maxBytes) * 100 : 0;
+  const isPro = subscription?.plan === 'pro';
 
   return (
     <div className="space-y-4">
-      <InfoCard>
-        <div className="px-4 pt-3.5 pb-4 space-y-4">
-          {usage && (
-            <div className="space-y-3">
-              <div className="settings-metric-row flex items-center justify-between">
-                <span className="text-[13px] font-medium">AI Usage</span>
-                <div className="flex items-center gap-2">
-                  {usage.byokActive && (
-                    <span className="flex items-center gap-1 text-[11px] text-emerald-400">
-                      <Zap className="w-3 h-3" />
-                      Using your key
+      <div className={storage ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>
+        <InfoCard className={storage ? 'h-full' : ''}>
+          <div className="px-4 pt-3.5 pb-4 space-y-4">
+            {usage && (
+              <div className="space-y-3">
+                <div className="settings-metric-row flex items-center justify-between">
+                  <span className="text-[13px] font-medium">AI Usage</span>
+                  <div className="flex items-center gap-2">
+                    {usage.byokActive && (
+                      <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                        <Zap className="w-3 h-3" />
+                        Using your key
+                      </span>
+                    )}
+                    {usingBonus && (
+                      <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                        <Zap className="w-3 h-3" />
+                        Bonus active
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {usage.byokFallback && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Switched to your OpenRouter key — platform cap reached. Platform access returns on the next reset.</span>
+                  </div>
+                )}
+                {usage.byokActive && !usage.byokFallback && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/5 text-cyan-400/80 border border-cyan-500/15">
+                    <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Using your OpenRouter key (exclusive mode).</span>
+                  </div>
+                )}
+                {!usage.allowed && !usage.byokActive && !usage.byokFallback && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-red-500/10 text-red-400 border border-red-500/20">
+                    <span>{isPro ? 'Usage limit reached. Add an OpenRouter key below to keep working.' : 'Usage limit reached. Upgrade to Pro to keep working.'}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="settings-metric-row flex items-center justify-between text-[12px]">
+                    <span className="text-[var(--color-text-muted)]">Monthly</span>
+                    <span className="font-mono text-[12px] flex items-center gap-2">
+                      {usage.monthlyUsedUsd !== undefined && usage.monthlyCapUsd !== undefined && usage.monthlyCapUsd > 0 ? (
+                        <span>
+                          {formatCost(usage.monthlyUsedUsd)}
+                          <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.monthlyCapUsd)}</span>
+                          <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(monthlyPercent)}%)</span>
+                        </span>
+                      ) : (
+                        <span>{Math.round(monthlyPercent)}%</span>
+                      )}
+                      {usage.monthlyResetsAt && (
+                        <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+                          <Clock className="w-3 h-3" />
+                          {monthlyTimeLeft}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  {usingBonus && (
-                    <span className="flex items-center gap-1 text-[11px] text-emerald-400">
-                      <Zap className="w-3 h-3" />
-                      Bonus active
+                  </div>
+                  <UsageBar percent={monthlyPercent} />
+                </div>
+
+                {(usage.topupCreditsUsd ?? 0) > 0 && (
+                  <p className="text-[11px] text-emerald-400">{formatCost(usage.topupCreditsUsd || 0)} bonus credits available</p>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="settings-metric-row flex items-center justify-between text-[12px]">
+                    <span className="text-[var(--color-text-muted)]">Session usage</span>
+                    <span className="font-mono text-[12px] flex items-center gap-2">
+                      {usage.sessionUsedUsd !== undefined && usage.sessionCapUsd !== undefined && usage.sessionCapUsd > 0 ? (
+                        <span>
+                          {formatCost(usage.sessionUsedUsd)}
+                          <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.sessionCapUsd)}</span>
+                          <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(sessionPercent)}%)</span>
+                        </span>
+                      ) : (
+                        <span>{Math.round(sessionPercent)}%</span>
+                      )}
+                      {usage.sessionResetsAt && (
+                        <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+                          <Clock className="w-3 h-3" />
+                          {sessionTimeLeft}
+                        </span>
+                      )}
                     </span>
-                  )}
+                  </div>
+                  <UsageBar percent={sessionPercent} height="h-1.5" />
                 </div>
+
+                {Math.max(monthlyPercent, sessionPercent) >= 75 && !usingBonus && (
+                  <div className={`flex items-center gap-2.5 p-2.5 rounded-lg text-[12px] ${
+                    Math.max(monthlyPercent, sessionPercent) >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                  }`}>
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {monthlyPercent >= 100
+                        ? `Monthly limit reached. Resets in ${monthlyTimeLeft}.`
+                        : sessionPercent >= 100
+                          ? `Session usage limit reached. Resets in ${sessionTimeLeft}.`
+                          : `${Math.round(Math.max(monthlyPercent, sessionPercent))}% of the nearest usage cap consumed.`}
+                    </span>
+                  </div>
+                )}
               </div>
+            )}
 
-              {usage.byokFallback && (
-                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Switched to your OpenRouter key — platform cap reached. Platform access returns on the next reset.</span>
-                </div>
-              )}
-              {usage.byokActive && !usage.byokFallback && (
-                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/5 text-cyan-400/80 border border-cyan-500/15">
-                  <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Using your OpenRouter key (exclusive mode).</span>
-                </div>
-              )}
-              {!usage.allowed && !usage.byokActive && !usage.byokFallback && (
-                <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-red-500/10 text-red-400 border border-red-500/20">
-                  <span>Usage limit reached. Add an OpenRouter key below or upgrade your plan to keep working.</span>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <div className="settings-metric-row flex items-center justify-between text-[12px]">
-                  <span className="text-[var(--color-text-muted)]">Monthly</span>
-                  <span className="font-mono text-[12px] flex items-center gap-2">
-                    {usage.monthlyUsedUsd !== undefined && usage.monthlyCapUsd !== undefined && usage.monthlyCapUsd > 0 ? (
-                      <span>
-                        {formatCost(usage.monthlyUsedUsd)}
-                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.monthlyCapUsd)}</span>
-                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(monthlyPercent)}%)</span>
-                      </span>
-                    ) : (
-                      <span>{Math.round(monthlyPercent)}%</span>
-                    )}
-                    {usage.monthlyResetsAt && (
-                      <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
-                        <Clock className="w-3 h-3" />
-                        {monthlyTimeLeft}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <UsageBar percent={monthlyPercent} />
+            {!usage && (
+              <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-6">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading usage...
               </div>
-
-              {(usage.topupCreditsUsd ?? 0) > 0 && (
-                <p className="text-[11px] text-emerald-400">{formatCost(usage.topupCreditsUsd || 0)} bonus credits available</p>
-              )}
-
-              <div className="space-y-1.5">
-                <div className="settings-metric-row flex items-center justify-between text-[12px]">
-                  <span className="text-[var(--color-text-muted)]">Session usage</span>
-                  <span className="font-mono text-[12px] flex items-center gap-2">
-                    {usage.sessionUsedUsd !== undefined && usage.sessionCapUsd !== undefined && usage.sessionCapUsd > 0 ? (
-                      <span>
-                        {formatCost(usage.sessionUsedUsd)}
-                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.sessionCapUsd)}</span>
-                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(sessionPercent)}%)</span>
-                      </span>
-                    ) : (
-                      <span>{Math.round(sessionPercent)}%</span>
-                    )}
-                    {usage.sessionResetsAt && (
-                      <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
-                        <Clock className="w-3 h-3" />
-                        {sessionTimeLeft}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <UsageBar percent={sessionPercent} height="h-1.5" />
-              </div>
-
-              {Math.max(monthlyPercent, sessionPercent) >= 75 && !usingBonus && (
-                <div className={`flex items-center gap-2.5 p-2.5 rounded-lg text-[12px] ${
-                  Math.max(monthlyPercent, sessionPercent) >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
-                }`}>
-                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>
-                    {monthlyPercent >= 100
-                      ? `Monthly limit reached. Resets in ${monthlyTimeLeft}.`
-                      : sessionPercent >= 100
-                        ? `Session usage limit reached. Resets in ${sessionTimeLeft}.`
-                        : `${Math.round(Math.max(monthlyPercent, sessionPercent))}% of the nearest usage cap consumed.`}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!usage && (
-            <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-6">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading usage...
-            </div>
-          )}
-        </div>
-      </InfoCard>
-
-      {storage && (
-        <InfoCard>
-          <div className="px-4 pt-3.5 pb-4 space-y-3">
-            <span className="text-[13px] font-medium">Storage</span>
-            <div className="space-y-1.5">
-              <div className="settings-metric-row flex items-center justify-between text-[12px]">
-                <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <HardDrive className="w-3 h-3" />
-                  Used
-                  <span className="text-[10px] text-[var(--color-text-muted)]/50">({storage.fileCount} file{storage.fileCount !== 1 ? 's' : ''})</span>
-                </span>
-                <span className="font-mono text-[12px]">
-                  {formatBytes(storage.bytesUsed)}
-                  <span className="text-[var(--color-text-muted)] font-normal"> / {formatBytes(storage.maxBytes)}</span>
-                </span>
-              </div>
-              <UsageBar percent={storagePercent} height="h-1.5" />
-            </div>
+            )}
           </div>
         </InfoCard>
-      )}
+
+        {storage && (
+          <InfoCard className="h-full">
+            <div className="px-4 pt-3.5 pb-4 space-y-3">
+              <span className="text-[13px] font-medium">Storage</span>
+              <div className="space-y-1.5">
+                <div className="settings-metric-row flex items-center justify-between text-[12px]">
+                  <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
+                    <HardDrive className="w-3 h-3" />
+                    Used
+                    <span className="text-[10px] text-[var(--color-text-muted)]/50">({storage.fileCount} file{storage.fileCount !== 1 ? 's' : ''})</span>
+                  </span>
+                  <span className="font-mono text-[12px]">
+                    {formatBytes(storage.bytesUsed)}
+                    <span className="text-[var(--color-text-muted)] font-normal"> / {formatBytes(storage.maxBytes)}</span>
+                  </span>
+                </div>
+                <UsageBar percent={storagePercent} height="h-1.5" />
+              </div>
+            </div>
+          </InfoCard>
+        )}
+      </div>
 
       {tweetStatus && (
         <InfoCard>
           <div className="px-4 pt-3.5 pb-4 space-y-3">
-            <div className="settings-metric-row flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Gift className="w-4 h-4 text-[var(--color-text-muted)]" />
-                <span className="text-[13px] font-medium">Earn Bonus Usage</span>
+              <div className="settings-metric-row flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Gift className="w-4 h-4 text-[var(--color-text-muted)]" />
+                  <span className="text-[13px] font-medium">Earn Bonus Usage</span>
               </div>
               <span className="text-[11px] text-[var(--color-text-muted)]">
                 {tweetStatus.tweetsRedeemed}/{tweetStatus.maxTweets} redeemed
@@ -313,11 +318,11 @@ export function UsagePanel() {
                     i < tweetStatus.tweetsRedeemed ? 'bg-emerald-500' : 'bg-white/[0.08]'
                   }`}
                 />
-              ))}
-            </div>
+                ))}
+              </div>
 
-            {hasBonusCredits && (
-              <div className="flex items-center gap-2 text-[11px] text-emerald-400">
+              {hasBonusCredits && (
+                <div className="flex items-center gap-2 text-[11px] text-emerald-400">
                 <Zap className="w-3 h-3" />
                 {tweetStatus.totalBonusCredits !== undefined
                   ? `${formatCost(tweetStatus.totalBonusCredits)} bonus usage available`
@@ -373,11 +378,11 @@ export function UsagePanel() {
               }`}>
                 {tweetMessage.type === 'success' ? <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
                 <span>{tweetMessage.text}</span>
-              </div>
-            )}
-          </div>
-        </InfoCard>
-      )}
+                </div>
+              )}
+            </div>
+          </InfoCard>
+        )}
     </div>
   );
 }

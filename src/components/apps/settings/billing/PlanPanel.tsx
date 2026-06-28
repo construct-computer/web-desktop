@@ -1,34 +1,30 @@
 /**
- * PlanPanel — Subscription plan management and feature comparison.
+ * PlanPanel — subscription plan management.
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import {
   Loader2,
-  Check,
-  Minus,
+  ExternalLink,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, InfoHint } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
-import { getBillingPlans, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
-import { AGENT_EMAIL_DOMAIN } from '@/lib/config';
-import { BILLING_PLAN_ORDER, buildBillingFeatureRows } from '@/lib/billingPlans';
-
-/* ── Reusable card wrapper ── */
-
-function InfoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-lg border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.03] dark:bg-white/[0.04] ${className}`}>
-      {children}
-    </div>
-  );
-}
+import { openSubscribeWindow } from '@/lib/settingsNav';
+import { getBillingPlans, type BillingPlanId, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
+import { BILLING_PLAN_ORDER } from '@/lib/billingPlans';
+import { LITE_FEATURES, STARTER_FEATURES, PRO_FEATURES, type PlanFeature } from '../../../screens/subscribePlanCopy';
 
 type BillingNotice = {
   tone: 'warning' | 'danger' | 'info';
   title: string;
   body: string;
+};
+
+const PLAN_FEATURES: Record<BillingPlanId, PlanFeature[]> = {
+  lite: LITE_FEATURES,
+  starter: STARTER_FEATURES,
+  pro: PRO_FEATURES,
 };
 
 function formatBillingDate(timestamp: number | null): string | null {
@@ -37,7 +33,8 @@ function formatBillingDate(timestamp: number | null): string | null {
 }
 
 function formatPlanName(plan: string): string {
-  if (!plan) return 'Free';
+  if (!plan || plan === 'unsubscribed') return 'Unsubscribed';
+  if (plan === 'free') return 'Unsubscribed';
   return plan.charAt(0).toUpperCase() + plan.slice(1);
 }
 
@@ -65,7 +62,7 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
     return {
       tone: 'danger',
       title: 'Subscription inactive',
-      body: 'Your paid subscription is no longer active, so this workspace is using the Free plan.',
+      body: 'Your paid subscription is no longer active, so this workspace is unsubscribed.',
     };
   }
 
@@ -75,7 +72,7 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
       tone: 'warning',
       title: 'Cancellation scheduled',
       body: endDate
-        ? `Your paid access remains active until ${endDate}. After that, your workspace will move to the Free plan.`
+        ? `Your paid access remains active until ${endDate}. After that, your workspace will be unsubscribed.`
         : 'Your paid access remains active until the current billing period ends.',
     };
   }
@@ -83,11 +80,7 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
   return null;
 }
 
-function BillingStatusBanner({
-  notice,
-}: {
-  notice: BillingNotice;
-}) {
+function BillingStatusBanner({ notice }: { notice: BillingNotice }) {
   const toneClass = notice.tone === 'danger'
     ? 'bg-red-500/10 text-red-400 border-red-500/20'
     : notice.tone === 'warning'
@@ -95,7 +88,7 @@ function BillingStatusBanner({
       : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
 
   return (
-    <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[12px] ${toneClass}`}>
+    <div className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-[12px] ${toneClass}`}>
       <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="font-semibold">{notice.title}</div>
@@ -105,16 +98,95 @@ function BillingStatusBanner({
   );
 }
 
+function PlanCard({
+  plan,
+  features,
+  currentPlan,
+  loading,
+  onClick,
+}: {
+  plan: BillingPlanInfo;
+  features: PlanFeature[];
+  currentPlan: BillingPlanId | 'unsubscribed';
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  const currentIndex = BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId);
+  const targetIndex = BILLING_PLAN_ORDER.indexOf(plan.id);
+  const isCurrent = plan.id === currentPlan;
+  const isPro = plan.id === 'pro';
+
+  const cardClass = isPro
+    ? 'border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.03]'
+    : plan.id === 'lite'
+      ? 'border-black/5 dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.03]'
+      : 'border-black/5 dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.025]';
+
+  const buttonLabel = isCurrent
+    ? 'Current plan'
+    : currentIndex < 0
+      ? `Get ${plan.name}`
+      : targetIndex > currentIndex
+        ? `Upgrade to ${plan.name}`
+        : 'Manage plan';
+
+  return (
+    <div className={`rounded-2xl border p-5 flex flex-col relative overflow-hidden ${cardClass} ${isCurrent ? 'ring-1 ring-[var(--color-accent)]/20' : ''}`}>
+      {isPro && !isCurrent && (
+        <div className="absolute top-3 right-3">
+          <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
+            Popular
+          </span>
+        </div>
+      )}
+      {isCurrent && (
+        <div className="absolute top-3 right-3">
+          <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-[var(--color-accent)]/15 text-[var(--color-accent)] uppercase tracking-widest">
+            Current
+          </span>
+        </div>
+      )}
+
+      <div className="mb-3">
+        <h2 className="text-[15px] text-gray-900 dark:text-white font-semibold mb-0.5">{plan.name}</h2>
+        <div className="flex items-baseline gap-1">
+          <span className="text-[28px] text-gray-900 dark:text-white font-bold tracking-tight">{plan.priceLabel}</span>
+          {plan.period && <span className="text-gray-400 dark:text-white/30 text-sm">{plan.period}</span>}
+        </div>
+      </div>
+
+      <div className="space-y-2 mb-4 flex-1">
+        {features.map(({ icon: Icon, text, highlight }) => (
+          <div key={text} className="flex items-start gap-2.5">
+            <Icon className={`w-3.5 h-3.5 mt-[3px] flex-shrink-0 ${highlight ? 'text-emerald-500 dark:text-emerald-400' : plan.id === 'lite' ? 'text-blue-500/70 dark:text-blue-400/70' : 'text-emerald-500/60 dark:text-emerald-400/60'}`} />
+            <span className={`text-[12px] leading-snug ${highlight ? 'text-gray-700 dark:text-white/70 font-medium' : 'text-gray-500 dark:text-white/50'}`}>{text}</span>
+          </div>
+        ))}
+      </div>
+
+      <Button
+        onClick={onClick}
+        disabled={!!loading || isCurrent}
+        className="w-full"
+        variant={isPro ? 'primary' : 'default'}
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function PlanPanel() {
   const {
     subscription,
     subscriptionLoading,
     fetchSubscription,
+    openPortal,
     startCheckout,
     switchPlan,
   } = useBillingStore();
 
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<BillingPlanId | null>(null);
   const [plans, setPlans] = useState<BillingPlanInfo[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
 
@@ -128,7 +200,6 @@ export function PlanPanel() {
     }
   }, []);
 
-  // Fetch data on mount
   useEffect(() => {
     fetchSubscription();
     fetchPlans();
@@ -150,218 +221,106 @@ export function PlanPanel() {
     };
   }, [fetchPlans, fetchSubscription]);
 
-  const handleCheckout = useCallback(async (plan: 'starter' | 'pro') => {
-    setCheckoutLoading(true);
+  const handleCheckout = useCallback(async (plan: BillingPlanId) => {
+    setCheckoutLoading(plan);
     const url = await startCheckout(plan);
     if (url) window.location.href = url;
-    setCheckoutLoading(false);
+    setCheckoutLoading(null);
   }, [startCheckout]);
 
-  const handleSwitchPlan = useCallback(async (plan: 'free' | 'starter' | 'pro') => {
-    setCheckoutLoading(true);
+  const handleSwitchPlan = useCallback(async (plan: BillingPlanId) => {
+    setCheckoutLoading(plan);
     const result = await switchPlan(plan);
-    setCheckoutLoading(false);
     if (result === true) {
       window.location.reload();
-    } else if (typeof result === 'object' && result.redirectToCheckout) {
-      // If upgrade required, redirect to checkout
-      handleCheckout(result.targetPlan as 'starter' | 'pro');
+      return;
     }
+    if (typeof result === 'object' && result.redirectToCheckout) {
+      await handleCheckout(result.targetPlan as BillingPlanId);
+      return;
+    }
+    setCheckoutLoading(null);
   }, [switchPlan, handleCheckout]);
 
-  const currentPlan = subscription?.plan || 'free';
+  const currentPlan = subscription?.plan || 'unsubscribed';
   const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
-  const isDevMode = isNonProd || !subscription?.dodoSubscriptionId;
   const billingNotice = getBillingNotice(subscription);
   const canManageBilling = !isNonProd && !!subscription?.dodoCustomerId;
+  const summary = currentPlan === 'unsubscribed'
+    ? 'Pick a plan to unlock the desktop, usage, and AI provider settings.'
+    : canManageBilling
+      ? 'Manage your subscription, invoices, payment details, and cancellation in the Dodo Payments portal.'
+      : isNonProd
+        ? 'Plan changes are handled directly in this environment.'
+        : 'Billing portal becomes available after checkout.';
+
+  const orderedPlans = BILLING_PLAN_ORDER
+    .map((id) => plans.find((plan) => plan.id === id))
+    .filter((plan): plan is BillingPlanInfo => !!plan);
 
   return (
     <div className="space-y-4">
-      {/* ── Plan Selection ── */}
-      <InfoCard>
+      <div className="rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.03] dark:bg-white/[0.04] p-4 space-y-4">
         {subscriptionLoading && !subscription ? (
-          <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] px-4 py-6">
+          <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-6">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading subscription...
           </div>
         ) : (
-          <div className="px-4 pt-3.5 pb-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-black/6 dark:border-white/6 bg-black/2 dark:bg-white/3 px-3 py-2.5">
+          <>
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] px-4 py-3.5">
               <div className="min-w-0">
                 <div className="text-[12px] font-semibold text-text">
                   Current plan: {currentPlanLabel}
                 </div>
-                <p className="mt-0.5 text-[11px] text-text-muted">
-                  {canManageBilling
-                    ? 'Manage your subscription, invoices, payment details, and cancellation in the Dodo Payments portal.'
-                    : isNonProd
-                      ? 'Plan changes are handled directly in this environment.'
-                      : 'Billing portal becomes available after checkout.'}
+                <p className="mt-0.5 text-[11px] text-text-muted leading-relaxed">
+                  {summary}
                 </p>
               </div>
-            </div>
 
-            {billingNotice && (
-              <BillingStatusBanner
-                notice={billingNotice}
-              />
-            )}
-
-            <PlanSelector
-              currentPlan={currentPlan}
-              plans={plans}
-              plansLoading={plansLoading}
-              isDevMode={isDevMode}
-              checkoutLoading={checkoutLoading}
-              onSwitchPlan={handleSwitchPlan}
-              onCheckout={handleCheckout}
-            />
-          </div>
-        )}
-      </InfoCard>
-    </div>
-  );
-}
-
-// ── Plan Selector (plan cards + feature comparison in one) ──
-
-type PlanId = 'free' | 'starter' | 'pro';
-
-function PlanSelector({
-  currentPlan,
-  plans,
-  plansLoading,
-  isDevMode,
-  checkoutLoading,
-  onSwitchPlan,
-  onCheckout,
-}: {
-  currentPlan: string;
-  plans: BillingPlanInfo[];
-  plansLoading: boolean;
-  isDevMode: boolean;
-  checkoutLoading: boolean;
-  onSwitchPlan: (plan: 'free' | 'starter' | 'pro') => void;
-  onCheckout: (plan: 'starter' | 'pro') => void;
-}) {
-  const effective = BILLING_PLAN_ORDER.includes(currentPlan as PlanId) ? currentPlan as PlanId : 'free';
-  const currentIndex = BILLING_PLAN_ORDER.indexOf(effective);
-  const orderedPlans = BILLING_PLAN_ORDER
-    .map((id) => plans.find((plan) => plan.id === id))
-    .filter((plan): plan is BillingPlanInfo => !!plan);
-  const upgradePlans = orderedPlans.filter((plan) => BILLING_PLAN_ORDER.indexOf(plan.id) > currentIndex);
-  const features = buildBillingFeatureRows(plans, effective, AGENT_EMAIL_DOMAIN);
-
-  return (
-    <div className="space-y-3">
-      <div className="min-w-0">
-        <div className="text-[12px] font-semibold text-text">Upgrade options</div>
-        <p className="mt-0.5 text-[11px] text-text-muted">
-          {upgradePlans.length > 0
-            ? 'Only higher plans are shown here.'
-            : 'You are on the highest available plan.'}
-        </p>
-      </div>
-
-      <div className={`settings-plan-grid grid gap-2 ${upgradePlans.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {upgradePlans.map((p) => {
-          const targetIndex = BILLING_PLAN_ORDER.indexOf(p.id);
-          const isUpgrade = targetIndex > currentIndex;
-          return (
-            <div
-              key={p.id}
-              className="p-3 rounded-lg border border-black/[0.06] dark:border-white/[0.06] text-center"
-            >
-              <span className="text-[13px] font-semibold">{p.name}</span>
-              <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
-                <span className="text-[18px] font-bold">{p.priceLabel}</span>
-                {p.period && <span className="text-[11px] text-[var(--color-text-muted)]">{p.period}</span>}
-              </div>
               <Button
-                size="sm"
-                variant={isUpgrade ? 'primary' : 'default'}
-                onClick={() => {
-                  if (isDevMode) onSwitchPlan(p.id);
-                  else onCheckout(p.id as 'starter' | 'pro');
-                }}
-                disabled={checkoutLoading}
-                className="w-full mt-2"
+                size="md"
+                variant={canManageBilling ? 'default' : 'primary'}
+                onClick={canManageBilling ? async () => {
+                  const result = await openPortal();
+                  if ('url' in result) window.location.href = result.url;
+                } : openSubscribeWindow}
+                className="shrink-0 gap-1.5"
               >
-                {checkoutLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Upgrade'}
+                {canManageBilling ? <ExternalLink className="w-3.5 h-3.5" /> : null}
+                {canManageBilling ? 'Manage subscription' : 'Choose plan'}
               </Button>
             </div>
-          );
-        })}
-        {plansLoading && upgradePlans.length === 0 && (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-black/[0.06] dark:border-white/[0.06] px-3 py-6 text-[12px] text-[var(--color-text-muted)]">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Loading plan details...
-          </div>
+
+            {billingNotice && <BillingStatusBanner notice={billingNotice} />}
+
+            {plansLoading && orderedPlans.length === 0 ? (
+              <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading plan details...
+              </div>
+            ) : orderedPlans.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                {orderedPlans.map((plan) => (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    features={PLAN_FEATURES[plan.id]}
+                    currentPlan={currentPlan as BillingPlanId | 'unsubscribed'}
+                    loading={checkoutLoading === plan.id}
+                    onClick={() => void handleSwitchPlan(plan.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-[12px] text-[var(--color-text-muted)] py-4">
+                Plan details are not available right now.
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* Feature comparison table — scroll horizontally on narrow viewports */}
-      <div className="rounded-lg border border-black/[0.06] dark:border-white/[0.06] overflow-x-auto">
-        <div className="min-w-[420px]">
-        <div className="grid grid-cols-[1fr_84px_84px_84px] text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
-          <span />
-          <span className="text-center">Free</span>
-          <span className="text-center">Starter</span>
-          <span className="text-center">Pro</span>
-        </div>
-        {features.length === 0 && plansLoading ? (
-          <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-[var(--color-text-muted)]">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Loading plan details...
-          </div>
-        ) : features.length === 0 ? (
-          <div className="px-3 py-4 text-[12px] text-[var(--color-text-muted)]">
-            Plan details are not available right now.
-          </div>
-        ) : features.map((f, i) => (
-          <div
-            key={f.label}
-            className={`grid grid-cols-[1fr_84px_84px_84px] items-center px-3 py-2 text-[11px] ${
-              i % 2 === 0 ? '' : 'bg-black/[0.015] dark:bg-white/[0.015]'
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="text-[var(--color-text-muted)] select-none transition-colors">
-                {f.label}
-              </span>
-              <InfoHint side="top">{f.tooltip}</InfoHint>
-            </div>
-            {(['free', 'starter', 'pro'] as const).map((tier) => {
-              const currentCell = f.cells[tier];
-              const has = currentCell.enabled;
-              const val = currentCell.value;
-              const color = currentCell.color;
-              const valClass = tier === effective
-                ? 'text-[var(--color-text)] font-medium'
-                : color || 'text-[var(--color-text-muted)]';
-              return (
-                <span key={tier} className="text-center">
-                  {has ? (
-                    val ? (
-                      <span className={valClass}>{val}</span>
-                    ) : (
-                      <Check className="w-3 h-3 text-emerald-400 mx-auto" />
-                    )
-                  ) : (
-                    <Minus className="w-3.5 h-3.5 text-[var(--color-text-muted)] opacity-40 mx-auto" />
-                  )}
-                </span>
-              );
-            })}
-          </div>
-        ))}
-        </div>
-      </div>
-
-      <p className="text-[11px] text-[var(--color-text-muted)]">
-        BYOK is available on every plan.
-      </p>
     </div>
   );
 }

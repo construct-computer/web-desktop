@@ -163,7 +163,7 @@ export function SetupModal() {
     }
   }, [emailUsername, emailAvailable, emailLocked, emailChecking, instanceId, checkEmail]);
 
-  // Refetch subscription on window focus while still free — catches the case
+  // Refetch subscription on window focus while still unsubscribed — catches the case
   // where the user upgraded in another tab/popup and returned to the modal.
   useEffect(() => {
     if (isPaid) return;

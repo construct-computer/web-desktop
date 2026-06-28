@@ -3,7 +3,8 @@ import { Plus, MoreHorizontal, Pencil, Trash2, Search, Crown } from 'lucide-reac
 import { useComputerStore, shouldForceSessionRefresh, type ActiveSessionStatus } from '@/stores/agentStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWindowStore } from '@/stores/windowStore';
-import { openSettingsToSection } from '@/lib/settingsNav';
+import { openSubscribeWindow } from '@/lib/settingsNav';
+import { hasPaidAccess } from '@/lib/plans';
 import { getSessionDisplayMeta } from '@/lib/sessionDisplay';
 import { isAttentionSession, mergeAttentionSessions } from '@/lib/autopilotAttention';
 import * as api from '@/services/api';
@@ -222,11 +223,11 @@ export function SpotlightSidebar() {
   const initializedRef = useRef(false);
   const userPlan = useAuthStore(s => s.user?.plan);
   const closeSpotlight = useWindowStore(s => s.closeSpotlight);
-  const showUpgradeCta = !userPlan || userPlan === 'free';
+  const showUpgradeCta = !hasPaidAccess(userPlan);
 
   const handleUpgradeClick = useCallback(() => {
     closeSpotlight();
-    openSettingsToSection('billing');
+    openSubscribeWindow();
   }, [closeSpotlight]);
 
   useEffect(() => {

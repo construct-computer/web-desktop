@@ -18,6 +18,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { Download, ExternalLink, Crown, AlertTriangle } from 'lucide-react';
 import { InfoHint } from '@/components/ui';
+import { hasPaidAccess } from '@/lib/plans';
+import { openSubscribeWindow } from '@/lib/settingsNav';
 
 // Assets
 import constructLogo from '@/assets/logo.png';
@@ -321,9 +323,9 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
             </span>
           </button>
         )}
-        {!isMobile && !hasBillingIssue && (!userPlan || userPlan === 'free') && (
+        {!isMobile && !hasBillingIssue && !hasPaidAccess(userPlan) && (
           <button
-            onClick={() => openSettingsToSection('billing')}
+            onClick={openSubscribeWindow}
             className="relative mr-1 flex h-6 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-1.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-95 dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09] xl:pr-2.5"
             title="Upgrade Plan"
             aria-label="Upgrade plan"

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, ExternalLink, Zap, AlertCircle } from 'lucide-react';
-import { Button, Select, InfoHint } from '@/components/ui';
+import { useState, useEffect, useRef } from 'react';
+import { Loader2, Zap, AlertCircle } from 'lucide-react';
+import { Select, InfoHint } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
 import { useSettingsNav, type BillingSubsection } from '@/lib/settingsNav';
+import { hasPaidAccess } from '@/lib/plans';
 import {
   getPlatformModelSettings, updatePlatformModel,
   type PlatformModelSettings,
@@ -59,7 +60,7 @@ function PlatformModelPicker() {
           </span>
         </div>
         <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-          Choose the main model Construct uses. BYOK models stay separate.
+          Choose the main model Construct uses.
         </p>
         {platformModelLoading ? (
           <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]">
@@ -111,28 +112,19 @@ const SUBSECTION_ANCHORS: Record<BillingSubsection, string> = {
 
 export function BillingSection() {
   const subscription = useBillingStore((s) => s.subscription);
-  const openPortal = useBillingStore((s) => s.openPortal);
   const pendingSubsection = useSettingsNav((s) => s.pendingSubsection);
   const setPendingSubsection = useSettingsNav((s) => s.setPendingSubsection);
-  const [portalLoading, setPortalLoading] = useState(false);
 
-  const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
-  const hasDodoCustomer = !!subscription?.dodoCustomerId;
-  const canManageSubscription = hasDodoCustomer && !isNonProd;
-
-  const handleManageBilling = useCallback(async () => {
-    setPortalLoading(true);
-    try {
-      const result = await openPortal();
-      if ('url' in result) window.location.href = result.url;
-    } finally {
-      setPortalLoading(false);
-    }
-  }, [openPortal]);
+  const isSubscribed = hasPaidAccess(subscription?.plan);
+  const isPro = subscription?.plan === 'pro';
 
   const scrolledRef = useRef(false);
   useEffect(() => {
     if (!pendingSubsection || scrolledRef.current) return;
+    if (!isSubscribed && (pendingSubsection === 'usage' || pendingSubsection === 'ai-provider')) {
+      setPendingSubsection(null);
+      return;
+    }
     const anchorId = SUBSECTION_ANCHORS[pendingSubsection];
     const el = document.getElementById(anchorId);
     if (el) {
@@ -140,46 +132,38 @@ export function BillingSection() {
       scrolledRef.current = true;
       setPendingSubsection(null);
     }
-  }, [pendingSubsection, setPendingSubsection]);
+  }, [isSubscribed, pendingSubsection, setPendingSubsection]);
 
   return (
     <SectionPanel
       title="Billing"
       subtitle="Plan, usage limits, and AI provider settings."
-      action={canManageSubscription ? (
-        <Button
-          size="md"
-          variant="default"
-          onClick={handleManageBilling}
-          disabled={portalLoading}
-          className="shrink-0 gap-1.5"
-        >
-          {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-          Manage subscription
-        </Button>
-      ) : undefined}
     >
       <div id="billing-plan">
-        <SettingsSubsection title="Your plan">
-          <PlanPanel />
-        </SettingsSubsection>
+        <PlanPanel />
       </div>
 
-      <div id="billing-usage" className="mt-6">
-        <UsagePanel />
-      </div>
+      {isSubscribed && (
+        <div id="billing-usage" className="mt-6">
+          <UsagePanel />
+        </div>
+      )}
 
-      <div id="billing-ai-provider" className="mt-6">
-        <SettingsSubsection
-          title="AI provider"
-          description="Choose Construct's default model or bring your own OpenRouter key."
-        >
-          <div className="space-y-4">
-            <PlatformModelPicker />
-            <ByokPanel />
-          </div>
-        </SettingsSubsection>
-      </div>
+      {isSubscribed && (
+        <div id="billing-ai-provider" className="mt-6">
+          <SettingsSubsection
+            title="AI provider"
+            description={isPro
+              ? "Choose Construct's default model or bring your own OpenRouter key."
+              : "Choose Construct's default model used by your paid plan."}
+          >
+            <div className="space-y-4">
+              <PlatformModelPicker />
+              {isPro && <ByokPanel />}
+            </div>
+          </SettingsSubsection>
+        </div>
+      )}
     </SectionPanel>
   );
 }

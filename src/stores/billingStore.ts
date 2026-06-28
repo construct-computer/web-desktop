@@ -19,6 +19,7 @@ import {
   deleteByokKey,
   updateByokSettings,
   listByokModels,
+  type BillingPlanId,
   type SubscriptionInfo,
   type CurrentUsage,
   type UsageHistorySummary,
@@ -76,8 +77,8 @@ interface BillingState {
   fetchSubscription: () => Promise<void>;
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
-  startCheckout: (plan?: 'starter' | 'pro', coupon?: string) => Promise<string | null>;
-  switchPlan: (plan: 'free' | 'starter' | 'pro') => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
+  startCheckout: (plan?: BillingPlanId, coupon?: string) => Promise<string | null>;
+  switchPlan: (plan: BillingPlanId) => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
   openPortal: () => Promise<{ url: string } | { error: string }>;
   buyTopup: (amount: number) => Promise<string | null>;
 
@@ -126,7 +127,7 @@ function billingStatusNotice(subscription: SubscriptionInfo): { title: string; b
   if (status === 'expired' || status === 'cancelled' || status === 'canceled') {
     return {
       title: 'Subscription inactive',
-      body: 'Your paid subscription is no longer active, so your workspace is using the Free plan.',
+      body: 'Your paid subscription is no longer active, so your workspace is unsubscribed.',
       variant: 'error',
     };
   }
@@ -173,8 +174,9 @@ function maybeNotifyBillingStatus(previous: SubscriptionInfo | null, next: Subsc
 
 function syncAuthPlan(plan: string): void {
   const auth = useAuthStore.getState();
-  if (!auth.user || auth.user.plan === plan) return;
-  auth.setUser({ ...auth.user, plan });
+  const normalizedPlan = plan === 'free' ? 'unsubscribed' : plan;
+  if (!auth.user || auth.user.plan === normalizedPlan) return;
+  auth.setUser({ ...auth.user, plan: normalizedPlan });
 }
 
 export const useBillingStore = create<BillingState>((set, get) => ({
@@ -199,9 +201,13 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     const result = await getSubscription();
     if (result.success) {
       const previous = get().subscription;
-      syncAuthPlan(result.data.plan);
-      maybeNotifyBillingStatus(previous, result.data);
-      set({ subscription: result.data, subscriptionLoading: false });
+      const subscription = {
+        ...result.data,
+        plan: result.data.plan === 'free' ? 'unsubscribed' : result.data.plan,
+      };
+      syncAuthPlan(subscription.plan);
+      maybeNotifyBillingStatus(previous, subscription);
+      set({ subscription, subscriptionLoading: false });
     } else {
       set({ subscriptionError: result.error, subscriptionLoading: false });
     }
@@ -236,7 +242,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
   },
 
-  startCheckout: async (plan: 'starter' | 'pro' = 'pro', coupon?: string) => {
+  startCheckout: async (plan: BillingPlanId = 'lite', coupon?: string) => {
     let finalCoupon = coupon;
     // Auto-attach a stored promo only for Pro checkout. Promos currently in
     // circulation (e.g. YCSUS) are scoped to the Pro product on Dodo's side,
@@ -254,7 +260,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     return null;
   },
 
-  switchPlan: async (plan: 'free' | 'starter' | 'pro') => {
+  switchPlan: async (plan: BillingPlanId) => {
     const result = await switchPlanApi(plan);
     if (result.success) {
       // If portal URL is returned (for downgrades in production), redirect to portal

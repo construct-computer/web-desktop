@@ -98,6 +98,21 @@ describe('openWindow large defaults', () => {
     expect(win?.maxHeight).toBe(workArea.height);
   });
 
+  it('honors explicit initial size overrides', () => {
+    const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: false });
+    const width = 1000;
+    const height = 560;
+    const expected = computeVisuallyCenteredPosition(workArea, { width, height });
+
+    const id = useWindowStore.getState().openWindow('subscribe', { width, height });
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+
+    expect(win?.width).toBe(width);
+    expect(win?.height).toBe(height);
+    expect(win?.x).toBe(expected.x);
+    expect(win?.y).toBe(expected.y);
+  });
+
   it('opens centered regardless of legacy saved position in localStorage', () => {
     localStorage.setItem(
       STORAGE_KEYS.windowPositions,
@@ -128,6 +143,46 @@ describe('openWindow large defaults', () => {
     expect(w1.height).toBe(expected.height);
     expect(w2.width).toBe(expected.width);
     expect(w2.height).toBe(expected.height);
+  });
+});
+
+describe('openWindow access', () => {
+  beforeEach(() => {
+    vi.stubGlobal('innerWidth', 1280);
+    vi.stubGlobal('innerHeight', 800);
+    vi.stubGlobal('localStorage', mockLocalStorage());
+    useWindowStore.setState({
+      windows: [],
+      focusedWindowId: null,
+      nextZIndex: 100,
+      activeWorkspaceId: 'main',
+      stageManagerActive: false,
+    });
+    useAuthStore.setState({ user: { plan: 'unsubscribed' } as never });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('still opens app windows for unsubscribed users', () => {
+    const id = useWindowStore.getState().openWindow('app', {
+      title: 'Example App',
+      metadata: { appId: 'example-app' },
+    });
+
+    expect(id).toBeTruthy();
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(win?.type).toBe('app');
+    expect(win?.metadata?.appId).toBe('example-app');
+  });
+
+  it('opens subscribe with the logo icon', () => {
+    const id = useWindowStore.getState().openWindow('subscribe', { width: 1000, height: 640 });
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+
+    expect(win?.title).toBe('Subscribe');
+    expect(win?.icon).toBeTruthy();
   });
 });
 

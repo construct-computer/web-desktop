@@ -20,11 +20,11 @@ import { useDesktopTour } from '@/hooks/useDesktopTour';
 import { BOOT_EVENTS } from '@/hooks/useBootPhase';
 import { PromoCodeModal } from '@/components/apps/PromoCodeModal';
 import { MobileDesktopBackground } from './MobileDesktopBackground';
-import { SubscriptionOverlay } from '@/components/screens/SubscriptionOverlay';
 import { validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { hasAgentAccess } from '@/lib/plans';
+import { openSubscribeWindow } from '@/lib/settingsNav';
 
 // ── Workspace slide constants ──────────────────────────────────────
 
@@ -165,6 +165,7 @@ export function Desktop({
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const closeWindowsByType = useWindowStore((s) => s.closeWindowsByType);
   const isTelegram = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
 
   // Keep subscription state fresh even when Settings is closed. This lets
@@ -220,6 +221,15 @@ export function Desktop({
   // Guided tour: auto-starts after setup + onboarding are complete.
   // Force-start from the menubar always works regardless of flags.
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
+  useEffect(() => {
+    if (!userId) return;
+    if (hasAccess) {
+      closeWindowsByType('subscribe');
+      return;
+    }
+    openSubscribeWindow();
+  }, [userId, hasAccess, closeWindowsByType]);
+
   const tourTriggered = useRef(false);
   const startTourWhenReady = useCallback(() => {
     if (tourTriggered.current || !user || !hasAccess) return;
@@ -373,10 +383,10 @@ export function Desktop({
       </div>
 
 
-      {/* Agent desktop surface — only for active plans (need agent connection). */}
+      {/* Agent desktop surface. */}
       <div style={chromeVisibilityStyle(chromeHidden)}>
-        {hasAccess && <AgentGraphWidget showAutopilot={!isMobile} />}
-        {hasAccess && <ClippyWidget />}
+        <AgentGraphWidget showAutopilot={!isMobile} />
+        <ClippyWidget />
       </div>
 
       {/* Dock (desktop) / App bar (mobile) */}
@@ -399,9 +409,6 @@ export function Desktop({
       {/* Notification system */}
       {!chromeHidden && <Toasts />}
       {!chromeHidden && <NotificationCenter />}
-
-      {/* Subscription overlay — permanent until user subscribes */}
-      {user && !hasAccess && !chromeHidden && <SubscriptionOverlay />}
 
       {/* Promo code modal — shown once after onboarding if the user landed
           via ?code=XXX and isn't already on Pro. Also shown to unsubscribed users immediately. */}

@@ -1,6 +1,6 @@
 import type { BillingPlanId, BillingPlanInfo } from '@/services/api';
 
-export const BILLING_PLAN_ORDER: BillingPlanId[] = ['free', 'starter', 'pro'];
+export const BILLING_PLAN_ORDER: BillingPlanId[] = ['lite', 'starter', 'pro'];
 
 export type BillingFeatureCell = {
   value: string;
@@ -76,7 +76,7 @@ export function buildBillingFeatureRows(
   if (!planMap) return [];
   const effective = BILLING_PLAN_ORDER.includes(currentPlan as BillingPlanId)
     ? currentPlan as BillingPlanId
-    : 'free';
+    : 'lite';
   const currentUsage = planMap[effective].limits.monthlyUsageRelativeToFree || 1;
 
   const fromPlans = (
@@ -87,7 +87,7 @@ export function buildBillingFeatureRows(
     label,
     tooltip,
     cells: {
-      free: getCell(planMap.free),
+      lite: getCell(planMap.lite),
       starter: getCell(planMap.starter),
       pro: getCell(planMap.pro),
     },

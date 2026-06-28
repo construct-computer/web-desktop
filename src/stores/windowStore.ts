@@ -4,14 +4,8 @@ import { shallow } from 'zustand/shallow';
 import type { WindowConfig, WindowType, WindowBounds, Workspace, WorkspacePlatform, MenuBarPanelType } from '@/types';
 import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
-import { useAuthStore } from '@/stores/authStore';
-import { hasAgentAccess } from '@/lib/plans';
 import { track } from '@/lib/analytics';
-
-/** Window types unsubscribed users can open in preview mode. */
-const PREVIEW_ALLOWED_TYPES: Set<WindowType> = new Set([
-  'settings', 'about', 'app-registry', 'app-builder',
-]);
+import constructLogo from '@/assets/logo.png';
 import {
   DEFAULT_OPEN_PADDING,
   MENUBAR_HEIGHT,
@@ -196,6 +190,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
   'access-control': { title: 'Approvals' },
   'app-registry': { title: 'Apps' },
   'app-builder': { title: 'Builder' },
+  subscribe: { title: 'Subscribe', icon: constructLogo },
   'document-viewer': { title: 'Document Viewer' },
   app: { title: 'App' },
 };
@@ -250,7 +245,7 @@ const WINDOW_PLATFORM_MAP: Partial<Record<WindowType, WorkspacePlatform>> = {
 /** Window types that only allow a single instance (opening again focuses the existing one). */
 const SINGLETON_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'calendar', 'auditlogs', 'memory',
-  'email', 'files', 'access-control', 'app-registry', 'app-builder',
+  'email', 'files', 'access-control', 'app-registry', 'app-builder', 'subscribe',
   // NOTE: 'terminal' was removed — multiple terminal windows are supported,
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);
@@ -464,14 +459,6 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
-      // Preview mode: unsubscribed users can only open whitelisted app types.
-      // Telegram Mini App users are exempt from this UI block since they use the serverless agent.
-      const userPlan = useAuthStore.getState().user?.plan;
-      const isTelegram = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
-      if (!isTelegram && !hasAgentAccess(userPlan) && !PREVIEW_ALLOWED_TYPES.has(type)) {
-        return '';
-      }
-
       // During a workspace transition, default new windows to the destination workspace
       const wsId = options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId);
       // Prevent duplicate windows only for singleton types (settings, calendar, etc.)
@@ -503,7 +490,10 @@ export const useWindowStore = create<WindowStore>()(
         stageManagerActive: get().stageManagerActive,
         mobile,
       });
-      const { x, y, width, height } = computeDefaultOpenBounds(workArea);
+      const defaultBounds = computeDefaultOpenBounds(workArea);
+      const width = clamp(options.width ?? defaultBounds.width, 1, workArea.width);
+      const height = clamp(options.height ?? defaultBounds.height, 1, workArea.height);
+      const { x, y } = computeVisuallyCenteredPosition(workArea, { width, height }, { mobile });
 
       const { windows, nextZIndex } = get();
 
@@ -532,7 +522,7 @@ export const useWindowStore = create<WindowStore>()(
         id,
         type,
         title: options.title ?? defaults.title ?? type,
-        icon: options.icon,
+        icon: options.icon ?? defaults.icon,
         x,
         y,
         width,
@@ -574,7 +564,7 @@ export const useWindowStore = create<WindowStore>()(
       // Only track windows in the main workspace — subagent/platform windows
       // are transient and should not be restored as orphans on the main desktop.
       // App windows require metadata (appId) and cannot be restored from just the type.
-      if (wsId === 'main' && type !== 'app') {
+      if (wsId === 'main' && type !== 'app' && type !== 'subscribe') {
         agentWS.sendWindowOpen(type);
       }
 

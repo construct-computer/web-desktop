@@ -83,3 +83,11 @@ export function openSettingsToSection(
   useSettingsNav.getState().setPendingSubsection(subsection);
   useWindowStore.getState().openWindow('settings');
 }
+
+/** Open the subscribe popup window. */
+export function openSubscribeWindow(): void {
+  useWindowStore.getState().openWindow('subscribe', {
+    width: 1000,
+    height: 640,
+  });
+}

@@ -4,13 +4,13 @@
  * Replaces the old "Email is available on the Pro plan — Open Settings"
  * dead-end. Handles two distinct cohorts without ever leaving the app:
  *
- *   (a) Free users            → inline upgrade CTA (Starter / Pro).
+ *   (a) Users without email   → inline upgrade CTA (Starter / Pro).
  *   (b) Paid without inbox    → inline username picker with live availability
  *                               check and a "Create inbox" action.
  *
  * On staging/local the upgrade path uses `switchPlan` so the plan flips
  * in place. On prod it redirects to the Dodo checkout URL. Either way, a
- * window-focus listener re-fetches billing while the user is still free so
+ * window-focus listener re-fetches billing while the user still lacks email access so
  * upgrades completed in another tab/popup are picked up automatically.
  */
 
@@ -83,7 +83,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
     if (!subscription) fetchSubscription();
   }, [subscription, fetchSubscription]);
 
-  // Refetch subscription on window focus while the user is still free,
+  // Refetch subscription on window focus while the user still lacks email access,
   // so upgrades completed in a side tab/popup are picked up automatically.
   useEffect(() => {
     if (isPaid) return;
@@ -155,7 +155,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
     }
   }, [isPaid, username, available, checking, instanceId, runAvailabilityCheck]);
 
-  // ── Upgrade handler (free → paid) ──
+  // ── Upgrade handler (no email access → paid) ──
   const handleUpgrade = async (plan: 'starter' | 'pro') => {
     setUpgrading(plan);
     try {

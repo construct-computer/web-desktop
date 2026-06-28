@@ -2573,7 +2573,7 @@ export interface SubscriptionInfo {
   };
 }
 
-export type BillingPlanId = 'free' | 'starter' | 'pro';
+export type BillingPlanId = 'lite' | 'starter' | 'pro';
 
 export interface BillingPlanInfo {
   id: BillingPlanId;
@@ -2682,7 +2682,7 @@ export async function getUsageRecords(opts?: {
   return request(`/billing/usage/records${qs ? `?${qs}` : ''}`);
 }
 
-export async function createCheckout(plan = 'pro', coupon?: string): Promise<ApiResult<{ checkoutUrl: string }>> {
+export async function createCheckout(plan = 'lite', coupon?: string): Promise<ApiResult<{ checkoutUrl: string }>> {
   return request('/billing/checkout', {
     method: 'POST',
     body: JSON.stringify({ plan, ...(coupon ? { discount_code: coupon } : {}) }),
@@ -2695,7 +2695,7 @@ export async function validateDiscountCode(
   return request(`/billing/discount/validate?code=${encodeURIComponent(code)}`);
 }
 
-export async function switchPlan(plan: 'free' | 'starter' | 'pro'): Promise<ApiResult<{ 
+export async function switchPlan(plan: 'lite' | 'starter' | 'pro'): Promise<ApiResult<{ 
   ok: boolean; 
   plan: string; 
   message?: string;

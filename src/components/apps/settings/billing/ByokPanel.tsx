@@ -46,6 +46,8 @@ function pricingText(model: Pick<ByokModel, 'pricing'> | undefined): string {
 
 export function ByokPanel() {
   const {
+    subscription,
+    fetchSubscription,
     byok,
     byokLoading,
     byokError,
@@ -59,6 +61,8 @@ export function ByokPanel() {
     setByokMonthlyLimit,
     fetchByokModels,
   } = useBillingStore();
+
+  const isPro = subscription?.plan === 'pro';
 
   // Local form state
   const [keyInput, setKeyInput] = useState('');
@@ -76,8 +80,9 @@ export function ByokPanel() {
   const [customModel, setCustomModel] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
 
-  useEffect(() => { fetchByok(); }, [fetchByok]);
-  useEffect(() => { fetchByokModels(); }, [fetchByokModels]);
+  useEffect(() => { if (!subscription) void fetchSubscription(); }, [subscription, fetchSubscription]);
+  useEffect(() => { if (isPro) void fetchByok(); }, [isPro, fetchByok]);
+  useEffect(() => { if (isPro) void fetchByokModels(); }, [isPro, fetchByokModels]);
 
   // Keep local limit draft in sync with server-side value on load.
   useEffect(() => {
@@ -215,6 +220,18 @@ export function ByokPanel() {
       </Card>
     );
   }
+
+  if (!subscription) {
+    return (
+      <Card>
+        <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] px-4 py-6">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading subscription...
+        </div>
+      </Card>
+    );
+  }
+
+  if (!isPro) return null;
 
   const modeHint = hasKey
     ? MODES.find((m) => m.id === (mode === 'exclusive' ? 'exclusive' : 'auto'))?.hint
