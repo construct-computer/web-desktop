@@ -87,7 +87,7 @@ interface BillingState {
   deleteByokKey: () => Promise<void>;
   setByokMode: (mode: ByokMode) => Promise<{ ok: boolean; error?: string }>;
   setByokModel: (model: string | null) => Promise<{ ok: boolean; error?: string }>;
-  setByokWeeklyLimit: (weeklyLimitUsd: number | null) => Promise<{ ok: boolean; error?: string }>;
+  setByokMonthlyLimit: (monthlyLimitUsd: number | null) => Promise<{ ok: boolean; error?: string }>;
   fetchByokModels: (force?: boolean) => Promise<void>;
 
   // Provider-state actions
@@ -211,8 +211,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     set({ usageLoading: true });
     const result = await getCurrentUsage();
     if (result.success) {
-      // A fresh poll after a weekly reset should clear any stale block marker
-      // left by a previous blocked-no-key / blocked-byok-cap SSE event.
+      // A fresh poll after the active budget resets should clear any stale
+      // block marker left by a previous blocked-no-key / blocked-byok-cap SSE event.
       const { lastBlock } = get();
       const clearBlock = !!lastBlock && (
         (lastBlock.kind === 'byok-cap'
@@ -349,8 +349,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     return { ok: false, error: res.error };
   },
 
-  setByokWeeklyLimit: async (weeklyLimitUsd: number | null) => {
-    const res = await updateByokSettings({ weeklyLimitUsd });
+  setByokMonthlyLimit: async (monthlyLimitUsd: number | null) => {
+    const res = await updateByokSettings({ monthlyLimitUsd });
     if (res.success) {
       set({ byok: res.data });
       return { ok: true };

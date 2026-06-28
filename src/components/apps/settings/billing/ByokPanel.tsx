@@ -5,7 +5,7 @@
  *  - paste + validate their OpenRouter API key (server validates against /auth/key)
  *  - pick a mode (auto-fallback / exclusive) once a key is saved
  *  - choose a model (curated list + searchable combobox + custom override)
- *  - set a self-imposed weekly USD cap
+ *  - set a self-imposed monthly USD cap
  *
  * Rendered inside `SubscriptionSection` below the main plan picker.
  */
@@ -56,7 +56,7 @@ export function ByokPanel() {
     deleteByokKey,
     setByokMode,
     setByokModel,
-    setByokWeeklyLimit,
+    setByokMonthlyLimit,
     fetchByokModels,
   } = useBillingStore();
 
@@ -82,9 +82,9 @@ export function ByokPanel() {
   // Keep local limit draft in sync with server-side value on load.
   useEffect(() => {
     if (byok && !limitBusy) {
-      setLimitDraft(byok.weeklyLimitUsd != null ? String(byok.weeklyLimitUsd) : '');
+      setLimitDraft(byok.monthlyLimitUsd != null ? String(byok.monthlyLimitUsd) : '');
     }
-  }, [byok?.weeklyLimitUsd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [byok?.monthlyLimitUsd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recommendedIds = useMemo(
     () => new Set((byokModels?.recommended || []).map((m) => m.id)),
@@ -199,10 +199,10 @@ export function ByokPanel() {
       }
       value = parsed;
     }
-    const res = await setByokWeeklyLimit(value);
+    const res = await setByokMonthlyLimit(value);
     setLimitBusy(false);
     if (!res.ok) setLimitError(res.error || 'Failed to save limit.');
-  }, [limitDraft, setByokWeeklyLimit]);
+  }, [limitDraft, setByokMonthlyLimit]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -405,17 +405,17 @@ export function ByokPanel() {
         </div>
       </Card>
 
-      {/* Weekly limit */}
+      {/* Monthly limit */}
       <Card>
         <div className="px-4 pt-3.5 pb-4 space-y-2">
-          <Label className="text-[13px] font-semibold">Weekly spend limit (USD)</Label>
+          <Label className="text-[13px] font-semibold">Monthly spend limit (USD)</Label>
           <p className="text-[11px] text-[var(--color-text-muted)]">
-            Only counts traffic that hits your OpenRouter key. Leave blank for no limit. Resets Monday 00:00 UTC.
+            Only counts traffic that hits your OpenRouter key. Leave blank for no limit. Resets at the start of each month.
           </p>
           {isByokCapBlocked && (
             <div className="flex items-center gap-1.5 text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
               <AlertCircle className="w-3 h-3 flex-shrink-0" />
-              You've hit this cap this week — raise it or wait until Monday.
+              You've hit this cap this month — raise it or wait for the reset.
             </div>
           )}
           <div className="settings-form-pair">

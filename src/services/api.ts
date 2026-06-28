@@ -2734,7 +2734,7 @@ export interface ByokSettings {
   hasKey: boolean;
   mode: ByokMode;
   model: string | null;
-  weeklyLimitUsd: number | null;
+  monthlyLimitUsd: number | null;
   keyPreview: string | null;
   credits?: {
     usage?: number;
@@ -2796,11 +2796,11 @@ export async function deleteByokKey(): Promise<ApiResult<{ ok: boolean }>> {
   return request('/billing/byok/key', { method: 'DELETE' });
 }
 
-/** Patch BYOK settings (mode/model/weekly limit). */
+/** Patch BYOK settings (mode/model/monthly limit). */
 export async function updateByokSettings(patch: {
   mode?: ByokMode;
   model?: string | null;
-  weeklyLimitUsd?: number | null;
+  monthlyLimitUsd?: number | null;
 }): Promise<ApiResult<ByokSettings>> {
   return request('/billing/byok/settings', {
     method: 'PUT',

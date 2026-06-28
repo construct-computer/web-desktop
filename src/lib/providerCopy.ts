@@ -35,7 +35,7 @@ export interface ProviderCopy {
 }
 
 function formatResetTime(iso?: string): string {
-  if (!iso) return 'the weekly reset';
+  if (!iso) return 'the reset';
   const d = new Date(iso);
   const now = Date.now();
   const diff = d.getTime() - now;
@@ -125,11 +125,11 @@ export function providerCopy(p: EffectiveProvider): ProviderCopy {
     case 'blocked-byok-cap': {
       return {
         badge: 'OpenRouter cap reached — raise it in Settings',
-        bannerTitle: 'OpenRouter weekly cap reached',
-        bannerBody: 'You\'ve hit the self-imposed weekly cap on your OpenRouter key. Raise it in Settings or wait until Monday.',
-        noticeText: 'Your OpenRouter weekly cap is reached. Raise it in Settings.',
+        bannerTitle: 'OpenRouter monthly cap reached',
+        bannerBody: 'You\'ve hit the self-imposed monthly cap on your OpenRouter key. Raise it in Settings or wait for the reset.',
+        noticeText: 'Your OpenRouter monthly cap is reached. Raise it in Settings.',
         toastTitle: 'OpenRouter cap reached',
-        toastBody: 'Raise your self-imposed weekly cap in Settings.',
+        toastBody: 'Raise your self-imposed monthly cap in Settings.',
         toastVariant: 'error',
         widgetLabel: 'BYOK cap reached',
         tone: 'red',
