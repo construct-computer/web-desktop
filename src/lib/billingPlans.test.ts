@@ -10,7 +10,7 @@ const plans: BillingPlanInfo[] = [
     priceLabel: '$0',
     period: '',
     limits: {
-      weeklyUsageRelativeToFree: 1,
+      monthlyUsageRelativeToFree: 1,
       sessionUsageRelativeToFree: 1,
       mainTaskSteps: 20,
       commandRuntimeSeconds: 300,
@@ -28,8 +28,8 @@ const plans: BillingPlanInfo[] = [
     priceLabel: '$59',
     period: '/mo',
     limits: {
-      weeklyUsageRelativeToFree: 2.285,
-      sessionUsageRelativeToFree: 2.333,
+      monthlyUsageRelativeToFree: 4.375,
+      sessionUsageRelativeToFree: 4.5,
       mainTaskSteps: 50,
       commandRuntimeSeconds: 3600,
       parallelWork: 6,
@@ -46,8 +46,8 @@ const plans: BillingPlanInfo[] = [
     priceLabel: '$299',
     period: '/mo',
     limits: {
-      weeklyUsageRelativeToFree: 12.857,
-      sessionUsageRelativeToFree: 7.333,
+      monthlyUsageRelativeToFree: 23.75,
+      sessionUsageRelativeToFree: 16,
       mainTaskSteps: 100,
       commandRuntimeSeconds: 10800,
       parallelWork: -1,

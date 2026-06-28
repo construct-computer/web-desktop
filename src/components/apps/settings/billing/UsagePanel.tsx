@@ -122,13 +122,11 @@ export function UsagePanel() {
     };
   }, [fetchUsage, fetchTweetStatus, fetchSubscription]);
 
-  const [weeklyTimeLeft, setWeeklyTimeLeft] = useState('');
   const [monthlyTimeLeft, setMonthlyTimeLeft] = useState('');
   const [sessionTimeLeft, setSessionTimeLeft] = useState('');
   useEffect(() => {
     const update = () => {
       if (usage?.monthlyResetsAt) setMonthlyTimeLeft(formatTimeRemaining(usage.monthlyResetsAt));
-      if (usage?.weeklyResetsAt) setWeeklyTimeLeft(formatTimeRemaining(usage.weeklyResetsAt));
       if (usage?.sessionResetsAt) {
         setSessionTimeLeft(formatTimeRemaining(usage.sessionResetsAt));
       }
@@ -136,10 +134,9 @@ export function UsagePanel() {
     update();
     const timer = setInterval(update, 30_000);
     return () => clearInterval(timer);
-  }, [usage?.monthlyResetsAt, usage?.weeklyResetsAt, usage?.sessionResetsAt]);
+  }, [usage?.monthlyResetsAt, usage?.sessionResetsAt]);
 
   const monthlyPercent = usage?.monthlyPercentUsed ?? 0;
-  const weeklyPercent = usage?.weeklyPercentUsed ?? 0;
   const sessionPercent = usage?.sessionPercentUsed ?? 0;
   const storagePercent = storage ? (storage.bytesUsed / storage.maxBytes) * 100 : 0;
 
@@ -170,7 +167,7 @@ export function UsagePanel() {
               {usage.byokFallback && (
                 <div className="flex items-center gap-2 p-2.5 rounded-lg text-[12px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                   <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Switched to your OpenRouter key — platform weekly cap reached. Platform access returns on the next weekly reset.</span>
+                  <span>Switched to your OpenRouter key — platform cap reached. Platform access returns on the next reset.</span>
                 </div>
               )}
               {usage.byokActive && !usage.byokFallback && (
@@ -209,34 +206,9 @@ export function UsagePanel() {
                 <UsageBar percent={monthlyPercent} />
               </div>
 
-              <div className="space-y-1.5">
-                <div className="settings-metric-row flex items-center justify-between text-[12px]">
-                  <span className="text-[var(--color-text-muted)]">Weekly</span>
-                  <span className="font-mono text-[12px] flex items-center gap-2">
-                    {usage.weeklyUsedUsd !== undefined && usage.weeklyCapUsd !== undefined && usage.weeklyCapUsd > 0 ? (
-                      <span>
-                        {formatCost(usage.weeklyUsedUsd)}
-                        <span className="text-[var(--color-text-muted)] font-normal"> / {formatCost(usage.weeklyCapUsd)}</span>
-                        <span className="text-[var(--color-text-muted)] font-normal"> ({Math.round(weeklyPercent)}%)</span>
-                      </span>
-                    ) : (
-                      <span>{Math.round(weeklyPercent)}%</span>
-                    )}
-                    {usage.weeklyResetsAt && (
-                      <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
-                        <Clock className="w-3 h-3" />
-                        {weeklyTimeLeft}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <UsageBar percent={weeklyPercent} />
-                {(usage.topupCreditsUsd ?? 0) > 0 && (
-                  <p className="text-[11px] text-emerald-400">
-                    {formatCost(usage.topupCreditsUsd || 0)} bonus credits available
-                  </p>
-                )}
-              </div>
+              {(usage.topupCreditsUsd ?? 0) > 0 && (
+                <p className="text-[11px] text-emerald-400">{formatCost(usage.topupCreditsUsd || 0)} bonus credits available</p>
+              )}
 
               <div className="space-y-1.5">
                 <div className="settings-metric-row flex items-center justify-between text-[12px]">
@@ -262,19 +234,17 @@ export function UsagePanel() {
                 <UsageBar percent={sessionPercent} height="h-1.5" />
               </div>
 
-              {Math.max(monthlyPercent, weeklyPercent, sessionPercent) >= 75 && !usingBonus && (
+              {Math.max(monthlyPercent, sessionPercent) >= 75 && !usingBonus && (
                 <div className={`flex items-center gap-2.5 p-2.5 rounded-lg text-[12px] ${
-                  Math.max(monthlyPercent, weeklyPercent, sessionPercent) >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                  Math.max(monthlyPercent, sessionPercent) >= 100 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
                 }`}>
                   <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>
                     {monthlyPercent >= 100
                       ? `Monthly limit reached. Resets in ${monthlyTimeLeft}.`
-                      : weeklyPercent >= 100
-                        ? `Weekly limit reached. Resets in ${weeklyTimeLeft}.`
-                        : sessionPercent >= 100
-                          ? `Session usage limit reached. Resets in ${sessionTimeLeft}.`
-                          : `${Math.round(Math.max(monthlyPercent, weeklyPercent, sessionPercent))}% of the nearest usage cap consumed.`}
+                      : sessionPercent >= 100
+                        ? `Session usage limit reached. Resets in ${sessionTimeLeft}.`
+                        : `${Math.round(Math.max(monthlyPercent, sessionPercent))}% of the nearest usage cap consumed.`}
                   </span>
                 </div>
               )}
@@ -327,13 +297,13 @@ export function UsagePanel() {
 
             <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
               Tweet about Construct to earn{' '}
-              {tweetStatus.creditPerTweet ? (
-                <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span>
-              ) : (
-                <span className="font-semibold text-[var(--color-text)]">bonus usage</span>
-              )}
-              {tweetStatus.creditPerTweet ? ' in bonus usage' : ''}. Kicks in only after your weekly limit is hit. Max {tweetStatus.maxTweets} tweets, one per week.
-            </p>
+               {tweetStatus.creditPerTweet ? (
+                 <span className="font-semibold text-[var(--color-text)]">${tweetStatus.creditPerTweet}</span>
+               ) : (
+                 <span className="font-semibold text-[var(--color-text)]">bonus usage</span>
+               )}
+               {tweetStatus.creditPerTweet ? ' in bonus usage' : ''}. Kicks in only after your monthly limit is hit. Max {tweetStatus.maxTweets} tweets, one per week.
+             </p>
 
             <div className="flex gap-1.5">
               {Array.from({ length: tweetStatus.maxTweets }).map((_, i) => (

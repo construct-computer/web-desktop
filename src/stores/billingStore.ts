@@ -214,8 +214,11 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       // A fresh poll after a weekly reset should clear any stale block marker
       // left by a previous blocked-no-key / blocked-byok-cap SSE event.
       const { lastBlock } = get();
-      const clearBlock =
-        lastBlock && result.data.weeklyPercentUsed !== undefined && result.data.weeklyPercentUsed < 100;
+      const clearBlock = !!lastBlock && (
+        (lastBlock.kind === 'byok-cap'
+          ? result.data.weeklyPercentUsed !== undefined && result.data.weeklyPercentUsed < 100
+          : result.data.monthlyPercentUsed !== undefined && result.data.monthlyPercentUsed < 100)
+      );
       set({
         usage: result.data,
         usageLoading: false,

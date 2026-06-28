@@ -241,11 +241,8 @@ function formatEventTime(event: api.AgentCalendarEvent): string {
 
 function resetHint(usage: api.CurrentUsage | null): string | null {
   if (!usage) return null;
-  const maxPct = Math.max(usage.weeklyPercentUsed || 0, usage.monthlyPercentUsed || 0, usage.sessionPercentUsed || 0);
+  const maxPct = Math.max(usage.monthlyPercentUsed || 0, usage.sessionPercentUsed || 0);
   if (maxPct < 70) return null;
-  if (usage.weeklyPercentUsed >= usage.monthlyPercentUsed && usage.weeklyPercentUsed >= usage.sessionPercentUsed) {
-    return `Weekly usage ${Math.round(usage.weeklyPercentUsed)}%`;
-  }
   if (usage.sessionPercentUsed >= usage.monthlyPercentUsed) {
     return `Session usage ${Math.round(usage.sessionPercentUsed)}%`;
   }

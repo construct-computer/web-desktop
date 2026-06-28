@@ -93,7 +93,7 @@ export function providerCopy(p: EffectiveProvider): ProviderCopy {
       return {
         badge: `Using your OpenRouter key · platform cap reached`,
         bannerTitle: 'Switched to your OpenRouter key',
-        bannerBody: `Platform weekly cap reached. Now using ${m}. Platform access returns in ${reset}.`,
+        bannerBody: `Platform cap reached. Now using ${m}. Platform access returns in ${reset}.`,
         noticeText: `Platform cap reached — switched to your OpenRouter key (${m}).`,
         toastTitle: 'Switched to OpenRouter',
         toastBody: `Platform cap reached. Now using ${m}.`,

@@ -77,7 +77,7 @@ export function buildBillingFeatureRows(
   const effective = BILLING_PLAN_ORDER.includes(currentPlan as BillingPlanId)
     ? currentPlan as BillingPlanId
     : 'free';
-  const currentUsage = planMap[effective].limits.weeklyUsageRelativeToFree || 1;
+  const currentUsage = planMap[effective].limits.monthlyUsageRelativeToFree || 1;
 
   const fromPlans = (
     label: string,
@@ -98,7 +98,7 @@ export function buildBillingFeatureRows(
       'Usage included',
       'Standard AI usage included relative to your current plan. Heavy tasks use more of this budget. BYOK bypasses this.',
       (plan) => {
-        const ratio = plan.limits.weeklyUsageRelativeToFree / currentUsage;
+        const ratio = plan.limits.monthlyUsageRelativeToFree / currentUsage;
         return cell(formatMultiplier(ratio), true, multiplierColor(ratio));
       },
     ),

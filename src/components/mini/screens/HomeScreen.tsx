@@ -37,16 +37,16 @@ export function HomeScreen({ onNavigate, onLogout }: Props) {
     const usageRes = await apiJSON<any>('/billing/usage/current');
 
     if (usageRes) {
-      const resetsAt = usageRes.weeklyResetsAt || usageRes.resetsAt;
+      const resetsAt = usageRes.monthlyResetsAt || usageRes.resetsAt;
       const resetTs = resetsAt
         ? (typeof resetsAt === 'string' ? new Date(resetsAt).getTime() : resetsAt)
         : Date.now();
       const mins = Math.max(0, Math.round((resetTs - Date.now()) / 60_000));
       setUsage({
-        percentUsed: usageRes.weeklyPercentUsed ?? usageRes.percentUsed ?? 0,
+        percentUsed: usageRes.monthlyPercentUsed ?? usageRes.percentUsed ?? 0,
         resetsIn: `${Math.floor(mins / 60)}h ${mins % 60}m`,
-        usedUsd: usageRes.weeklyUsedUsd,
-        capUsd: usageRes.weeklyCapUsd,
+        usedUsd: usageRes.monthlyUsedUsd,
+        capUsd: usageRes.monthlyCapUsd,
       });
     }
   }, []);

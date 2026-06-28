@@ -2569,7 +2569,7 @@ export interface SubscriptionInfo {
   /** Only present in staging */
   limits?: {
     sessionCapUsd: number;
-    weeklyCapUsd: number;
+    monthlyCapUsd: number;
   };
 }
 
@@ -2582,7 +2582,7 @@ export interface BillingPlanInfo {
   priceLabel: string;
   period: string;
   limits: {
-    weeklyUsageRelativeToFree: number;
+    monthlyUsageRelativeToFree: number;
     sessionUsageRelativeToFree: number;
     mainTaskSteps: number;
     commandRuntimeSeconds: number;
