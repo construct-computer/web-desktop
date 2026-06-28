@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, Check, Sparkles, AlertCircle, Lock, Mail, ArrowRight,
 } from 'lucide-react';
-import { Button, Input, Label } from '@/components/ui';
+import { Input, Label } from '@/components/ui';
 import constructLogo from '@/assets/logo.png';
 import { ConstructSetupWindow } from '@/components/boot/ConstructSetupWindow';
 import { OnboardingFooter } from '@/components/onboarding/OnboardingFooter';
@@ -317,21 +317,19 @@ export function SetupModal() {
               <Mail className="w-3.5 h-3.5" />
               Construct email address
               {emailLocked && <Lock className="w-3 h-3 text-[var(--color-text-muted)]" />}
-              {!emailLocked && !isPaid && (
-                <span className="px-1.5 py-0.5 text-[8px] rounded-full bg-black/5 dark:bg-white/10 text-[var(--color-text-muted)] font-semibold tracking-wide uppercase normal-case ml-1">Optional</span>
-              )}
             </Label>
             {!isPaid && !emailLocked ? (
               showUpgrade ? (
                 <SetupModalUpgradeCard upgrading={upgrading} onUpgrade={handleUpgrade} onCancel={() => setShowUpgrade(false)} />
               ) : (
-                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02]">
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    Give Construct a dedicated inbox
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-[var(--color-border)] bg-black/[0.02] dark:bg-white/[0.02]">
+                  <p className="min-w-0 flex-1 text-[11px] text-[var(--color-text-muted)] leading-snug">
+                    <span className="block">Give Construct a dedicated email inbox.</span>
+                    <span className="block">Available on Starter and Pro.</span>
                   </p>
                   <button
                     type="button"
-                    className="h-6 text-[10px] font-medium px-2.5 rounded-md bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 transition-colors text-[var(--color-text)]"
+                    className="shrink-0 h-6 text-[10px] font-medium px-2.5 rounded-md bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 transition-colors text-[var(--color-text)]"
                     onClick={() => setShowUpgrade(true)}
                   >
                     View Plans
@@ -420,7 +418,8 @@ function SetupModalUpgradeCard({
     <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2.5 animate-in fade-in slide-in-from-top-1">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-          Give Construct a <span className="font-medium text-[var(--color-text)]">@{AGENT_EMAIL_DOMAIN}</span> inbox - available on any paid plan.
+          <span className="block">Give Construct a dedicated email inbox.</span>
+          <span className="block">Available on Starter and Pro.</span>
         </p>
         {onCancel && (
           <button

@@ -2088,11 +2088,11 @@ export const useComputerStore = create<ComputerStore>()(
 
     updateComputer: async (data) => {
       const { instanceId } = get();
-      if (!instanceId) return { success: false, error: 'Agent instance is not ready' };
 
       // owner_email is intentionally NOT sent — backend resolves it from the
-      // auth-verified DB record to prevent spoofing.
-      const result = await api.updateAgentConfig(instanceId, {
+      // auth-verified DB record to prevent spoofing. First-run setup can save
+      // before the computer store hydrates, so this call is user-scoped.
+      const result = await api.updateAgentConfig(instanceId ?? '', {
         openrouter_api_key: data.openrouterApiKey,
         agentmail_api_key: data.agentmailApiKey,
         agentmail_inbox_username: data.agentmailInboxUsername,

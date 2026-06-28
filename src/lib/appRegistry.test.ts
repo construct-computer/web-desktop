@@ -6,6 +6,7 @@ import {
   SYSTEM_WINDOW_METADATA,
   getSystemAppsByIds,
 } from './appRegistry';
+import constructLogo from '@/assets/logo.png';
 
 describe('app registry navigation definitions', () => {
   it('resolves desktop dock apps in product order', () => {
@@ -29,5 +30,6 @@ describe('app registry navigation definitions', () => {
     expect(SYSTEM_WINDOW_METADATA.settings?.label).toBe('Settings');
     expect(SYSTEM_WINDOW_METADATA.memory?.icon).toBeTruthy();
     expect(SYSTEM_WINDOW_METADATA['access-control']?.label).toBe('Approvals');
+    expect(SYSTEM_WINDOW_METADATA.subscribe?.icon).toBe(constructLogo);
   });
 });

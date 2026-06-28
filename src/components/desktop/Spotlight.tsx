@@ -620,7 +620,7 @@ export function Spotlight() {
                         type="button"
                         onClick={closeAndOpenSubscription}
                         className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2 text-amber-600 transition-all active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                        aria-label="Upgrade plan (opens subscription window)"
+                        aria-label="Open Subscribe"
                       >
                         <span
                           className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
@@ -628,7 +628,7 @@ export function Spotlight() {
                         />
                         <span className="relative flex items-center gap-1">
                           <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
-                          <span className="text-[11px] font-medium">Upgrade</span>
+                          <span className="text-[11px] font-medium">Open Subscribe</span>
                         </span>
                       </button>
                     )}
@@ -662,12 +662,12 @@ export function Spotlight() {
                       {sessionTitle}
                     </span>
                     {!hasPaidAccess(userPlan) && (
-                      <Tooltip content="Upgrade plan" side="bottom">
+                      <Tooltip content="Open Subscribe" side="bottom">
                         <button
                           type="button"
                           onClick={closeAndOpenSubscription}
                           className="relative flex h-8 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-amber-500/30 surface-control pl-2 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/10 active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                           aria-label="Upgrade plan (opens subscription window)"
+                          aria-label="Open Subscribe"
                         >
                           <span
                             className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
@@ -675,7 +675,7 @@ export function Spotlight() {
                           />
                           <span className="relative flex items-center gap-1">
                             <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
-                            <span className="text-xs font-medium">Upgrade</span>
+                            <span className="text-xs font-medium">Open Subscribe</span>
                           </span>
                         </button>
                       </Tooltip>
@@ -716,8 +716,15 @@ export function Spotlight() {
                   </div>
                   <h3 className="text-[15px] font-semibold text-[var(--color-text)] mb-1">Meet Construct</h3>
                   <p className="text-[13px] text-[var(--color-text-muted)] leading-relaxed">
-                    Subscribe to start chatting with Construct. It can browse the web, write code, manage files, send emails, and more.
+                    Starter and Pro unlock the full desktop: web browsing, files, email, calendar, and background work.
                   </p>
+                  <button
+                    type="button"
+                    onClick={closeAndOpenSubscription}
+                    className="mt-4 inline-flex items-center justify-center rounded-lg border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/10 px-4 py-2 text-[13px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)]/15"
+                  >
+                    Open Subscribe
+                  </button>
                 </div>
               </div>
             )}

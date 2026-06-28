@@ -7,6 +7,7 @@ import { useProvisionPhase, type ProvisionVariant } from '@/hooks/useProvisionPh
 import {
   provisionErrorMessage,
   provisionFooterTagline,
+  provisionHandoffLine,
   provisionSigningInLabel,
 } from '@/lib/provisioningCopy';
 import constructGif from '@/assets/construct/loader.gif';
@@ -147,7 +148,7 @@ export function ReturningUserScreen({
               <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
             <p className="text-sm font-medium text-white/90 tracking-wide">
-              {provisionSigningInLabel()}
+              {variant === 'first_run' ? provisionHandoffLine(variant) : provisionSigningInLabel()}
             </p>
           </div>
         )}

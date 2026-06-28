@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
-import { openSubscribeWindow } from '@/lib/settingsNav';
 import { getBillingPlans, type BillingPlanId, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
 import { BILLING_PLAN_ORDER } from '@/lib/billingPlans';
 import { LITE_FEATURES, STARTER_FEATURES, PRO_FEATURES, type PlanFeature } from '../../../screens/subscribePlanCopy';
@@ -246,13 +245,13 @@ export function PlanPanel() {
   const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const billingNotice = getBillingNotice(subscription);
-  const canManageBilling = !isNonProd && !!subscription?.dodoCustomerId;
+  const canManageBilling = currentPlan !== 'unsubscribed' && !isNonProd && !!subscription?.dodoCustomerId;
   const summary = currentPlan === 'unsubscribed'
-    ? 'Pick a plan to unlock the desktop, usage, and AI provider settings.'
+    ? 'Plan details are shown below. Paid plan management is available after you subscribe.'
     : canManageBilling
       ? 'Manage your subscription, invoices, payment details, and cancellation in the Dodo Payments portal.'
       : isNonProd
-        ? 'Plan changes are handled directly in this environment.'
+        ? 'Plan changes are disabled in this environment.'
         : 'Billing portal becomes available after checkout.';
 
   const orderedPlans = BILLING_PLAN_ORDER
@@ -281,15 +280,16 @@ export function PlanPanel() {
 
               <Button
                 size="md"
-                variant={canManageBilling ? 'default' : 'primary'}
+                variant="default"
+                disabled={!canManageBilling || subscriptionLoading}
                 onClick={canManageBilling ? async () => {
                   const result = await openPortal();
                   if ('url' in result) window.location.href = result.url;
-                } : openSubscribeWindow}
+                } : undefined}
                 className="shrink-0 gap-1.5"
               >
                 {canManageBilling ? <ExternalLink className="w-3.5 h-3.5" /> : null}
-                {canManageBilling ? 'Manage subscription' : 'Choose plan'}
+                Manage plan
               </Button>
             </div>
 

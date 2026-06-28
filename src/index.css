@@ -156,6 +156,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button:where(:not(:disabled)) {
+  cursor: pointer;
+}
+
 /* Monospace for code/terminal */
 code,
 pre,

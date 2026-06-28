@@ -75,6 +75,7 @@ export function Desktop({
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
+  const user = useAuthStore((s) => s.user);
   const isMobile = useIsMobile();
   const topBarHeight = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
 
@@ -162,7 +163,6 @@ export function Desktop({
     window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
   }, [openWindow]);
 
-  const user = useAuthStore((s) => s.user);
   const userId = user?.id;
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
   const closeWindowsByType = useWindowStore((s) => s.closeWindowsByType);
@@ -223,12 +223,13 @@ export function Desktop({
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
   useEffect(() => {
     if (!userId) return;
+    if (!user?.setupCompleted || !user?.onboardingCompleted) return;
     if (hasAccess) {
       closeWindowsByType('subscribe');
       return;
     }
     openSubscribeWindow();
-  }, [userId, hasAccess, closeWindowsByType]);
+  }, [userId, user?.setupCompleted, user?.onboardingCompleted, hasAccess, closeWindowsByType]);
 
   const tourTriggered = useRef(false);
   const startTourWhenReady = useCallback(() => {

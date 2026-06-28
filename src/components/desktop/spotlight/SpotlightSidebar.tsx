@@ -227,7 +227,7 @@ export function SpotlightSidebar() {
 
   const handleUpgradeClick = useCallback(() => {
     closeSpotlight();
-    openSubscribeWindow();
+    queueMicrotask(openSubscribeWindow);
   }, [closeSpotlight]);
 
   useEffect(() => {
@@ -397,12 +397,12 @@ export function SpotlightSidebar() {
         {showUpgradeCta && (
           <div className="shrink-0 px-3 pt-3 pb-4 flex flex-col items-center gap-2 border-t border-white/[0.06]">
             <p className="text-[10px] leading-snug text-center text-[var(--color-text-muted)]/75 px-0.5">
-              Starter and Pro add higher limits, more apps, and full email — open Settings to compare plans.
+              Starter and Pro add higher limits, more apps, and full email — open Subscribe to compare plans.
             </p>
             <button
               type="button"
               onClick={handleUpgradeClick}
-              title="Upgrade plan — opens Subscription in Settings"
+              title="Open Subscribe"
               className="relative w-full cursor-pointer overflow-hidden rounded-lg border border-amber-500/30 surface-control py-2 px-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/[0.10] active:scale-[0.98] dark:border-amber-400/25 dark:text-amber-400 dark:hover:border-amber-400/35 dark:hover:bg-white/[0.09]"
             >
               <span
@@ -412,10 +412,10 @@ export function SpotlightSidebar() {
               <span className="relative flex flex-col items-center gap-0.5">
                 <span className="flex items-center gap-1.5 text-[12px] font-semibold">
                   <Crown className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
-                  Upgrade your plan
+                  Open Subscribe
                 </span>
                 <span className="text-[10px] font-medium leading-tight text-amber-700/85 dark:text-amber-300/90">
-                  View pricing and checkout in Settings
+                  Compare plans and checkout in Subscribe
                 </span>
               </span>
             </button>

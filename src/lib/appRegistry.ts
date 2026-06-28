@@ -20,6 +20,7 @@ import iconAccessControl from '@/icons/access-control.png';
 import iconText from '@/icons/text.png';
 import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
+import constructLogo from '@/assets/logo.png';
 
 export interface AppDefinition {
   /** Unique identifier. */
@@ -180,6 +181,7 @@ export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string;
   'document-viewer': { label: 'Editor', icon: iconText },
   'app-registry': { label: 'Apps', icon: iconAppStore },
   'app-builder': { label: 'Builder', icon: iconText },
+  subscribe: { label: 'Subscribe', icon: constructLogo },
   about: { label: 'About', icon: iconGeneric },
 };
 

@@ -236,9 +236,9 @@ function WebAppShell() {
   const unsubscribeFromComputer = useComputerStore((s) => s.unsubscribeFromComputer);
 
   const firstRunDone = Boolean(user?.setupCompleted && user?.onboardingCompleted);
-  const needsFirstRun = isAuthenticated && hasAccess && !firstRunDone;
+  const needsFirstRun = isAuthenticated && !firstRunDone;
   const computerReady = Boolean(computer || !hasAccess);
-  const showDesktop = shouldShowDesktop(isAuthenticated, computerReady);
+  const showDesktop = shouldShowDesktop(isAuthenticated, computerReady) && !needsFirstRun;
   const wallpaperBlur = computeWallpaperBlur(lockScreenGone);
   const chromeHidden = shouldHideDesktopChrome(lockScreenGone, slidingUp);
 

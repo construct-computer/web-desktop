@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2,
   ArrowLeft,
+  Lock,
   Paperclip,
   Trash2,
   Search,
@@ -54,6 +55,7 @@ import {
   AGENT_EMAIL_REFRESH_EVENT,
 } from '@/lib/agentUiEvents';
 import { useWindowStore } from '@/stores/windowStore';
+import { openSettingsToSection } from '@/lib/settingsNav';
 import { shouldShowBlockingLoader, useFreshness } from '@/hooks/useFreshness';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 
@@ -83,12 +85,14 @@ function Checkbox({
   onChange,
   ariaLabel,
   className = '',
+  disabled = false,
 }: {
   checked: boolean;
   indeterminate?: boolean;
   onChange: (checked: boolean) => void;
   ariaLabel?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   const active = checked || indeterminate;
   return (
@@ -96,8 +100,11 @@ function Checkbox({
       type="button"
       role="checkbox"
       aria-checked={indeterminate ? 'mixed' : checked}
+      aria-disabled={disabled}
       aria-label={ariaLabel}
+      disabled={disabled}
       onClick={(event) => {
+        if (disabled) return;
         event.stopPropagation();
         onChange(!checked);
       }}
@@ -105,7 +112,7 @@ function Checkbox({
         active
           ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white'
           : 'border-white/25 bg-transparent hover:border-white/50 hover:bg-white/5'
-      } ${className}`}
+      } ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-transparent hover:border-white/25' : ''} ${className}`}
     >
       {indeterminate ? (
         <span className="block h-0.5 w-2 rounded-full bg-white" />
@@ -135,9 +142,37 @@ function markThreadReadLocally(thread: EmailThreadDetail): EmailThreadDetail {
   };
 }
 
+function ReadOnlyUpgradeCard() {
+  return (
+    <div className="pointer-events-none absolute bottom-4 right-4 z-20 w-[280px] max-w-[calc(100%-2rem)]">
+      <div className="pointer-events-auto rounded-2xl border border-white/10 bg-[var(--color-surface-raised)]/95 p-4 shadow-2xl backdrop-blur">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/15 text-[var(--color-accent)]">
+            <Lock size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-[var(--color-text)]">Email is read only</div>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+              Upgrade to Starter or Pro to send, reply, and manage messages.
+            </p>
+            <button
+              type="button"
+              onClick={() => openSettingsToSection('billing')}
+              className="mt-3 inline-flex items-center justify-center rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-medium text-white hover:opacity-90"
+            >
+              Upgrade to Starter or Pro
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function EmailWindow(props: { config: WindowConfig }) {
   const { config } = props;
   const [inboxEmail, setInboxEmail] = useState('');
+  const [readOnly, setReadOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notConfigured, setNotConfigured] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -227,6 +262,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
       setLoading(true);
     }
     setNotConfigured(false);
+    setReadOnly(false);
     setInitError(null);
     const status = await getEmailStatus();
     if (!status.success) {
@@ -236,11 +272,13 @@ export function EmailWindow(props: { config: WindowConfig }) {
     }
     if (!status.data?.configured) {
       setNotConfigured(true);
+      setInboxEmail('');
       if (!silent) setLoading(false);
       return;
     }
 
     setInboxEmail(status.data.email || '');
+    setReadOnly(Boolean(status.data.readOnly));
     if (!silent) setLoading(false);
   }, []);
 
@@ -277,6 +315,13 @@ export function EmailWindow(props: { config: WindowConfig }) {
   }, [folder, searchQuery]);
 
   useEffect(() => {
+    if (!readOnly) return;
+    setSelection({});
+    setPendingAction(null);
+    setPendingDraftAction(null);
+  }, [readOnly]);
+
+  useEffect(() => {
     const onConfigured = () => {
       void init();
       void refreshNow();
@@ -307,7 +352,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
     const detail = await getThread(thread.threadId);
     if (detail.success && detail.data) {
       let nextThread = detail.data;
-      if (thread.unread) {
+      if (thread.unread && !readOnly) {
         const markResult = await markThreadUnreadState(
           thread.threadId,
           false,
@@ -329,14 +374,15 @@ export function EmailWindow(props: { config: WindowConfig }) {
         }
       }
       setSelectedThread(nextThread);
-      useComputerStore.getState().clearEmailUnread();
+      if (!readOnly) useComputerStore.getState().clearEmailUnread();
     } else if (detail.error) {
       setActionError(detail.error);
     }
     setThreadLoading(false);
-  }, []);
+  }, [readOnly]);
 
   const handleDeleteSelection = useCallback(async () => {
+    if (readOnly) return;
     const targets = items.filter(
       (item): item is EmailThread => isThreadItem(item) && selectedIds.has(getMailboxItemId(item)),
     );
@@ -364,9 +410,10 @@ export function EmailWindow(props: { config: WindowConfig }) {
 
     await loadMailbox(true, { silent: true });
     setPendingAction(null);
-  }, [items, selectedIds, selectedThread, loadMailbox]);
+  }, [items, readOnly, selectedIds, selectedThread, loadMailbox]);
 
   const handleMarkSelection = useCallback(async (unread: boolean) => {
+    if (readOnly) return;
     const threadTargets = items.filter(
       (item): item is EmailThread => isThreadItem(item) && selectedIds.has(getMailboxItemId(item)),
     );
@@ -409,15 +456,17 @@ export function EmailWindow(props: { config: WindowConfig }) {
 
     await loadMailbox(true, { silent: true });
     setPendingAction(null);
-  }, [items, selectedIds, selectedThread, loadMailbox]);
+  }, [items, readOnly, selectedIds, selectedThread, loadMailbox]);
 
   const handleThreadDelete = useCallback(async (threadId: string) => {
+    if (readOnly) return;
     await deleteThread(threadId);
     setSelectedThread(null);
     await loadMailbox(true, { silent: true });
-  }, [loadMailbox]);
+  }, [readOnly, loadMailbox]);
 
   const handleDraftSend = useCallback(async (draftId: string) => {
+    if (readOnly) return;
     setPendingDraftAction('send');
     setActionError(null);
     const result = await sendDraft(draftId);
@@ -425,9 +474,10 @@ export function EmailWindow(props: { config: WindowConfig }) {
     setSelectedDraft(null);
     await loadMailbox(true, { silent: true });
     setPendingDraftAction(null);
-  }, [loadMailbox]);
+  }, [readOnly, loadMailbox]);
 
   const handleDraftDelete = useCallback(async (draftId: string) => {
+    if (readOnly) return;
     setPendingDraftAction('delete');
     setActionError(null);
     const result = await deleteDraft(draftId);
@@ -435,9 +485,10 @@ export function EmailWindow(props: { config: WindowConfig }) {
     setSelectedDraft(null);
     await loadMailbox(true, { silent: true });
     setPendingDraftAction(null);
-  }, [loadMailbox]);
+  }, [readOnly, loadMailbox]);
 
   const handleMessageUnreadToggle = useCallback(async (message: EmailMessage) => {
+    if (readOnly) return;
     const result = await updateMessageLabels(message.messageId, message.unread
       ? { addLabels: ['read'], removeLabels: ['UNREAD', 'unread'] }
       : { addLabels: ['unread'], removeLabels: ['read'] });
@@ -447,7 +498,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
       const detail = await getThread(selectedThread.threadId);
       if (detail.success && detail.data) setSelectedThread(detail.data);
     }
-  }, [loadMailbox, selectedThread]);
+  }, [readOnly, loadMailbox, selectedThread]);
 
   const openAttachment = useCallback(async (_message: EmailMessage | EmailDraft, attachmentId: string | null) => {
     if (!attachmentId) return;
@@ -502,6 +553,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
             <ThreadPane
               inboxEmail={inboxEmail}
               thread={selectedThread}
+              readOnly={readOnly}
               onBack={() => setSelectedThread(null)}
               onDelete={handleThreadDelete}
               onToggleUnread={handleMessageUnreadToggle}
@@ -510,14 +562,16 @@ export function EmailWindow(props: { config: WindowConfig }) {
           ) : selectedDraft ? (
             <DraftPane
               draft={selectedDraft}
+              readOnly={readOnly}
               pendingAction={pendingDraftAction}
               onBack={() => setSelectedDraft(null)}
               onSend={handleDraftSend}
               onDelete={handleDraftDelete}
               onOpenAttachment={openAttachment}
             />
-          ) : null}
+            ) : null}
         </div>
+        {readOnly && <ReadOnlyUpgradeCard />}
       </div>
     );
   }
@@ -529,7 +583,14 @@ export function EmailWindow(props: { config: WindowConfig }) {
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium">{MAILBOX_FOLDERS.find((item) => item.key === folder)?.label || 'Mail'}</div>
-              <div className="text-[10px] text-[var(--color-text-muted)] truncate" title={inboxEmail}>{inboxEmail}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="text-[10px] text-[var(--color-text-muted)] truncate" title={inboxEmail}>{inboxEmail}</div>
+                {readOnly && (
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--color-text-muted)]">
+                    Read only
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={() => setSearchOpen((open) => !open)}
@@ -595,6 +656,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
                 checked={allVisibleSelected}
                 indeterminate={someVisibleSelected}
                 onChange={toggleSelectAll}
+                disabled={readOnly}
                 ariaLabel={allVisibleSelected ? 'Deselect all' : 'Select all'}
               />
               <span className="ml-1 text-[10px] font-medium text-[var(--color-text-muted)] mr-auto">
@@ -602,7 +664,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
               </span>
               <button
                 type="button"
-                disabled={pendingAction !== null}
+                disabled={readOnly || pendingAction !== null}
                 onClick={() => void handleMarkSelection(false)}
                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text)]/90 bg-white/10 hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Mark as read"
@@ -612,7 +674,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
               </button>
               <button
                 type="button"
-                disabled={pendingAction !== null}
+                disabled={readOnly || pendingAction !== null}
                 onClick={() => void handleMarkSelection(true)}
                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text)]/90 bg-white/10 hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Mark as unread"
@@ -622,7 +684,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
               </button>
               <button
                 type="button"
-                disabled={pendingAction !== null}
+                disabled={readOnly || pendingAction !== null}
                 onClick={() => void handleDeleteSelection()}
                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-red-300 bg-red-500/15 hover:bg-red-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Delete selected"
@@ -737,6 +799,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
                           <Checkbox
                             checked={checked}
                             onChange={(next) => setSelection((current) => ({ ...current, [id]: next }))}
+                            disabled={readOnly}
                             ariaLabel={`Select thread ${title}`}
                           />
                         </div>
@@ -795,6 +858,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
             </AnimatedListContainer>
           )}
         </div>
+        {readOnly && <ReadOnlyUpgradeCard />}
       </div>
     </div>
   );
@@ -802,6 +866,7 @@ export function EmailWindow(props: { config: WindowConfig }) {
 
 function DraftPane({
   draft,
+  readOnly,
   pendingAction,
   onBack,
   onSend,
@@ -809,6 +874,7 @@ function DraftPane({
   onOpenAttachment,
 }: {
   draft: EmailDraft;
+  readOnly: boolean;
   pendingAction: null | 'send' | 'delete';
   onBack: () => void;
   onSend: (draftId: string) => Promise<void>;
@@ -835,8 +901,8 @@ function DraftPane({
         </div>
         <button
           onClick={() => void onSend(draft.draftId)}
-          disabled={pendingAction !== null}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text)]/90 bg-white/10 hover:bg-white/15 disabled:opacity-50"
+          disabled={readOnly || pendingAction !== null}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text)]/90 bg-white/10 hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed"
           title="Send now"
         >
           {pendingAction === 'send' ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
@@ -844,8 +910,8 @@ function DraftPane({
         </button>
         <button
           onClick={() => void onDelete(draft.draftId)}
-          disabled={pendingAction !== null}
-          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)] disabled:opacity-50"
+          disabled={readOnly || pendingAction !== null}
+          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)] disabled:opacity-50 disabled:cursor-not-allowed"
           title="Delete"
         >
           {pendingAction === 'delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -894,6 +960,7 @@ function DraftPane({
 function ThreadPane({
   thread,
   inboxEmail,
+  readOnly,
   onBack,
   onDelete,
   onToggleUnread,
@@ -901,6 +968,7 @@ function ThreadPane({
 }: {
   thread: EmailThreadDetail;
   inboxEmail: string;
+  readOnly: boolean;
   onBack: () => void;
   onDelete: (threadId: string) => Promise<void>;
   onToggleUnread: (message: EmailMessage) => Promise<void>;
@@ -926,7 +994,8 @@ function ThreadPane({
         </div>
         <button
           onClick={() => void onDelete(thread.threadId)}
-          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)]"
+          disabled={readOnly}
+          className="p-2.5 -m-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-white/10 text-[var(--color-text-muted)] disabled:opacity-50 disabled:cursor-not-allowed"
           title="Delete"
         >
           <Trash2 size={14} />
@@ -971,7 +1040,11 @@ function ThreadPane({
                 ) : null}
 
                 <div className="flex items-center gap-1 px-2 pb-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => void onToggleUnread(message)} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-[10px] text-[var(--color-text-muted)]">
+                  <button
+                    onClick={() => void onToggleUnread(message)}
+                    disabled={readOnly}
+                    className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-[10px] text-[var(--color-text-muted)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {message.unread ? <MailOpen size={11} /> : <Mail size={11} />}
                     {message.unread ? 'Mark read' : 'Mark unread'}
                   </button>

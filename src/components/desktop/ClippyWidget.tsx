@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useComputerStore } from '@/stores/agentStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
+import { hasAgentAccess } from '@/lib/plans';
 import { ClippyStatusNarrative } from '@/components/desktop/ClippyStatusNarrative';
 import { useClippyActivitySummary, type ClippyActivitySummary } from '@/hooks/useClippyActivitySummary';
 import { CompactActivityRow } from '@/components/desktop/spotlight/CompactActivityRow';
@@ -369,6 +370,7 @@ export function ClippyWidget() {
   const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
   const onboardingCompleted = useAuthStore(s => s.user?.onboardingCompleted);
+  const hasAccess = hasAgentAccess(useAuthStore(s => s.user?.plan));
   const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
   // ── Position (ratio-based, driven by visible app-window state) ──
@@ -508,11 +510,11 @@ export function ClippyWidget() {
   // ── Derive visual state ──
   const visualState: ClippyState = useMemo(() => {
     if (flash === 'success') return 'success';
-    if (!agentConnected) return 'error';
+    if (!agentConnected) return hasAccess ? 'error' : 'idle';
     if (isIdle) return 'idle';
     if (stateLabel === 'Thinking…') return 'thinking';
     return 'working';
-  }, [flash, agentConnected, isIdle, stateLabel]);
+  }, [flash, agentConnected, hasAccess, isIdle, stateLabel]);
 
   // ── Continuous animation ──
   const avatarRef = useRef<HTMLDivElement>(null);
@@ -563,7 +565,7 @@ export function ClippyWidget() {
     activitySummary.toolFeed.length > 0
     || !!activitySummary.statusNarrative
     || activitySummary.subagents.length > 0;
-  const hasUniqueContext = !!scrollText || !agentConnected || hasActivityContext || isActive;
+  const hasUniqueContext = !!scrollText || (hasAccess && !agentConnected) || hasActivityContext || isActive;
   const showBubble = isActive && hasUniqueContext && !dismissed;
   const showWelcome = !!welcomeMsg && !showBubble;
   const bubbleDetail = hasActivityContext ? '' : scrollText;
@@ -1060,4 +1062,3 @@ function HelperChip({ agent, compact }: {
     </div>
   );
 }
-

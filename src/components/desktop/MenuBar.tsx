@@ -58,6 +58,7 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
   const drawerOpen = useNotificationStore((s) => s.drawerOpen);
   const unreadCount = useNotificationStore((s) => s.unreadCount)();
   const userPlan = useAuthStore((s) => s.user?.plan);
+  const isPaidPlan = hasPaidAccess(userPlan);
   const subscriptionStatus = useBillingStore((s) => s.subscription?.status);
   const normalizedSubscriptionStatus = (subscriptionStatus || '').toLowerCase();
   const hasBillingIssue = ['past_due', 'on_hold', 'failed'].includes(normalizedSubscriptionStatus);
@@ -372,24 +373,32 @@ export function MenuBar({ onLogout, onLockScreen, onReconnect, isConnected, isMo
         )}
 
         {/* Connection — clickable when disconnected to trigger manual reconnect */}
-        {isConnected ? (
-          <div
-            ref={wifiRef}
-            className={`relative ${isMobile ? 'p-1.5' : 'p-1'} rounded-md hover:bg-black/8 dark:hover:bg-white/10 transition cursor-default`}
-            onMouseEnter={() => setWifiHover(true)}
-            onMouseLeave={() => setWifiHover(false)}
-          >
-            <Wifi className={isMobile ? 'w-5 h-5 text-black/70 dark:text-white' : 'w-4 h-4 text-black/70 dark:text-white'} />
-            {wifiHover && <LatencyPopover anchorRef={wifiRef} latency={latency} />}
-          </div>
+        {isPaidPlan ? (
+          isConnected ? (
+            <div
+              ref={wifiRef}
+              className={`relative ${isMobile ? 'p-1.5' : 'p-1'} rounded-md hover:bg-black/8 dark:hover:bg-white/10 transition cursor-default`}
+              onMouseEnter={() => setWifiHover(true)}
+              onMouseLeave={() => setWifiHover(false)}
+            >
+              <Wifi className={isMobile ? 'w-5 h-5 text-black/70 dark:text-white' : 'w-4 h-4 text-black/70 dark:text-white'} />
+              {wifiHover && <LatencyPopover anchorRef={wifiRef} latency={latency} />}
+            </div>
+          ) : (
+            <button
+              className={`${isMobile ? 'p-1.5' : 'p-1'} rounded-md hover:bg-black/8 dark:hover:bg-white/10 transition`}
+              onClick={onReconnect}
+              title="Disconnected — click to reconnect"
+            >
+              <WifiOff className={`${isMobile ? 'w-5 h-5' : 'w-4 h-4'} text-red-500 dark:text-red-400 animate-pulse`} />
+            </button>
+          )
         ) : (
-          <button
-            className={`${isMobile ? 'p-1.5' : 'p-1'} rounded-md hover:bg-black/8 dark:hover:bg-white/10 transition`}
-            onClick={onReconnect}
-            title="Disconnected — click to reconnect"
+          <div
+            className={`${isMobile ? 'p-1.5' : 'p-1'} rounded-md transition`}
           >
-            <WifiOff className={`${isMobile ? 'w-5 h-5' : 'w-4 h-4'} text-red-500 dark:text-red-400 animate-pulse`} />
-          </button>
+            <Wifi className={isMobile ? 'w-5 h-5 text-black/55 dark:text-white/55' : 'w-4 h-4 text-black/55 dark:text-white/55'} />
+          </div>
         )}
 
         {/* Clock */}

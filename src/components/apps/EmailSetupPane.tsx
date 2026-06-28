@@ -336,7 +336,7 @@ export function EmailSetupPane({ onConfigured }: { onConfigured?: () => void }) 
           </h2>
           <p className="text-[12px] text-black/50 dark:text-white/50 leading-relaxed">
             A real <span className="font-medium text-black/70 dark:text-white/60">@{AGENT_EMAIL_DOMAIN}</span>{' '}
-            inbox your agent can send and receive mail from. Available on any paid plan.
+            inbox your agent can send and receive mail from. Available on Starter and Pro.
           </p>
         </div>
 

@@ -261,7 +261,7 @@ function ConstructIdentityPanel() {
         agentName: agentName.trim() || 'Construct',
       };
 
-      // Include email username only if not already set and user is on a paid plan.
+      // Include email username only if not already set and user is on Starter or Pro.
       // (Backend also enforces this — belt-and-suspenders to avoid a 403 round-trip.)
       if (emailChanged) {
         updateData.agentmailInboxUsername = selectedEmailUsername;
@@ -322,7 +322,7 @@ function ConstructIdentityPanel() {
             </div>
           ) : !isPaid ? (
             <div className="settings-control-inline flex-wrap justify-end">
-              <span className="min-w-0 text-[12px] text-[var(--color-text-muted)]">Available on paid plans</span>
+              <span className="min-w-0 text-[12px] text-[var(--color-text-muted)]">Available on Starter and Pro</span>
               <button
                 type="button"
                 onClick={() => setPendingSection('billing')}

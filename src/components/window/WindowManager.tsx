@@ -383,7 +383,7 @@ export function WindowManager() {
                             ))}
                           </ul>
                           <Button className="mt-4 w-full" variant="primary" onClick={openSubscribeWindow}>
-                            Open Subscribe
+                            Upgrade to paid plan
                           </Button>
                         </div>
                       </div>

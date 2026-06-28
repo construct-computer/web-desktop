@@ -233,7 +233,7 @@ export function getMailboxItemId(item: MailboxItem): string {
 }
 
 export async function getEmailStatus() {
-  return request<{ configured: boolean; inboxId: string | null; email: string | null }>('/status');
+  return request<{ configured: boolean; inboxId: string | null; email: string | null; readOnly: boolean }>('/status');
 }
 
 export async function listMailbox(params: {

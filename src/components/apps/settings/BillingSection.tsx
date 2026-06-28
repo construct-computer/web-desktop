@@ -117,11 +117,15 @@ export function BillingSection() {
 
   const isSubscribed = hasPaidAccess(subscription?.plan);
   const isPro = subscription?.plan === 'pro';
+  const showAiProvider = isPro;
+  const subtitle = isPro
+    ? "Plan, usage limits, and AI provider settings."
+    : 'Plan and usage limits.';
 
   const scrolledRef = useRef(false);
   useEffect(() => {
     if (!pendingSubsection || scrolledRef.current) return;
-    if (!isSubscribed && (pendingSubsection === 'usage' || pendingSubsection === 'ai-provider')) {
+    if ((!isSubscribed && pendingSubsection === 'usage') || (!showAiProvider && pendingSubsection === 'ai-provider')) {
       setPendingSubsection(null);
       return;
     }
@@ -132,12 +136,12 @@ export function BillingSection() {
       scrolledRef.current = true;
       setPendingSubsection(null);
     }
-  }, [isSubscribed, pendingSubsection, setPendingSubsection]);
+  }, [isSubscribed, pendingSubsection, setPendingSubsection, showAiProvider]);
 
   return (
     <SectionPanel
       title="Billing"
-      subtitle="Plan, usage limits, and AI provider settings."
+      subtitle={subtitle}
     >
       <div id="billing-plan">
         <PlanPanel />
@@ -149,7 +153,7 @@ export function BillingSection() {
         </div>
       )}
 
-      {isSubscribed && (
+      {showAiProvider && (
         <div id="billing-ai-provider" className="mt-6">
           <SettingsSubsection
             title="AI provider"

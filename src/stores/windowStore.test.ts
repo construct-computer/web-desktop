@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowStore } from './windowStore';
 import { useAuthStore } from './authStore';
+import constructLogo from '@/assets/logo.png';
 import { STORAGE_KEYS } from '@/lib/config';
 import {
   computeDefaultOpenBounds,
@@ -182,7 +183,7 @@ describe('openWindow access', () => {
     const win = useWindowStore.getState().windows.find((w) => w.id === id);
 
     expect(win?.title).toBe('Subscribe');
-    expect(win?.icon).toBeTruthy();
+    expect(win?.icon).toBe(constructLogo);
   });
 });
 
