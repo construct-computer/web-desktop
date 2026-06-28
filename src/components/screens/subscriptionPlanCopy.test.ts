@@ -8,6 +8,7 @@ const textOf = (features: PlanFeature[]) => features.map((f) => f.text);
 describe('subscription overlay plan copy', () => {
   it('Starter copy matches the Starter tier limits', () => {
     const texts = textOf(STARTER_FEATURES);
+    expect(texts).toContain('4× the usage of Free');
     expect(texts).toContain('150 steps per task');
     expect(texts).toContain('30 min command runtime');
     expect(texts).toContain('5 tasks in parallel');
@@ -18,6 +19,7 @@ describe('subscription overlay plan copy', () => {
 
   it('Pro copy matches the Pro tier limits', () => {
     const texts = textOf(PRO_FEATURES);
+    expect(texts).toContain('24× the usage of Free');
     expect(texts).toContain('1,000 steps per task');
     expect(texts).toContain('1 hr command runtime');
     expect(texts).toContain('Unlimited parallel tasks');

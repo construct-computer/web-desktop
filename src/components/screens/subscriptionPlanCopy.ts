@@ -20,7 +20,7 @@ export interface PlanFeature {
 }
 
 export const STARTER_FEATURES: PlanFeature[] = [
-  { icon: Zap, text: '2\u00d7 the usage of Free' },
+  { icon: Zap, text: '4\u00d7 the usage of Free' },
   { icon: Footprints, text: '150 steps per task' },
   { icon: Clock, text: '30 min command runtime' },
   { icon: Layers, text: '5 tasks in parallel' },
@@ -31,7 +31,7 @@ export const STARTER_FEATURES: PlanFeature[] = [
 ];
 
 export const PRO_FEATURES: PlanFeature[] = [
-  { icon: Zap, text: '13\u00d7 the usage of Free', highlight: true },
+  { icon: Zap, text: '24\u00d7 the usage of Free', highlight: true },
   { icon: Footprints, text: '1,000 steps per task', highlight: true },
   { icon: Clock, text: '1 hr command runtime' },
   { icon: Layers, text: 'Unlimited parallel tasks', highlight: true },
