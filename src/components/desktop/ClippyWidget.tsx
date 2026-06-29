@@ -377,8 +377,8 @@ export function ClippyWidget() {
 
   // ── Position (ratio-based, driven by visible app-window state) ──
   const hasVisibleWindows = useWindowStore(
-    (s) => s.windows.some((w) => w.type === 'chat' && w.state !== 'minimized')
-      || s.windows.some((w) => w.workspaceId === s.activeWorkspaceId && w.state !== 'minimized'),
+    (s) => s.windows.some((w) => w.type === 'chat' && (w.state !== 'minimized' || !!s.minimizeAnimatingWindowIds[w.id]))
+      || s.windows.some((w) => w.workspaceId === s.activeWorkspaceId && (w.state !== 'minimized' || !!s.minimizeAnimatingWindowIds[w.id])),
   );
   const avatarSize = isMobile ? MOBILE_AVATAR_SIZE : DESKTOP_AVATAR_SIZE;
   const [winSize, setWinSize] = useState(() => ({

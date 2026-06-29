@@ -27,6 +27,8 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
   const [animating, setAnimating] = useState(false);
   /** Opacity fade on close only — open keeps opacity 1 so glass stays visible during slide-in */
   const [fadedOut, setFadedOut] = useState(false);
+  const [shouldRender, setShouldRender] = useState(true);
+  const [minimizeExiting, setMinimizeExiting] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -45,11 +47,27 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
   );
 
   useEffect(() => {
-    if (!isFocused || isMinimized) {
+    if (isMinimized) {
+      setShouldRender(true);
       setAnimating(false);
-      if (!isFocused) setFadedOut(true);
+      setFadedOut(true);
+      setMinimizeExiting(true);
+      const t = setTimeout(() => {
+        setShouldRender(false);
+        setMinimizeExiting(false);
+      }, unmountDelayMs);
+      return () => clearTimeout(t);
+    }
+
+    setShouldRender(true);
+    setMinimizeExiting(false);
+
+    if (!isFocused) {
+      setAnimating(false);
+      setFadedOut(true);
       return;
     }
+
     setFadedOut(false);
     return kickOpenAnimation(setAnimating, prefersReducedMotion);
   }, [isFocused, isMinimized, prefersReducedMotion]);
@@ -69,7 +87,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
     setTimeout(finishClose, unmountDelayMs);
   }, [play, finishClose, unmountDelayMs]);
 
-  if (isMinimized) return null;
+  if (!shouldRender) return null;
 
   return (
     <div
@@ -77,13 +95,14 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
       data-window-type={config.type}
       className={cn(
         'absolute inset-0',
-        isFocused ? 'z-[200] visible' : 'z-[100] invisible pointer-events-none',
+        isFocused || minimizeExiting ? 'z-[200] visible' : 'z-[100] invisible pointer-events-none',
+        minimizeExiting && 'pointer-events-none',
       )}
     >
       <div
         className="flex h-full w-full flex-col"
         style={{
-          transform: animating ? 'translateY(0)' : 'translateY(100%)',
+          transform: isMinimized || minimizeExiting ? 'translateY(100%)' : (animating ? 'translateY(0)' : 'translateY(100%)'),
           opacity: fadedOut ? 0 : 1,
           transition: panelTransition,
           pointerEvents: animating ? 'auto' : 'none',

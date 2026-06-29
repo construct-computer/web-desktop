@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowStore } from './windowStore';
 import { useAuthStore } from './authStore';
 import constructLogo from '@/assets/logo.png';
@@ -9,7 +9,18 @@ import {
   computeVisuallyCenteredPosition,
   getDesktopWorkArea,
 } from '@/lib/windowBounds';
-import { MENUBAR_HEIGHT } from '@/lib/constants';
+import { MENUBAR_HEIGHT, WINDOW_TRANSITION_MS } from '@/lib/constants';
+
+vi.useFakeTimers();
+
+afterEach(() => {
+  vi.clearAllTimers();
+  useWindowStore.setState({ minimizeAnimatingWindowIds: {} });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 describe('app-builder singleton metadata switching', () => {
   beforeAll(() => {
@@ -233,6 +244,18 @@ describe('openWindow large defaults', () => {
     const restored = useWindowStore.getState().windows.find((w) => w.id === id);
     expect(restored?.state).toBe('normal');
     expect(useWindowStore.getState().agentWindowOpen).toBe(true);
+  });
+
+  it('tracks minimize animation while the window is shrinking', () => {
+    const id = useWindowStore.getState().openWindow('settings');
+
+    useWindowStore.getState().minimizeWindow(id);
+
+    expect(useWindowStore.getState().minimizeAnimatingWindowIds[id]).toBe(true);
+
+    vi.advanceTimersByTime(WINDOW_TRANSITION_MS);
+
+    expect(useWindowStore.getState().minimizeAnimatingWindowIds[id]).toBeUndefined();
   });
 
   it('toggleSpotlight keeps chat open', () => {

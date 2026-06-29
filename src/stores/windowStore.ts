@@ -14,6 +14,7 @@ import {
   DOCK_HEIGHT,
   MOBILE_APP_BAR_HEIGHT,
   STAGE_STRIP_WIDTH,
+  WINDOW_TRANSITION_MS,
   Z_INDEX,
   STORAGE_KEYS,
 } from '@/lib/constants';
@@ -66,11 +67,47 @@ const savePersistedAppWindows = (windows: WindowConfig[]) => {
 };
 
 const CHAT_OVERLAY_MIN_SIZE = { minWidth: 360, minHeight: 420 };
+const minimizeAnimationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearMinimizeAnimation(id: string) {
+  const existing = minimizeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    minimizeAnimationTimers.delete(id);
+  }
+
+  const current = useWindowStore.getState().minimizeAnimatingWindowIds;
+  if (!current[id]) return;
+
+  const next = { ...current };
+  delete next[id];
+  useWindowStore.setState({ minimizeAnimatingWindowIds: next });
+}
+
+function markMinimizeAnimation(id: string) {
+  const existing = minimizeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    minimizeAnimationTimers.delete(id);
+  }
+
+  const timer = setTimeout(() => {
+    minimizeAnimationTimers.delete(id);
+    const current = useWindowStore.getState().minimizeAnimatingWindowIds;
+    if (!current[id]) return;
+    const next = { ...current };
+    delete next[id];
+    useWindowStore.setState({ minimizeAnimatingWindowIds: next });
+  }, WINDOW_TRANSITION_MS);
+
+  minimizeAnimationTimers.set(id, timer);
+}
 
 function hasVisibleDesktopWindows(state: {
   windows: WindowConfig[];
   activeWorkspaceId: string;
   workspaceTransition: { fromId: string; toId: string; direction: 'left' | 'right' } | null;
+  minimizeAnimatingWindowIds: Record<string, true>;
 }): boolean {
   const visibleWorkspaceIds = new Set([state.activeWorkspaceId]);
   if (state.workspaceTransition) {
@@ -78,7 +115,9 @@ function hasVisibleDesktopWindows(state: {
     visibleWorkspaceIds.add(state.workspaceTransition.toId);
   }
   return state.windows.some(
-    (w) => w.type !== 'chat' && w.state !== 'minimized' && visibleWorkspaceIds.has(w.workspaceId),
+    (w) => w.type !== 'chat'
+      && (w.state !== 'minimized' || !!state.minimizeAnimatingWindowIds[w.id])
+      && visibleWorkspaceIds.has(w.workspaceId),
   );
 }
 
@@ -86,6 +125,7 @@ interface WindowStore {
   windows: WindowConfig[];
   focusedWindowId: string | null;
   nextZIndex: number;
+  minimizeAnimatingWindowIds: Record<string, true>;
 
   // Workspaces
   workspaces: Workspace[];
@@ -283,6 +323,7 @@ export const useWindowStore = create<WindowStore>()(
     windows: [],
     focusedWindowId: null,
     nextZIndex: Z_INDEX.window,
+    minimizeAnimatingWindowIds: {},
 
     // ── Workspaces ──────────────────────────────────────────
     workspaces: [MAIN_WORKSPACE],
@@ -646,6 +687,7 @@ export const useWindowStore = create<WindowStore>()(
     },
 
     closeWindow: (id) => {
+      clearMinimizeAnimation(id);
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
       const newWindows = windows.filter((w) => w.id !== id);
@@ -768,6 +810,7 @@ export const useWindowStore = create<WindowStore>()(
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
+      if (newState === 'normal') clearMinimizeAnimation(id);
 
       // Stage Manager: promote focused window as active, move previous active to strip
       if (sm.stageManagerActive && !isOverlayWindow) {
@@ -826,7 +869,12 @@ export const useWindowStore = create<WindowStore>()(
             : w
         ),
         focusedWindowId: focusedWindowId === id ? null : focusedWindowId,
+        minimizeAnimatingWindowIds: {
+          ...get().minimizeAnimatingWindowIds,
+          [id]: true,
+        },
       });
+      markMinimizeAnimation(id);
 
       // Stage Manager: if minimizing the active window, promote next from strip.
       // If minimizing a strip window, remove it from the strip order.
@@ -912,6 +960,7 @@ export const useWindowStore = create<WindowStore>()(
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
+      clearMinimizeAnimation(id);
     },
     
     restoreWindow: (id) => {

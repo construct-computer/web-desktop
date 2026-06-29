@@ -173,6 +173,7 @@ export function WindowManager() {
   const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
+  const minimizeAnimatingWindowIds = useWindowStore((s) => s.minimizeAnimatingWindowIds);
   const isMobile = useIsMobile();
 
   // During a workspace transition, render windows from BOTH the from and to
@@ -186,13 +187,15 @@ export function WindowManager() {
       ? windows.filter(
         (w) => w.workspaceId === workspaceTransition.fromId || w.workspaceId === workspaceTransition.toId,
       )
-      : windows.filter((w) => w.workspaceId === activeWorkspaceId && w.state !== 'minimized');
+      : windows.filter((w) => w.workspaceId === activeWorkspaceId);
 
-    if (isMobile) return baseWindows;
+    const keepMinimized = (w: WindowConfig) => w.state !== 'minimized' || !!minimizeAnimatingWindowIds[w.id];
+
+    if (isMobile) return baseWindows.filter(keepMinimized);
 
     // Desktop chat is rendered separately as a floating overlay.
-    return baseWindows.filter((w) => w.type !== 'chat');
-  }, [windows, activeWorkspaceId, workspaceTransition, isMobile]);
+    return baseWindows.filter((w) => w.type !== 'chat' && keepMinimized(w));
+  }, [windows, activeWorkspaceId, workspaceTransition, isMobile, minimizeAnimatingWindowIds]);
 
   const lockedByPlan = !hasPaidAccess(userPlan);
 

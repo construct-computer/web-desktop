@@ -10,6 +10,7 @@ export function ChatWindowOverlay() {
   const isMobile = useIsMobile();
   const agentWindowOpen = useWindowStore((s) => s.agentWindowOpen);
   const stageManagerActive = useWindowStore((s) => s.stageManagerActive);
+  const minimizeAnimatingWindowIds = useWindowStore((s) => s.minimizeAnimatingWindowIds);
   const hasOtherVisibleWindows = useWindowStore((s) => {
     const visibleWorkspaceIds = new Set([s.activeWorkspaceId]);
     if (s.workspaceTransition) {
@@ -17,15 +18,20 @@ export function ChatWindowOverlay() {
       visibleWorkspaceIds.add(s.workspaceTransition.toId);
     }
     return s.windows.some(
-      (w) => w.type !== 'chat' && w.state !== 'minimized' && visibleWorkspaceIds.has(w.workspaceId),
+      (w) => w.type !== 'chat'
+        && (w.state !== 'minimized' || !!s.minimizeAnimatingWindowIds[w.id])
+        && visibleWorkspaceIds.has(w.workspaceId),
     );
   });
   const chatWindow = useWindowStore((s) => s.windows.find((w) => w.type === 'chat'));
   const moveWindow = useWindowStore((s) => s.moveWindow);
-  const shouldRender = !isMobile && agentWindowOpen && !!chatWindow && chatWindow.state !== 'minimized';
+  const shouldRender = !isMobile
+    && agentWindowOpen
+    && !!chatWindow
+    && (chatWindow.state !== 'minimized' || !!minimizeAnimatingWindowIds[chatWindow.id]);
 
   useEffect(() => {
-    if (!shouldRender || !chatWindow) return;
+    if (!shouldRender || !chatWindow || chatWindow.state === 'minimized') return;
     const workArea = getDesktopWorkArea({ stageManagerActive, mobile: false });
     const dockMode = hasOtherVisibleWindows ? 'side' : 'center';
     const target = computeChatDockBounds(
@@ -37,7 +43,7 @@ export function ChatWindowOverlay() {
     if (chatWindow.x !== target.x || chatWindow.y !== target.y) {
       moveWindow(chatWindow.id, target.x, target.y);
     }
-  }, [shouldRender, chatWindow?.id, chatWindow?.width, chatWindow?.height, hasOtherVisibleWindows, moveWindow, stageManagerActive]);
+  }, [shouldRender, chatWindow?.id, chatWindow?.width, chatWindow?.height, chatWindow?.state, hasOtherVisibleWindows, moveWindow, stageManagerActive]);
 
   if (!shouldRender || !chatWindow) return null;
 
