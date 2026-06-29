@@ -254,6 +254,10 @@ function DockItem({
     <div
       ref={ref}
       data-tour={item.id}
+      data-dock-item
+      data-dock-window-type={item.windowType}
+      data-dock-window-id={item.windowId}
+      data-dock-app-id={item.appId}
       className="relative group flex flex-col items-center cursor-pointer shrink-0"
       onClick={() => {
         if (bouncing) return;

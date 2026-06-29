@@ -41,7 +41,7 @@ export interface ToolWindowRoute {
 /** Window types backed by a real component (mirror of WindowManager). */
 const REAL_WINDOW_TYPES = new Set<WindowType>([
   'browser', 'terminal', 'files', 'editor', 'document-viewer',
-  'settings', 'about', 'calendar', 'auditlogs', 'memory', 'email',
+  'settings', 'about', 'calendar', 'auditlogs', 'memory', 'email', 'chat',
   'access-control', 'app-registry', 'app-builder', 'app',
 ]);
 
@@ -234,13 +234,12 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
 
 /**
  * Map a `desktop` tool action (`open_<window_type>`) to a window type.
- * Returns null for `chat` (no standalone window) and `app` (handled separately
- * because it needs an appId param).
+ * Returns null for `app` (handled separately because it needs an appId param).
  */
 export function desktopActionToWindowType(action: string): WindowType | null {
   if (action === 'open_file') return 'editor';
   if (!action.startsWith('open_')) return null;
   const rest = action.slice('open_'.length);
-  if (rest === 'chat' || rest === 'app') return null;
+  if (rest === 'app') return null;
   return REAL_WINDOW_TYPES.has(rest as WindowType) ? (rest as WindowType) : null;
 }

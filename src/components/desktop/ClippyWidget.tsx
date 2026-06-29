@@ -367,16 +367,19 @@ export function ClippyWidget() {
   const activitySummary = useClippyActivitySummary(isMobile);
   const { headline: stateLabel, detail: scrollText, isActive, isIdle } = activitySummary;
   const agentConnected = useComputerStore(s => s.agentConnected);
-  const toggleSpotlight = useWindowStore(s => s.toggleSpotlight);
+  const agentWindowOpen = useWindowStore(s => s.agentWindowOpen);
+  const chatWindow = useWindowStore(s => s.windows.find((w) => w.type === 'chat'));
+  const minimizeWindow = useWindowStore(s => s.minimizeWindow);
   const setupCompleted = useAuthStore(s => s.user?.setupCompleted);
   const onboardingCompleted = useAuthStore(s => s.user?.onboardingCompleted);
   const hasAccess = hasAgentAccess(useAuthStore(s => s.user?.plan));
   const defaultCenter = useMemo(() => isMobile ? { rx: 0.65, ry: 0.5 } : CENTER_POS, [isMobile]);
 
   // ── Position (ratio-based, driven by visible app-window state) ──
-  const hasVisibleWindows = useWindowStore(s => s.windows.some((w) => (
-    w.workspaceId === s.activeWorkspaceId && w.state !== 'minimized'
-  )));
+  const hasVisibleWindows = useWindowStore(
+    (s) => s.windows.some((w) => w.type === 'chat' && (w.state !== 'minimized' || !!s.minimizeAnimatingWindowIds[w.id]))
+      || s.windows.some((w) => w.workspaceId === s.activeWorkspaceId && (w.state !== 'minimized' || !!s.minimizeAnimatingWindowIds[w.id])),
+  );
   const avatarSize = isMobile ? MOBILE_AVATAR_SIZE : DESKTOP_AVATAR_SIZE;
   const [winSize, setWinSize] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 1920,
@@ -416,6 +419,15 @@ export function ClippyWidget() {
   const dragRef = useRef<{ startMX: number; startMY: number; startPx: number; startPy: number } | null>(null);
   const wasDragRef = useRef(false);
 
+  const toggleChatWindow = useCallback(() => {
+    const shouldOpenChat = !agentWindowOpen || !chatWindow || chatWindow.state === 'minimized';
+    if (shouldOpenChat) {
+      void openSpotlightSession(activitySummary.primaryRunningSessionKey);
+      return;
+    }
+    minimizeWindow(chatWindow.id);
+  }, [activitySummary.primaryRunningSessionKey, agentWindowOpen, chatWindow, minimizeWindow]);
+
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -437,11 +449,11 @@ export function ClippyWidget() {
 
   const onPointerUp = useCallback(() => {
     if (dragRef.current) {
-      if (!wasDragRef.current) toggleSpotlight();
+      if (!wasDragRef.current) toggleChatWindow();
       dragRef.current = null;
     }
     setIsDragging(false);
-  }, [toggleSpotlight]);
+  }, [toggleChatWindow]);
 
   // ── Welcome bubble (shows once on mount with 1s delay, auto-dismisses) ──
   // Suppress on mount if user is still in onboarding (setup wizard / tour)
@@ -703,10 +715,10 @@ export function ClippyWidget() {
            avatarSize={avatarSize}
            isMobile={isMobile}
            closing={bubbleClosing}
-           onClickBubble={() => {
-             void openSpotlightSession(activitySummary.primaryRunningSessionKey);
-           }}
-         />
+          onClickBubble={() => {
+              toggleChatWindow();
+            }}
+          />
       )}
 
       {/* Shortcut hint */}
@@ -718,7 +730,7 @@ export function ClippyWidget() {
               color: 'rgba(255,255,255,0.6)',
               textShadow: '0 1px 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.4)',
             }}>
-            ctrl+space
+            open chat
           </span>
         </div>
       )}
@@ -996,7 +1008,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
                 fontWeight: 600,
               }}
             >
-              +{hiddenSubagents} more in Spotlight
+              +{hiddenSubagents} more in chat
             </div>
           )}
         </div>
@@ -1010,7 +1022,7 @@ function ClippyActivityBubbleContent({ summary, isMobile }: {
             fontSize: isMobile ? '9px' : '10px',
           }}
         >
-          Open Spotlight for full activity
+          Open chat for full activity
         </div>
       )}
     </div>

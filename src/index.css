@@ -1016,12 +1016,12 @@ html.dark .glass-window::before {
 }
 
 .spotlight-scrim {
-  --glass-filter: blur(8px) saturate(1.1);
+  --glass-filter: blur(0px) saturate(1);
   border: none !important;
 }
 
 .spotlight-scrim::before {
-  background-color: rgba(0, 0, 0, 0.26);
+  background-color: rgba(0, 0, 0, 0);
 }
 
 .spotlight-glass-window {
@@ -1252,7 +1252,7 @@ html.dark .soft-popover::before {
   background-color: rgba(0, 0, 0, 0.18);
 }
 
-/* Spotlight — blur/dim transitions in sync with panel open/close */
+/* Spotlight — dim transitions in sync with panel open/close */
 .spotlight-scrim.spotlight-scrim-sync::before {
   animation: none;
   transition:
@@ -1268,9 +1268,9 @@ html.dark .soft-popover::before {
 }
 
 .spotlight-scrim-sync.is-open::before {
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
-  backdrop-filter: blur(8px) saturate(1.1);
-  background-color: rgba(0, 0, 0, 0.26);
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  backdrop-filter: blur(0px) saturate(1);
+  background-color: rgba(0, 0, 0, 0);
 }
 
 /* Spotlight panel glass — static frost when open; blur on element for stable compositing during scale */
@@ -1301,7 +1301,7 @@ html.dark .soft-popover::before {
 .spotlight-glass-window-sync.is-open::before {
   -webkit-backdrop-filter: blur(24px) saturate(1.25);
   backdrop-filter: blur(24px) saturate(1.25);
-  background-color: rgba(255, 255, 255, 0.62);
+  background-color: rgba(255, 255, 255, 0.90);
   border-color: rgba(0, 0, 0, 0.08);
 }
 
@@ -1311,7 +1311,7 @@ html.dark .spotlight-glass-window-sync:not(.is-open)::before {
 }
 
 html.dark .spotlight-glass-window-sync.is-open::before {
-  background-color: rgba(8, 10, 16, 0.64);
+  background-color: rgba(8, 10, 16, 0.82);
   border-color: rgba(255, 255, 255, 0.08);
 }
 

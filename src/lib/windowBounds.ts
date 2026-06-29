@@ -28,6 +28,8 @@ export interface DesktopWorkArea {
   screenHeight: number;
 }
 
+export type ChatDockMode = 'center' | 'side';
+
 export function getDesktopWorkArea(opts?: {
   stageManagerActive?: boolean;
   mobile?: boolean;
@@ -82,6 +84,51 @@ export function computeVisuallyCenteredPosition(
   return {
     x: Math.max(area.x, Math.min(centeredX, maxX)),
     y: area.y + Math.floor((area.height - height) / 2),
+  };
+}
+
+export function computeChatDockBounds(
+  area: DesktopWorkArea,
+  size?: { width?: number; height?: number },
+  mode: ChatDockMode = 'side',
+): WindowBounds {
+  const width = Math.min(
+    area.width,
+    Math.max(1, Math.floor(size?.width ?? 460)),
+  );
+  const height = Math.min(
+    area.height,
+    Math.max(1, Math.floor(size?.height ?? 580)),
+  );
+  const centerY = area.y + Math.floor((area.height - height) / 2);
+  const sideX = Math.max(area.x, area.x + area.width - width);
+  const centerX = area.x + Math.floor((area.width - width) / 2);
+
+  return {
+    x: mode === 'center' ? centerX : sideX,
+    y: centerY,
+    width,
+    height,
+  };
+}
+
+export function computeDockMinimizeTransform(
+  source: Pick<WindowBounds, 'x' | 'y' | 'width' | 'height'>,
+  target: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+): { transform: string; transformOrigin: 'top left' } {
+  const scale = Math.min(
+    1,
+    target.width / source.width,
+    target.height / source.height,
+  );
+  const scaledWidth = source.width * scale;
+  const scaledHeight = source.height * scale;
+  const x = target.left - source.x + Math.round((target.width - scaledWidth) / 2);
+  const y = target.top - source.y + Math.round((target.height - scaledHeight) / 2);
+
+  return {
+    transform: `translate(${x}px, ${y}px) scale(${Number(scale.toFixed(3))})`,
+    transformOrigin: 'top left',
   };
 }
 

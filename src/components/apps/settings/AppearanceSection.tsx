@@ -272,7 +272,7 @@ function AppearanceInner() {
           <span className="text-[13px] font-medium">Sound</span>
         </div>
         <SettingsCard>
-          <SettingsRow label="Voice input" description="Enable voice transcription in Spotlight.">
+          <SettingsRow label="Voice input" description="Enable voice transcription in chat.">
             <Toggle checked={voiceEnabled} onChange={setVoiceEnabled} />
           </SettingsRow>
           <SettingsRow label="UI Sounds" description="Play sounds for clicks, notifications, and other actions.">

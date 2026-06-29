@@ -6,6 +6,7 @@ import { generateId, clamp } from '@/lib/utils';
 import { agentWS } from '@/services/websocket';
 import { track } from '@/lib/analytics';
 import constructLogo from '@/assets/logo.png';
+import iconChat from '@/icons/chat.png';
 import {
   DEFAULT_OPEN_PADDING,
   MENUBAR_HEIGHT,
@@ -13,6 +14,7 @@ import {
   DOCK_HEIGHT,
   MOBILE_APP_BAR_HEIGHT,
   STAGE_STRIP_WIDTH,
+  WINDOW_TRANSITION_MS,
   Z_INDEX,
   STORAGE_KEYS,
 } from '@/lib/constants';
@@ -20,6 +22,7 @@ import {
   getDesktopWorkArea,
   computeDefaultOpenBounds,
   computeVisuallyCenteredPosition,
+  computeChatDockBounds,
   clampBoundsToWorkArea,
   computeOpenMinSize,
 } from '@/lib/windowBounds';
@@ -32,6 +35,9 @@ const MAIN_WORKSPACE: Workspace = {
   platform: 'desktop',
   color: '#6366f1', // indigo
 };
+
+// ponytail: desktop chat is a separate overlay lane, not a real workspace.
+const CHAT_OVERLAY_WORKSPACE_ID = '__chat_overlay__';
 
 /** Persisted app window entry — just enough to re-open it. */
 interface PersistedAppWindow {
@@ -60,10 +66,111 @@ const savePersistedAppWindows = (windows: WindowConfig[]) => {
   localStorage.setItem(STORAGE_KEYS.openAppWindows, JSON.stringify(appWindows));
 };
 
+const CHAT_OVERLAY_MIN_SIZE = { minWidth: 360, minHeight: 420 };
+const minimizeAnimationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const closeAnimationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearMinimizeAnimation(id: string) {
+  const existing = minimizeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    minimizeAnimationTimers.delete(id);
+  }
+
+  const current = useWindowStore.getState().minimizeAnimatingWindowIds;
+  if (!current[id]) return;
+
+  const next = { ...current };
+  delete next[id];
+  useWindowStore.setState({ minimizeAnimatingWindowIds: next });
+}
+
+function markMinimizeAnimation(id: string) {
+  const existing = minimizeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    minimizeAnimationTimers.delete(id);
+  }
+
+  const timer = setTimeout(() => {
+    minimizeAnimationTimers.delete(id);
+    const current = useWindowStore.getState().minimizeAnimatingWindowIds;
+    if (!current[id]) return;
+    const next = { ...current };
+    delete next[id];
+    useWindowStore.setState({ minimizeAnimatingWindowIds: next });
+  }, WINDOW_TRANSITION_MS);
+
+  minimizeAnimationTimers.set(id, timer);
+}
+
+function clearCloseAnimation(id: string) {
+  const existing = closeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    closeAnimationTimers.delete(id);
+  }
+
+  const current = useWindowStore.getState().closeAnimatingWindowIds;
+  if (!current[id]) return;
+
+  const next = { ...current };
+  delete next[id];
+  useWindowStore.setState({ closeAnimatingWindowIds: next });
+}
+
+function markCloseAnimation(id: string, beforeClose?: () => void) {
+  const existing = closeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    closeAnimationTimers.delete(id);
+  }
+
+  useWindowStore.setState({
+    closeAnimatingWindowIds: {
+      ...useWindowStore.getState().closeAnimatingWindowIds,
+      [id]: true,
+    },
+  });
+
+  const timer = setTimeout(() => {
+    closeAnimationTimers.delete(id);
+    beforeClose?.();
+    const current = useWindowStore.getState().closeAnimatingWindowIds;
+    if (!current[id]) return;
+    const next = { ...current };
+    delete next[id];
+    useWindowStore.setState({ closeAnimatingWindowIds: next });
+    useWindowStore.getState().closeWindow(id);
+  }, WINDOW_TRANSITION_MS);
+
+  closeAnimationTimers.set(id, timer);
+}
+
+function hasVisibleDesktopWindows(state: {
+  windows: WindowConfig[];
+  activeWorkspaceId: string;
+  workspaceTransition: { fromId: string; toId: string; direction: 'left' | 'right' } | null;
+  minimizeAnimatingWindowIds: Record<string, true>;
+}): boolean {
+  const visibleWorkspaceIds = new Set([state.activeWorkspaceId]);
+  if (state.workspaceTransition) {
+    visibleWorkspaceIds.add(state.workspaceTransition.fromId);
+    visibleWorkspaceIds.add(state.workspaceTransition.toId);
+  }
+  return state.windows.some(
+    (w) => w.type !== 'chat'
+      && (w.state !== 'minimized' || !!state.minimizeAnimatingWindowIds[w.id])
+      && visibleWorkspaceIds.has(w.workspaceId),
+  );
+}
+
 interface WindowStore {
   windows: WindowConfig[];
   focusedWindowId: string | null;
   nextZIndex: number;
+  minimizeAnimatingWindowIds: Record<string, true>;
+  closeAnimatingWindowIds: Record<string, true>;
 
   // Workspaces
   workspaces: Workspace[];
@@ -90,6 +197,7 @@ interface WindowStore {
   // Actions
   openWindow: (type: WindowType, options?: Partial<WindowConfig>) => string;
   closeWindow: (id: string) => void;
+  requestCloseWindow: (id: string, opts?: { beforeClose?: () => void }) => void;
   /** Update a window's properties (title, metadata, etc.) without closing/reopening */
   updateWindow: (id: string, updates: Partial<Pick<WindowConfig, 'title' | 'metadata'>>) => void;
   focusWindow: (id: string) => void;
@@ -149,6 +257,11 @@ interface WindowStore {
   toggleSpotlight: () => void;
   closeSpotlight: () => void;
 
+  // Agent window (top-layer chat surface)
+  agentWindowOpen: boolean;
+  openAgentWindow: () => void;
+  closeAgentWindow: () => void;
+
   // Launchpad (macOS-style fullscreen app grid)
   launchpadOpen: boolean;
   toggleLaunchpad: () => void;
@@ -191,6 +304,7 @@ const windowDefaults: Record<WindowType, Partial<WindowConfig>> = {
   'app-registry': { title: 'Apps' },
   'app-builder': { title: 'Builder' },
   subscribe: { title: 'Subscribe', icon: constructLogo },
+  chat: { title: 'Construct', icon: iconChat },
   'document-viewer': { title: 'Document Viewer' },
   app: { title: 'App' },
 };
@@ -245,7 +359,7 @@ const WINDOW_PLATFORM_MAP: Partial<Record<WindowType, WorkspacePlatform>> = {
 /** Window types that only allow a single instance (opening again focuses the existing one). */
 const SINGLETON_TYPES: Set<WindowType> = new Set([
   'settings', 'about', 'calendar', 'auditlogs', 'memory',
-  'email', 'files', 'access-control', 'app-registry', 'app-builder', 'subscribe',
+  'email', 'files', 'access-control', 'app-registry', 'app-builder', 'subscribe', 'chat',
   // NOTE: 'terminal' was removed — multiple terminal windows are supported,
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);
@@ -255,6 +369,8 @@ export const useWindowStore = create<WindowStore>()(
     windows: [],
     focusedWindowId: null,
     nextZIndex: Z_INDEX.window,
+    minimizeAnimatingWindowIds: {},
+    closeAnimatingWindowIds: {},
 
     // ── Workspaces ──────────────────────────────────────────
     workspaces: [MAIN_WORKSPACE],
@@ -422,6 +538,7 @@ export const useWindowStore = create<WindowStore>()(
       const { windows, workspaces, activeWorkspaceId } = get();
       const win = windows.find(w => w.id === windowId);
       if (!win || win.workspaceId === workspaceId) return;
+      if (win.type === 'chat' && !isMobileViewport()) return;
       if (!workspaces.some(w => w.id === workspaceId)) return;
 
       // Re-assign the window's workspace
@@ -459,15 +576,21 @@ export const useWindowStore = create<WindowStore>()(
 
     // ── Windows ─────────────────────────────────────────────
     openWindow: (type, options = {}) => {
-      // During a workspace transition, default new windows to the destination workspace
-      const wsId = options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId);
+      const mobile = isMobileViewport();
+      const desktopChatOverlay = type === 'chat' && !mobile;
+      // Desktop chat ignores workspace routing and always docks to the overlay lane.
+      const wsId = desktopChatOverlay
+        ? CHAT_OVERLAY_WORKSPACE_ID
+        : (options.workspaceId ?? (get().workspaceTransition?.toId ?? get().activeWorkspaceId));
       // Prevent duplicate windows only for singleton types (settings, calendar, etc.)
       if (SINGLETON_TYPES.has(type)) {
         const existing = get().windows.find((w) => w.type === type);
         if (existing) {
           // Switch to the workspace if needed, then focus
           if (get().activeWorkspaceId !== existing.workspaceId) get().switchWorkspace(existing.workspaceId);
+          clearCloseAnimation(existing.id);
           get().focusWindow(existing.id);
+          if (type === 'chat') set({ agentWindowOpen: true });
           return existing.id;
         }
       }
@@ -479,21 +602,25 @@ export const useWindowStore = create<WindowStore>()(
         );
         if (existing) {
           if (get().activeWorkspaceId !== existing.workspaceId) get().switchWorkspace(existing.workspaceId);
+          clearCloseAnimation(existing.id);
           get().focusWindow(existing.id);
           return existing.id;
         }
       }
 
       const defaults = windowDefaults[type] || {};
-      const mobile = isMobileViewport();
       const workArea = getDesktopWorkArea({
         stageManagerActive: get().stageManagerActive,
         mobile,
       });
       const defaultBounds = computeDefaultOpenBounds(workArea);
-      const width = clamp(options.width ?? defaultBounds.width, 1, workArea.width);
-      const height = clamp(options.height ?? defaultBounds.height, 1, workArea.height);
-      const { x, y } = computeVisuallyCenteredPosition(workArea, { width, height }, { mobile });
+      const desktopChatSide = desktopChatOverlay && hasVisibleDesktopWindows(get()) ? 'side' : 'center';
+      const chatBounds = desktopChatOverlay
+        ? computeChatDockBounds(workArea, { width: options.width, height: options.height }, desktopChatSide)
+        : null;
+      const width = chatBounds?.width ?? clamp(options.width ?? defaultBounds.width, 1, workArea.width);
+      const height = chatBounds?.height ?? clamp(options.height ?? defaultBounds.height, 1, workArea.height);
+      const { x, y } = chatBounds ?? computeVisuallyCenteredPosition(workArea, { width, height }, { mobile });
 
       const { windows, nextZIndex } = get();
 
@@ -508,7 +635,9 @@ export const useWindowStore = create<WindowStore>()(
         metadata = { ...metadata, terminalId };
       }
 
-      const openMin = computeOpenMinSize(workArea);
+      const openMin = desktopChatOverlay
+        ? CHAT_OVERLAY_MIN_SIZE
+        : computeOpenMinSize(workArea);
       const minWidthRaw = Math.max(options.minWidth ?? 0, openMin.minWidth);
       const minHeightRaw = Math.max(options.minHeight ?? 0, openMin.minHeight);
       const minWidth = mobile
@@ -545,6 +674,7 @@ export const useWindowStore = create<WindowStore>()(
         windows: newWindows,
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
+        ...(type === 'chat' ? { agentWindowOpen: true } : {}),
       });
 
       if (type === 'app' && metadata?.appId) {
@@ -552,7 +682,7 @@ export const useWindowStore = create<WindowStore>()(
           window_type: type,
           app_id: String(metadata.appId),
         });
-      } else if (wsId === 'main') {
+      } else if (wsId === 'main' || desktopChatOverlay) {
         track('window_opened', { window_type: type });
       }
 
@@ -564,8 +694,12 @@ export const useWindowStore = create<WindowStore>()(
       // Only track windows in the main workspace — subagent/platform windows
       // are transient and should not be restored as orphans on the main desktop.
       // App windows require metadata (appId) and cannot be restored from just the type.
-      if (wsId === 'main' && type !== 'app' && type !== 'subscribe') {
+      if ((wsId === 'main' || desktopChatOverlay) && type !== 'app' && type !== 'subscribe') {
         agentWS.sendWindowOpen(type);
+      }
+
+      if (desktopChatOverlay) {
+        return id;
       }
 
       // Stage Manager: new window becomes active, previous active goes to strip
@@ -602,6 +736,8 @@ export const useWindowStore = create<WindowStore>()(
     },
 
     closeWindow: (id) => {
+      clearMinimizeAnimation(id);
+      clearCloseAnimation(id);
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
       const newWindows = windows.filter((w) => w.id !== id);
@@ -629,6 +765,10 @@ export const useWindowStore = create<WindowStore>()(
             ? { app_id: String(closing.metadata.appId) }
             : {}),
         });
+      }
+
+      if (closing?.type === 'chat') {
+        set({ agentWindowOpen: false });
       }
       
       // Stage Manager: if we closed the active window, promote next from strip
@@ -673,6 +813,13 @@ export const useWindowStore = create<WindowStore>()(
       // Persist open app windows
       if (closing?.type === 'app') savePersistedAppWindows(newWindows);
     },
+
+    requestCloseWindow: (id, opts) => {
+      const window = get().windows.find((w) => w.id === id);
+      if (!window) return;
+
+      markCloseAnimation(id, opts?.beforeClose);
+    },
     
     focusWindow: (id) => {
       const { windows, nextZIndex, focusedWindowId } = get();
@@ -680,6 +827,10 @@ export const useWindowStore = create<WindowStore>()(
       
       const window = windows.find((w) => w.id === id);
       if (!window) return;
+      clearCloseAnimation(id);
+      const mobile = isMobileViewport();
+      const isDesktopChatWindow = window.type === 'chat' && !mobile;
+      const isOverlayWindow = window.workspaceId === CHAT_OVERLAY_WORKSPACE_ID || isDesktopChatWindow;
 
       const wasMinimized = window.state === 'minimized';
       const newState = wasMinimized ? 'normal' : window.state;
@@ -689,12 +840,18 @@ export const useWindowStore = create<WindowStore>()(
       if (wasMinimized && newState === 'normal') {
         const workArea = getDesktopWorkArea({
           stageManagerActive: sm.stageManagerActive,
-          mobile: isMobileViewport(),
+          mobile,
         });
-        restorePosition = computeVisuallyCenteredPosition(workArea, {
-          width: window.width,
-          height: window.height,
-        });
+        restorePosition = isDesktopChatWindow
+          ? computeChatDockBounds(
+              workArea,
+              { width: window.width, height: window.height },
+              hasVisibleDesktopWindows(get()) ? 'side' : 'center',
+            )
+          : computeVisuallyCenteredPosition(workArea, {
+              width: window.width,
+              height: window.height,
+            });
       }
 
       set({
@@ -711,9 +868,10 @@ export const useWindowStore = create<WindowStore>()(
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
+      if (newState === 'normal') clearMinimizeAnimation(id);
 
       // Stage Manager: promote focused window as active, move previous active to strip
-      if (sm.stageManagerActive) {
+      if (sm.stageManagerActive && !isOverlayWindow) {
         const wsTarget = window.workspaceId;
         const actives = sm.stageManagerActiveIds[wsTarget] || [];
         const order = sm.stageManagerOrder[wsTarget] || [];
@@ -746,6 +904,7 @@ export const useWindowStore = create<WindowStore>()(
       const { windows, focusedWindowId, stageManagerActive } = get();
       const target = windows.find((w) => w.id === id);
       if (!target) return;
+      const isOverlayWindow = target.workspaceId === CHAT_OVERLAY_WORKSPACE_ID || (target.type === 'chat' && !isMobileViewport());
 
       const mobile = isMobileViewport();
       const collapseFromMaximized = target.state === 'maximized';
@@ -768,12 +927,17 @@ export const useWindowStore = create<WindowStore>()(
             : w
         ),
         focusedWindowId: focusedWindowId === id ? null : focusedWindowId,
+        minimizeAnimatingWindowIds: {
+          ...get().minimizeAnimatingWindowIds,
+          [id]: true,
+        },
       });
+      markMinimizeAnimation(id);
 
       // Stage Manager: if minimizing the active window, promote next from strip.
       // If minimizing a strip window, remove it from the strip order.
       const sm = get();
-      if (sm.stageManagerActive) {
+      if (sm.stageManagerActive && !isOverlayWindow) {
         const window = get().windows.find(w => w.id === id);
         const wsTarget = window?.workspaceId || sm.activeWorkspaceId;
         const actives = sm.stageManagerActiveIds[wsTarget] || [];
@@ -826,6 +990,7 @@ export const useWindowStore = create<WindowStore>()(
       if (!window) return;
       
       const mobile = isMobileViewport();
+      if (window.workspaceId === CHAT_OVERLAY_WORKSPACE_ID || (window.type === 'chat' && !mobile)) return;
       const screenWidth = globalThis.innerWidth;
       const menuH = mobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
       const bottomH = mobile ? MOBILE_APP_BAR_HEIGHT : DOCK_HEIGHT;
@@ -853,6 +1018,7 @@ export const useWindowStore = create<WindowStore>()(
         focusedWindowId: id,
         nextZIndex: nextZIndex + 1,
       });
+      clearMinimizeAnimation(id);
     },
     
     restoreWindow: (id) => {
@@ -865,9 +1031,16 @@ export const useWindowStore = create<WindowStore>()(
         stageManagerActive: get().stageManagerActive,
         mobile,
       });
-      const bounds = window.previousBounds
-        ? clampBoundsToWorkArea(window.previousBounds, workArea)
-        : computeDefaultOpenBounds(workArea);
+      const isDesktopChatWindow = window.type === 'chat' && !mobile;
+      const bounds = isDesktopChatWindow
+        ? computeChatDockBounds(
+            workArea,
+            { width: window.width, height: window.height },
+            hasVisibleDesktopWindows(get()) ? 'side' : 'center',
+          )
+        : window.previousBounds
+          ? clampBoundsToWorkArea(window.previousBounds, workArea)
+          : computeDefaultOpenBounds(workArea);
       
       set({
         windows: windows.map((w) =>
@@ -899,6 +1072,7 @@ export const useWindowStore = create<WindowStore>()(
     moveWindow: (id, x, y) => {
       const { windows } = get();
       const window = windows.find((w) => w.id === id);
+      if (!window) return;
       set({
         windows: windows.map((w) =>
           w.id === id ? { ...w, x, y, state: 'normal' } : w
@@ -1162,6 +1336,17 @@ export const useWindowStore = create<WindowStore>()(
       set({ spotlightOpen: !s.spotlightOpen, launchpadOpen: false });
     },
     closeSpotlight: () => set({ spotlightOpen: false }),
+
+    // ── Agent window ───────────────────────────────────────────
+    agentWindowOpen: false,
+    openAgentWindow: () => {
+      set({ spotlightOpen: false, launchpadOpen: false });
+      get().openWindow('chat');
+    },
+    closeAgentWindow: () => {
+      set({ agentWindowOpen: false });
+      get().closeWindowsByType('chat');
+    },
 
     // ── Launchpad ─────────────────────────────────────────────
     launchpadOpen: false,

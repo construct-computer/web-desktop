@@ -30,6 +30,7 @@ const DocumentViewerWindow = lazy(() => import('../apps/DocumentViewerWindow').t
 const AppRegistryWindow = lazy(() => import('../apps/AppRegistryWindow').then((m) => ({ default: m.AppRegistryWindow })));
 const AppBuilderWindow = lazy(() => import('../apps/AppBuilderWindow').then((m) => ({ default: m.AppBuilderWindow })));
 const SubscribeWindow = lazy(() => import('../screens/SubscribeWindow').then((m) => ({ default: m.SubscribeWindow })));
+const ChatWindow = lazy(() => import('@/components/desktop/AgentWindow').then((m) => ({ default: m.AgentWindow })));
 const AppWindow = lazy(() => import('../apps/AppWindow').then((m) => ({ default: m.AppWindow })));
 
 const PAID_ONLY_WINDOW_TYPES: Set<WindowType> = new Set([
@@ -61,7 +62,7 @@ const WINDOW_LOCK_BULLETS: Partial<Record<WindowType, readonly string[]>> = {
 };
 
 // Map window types to their content components.
-// Chat and Tracker are NOT standalone windows — they live as MenuBar dropdown panels only.
+// Tracker stays in the menu bar; desktop chat is rendered by the overlay host.
 const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowConfig }>> = {
   browser: BrowserWindow,
   terminal: TerminalWindow,
@@ -77,6 +78,7 @@ const windowComponents: Record<WindowType, React.ComponentType<{ config: WindowC
   'access-control': AccessControlWindow,
   'app-registry': AppRegistryWindow,
   'app-builder': AppBuilderWindow,
+  chat: ChatWindow,
   subscribe: SubscribeWindow,
   app: AppWindow,
 };
@@ -171,6 +173,8 @@ export function WindowManager() {
   const activeWorkspaceId = useWindowStore((s) => s.activeWorkspaceId);
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
+  const minimizeAnimatingWindowIds = useWindowStore((s) => s.minimizeAnimatingWindowIds);
+  const isMobile = useIsMobile();
 
   // During a workspace transition, render windows from BOTH the from and to
   // workspaces so they can slide together. Otherwise just the active workspace.
@@ -179,15 +183,19 @@ export function WindowManager() {
   const stageManagerOrder = useWindowStore((s) => s.stageManagerOrder);
 
   const visibleWindows = useMemo(() => {
-    if (workspaceTransition) {
-      return windows.filter(
+    const baseWindows = workspaceTransition
+      ? windows.filter(
         (w) => w.workspaceId === workspaceTransition.fromId || w.workspaceId === workspaceTransition.toId,
-      );
-    }
-    // Stage Manager: show ALL workspace windows (active + strip) — strip windows
-    // are rendered as real scaled-down windows via CSS transforms, not placeholders.
-      return windows.filter((w) => w.workspaceId === activeWorkspaceId && w.state !== 'minimized');
-  }, [windows, activeWorkspaceId, workspaceTransition]);
+      )
+      : windows.filter((w) => w.workspaceId === activeWorkspaceId);
+
+    const keepMinimized = (w: WindowConfig) => w.state !== 'minimized' || !!minimizeAnimatingWindowIds[w.id];
+
+    if (isMobile) return baseWindows.filter(keepMinimized);
+
+    // Desktop chat is rendered separately as a floating overlay.
+    return baseWindows.filter((w) => w.type !== 'chat' && keepMinimized(w));
+  }, [windows, activeWorkspaceId, workspaceTransition, isMobile, minimizeAnimatingWindowIds]);
 
   const lockedByPlan = !hasPaidAccess(userPlan);
 
@@ -302,7 +310,6 @@ export function WindowManager() {
   // To-workspace windows are positioned one screen-width away so the
   // container's translateX can reveal them during the slide.
   const screenWidth = globalThis.innerWidth || 1920;
-  const isMobile = useIsMobile();
 
   return (
     <>

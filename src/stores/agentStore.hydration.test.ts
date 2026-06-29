@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { isTriggeredSessionKey } from './agentSessionKeys';
 
 const agentStoreSource = readFileSync(new URL('./agentStore.ts', import.meta.url), 'utf8');
+const agentWindowSource = readFileSync(new URL('../components/desktop/AgentWindow.tsx', import.meta.url), 'utf8');
 const spotlightNavSource = readFileSync(new URL('../lib/spotlightNav.ts', import.meta.url), 'utf8');
 const spotlightSidebarSource = readFileSync(
   new URL('../components/desktop/spotlight/SpotlightSidebar.tsx', import.meta.url),
@@ -64,10 +65,10 @@ describe('hydration loop prevention contract', () => {
     expect(agentStoreSource).toMatch(/prefetchSessionHistory\(readyKey\)/);
   });
 
-  it('exports shouldRefreshChatHistory for Spotlight entry points', () => {
+  it('chat window refreshes history on open', () => {
     expect(agentStoreSource).toMatch(/export function shouldRefreshChatHistory/);
-    expect(spotlightSource).toMatch(/shouldRefreshChatHistory\(activeSessionKey\)/);
-    expect(spotlightSource).not.toMatch(/void refreshActiveChatHistory\(\);\s*\}\s*, \[instanceId, activeSessionKey, refreshActiveChatHistory\]\);\s*\n\s*\/\/ Re-fetch when Spotlight opens/);
+    expect(agentWindowSource).toMatch(/shouldRefreshChatHistory\(activeSessionKey\)/);
+    expect(spotlightSource).not.toMatch(/refreshActiveChatHistory|shouldRefreshChatHistory/);
   });
 
   it('sidebar does not always force-refresh on session selection', () => {
