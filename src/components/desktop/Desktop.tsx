@@ -224,7 +224,7 @@ export function Desktop({
     return () => { cancelled = true; };
   }, []);
 
-  // Guided tour: auto-starts after setup + onboarding are complete.
+  // Guided tour auto-starts after setup + onboarding are complete, regardless of plan status.
   // Force-start from the menubar always works regardless of flags.
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
   const hasBillingIssue = !!subscription?.dodoCustomerId
@@ -236,16 +236,22 @@ export function Desktop({
       closeWindowsByType('subscribe');
       return;
     }
-    if (hasBillingIssue) {
-      openSettingsToSection('billing');
-      return;
-    }
-    openSubscribeWindow();
+
+    const openBillingOrSubscribe = () => {
+      if (hasBillingIssue) {
+        openSettingsToSection('billing');
+      } else {
+        openSubscribeWindow();
+      }
+    };
+
+    window.addEventListener('construct:onboarding-done', openBillingOrSubscribe, { once: true });
+    return () => window.removeEventListener('construct:onboarding-done', openBillingOrSubscribe);
   }, [userId, user?.setupCompleted, user?.onboardingCompleted, hasAccess, hasBillingIssue, closeWindowsByType]);
 
   const tourTriggered = useRef(false);
   const startTourWhenReady = useCallback(() => {
-    if (tourTriggered.current || !user || !hasAccess) return;
+    if (tourTriggered.current || !user) return;
     if (!user.setupCompleted || !user.onboardingCompleted) return;
 
     const tourDone = localStorage.getItem('construct:tour-completed') === '1';
@@ -256,7 +262,7 @@ export function Desktop({
     window.setTimeout(() => {
       window.dispatchEvent(new Event('construct:start-tour'));
     }, 600);
-  }, [user, hasAccess]);
+  }, [user]);
 
   const TOUR_SETTLE_MS = 2000;
 
@@ -273,7 +279,7 @@ export function Desktop({
   useEffect(() => {
     if (entering) return;
     startTourWhenReady();
-  }, [entering, startTourWhenReady, user, hasAccess]);
+  }, [entering, startTourWhenReady, user]);
 
   // Request browser notification permission early so it's available
   // when the agent sends notifications while the tab is in the background.
