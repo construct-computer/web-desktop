@@ -24,7 +24,7 @@ import { validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { hasAgentAccess } from '@/lib/plans';
-import { openSubscribeWindow } from '@/lib/settingsNav';
+import { openSettingsToSection, openSubscribeWindow } from '@/lib/settingsNav';
 
 // ── Workspace slide constants ──────────────────────────────────────
 
@@ -165,6 +165,7 @@ export function Desktop({
 
   const userId = user?.id;
   const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const subscription = useBillingStore((s) => s.subscription);
   const closeWindowsByType = useWindowStore((s) => s.closeWindowsByType);
   const isTelegram = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
 
@@ -221,6 +222,8 @@ export function Desktop({
   // Guided tour: auto-starts after setup + onboarding are complete.
   // Force-start from the menubar always works regardless of flags.
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
+  const hasBillingIssue = !!subscription?.dodoCustomerId
+    && ['on_hold', 'past_due', 'failed'].includes((subscription.status || '').toLowerCase());
   useEffect(() => {
     if (!userId) return;
     if (!user?.setupCompleted || !user?.onboardingCompleted) return;
@@ -228,8 +231,12 @@ export function Desktop({
       closeWindowsByType('subscribe');
       return;
     }
+    if (hasBillingIssue) {
+      openSettingsToSection('billing');
+      return;
+    }
     openSubscribeWindow();
-  }, [userId, user?.setupCompleted, user?.onboardingCompleted, hasAccess, closeWindowsByType]);
+  }, [userId, user?.setupCompleted, user?.onboardingCompleted, hasAccess, hasBillingIssue, closeWindowsByType]);
 
   const tourTriggered = useRef(false);
   const startTourWhenReady = useCallback(() => {

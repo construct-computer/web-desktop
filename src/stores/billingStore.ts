@@ -12,6 +12,10 @@ import {
   getUsageHistory,
   createCheckout,
   switchPlan as switchPlanApi,
+  previewPlanChange as previewPlanChangeApi,
+  cancelSubscription as cancelSubscriptionApi,
+  resumeSubscription as resumeSubscriptionApi,
+  updateSubscriptionPaymentMethod,
   createPortalSession,
   createTopupCheckout,
   getByokSettings,
@@ -78,7 +82,11 @@ interface BillingState {
   fetchUsage: () => Promise<void>;
   fetchHistory: (days?: number) => Promise<void>;
   startCheckout: (plan?: BillingPlanId, coupon?: string) => Promise<string | null>;
+  previewPlanChange: (plan: BillingPlanId) => Promise<any | null>;
   switchPlan: (plan: BillingPlanId) => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
+  cancelSubscription: () => Promise<boolean>;
+  resumeSubscription: () => Promise<boolean>;
+  updatePaymentMethod: () => Promise<{ url: string } | { error: string }>;
   openPortal: () => Promise<{ url: string } | { error: string }>;
   buyTopup: (amount: number) => Promise<string | null>;
 
@@ -204,6 +212,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       const subscription = {
         ...result.data,
         plan: result.data.plan === 'free' ? 'unsubscribed' : result.data.plan,
+        storedPlan: result.data.storedPlan === 'free' ? 'unsubscribed' : result.data.storedPlan,
       };
       syncAuthPlan(subscription.plan);
       maybeNotifyBillingStatus(previous, subscription);
@@ -260,19 +269,29 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     return null;
   },
 
+  previewPlanChange: async (plan: BillingPlanId) => {
+    const result = await previewPlanChangeApi(plan);
+    if (result.success) return result.data.preview;
+    useNotificationStore.getState().addNotification({
+      title: 'Could not preview plan change',
+      body: result.error || 'Try again or use the Dodo portal.',
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return null;
+  },
+
   switchPlan: async (plan: BillingPlanId) => {
     const result = await switchPlanApi(plan);
     if (result.success) {
-      // If portal URL is returned (for downgrades in production), redirect to portal
-      if (result.data.portalUrl) {
-        window.location.href = result.data.portalUrl;
-        return true;
-      }
-      // Refresh subscription data after switching
-      const sub = await getSubscription();
-      if (sub.success) {
-        set({ subscription: sub.data });
-      }
+      await get().fetchSubscription();
+      await get().fetchUsage();
+      useNotificationStore.getState().addNotification({
+        title: result.data.scheduled ? 'Plan change scheduled' : 'Plan updated',
+        body: result.data.scheduled ? 'Your current plan stays active until the next billing date.' : 'Your subscription has been updated.',
+        source: 'Billing',
+        variant: 'info',
+      }, 6_000);
       return true;
     }
     // If upgrade is required, return the error info so UI can redirect to checkout
@@ -280,6 +299,72 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       return { redirectToCheckout: true, targetPlan: result.data.targetPlan as string };
     }
     return false;
+  },
+
+  cancelSubscription: async () => {
+    const result = await cancelSubscriptionApi();
+    if (result.success) {
+      await get().fetchSubscription();
+      useNotificationStore.getState().addNotification({
+        title: 'Cancellation scheduled',
+        body: 'Your access remains active until the end of the current billing period.',
+        source: 'Billing',
+        variant: 'info',
+      }, 6_000);
+      return true;
+    }
+    useNotificationStore.getState().addNotification({
+      title: 'Could not cancel subscription',
+      body: result.error || 'Try again or use the Dodo portal.',
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return false;
+  },
+
+  resumeSubscription: async () => {
+    const result = await resumeSubscriptionApi();
+    if (result.success) {
+      await get().fetchSubscription();
+      useNotificationStore.getState().addNotification({
+        title: 'Subscription resumed',
+        body: 'Scheduled cancellation or downgrade has been removed.',
+        source: 'Billing',
+        variant: 'info',
+      }, 6_000);
+      return true;
+    }
+    useNotificationStore.getState().addNotification({
+      title: 'Could not resume subscription',
+      body: result.error || 'Try again or use the Dodo portal.',
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return false;
+  },
+
+  updatePaymentMethod: async () => {
+    const result = await updateSubscriptionPaymentMethod();
+    if (result.success) {
+      const url = result.data.paymentLink || result.data.portalUrl;
+      if (url) return { url };
+      const message = 'No payment method update link returned. Please use the Dodo portal.';
+      useNotificationStore.getState().addNotification({
+        title: 'Could not update payment method',
+        body: message,
+        source: 'Billing',
+        variant: 'error',
+      }, 8_000);
+      return { error: message };
+    }
+    const message = result.error || 'Unable to open payment method update. Please try again or use the Dodo portal.';
+    useNotificationStore.getState().addNotification({
+      title: 'Could not update payment method',
+      body: message,
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return { error: message };
   },
 
   openPortal: async () => {

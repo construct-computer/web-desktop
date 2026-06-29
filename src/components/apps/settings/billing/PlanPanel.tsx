@@ -37,6 +37,19 @@ function formatPlanName(plan: string): string {
   return plan.charAt(0).toUpperCase() + plan.slice(1);
 }
 
+function isPaidPlan(plan: string | null | undefined): plan is BillingPlanId {
+  return plan === 'lite' || plan === 'starter' || plan === 'pro';
+}
+
+function formatMoneyFromMinor(amount: number | undefined, currency: string | undefined): string | null {
+  if (amount == null || !currency) return null;
+  try {
+    return new Intl.NumberFormat([], { style: 'currency', currency }).format(amount / 100);
+  } catch {
+    return `${currency} ${(amount / 100).toFixed(2)}`;
+  }
+}
+
 function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice | null {
   if (!subscription) return null;
 
@@ -76,6 +89,26 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
     };
   }
 
+  if (subscription.scheduledPlan) {
+    const date = formatBillingDate(subscription.scheduledEffectiveAt || null);
+    return {
+      tone: 'info',
+      title: `${formatPlanName(subscription.scheduledPlan)} scheduled`,
+      body: date
+        ? `Your plan changes to ${formatPlanName(subscription.scheduledPlan)} on ${date}.`
+        : `Your plan change to ${formatPlanName(subscription.scheduledPlan)} is scheduled.`,
+    };
+  }
+
+  if (subscription.trialEndsAt && subscription.trialEndsAt > Date.now()) {
+    const date = formatBillingDate(subscription.trialEndsAt);
+    return {
+      tone: 'info',
+      title: 'Lite trial active',
+      body: date ? `Your first Lite charge is scheduled after the trial ends on ${date}.` : 'Your first Lite charge is scheduled after the 24-hour trial ends.',
+    };
+  }
+
   return null;
 }
 
@@ -101,17 +134,19 @@ function PlanCard({
   plan,
   features,
   currentPlan,
+  actionLabel,
+  badge,
   loading,
   onClick,
 }: {
   plan: BillingPlanInfo;
   features: PlanFeature[];
   currentPlan: BillingPlanId | 'unsubscribed';
+  actionLabel: string;
+  badge?: string | null;
   loading?: boolean;
   onClick: () => void;
 }) {
-  const currentIndex = BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId);
-  const targetIndex = BILLING_PLAN_ORDER.indexOf(plan.id);
   const isCurrent = plan.id === currentPlan;
   const isPro = plan.id === 'pro';
 
@@ -121,17 +156,9 @@ function PlanCard({
       ? 'border-black/5 dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.03]'
       : 'border-black/5 dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.025]';
 
-  const buttonLabel = isCurrent
-    ? 'Current plan'
-    : currentIndex < 0
-      ? `Get ${plan.name}`
-      : targetIndex > currentIndex
-        ? `Upgrade to ${plan.name}`
-        : 'Manage plan';
-
   return (
     <div className={`rounded-2xl border p-5 flex flex-col relative overflow-hidden ${cardClass} ${isCurrent ? 'ring-1 ring-[var(--color-accent)]/20' : ''}`}>
-      {isPro && !isCurrent && (
+      {isPro && !isCurrent && !badge && (
         <div className="absolute top-3 right-3">
           <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
             Popular
@@ -142,6 +169,13 @@ function PlanCard({
         <div className="absolute top-3 right-3">
           <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-[var(--color-accent)]/15 text-[var(--color-accent)] uppercase tracking-widest">
             Current
+          </span>
+        </div>
+      )}
+      {badge && !isCurrent && (
+        <div className="absolute top-3 right-3">
+          <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 uppercase tracking-widest">
+            {badge}
           </span>
         </div>
       )}
@@ -169,7 +203,7 @@ function PlanCard({
         className="w-full"
         variant={isPro ? 'primary' : 'default'}
       >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : buttonLabel}
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : actionLabel}
       </Button>
     </div>
   );
@@ -182,10 +216,16 @@ export function PlanPanel() {
     fetchSubscription,
     openPortal,
     startCheckout,
+    previewPlanChange,
     switchPlan,
+    cancelSubscription,
+    resumeSubscription,
+    updatePaymentMethod,
   } = useBillingStore();
 
   const [checkoutLoading, setCheckoutLoading] = useState<BillingPlanId | null>(null);
+  const [secondaryLoading, setSecondaryLoading] = useState<string | null>(null);
+  const [pendingChange, setPendingChange] = useState<{ plan: BillingPlanId; preview: any } | null>(null);
   const [plans, setPlans] = useState<BillingPlanInfo[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
 
@@ -231,7 +271,8 @@ export function PlanPanel() {
     setCheckoutLoading(plan);
     const result = await switchPlan(plan);
     if (result === true) {
-      window.location.reload();
+      setPendingChange(null);
+      setCheckoutLoading(null);
       return;
     }
     if (typeof result === 'object' && result.redirectToCheckout) {
@@ -241,18 +282,68 @@ export function PlanPanel() {
     setCheckoutLoading(null);
   }, [switchPlan, handleCheckout]);
 
-  const currentPlan = subscription?.plan || 'unsubscribed';
+  const handlePlanAction = useCallback(async (plan: BillingPlanId) => {
+    if (subscription?.environment === 'staging' || subscription?.environment === 'local') {
+      await handleSwitchPlan(plan);
+      return;
+    }
+    const billingPlan = subscription?.storedPlan || subscription?.plan || 'unsubscribed';
+    if (!subscription?.dodoSubscriptionId || !isPaidPlan(billingPlan)) {
+      await handleCheckout(plan);
+      return;
+    }
+    if (plan === billingPlan) return;
+    setCheckoutLoading(plan);
+    const preview = await previewPlanChange(plan);
+    setCheckoutLoading(null);
+    if (preview !== null) setPendingChange({ plan, preview });
+  }, [handleCheckout, handleSwitchPlan, previewPlanChange, subscription]);
+
+  const handleOpenPortal = useCallback(async () => {
+    setSecondaryLoading('portal');
+    const result = await openPortal();
+    setSecondaryLoading(null);
+    if ('url' in result) window.location.href = result.url;
+  }, [openPortal]);
+
+  const handleCancel = useCallback(async () => {
+    setSecondaryLoading('cancel');
+    await cancelSubscription();
+    setSecondaryLoading(null);
+  }, [cancelSubscription]);
+
+  const handleResume = useCallback(async () => {
+    setSecondaryLoading('resume');
+    await resumeSubscription();
+    setSecondaryLoading(null);
+  }, [resumeSubscription]);
+
+  const handlePaymentMethod = useCallback(async () => {
+    setSecondaryLoading('payment');
+    const result = await updatePaymentMethod();
+    setSecondaryLoading(null);
+    if ('url' in result) window.location.href = result.url;
+  }, [updatePaymentMethod]);
+
+  const currentPlan = subscription?.storedPlan || subscription?.plan || 'unsubscribed';
   const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const billingNotice = getBillingNotice(subscription);
-  const canManageBilling = currentPlan !== 'unsubscribed' && !isNonProd && !!subscription?.dodoCustomerId;
+  const canManageBilling = !isNonProd && !!subscription?.dodoCustomerId && subscription.dodoCustomerId !== 'admin_grant';
+  const billingStatus = (subscription?.status || '').toLowerCase();
+  const hasPaymentIssue = billingStatus === 'on_hold' || billingStatus === 'past_due';
+  const canCancel = canManageBilling && isPaidPlan(currentPlan) && !subscription?.cancelAtPeriodEnd && billingStatus === 'active';
+  const canResume = canManageBilling && (!!subscription?.cancelAtPeriodEnd || !!subscription?.scheduledPlan);
   const summary = currentPlan === 'unsubscribed'
     ? 'Plan details are shown below. Paid plan management is available after you subscribe.'
     : canManageBilling
-      ? 'Manage your subscription, invoices, payment details, and cancellation in the Dodo Payments portal.'
+      ? 'Manage your plan here. Dodo portal remains available for invoices and payment details.'
       : isNonProd
         ? 'Plan changes are disabled in this environment.'
         : 'Billing portal becomes available after checkout.';
+
+  const previewCharge = pendingChange?.preview?.immediate_charge?.summary;
+  const previewAmount = formatMoneyFromMinor(previewCharge?.total_amount, previewCharge?.currency);
 
   const orderedPlans = BILLING_PLAN_ORDER
     .map((id) => plans.find((plan) => plan.id === id))
@@ -281,19 +372,61 @@ export function PlanPanel() {
               <Button
                 size="md"
                 variant="default"
-                disabled={!canManageBilling || subscriptionLoading}
-                onClick={canManageBilling ? async () => {
-                  const result = await openPortal();
-                  if ('url' in result) window.location.href = result.url;
-                } : undefined}
+                disabled={!canManageBilling || subscriptionLoading || secondaryLoading === 'portal'}
+                onClick={canManageBilling ? handleOpenPortal : undefined}
                 className="shrink-0 gap-1.5"
               >
-                {canManageBilling ? <ExternalLink className="w-3.5 h-3.5" /> : null}
-                Manage plan
+                {secondaryLoading === 'portal' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : canManageBilling ? <ExternalLink className="w-3.5 h-3.5" /> : null}
+                Open Dodo
               </Button>
             </div>
 
             {billingNotice && <BillingStatusBanner notice={billingNotice} />}
+
+            {(hasPaymentIssue || canCancel || canResume) && (
+              <div className="flex flex-wrap gap-2">
+                {hasPaymentIssue && (
+                  <Button size="sm" variant="primary" disabled={secondaryLoading === 'payment'} onClick={handlePaymentMethod}>
+                    {secondaryLoading === 'payment' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Update payment method
+                  </Button>
+                )}
+                {canResume && (
+                  <Button size="sm" variant="default" disabled={secondaryLoading === 'resume'} onClick={handleResume}>
+                    {secondaryLoading === 'resume' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Undo scheduled change
+                  </Button>
+                )}
+                {canCancel && (
+                  <Button size="sm" variant="default" disabled={secondaryLoading === 'cancel'} onClick={handleCancel}>
+                    {secondaryLoading === 'cancel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Cancel at period end
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {pendingChange && (
+              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] p-4 text-[12px] text-cyan-700 dark:text-cyan-300 space-y-3">
+                <div className="font-semibold">Confirm change to {formatPlanName(pendingChange.plan)}</div>
+                <p className="leading-relaxed">
+                  {BILLING_PLAN_ORDER.indexOf(pendingChange.plan) < BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId)
+                    ? 'This downgrade is scheduled for your next billing date, so current plan benefits stay active until then.'
+                    : previewAmount
+                      ? `Dodo previewed an immediate charge of ${previewAmount}. Your plan changes after Dodo confirms payment.`
+                      : 'Dodo previewed this change. Your plan changes after Dodo confirms payment.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="primary" disabled={checkoutLoading === pendingChange.plan} onClick={() => void handleSwitchPlan(pendingChange.plan)}>
+                    {checkoutLoading === pendingChange.plan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Confirm
+                  </Button>
+                  <Button size="sm" variant="default" disabled={!!checkoutLoading} onClick={() => setPendingChange(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {plansLoading && orderedPlans.length === 0 ? (
               <div className="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] py-4">
@@ -308,8 +441,17 @@ export function PlanPanel() {
                     plan={plan}
                     features={PLAN_FEATURES[plan.id]}
                     currentPlan={currentPlan as BillingPlanId | 'unsubscribed'}
+                    actionLabel={(() => {
+                      if (plan.id === currentPlan) return 'Current plan';
+                      if (subscription?.scheduledPlan === plan.id) return 'Scheduled';
+                      if (!isPaidPlan(currentPlan)) return `Get ${plan.name}`;
+                      return BILLING_PLAN_ORDER.indexOf(plan.id) > BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId)
+                        ? `Upgrade to ${plan.name}`
+                        : `Downgrade to ${plan.name}`;
+                    })()}
+                    badge={subscription?.scheduledPlan === plan.id ? 'Scheduled' : null}
                     loading={checkoutLoading === plan.id}
-                    onClick={() => void handleSwitchPlan(plan.id)}
+                    onClick={() => void handlePlanAction(plan.id)}
                   />
                 ))}
               </div>

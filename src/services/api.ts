@@ -2536,13 +2536,22 @@ export async function deleteMemory(memoryId: string): Promise<ApiResult<{ succes
 
 export interface SubscriptionInfo {
   plan: string;
+  storedPlan?: string;
   planSource: string;
   status: string;
   dodoCustomerId: string | null;
   dodoSubscriptionId: string | null;
+  dodoProductId?: string | null;
   currentPeriodStart: number | null;
   currentPeriodEnd: number | null;
   cancelAtPeriodEnd: boolean;
+  trialEndsAt?: number | null;
+  trialUsed?: boolean;
+  scheduledPlan?: string | null;
+  scheduledEffectiveAt?: number | null;
+  scheduledChangeId?: string | null;
+  dodoLastSyncedAt?: number | null;
+  lastPaymentErrorCode?: string | null;
   environment?: string;
   byok?: boolean;
   byokSettings?: ByokSettings;
@@ -2702,11 +2711,34 @@ export async function switchPlan(plan: 'lite' | 'starter' | 'pro'): Promise<ApiR
   portalUrl?: string;
   redirectToCheckout?: boolean;
   targetPlan?: string;
+  scheduled?: boolean;
 }>> {
   return request('/billing/switch-plan', {
     method: 'POST',
     body: JSON.stringify({ plan }),
   });
+}
+
+export async function previewPlanChange(plan: 'lite' | 'starter' | 'pro'): Promise<ApiResult<{
+  ok: boolean;
+  preview: any;
+}>> {
+  return request('/billing/preview-plan-change', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  });
+}
+
+export async function cancelSubscription(): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/billing/cancel-subscription', { method: 'POST' });
+}
+
+export async function resumeSubscription(): Promise<ApiResult<{ ok: boolean }>> {
+  return request('/billing/resume-subscription', { method: 'POST' });
+}
+
+export async function updateSubscriptionPaymentMethod(): Promise<ApiResult<{ paymentLink?: string; portalUrl?: string }>> {
+  return request('/billing/payment-method', { method: 'POST' });
 }
 
 export async function createPortalSession(): Promise<ApiResult<{ portalUrl: string }>> {

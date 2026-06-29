@@ -461,7 +461,7 @@ function WebAppShell() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const billingStatus = params.get('billing_status');
-    if (billingStatus === 'success' || billingStatus === 'portal_return') {
+    if (billingStatus === 'success' || billingStatus === 'portal' || billingStatus === 'portal_return' || billingStatus === 'payment_method') {
       window.history.replaceState({}, '', '/');
       void Promise.allSettled([checkAuth(), fetchSubscription(), fetchUsage()]);
     }
