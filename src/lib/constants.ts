@@ -62,6 +62,7 @@ export const Z_INDEX = {
   menu: 950,
   startMenu: 950,
   modal: 1000,
+  survey: 1100,
   notification: 1200,
   tooltip: 2000,
 

@@ -86,6 +86,8 @@ export function Desktop({
 }: DesktopProps) {
   const { openWindow } = useWindowStore();
   const missionControlActive = useWindowStore((s) => s.missionControlActive);
+  const spotlightOpen = useWindowStore((s) => s.spotlightOpen);
+  const launchpadOpen = useWindowStore((s) => s.launchpadOpen);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
@@ -243,6 +245,7 @@ export function Desktop({
   const hasBillingIssue = !!subscription?.dodoCustomerId
     && ['on_hold', 'past_due', 'failed'].includes((subscription.status || '').toLowerCase());
   const promoVisible = Boolean(!chromeHidden && (user?.onboardingCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed);
+  const surveySuspended = promoVisible || missionControlActive || spotlightOpen || launchpadOpen;
   useEffect(() => {
     if (entering || chromeHidden) return;
     if (!userId || !user?.setupCompleted || !user?.onboardingCompleted) return;
@@ -517,7 +520,7 @@ export function Desktop({
         <PromoCodeModal code={promoCode || ''} onDismiss={() => setPromoDismissed(true)} />
       )}
 
-      <SurveyModal suspended={promoVisible} />
+      <SurveyModal suspended={surveySuspended} />
     </div>
   );
 }

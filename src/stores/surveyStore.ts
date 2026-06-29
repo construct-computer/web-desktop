@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as api from '@/services/api';
+import { openNativeExternalUrl } from '@/native';
 import { detectSurveySurface, type SurveyAnswers, type SurveyEventName, type SurveyPayload, type SurveySurface } from '@/lib/surveys';
 
 interface SurveyContext {
@@ -60,6 +61,23 @@ async function sendSurveyEvent(
     ...(body?.answers ? { answers: body.answers } : {}),
     metadata,
   }, options);
+}
+
+async function openSurveyCallToActionUrl(url: string): Promise<void> {
+  const tg = window.Telegram?.WebApp;
+  if (typeof tg?.openLink === 'function') {
+    tg.openLink(url);
+    return;
+  }
+
+  try {
+    if (await openNativeExternalUrl(url)) return;
+  } catch {
+    // Fall through to the browser open path.
+  }
+
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) window.location.href = url;
 }
 
 const initialState = createInitialState();
@@ -164,8 +182,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     if (!activeSurvey || !context) return;
     const url = callToActionUrl || activeSurvey.definition.callToAction.url;
     void sendSurveyEvent(activeSurvey, context, 'call_cta_clicked', { url });
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) window.location.href = url;
+    await openSurveyCallToActionUrl(url);
   },
 
   clear: () => set((state) => createInitialState(state.requestId + 1)),
