@@ -1,5 +1,12 @@
 import { API_BASE_URL, STORAGE_KEYS } from '@/lib/constants';
 import type { ApiResult, User, AgentWithConfig } from '@/types';
+import type {
+  SurveyEventRequest,
+  SurveyPayload,
+  SurveySurface,
+  SurveySubmitRequest,
+  SurveySubmitResult,
+} from '@/lib/surveys';
 import { Capacitor } from '@capacitor/core';
 
 type ApiRequestOptions = RequestInit & {
@@ -360,6 +367,39 @@ export async function completeOnboarding(body: {
   progress: import('@/lib/onboarding').OnboardingProgress;
 }>> {
   return request('/auth/onboarding/complete', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getNextSurvey(
+  trigger: string,
+  surface: SurveySurface,
+): Promise<ApiResult<{ survey: SurveyPayload | null }>> {
+  return request(`/surveys/next?trigger=${encodeURIComponent(trigger)}&surface=${encodeURIComponent(surface)}`, {
+    captureErrors: false,
+    retryNetwork: true,
+  });
+}
+
+export async function trackSurveyEvent(
+  surveyId: string,
+  body: SurveyEventRequest,
+  options: RequestInit = {},
+): Promise<ApiResult<{ ok: boolean }>> {
+  return request(`/surveys/${surveyId}/event`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    captureErrors: false,
+    ...options,
+  });
+}
+
+export async function submitSurveyResponse(
+  surveyId: string,
+  body: SurveySubmitRequest,
+): Promise<ApiResult<SurveySubmitResult>> {
+  return request(`/surveys/${surveyId}/response`, {
     method: 'POST',
     body: JSON.stringify(body),
   });

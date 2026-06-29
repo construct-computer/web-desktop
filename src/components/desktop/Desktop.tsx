@@ -14,12 +14,14 @@ import { Toasts } from '@/components/ui';
 import { WindowManager } from '@/components/window';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useSurveyStore } from '@/stores/surveyStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
 import { BOOT_EVENTS } from '@/hooks/useBootPhase';
 import { PromoCodeModal } from '@/components/apps/PromoCodeModal';
+import { SurveyModal } from '@/components/surveys/SurveyModal';
 import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
@@ -78,6 +80,7 @@ export function Desktop({
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
   const user = useAuthStore((s) => s.user);
+  const refreshSurvey = useSurveyStore((s) => s.refresh);
   const isMobile = useIsMobile();
   const topBarHeight = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
 
@@ -229,6 +232,14 @@ export function Desktop({
   const hasAccess = isTelegram || hasAgentAccess(user?.plan);
   const hasBillingIssue = !!subscription?.dodoCustomerId
     && ['on_hold', 'past_due', 'failed'].includes((subscription.status || '').toLowerCase());
+  const promoVisible = Boolean(!chromeHidden && (user?.onboardingCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed);
+  useEffect(() => {
+    if (entering || chromeHidden) return;
+    if (!userId || !user?.setupCompleted || !user?.onboardingCompleted) return;
+    if (promoVisible) return;
+    void refreshSurvey('app_ready');
+  }, [entering, chromeHidden, userId, user?.setupCompleted, user?.onboardingCompleted, promoVisible, refreshSurvey]);
+
   useEffect(() => {
     if (!userId) return;
     if (!user?.setupCompleted || !user?.onboardingCompleted) return;
@@ -434,9 +445,11 @@ export function Desktop({
 
       {/* Promo code modal — shown once after onboarding if the user landed
           via ?code=XXX and isn't already on Pro. Also shown to unsubscribed users immediately. */}
-      {!chromeHidden && (user?.onboardingCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed && (
-        <PromoCodeModal code={promoCode} onDismiss={() => setPromoDismissed(true)} />
+      {promoVisible && (
+        <PromoCodeModal code={promoCode || ''} onDismiss={() => setPromoDismissed(true)} />
       )}
+
+      <SurveyModal suspended={promoVisible} />
     </div>
   );
 }

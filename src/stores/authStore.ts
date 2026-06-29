@@ -11,6 +11,7 @@ import {
 import { saveSessionWallpaper } from '@/lib/wallpaperSession';
 import { setUserWallpaper } from '@/lib/wallpaperPrefs';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useSurveyStore } from '@/stores/surveyStore';
 import { identifyUser, resetAnalytics, track } from '@/lib/analytics';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
@@ -78,6 +79,7 @@ function clearStaleUserData(newUserId: string): void {
     deferWallpaperCacheClearForUser(previousUserId);
   }
 
+  useSurveyStore.getState().clear();
   useSettingsStore.getState().applyWallpaperForUser(newUserId);
 }
 
@@ -101,6 +103,7 @@ function persistWallpaperSessionBeforeLogout(): void {
 function clearLocalSessionData(): void {
   void clearWallpaperCacheOnSessionEnd();
   api.clearToken();
+  useSurveyStore.getState().clear();
 
   try { sessionStorage.clear(); } catch { /* */ }
   try { localStorage.removeItem('construct:tracker:dismissedGoals'); } catch { /* */ }
