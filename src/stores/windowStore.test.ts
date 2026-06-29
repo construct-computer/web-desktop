@@ -15,7 +15,7 @@ vi.useFakeTimers();
 
 afterEach(() => {
   vi.clearAllTimers();
-  useWindowStore.setState({ minimizeAnimatingWindowIds: {} });
+  useWindowStore.setState({ minimizeAnimatingWindowIds: {}, closeAnimatingWindowIds: {} });
 });
 
 afterAll(() => {
@@ -256,6 +256,20 @@ describe('openWindow large defaults', () => {
     vi.advanceTimersByTime(WINDOW_TRANSITION_MS);
 
     expect(useWindowStore.getState().minimizeAnimatingWindowIds[id]).toBeUndefined();
+  });
+
+  it('animates requestCloseWindow before removing the window', () => {
+    const id = useWindowStore.getState().openWindow('settings');
+
+    useWindowStore.getState().requestCloseWindow(id);
+
+    expect(useWindowStore.getState().closeAnimatingWindowIds[id]).toBe(true);
+    expect(useWindowStore.getState().windows.some((w) => w.id === id)).toBe(true);
+
+    vi.advanceTimersByTime(WINDOW_TRANSITION_MS);
+
+    expect(useWindowStore.getState().closeAnimatingWindowIds[id]).toBeUndefined();
+    expect(useWindowStore.getState().windows.some((w) => w.id === id)).toBe(false);
   });
 
   it('toggleSpotlight keeps chat open', () => {

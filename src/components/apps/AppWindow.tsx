@@ -724,7 +724,7 @@ function LocalAppPanel({
       const res = await api.deleteLocalApp(appId);
       if (res.success) {
         useAppStore.getState().fetchApps();
-        useWindowStore.getState().closeWindow(config.id);
+        useWindowStore.getState().requestCloseWindow(config.id);
       } else {
         logger.warn('Failed to delete local app:', res.error);
         setConfirmDelete(false);
@@ -1171,7 +1171,7 @@ async function handleBridgeMethod(
     }
 
     case 'ui.close': {
-      useWindowStore.getState().closeWindow(config.id);
+      useWindowStore.getState().requestCloseWindow(config.id);
       return { ok: true };
     }
 

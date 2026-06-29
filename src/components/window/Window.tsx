@@ -109,6 +109,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   };
   const { play } = useSound();
   const focusedWindowId = useWindowStore((s) => s.focusedWindowId);
+  const closeAnimatingWindowIds = useWindowStore((s) => s.closeAnimatingWindowIds);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
   const titleBarAccessory = useWindowAccessoryStore((s) => s.accessories[config.id]);
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
@@ -134,6 +135,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const isMaximized = config.state === 'maximized';
   const isMinimized = config.state === 'minimized';
   const isChatWindow = config.type === 'chat';
+  const isClosing = !!closeAnimatingWindowIds[config.id];
 
   // ── Mission Control state ───────────────────────────────────────
 
@@ -192,6 +194,14 @@ export function Window({ config, children, missionControlTarget, missionControlI
     const wasMinimized = prevIsMinimized.current;
     prevIsMinimized.current = isMinimized;
 
+    if (isClosing) {
+      setShouldRender(true);
+      setAnimVisible(false);
+      setFadedOut(true);
+      setOpeningFromDock(false);
+      return;
+    }
+
     if (inMC || exitingMC) {
       // Force visible in MC mode (or during exit animation), even for minimized windows
       setShouldRender(true);
@@ -247,7 +257,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
 
     setOpeningFromDock(false);
     return kickOpenAnimation(setAnimVisible, prefersReducedMotion);
-  }, [isMinimized, inMC, exitingMC, inWorkspaceTransition, unmountDelayMs, prefersReducedMotion]);
+  }, [isMinimized, isClosing, inMC, exitingMC, inWorkspaceTransition, unmountDelayMs, prefersReducedMotion]);
 
   // Re-trigger zoom-in when promoted from stage strip to center
   const prevStageTargetRef = useRef<StageTarget | null | undefined>(undefined);

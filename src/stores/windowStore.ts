@@ -68,6 +68,7 @@ const savePersistedAppWindows = (windows: WindowConfig[]) => {
 
 const CHAT_OVERLAY_MIN_SIZE = { minWidth: 360, minHeight: 420 };
 const minimizeAnimationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const closeAnimationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function clearMinimizeAnimation(id: string) {
   const existing = minimizeAnimationTimers.get(id);
@@ -103,6 +104,49 @@ function markMinimizeAnimation(id: string) {
   minimizeAnimationTimers.set(id, timer);
 }
 
+function clearCloseAnimation(id: string) {
+  const existing = closeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    closeAnimationTimers.delete(id);
+  }
+
+  const current = useWindowStore.getState().closeAnimatingWindowIds;
+  if (!current[id]) return;
+
+  const next = { ...current };
+  delete next[id];
+  useWindowStore.setState({ closeAnimatingWindowIds: next });
+}
+
+function markCloseAnimation(id: string, beforeClose?: () => void) {
+  const existing = closeAnimationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    closeAnimationTimers.delete(id);
+  }
+
+  useWindowStore.setState({
+    closeAnimatingWindowIds: {
+      ...useWindowStore.getState().closeAnimatingWindowIds,
+      [id]: true,
+    },
+  });
+
+  const timer = setTimeout(() => {
+    closeAnimationTimers.delete(id);
+    beforeClose?.();
+    const current = useWindowStore.getState().closeAnimatingWindowIds;
+    if (!current[id]) return;
+    const next = { ...current };
+    delete next[id];
+    useWindowStore.setState({ closeAnimatingWindowIds: next });
+    useWindowStore.getState().closeWindow(id);
+  }, WINDOW_TRANSITION_MS);
+
+  closeAnimationTimers.set(id, timer);
+}
+
 function hasVisibleDesktopWindows(state: {
   windows: WindowConfig[];
   activeWorkspaceId: string;
@@ -126,6 +170,7 @@ interface WindowStore {
   focusedWindowId: string | null;
   nextZIndex: number;
   minimizeAnimatingWindowIds: Record<string, true>;
+  closeAnimatingWindowIds: Record<string, true>;
 
   // Workspaces
   workspaces: Workspace[];
@@ -152,6 +197,7 @@ interface WindowStore {
   // Actions
   openWindow: (type: WindowType, options?: Partial<WindowConfig>) => string;
   closeWindow: (id: string) => void;
+  requestCloseWindow: (id: string, opts?: { beforeClose?: () => void }) => void;
   /** Update a window's properties (title, metadata, etc.) without closing/reopening */
   updateWindow: (id: string, updates: Partial<Pick<WindowConfig, 'title' | 'metadata'>>) => void;
   focusWindow: (id: string) => void;
@@ -324,6 +370,7 @@ export const useWindowStore = create<WindowStore>()(
     focusedWindowId: null,
     nextZIndex: Z_INDEX.window,
     minimizeAnimatingWindowIds: {},
+    closeAnimatingWindowIds: {},
 
     // ── Workspaces ──────────────────────────────────────────
     workspaces: [MAIN_WORKSPACE],
@@ -541,6 +588,7 @@ export const useWindowStore = create<WindowStore>()(
         if (existing) {
           // Switch to the workspace if needed, then focus
           if (get().activeWorkspaceId !== existing.workspaceId) get().switchWorkspace(existing.workspaceId);
+          clearCloseAnimation(existing.id);
           get().focusWindow(existing.id);
           if (type === 'chat') set({ agentWindowOpen: true });
           return existing.id;
@@ -554,6 +602,7 @@ export const useWindowStore = create<WindowStore>()(
         );
         if (existing) {
           if (get().activeWorkspaceId !== existing.workspaceId) get().switchWorkspace(existing.workspaceId);
+          clearCloseAnimation(existing.id);
           get().focusWindow(existing.id);
           return existing.id;
         }
@@ -688,6 +737,7 @@ export const useWindowStore = create<WindowStore>()(
 
     closeWindow: (id) => {
       clearMinimizeAnimation(id);
+      clearCloseAnimation(id);
       const { windows, focusedWindowId } = get();
       const closing = windows.find((w) => w.id === id);
       const newWindows = windows.filter((w) => w.id !== id);
@@ -763,6 +813,13 @@ export const useWindowStore = create<WindowStore>()(
       // Persist open app windows
       if (closing?.type === 'app') savePersistedAppWindows(newWindows);
     },
+
+    requestCloseWindow: (id, opts) => {
+      const window = get().windows.find((w) => w.id === id);
+      if (!window) return;
+
+      markCloseAnimation(id, opts?.beforeClose);
+    },
     
     focusWindow: (id) => {
       const { windows, nextZIndex, focusedWindowId } = get();
@@ -770,6 +827,7 @@ export const useWindowStore = create<WindowStore>()(
       
       const window = windows.find((w) => w.id === id);
       if (!window) return;
+      clearCloseAnimation(id);
       const mobile = isMobileViewport();
       const isDesktopChatWindow = window.type === 'chat' && !mobile;
       const isOverlayWindow = window.workspaceId === CHAT_OVERLAY_WORKSPACE_ID || isDesktopChatWindow;

@@ -17,12 +17,14 @@ interface MobileWindowProps {
 export function MobileWindow({ config, children }: MobileWindowProps) {
   const { play } = useSound();
   const focusedWindowId = useWindowStore((s) => s.focusedWindowId);
+  const closeAnimatingWindowIds = useWindowStore((s) => s.closeAnimatingWindowIds);
   const titleBarAccessory = useWindowAccessoryStore((s) => s.accessories[config.id]);
   const closeBrowserWindow = useComputerStore((s) => s.closeBrowserWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
 
   const isFocused = focusedWindowId === config.id;
   const isMinimized = config.state === 'minimized';
+  const isClosing = !!closeAnimatingWindowIds[config.id];
 
   const [animating, setAnimating] = useState(false);
   /** Opacity fade on close only — open keeps opacity 1 so glass stays visible during slide-in */
@@ -47,6 +49,14 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
   );
 
   useEffect(() => {
+    if (isClosing) {
+      setShouldRender(true);
+      setAnimating(false);
+      setFadedOut(true);
+      setMinimizeExiting(false);
+      return;
+    }
+
     if (isMinimized) {
       setShouldRender(true);
       setAnimating(false);
@@ -70,7 +80,7 @@ export function MobileWindow({ config, children }: MobileWindowProps) {
 
     setFadedOut(false);
     return kickOpenAnimation(setAnimating, prefersReducedMotion);
-  }, [isFocused, isMinimized, prefersReducedMotion]);
+  }, [isClosing, isFocused, isMinimized, prefersReducedMotion]);
 
   const finishClose = useCallback(() => {
     if (config.type === 'browser') {

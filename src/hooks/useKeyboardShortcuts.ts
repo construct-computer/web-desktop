@@ -22,7 +22,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers = {}) {
   const cycleWindows = useWindowStore(s => s.cycleWindows);
   const cycleWorkspaces = useWindowStore(s => s.cycleWorkspaces);
   const switchWorkspace = useWindowStore(s => s.switchWorkspace);
-  const closeWindow = useWindowStore(s => s.closeWindow);
+  const requestCloseWindow = useWindowStore(s => s.requestCloseWindow);
   const getFocusedWindow = useWindowStore(s => s.getFocusedWindow);
   const workspaces = useWindowStore(s => s.workspaces);
 
@@ -35,7 +35,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers = {}) {
       if (e.key === 'w' && !e.shiftKey && isAgentBrowser && (hasMod(e) || e.metaKey)) {
         e.preventDefault();
         if (closeActiveBrowserTab()) return;
-        useComputerStore.getState().closeBrowserWindow(focused.id);
+        useComputerStore.getState().closeBrowserWindow(focused.id, { animateClose: true });
         return;
       }
 
@@ -81,7 +81,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers = {}) {
       // Mod+W — close focused window (browser tab close handled above, including Cmd+W on Mac)
       if (e.key === 'w' && hasMod(e) && !e.shiftKey) {
         e.preventDefault();
-        if (focused) closeWindow(focused.id);
+        if (focused) requestCloseWindow(focused.id);
         return;
       }
 
@@ -107,5 +107,5 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers = {}) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSpotlight, toggleLaunchpad, cycleWindows, cycleWorkspaces, switchWorkspace, closeWindow, getFocusedWindow, workspaces, onOpenTerminal, onToggleStartMenu, isMobile]);
+  }, [toggleSpotlight, toggleLaunchpad, cycleWindows, cycleWorkspaces, switchWorkspace, requestCloseWindow, getFocusedWindow, workspaces, onOpenTerminal, onToggleStartMenu, isMobile]);
 }

@@ -977,7 +977,7 @@ interface ComputerStore {
   /** Open a new browser window (creates daemon tab). Returns the window ID. */
   openBrowserWindow: (url?: string) => string;
   /** Close a browser window (closes daemon tab). */
-  closeBrowserWindow: (windowId: string) => void;
+  closeBrowserWindow: (windowId: string, opts?: { animateClose?: boolean }) => void;
   /** Called when a browser window gains focus — switches daemon to that tab. */
   focusBrowserWindow: (windowId: string) => void;
   /** Navigate the focused browser window to a URL. */
@@ -4680,80 +4680,96 @@ export const useComputerStore = create<ComputerStore>()(
       return windowId;
     },
 
-    closeBrowserWindow: (windowId) => {
+    closeBrowserWindow: (windowId, opts) => {
       const win = useWindowStore.getState().getWindow(windowId);
       if (!win || win.type !== 'browser') return;
 
       const daemonTabId = win.metadata?.daemonTabId as string | null;
       const browserSubagentId = win.metadata?.browserSubagentId as string | null;
 
-      // Tell daemon to close the tab when running in legacy container mode.
-      if (daemonTabId && browserWS.isConnected()) {
-        browserWS.sendAction({ action: 'closeTab', tabId: daemonTabId });
-        tabBlobCache.delete(daemonTabId);
-        // Clean per-tab frame marker
-        const { browserState: bs1 } = get();
-        if (bs1.tabsWithFrames[daemonTabId]) {
-          const { [daemonTabId]: _, ...rest } = bs1.tabsWithFrames;
-          set({ browserState: { ...bs1, tabsWithFrames: rest } });
+      const runBrowserCleanup = () => {
+        // Tell daemon to close the tab when running in legacy container mode.
+        if (daemonTabId && browserWS.isConnected()) {
+          browserWS.sendAction({ action: 'closeTab', tabId: daemonTabId });
+          tabBlobCache.delete(daemonTabId);
+          // Clean per-tab frame marker
+          const { browserState: bs1 } = get();
+          if (bs1.tabsWithFrames[daemonTabId]) {
+            const { [daemonTabId]: _, ...rest } = bs1.tabsWithFrames;
+            set({ browserState: { ...bs1, tabsWithFrames: rest } });
+          }
         }
-      }
 
-      // Clean up Browser state
-      if (browserSubagentId) {
-        const { browserState } = get();
-        const { [browserSubagentId]: _removed, ...remainingStreams } = browserState.browserStreams;
-        const { [browserSubagentId]: _removedFrame, ...remainingFrames } = browserState.tabsWithFrames;
-        set({
-          browserState: {
-            ...browserState,
-            browserStreams: remainingStreams,
-            tabsWithFrames: remainingFrames,
-          },
-        });
-        tabBlobCache.delete(browserSubagentId);
-      }
+        // Clean up Browser state
+        if (browserSubagentId) {
+          const { browserState } = get();
+          const { [browserSubagentId]: _removed, ...remainingStreams } = browserState.browserStreams;
+          const { [browserSubagentId]: _removedFrame, ...remainingFrames } = browserState.tabsWithFrames;
+          set({
+            browserState: {
+              ...browserState,
+              browserStreams: remainingStreams,
+              tabsWithFrames: remainingFrames,
+            },
+          });
+          tabBlobCache.delete(browserSubagentId);
+        }
 
-      // Clean up per-window renderer
-      frameRenderers.delete(windowId);
-      canvasClearFns.delete(windowId);
+        // Clean up per-window renderer
+        frameRenderers.delete(windowId);
+        canvasClearFns.delete(windowId);
 
-      // Drop emulated search/fetch/research tabs when the agent browser window closes.
-      if (win.metadata?.browserAppWindow) {
-        const tabStore = useBrowserTabStore.getState();
-        tabStore.clearStaticTabs();
-        tabStore.downgradeLiveTabsOnClose();
-        tabStore.pruneInactiveLiveTabs(get().browserState.browserSessions);
-        const hasRunning = Object.values(get().browserState.browserSessions).some(
-          (s) => s.status === 'running' || s.status === 'starting',
-        );
-        if (!hasRunning) {
+        // Drop emulated search/fetch/research tabs when the agent browser window closes.
+        if (win.metadata?.browserAppWindow) {
+          const tabStore = useBrowserTabStore.getState();
+          tabStore.clearStaticTabs();
+          tabStore.downgradeLiveTabsOnClose();
+          tabStore.pruneInactiveLiveTabs(get().browserState.browserSessions);
+          const hasRunning = Object.values(get().browserState.browserSessions).some(
+            (s) => s.status === 'running' || s.status === 'starting',
+          );
+          if (!hasRunning) {
+            set({
+              browserState: {
+                ...get().browserState,
+                activeBrowserSessionId: null,
+              },
+            });
+          }
+        }
+      };
+
+      const finalizeBrowserCleanup = () => {
+        // If no browser windows remain, clear all frame state
+        const remainingBrowserWindows = useWindowStore.getState().windows.filter(w => w.type === 'browser');
+        if (remainingBrowserWindows.length === 0) {
+          tabBlobCache.clear();
           set({
             browserState: {
               ...get().browserState,
-              activeBrowserSessionId: null,
+              screenshot: null,
+              url: '',
+              title: '',
+              tabsWithFrames: {},
             },
           });
         }
-      }
+      };
 
       // Close the window
-      useWindowStore.getState().closeWindow(windowId);
-
-      // If no browser windows remain, clear all frame state
-      const remainingBrowserWindows = useWindowStore.getState().windows.filter(w => w.type === 'browser');
-      if (remainingBrowserWindows.length === 0) {
-        tabBlobCache.clear();
-        set({
-          browserState: {
-            ...get().browserState,
-            screenshot: null,
-            url: '',
-            title: '',
-            tabsWithFrames: {},
+      if (opts?.animateClose) {
+        useWindowStore.getState().requestCloseWindow(windowId, {
+          beforeClose: () => {
+            runBrowserCleanup();
+            queueMicrotask(finalizeBrowserCleanup);
           },
         });
+        return;
       }
+
+      runBrowserCleanup();
+      useWindowStore.getState().closeWindow(windowId);
+      finalizeBrowserCleanup();
     },
 
     focusBrowserWindow: (windowId) => {
