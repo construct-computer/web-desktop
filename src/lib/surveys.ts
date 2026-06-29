@@ -9,6 +9,8 @@ export type SurveyQuestionType = 'rating' | 'single_choice' | 'multiple_choice' 
 export type SurveyEventName = 'shown' | 'started' | 'dismissed' | 'abandoned' | 'call_cta_clicked' | 'call_booked';
 export type SurveyAnswerValue = string | number | string[];
 export type SurveyAnswers = Record<string, SurveyAnswerValue>;
+export const SURVEY_DEBUG_KINDS = ['nps', 'csat', 'feedback', 'churn', 'custom'] as const;
+export const SURVEY_DEBUG_TRIGGER_PREFIX = 'survey:debug:' as const;
 
 export interface SurveyQuestion {
   id: string;
@@ -91,6 +93,21 @@ export function detectSurveySurface(): SurveySurface {
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   if (/ConstructDesktop/i.test(userAgent)) return 'desktop_app';
   return 'web';
+}
+
+export function isSurveyKind(value: unknown): value is SurveyKind {
+  return typeof value === 'string' && (SURVEY_DEBUG_KINDS as readonly string[]).includes(value);
+}
+
+export function surveyDebugTriggerForKind(kind: SurveyKind): string {
+  return `${SURVEY_DEBUG_TRIGGER_PREFIX}${kind}`;
+}
+
+export function nextSurveyDebugKind(current?: SurveyKind | null): SurveyKind {
+  if (!current) return SURVEY_DEBUG_KINDS[0];
+  const index = SURVEY_DEBUG_KINDS.indexOf(current);
+  if (index < 0) return SURVEY_DEBUG_KINDS[0];
+  return SURVEY_DEBUG_KINDS[(index + 1) % SURVEY_DEBUG_KINDS.length];
 }
 
 export function isSurveyQuestionRequired(question: SurveyQuestion): boolean {

@@ -17,6 +17,7 @@ interface SurveyStore {
   error: string | null;
   callToActionUrl: string | null;
   responseId: string | null;
+  requestId: number;
   refresh: (trigger: string, surface?: SurveySurface) => Promise<void>;
   markShown: () => Promise<void>;
   markStarted: (options?: RequestInit) => Promise<void>;
@@ -25,6 +26,21 @@ interface SurveyStore {
   submit: (answers: SurveyAnswers, metadata?: Record<string, unknown>) => Promise<boolean>;
   clickCallToAction: () => Promise<void>;
   clear: () => void;
+}
+
+function createInitialState(requestId = 0) {
+  return {
+    activeSurvey: null,
+    context: null,
+    loading: false,
+    submitting: false,
+    started: false,
+    completed: false,
+    error: null,
+    callToActionUrl: null,
+    responseId: null,
+    requestId,
+  };
 }
 
 async function sendSurveyEvent(
@@ -46,38 +62,27 @@ async function sendSurveyEvent(
   }, options);
 }
 
-const initialState = {
-  activeSurvey: null,
-  context: null,
-  loading: false,
-  submitting: false,
-  started: false,
-  completed: false,
-  error: null,
-  callToActionUrl: null,
-  responseId: null,
-};
+const initialState = createInitialState();
 
 export const useSurveyStore = create<SurveyStore>((set, get) => ({
   ...initialState,
 
   refresh: async (trigger, surface = detectSurveySurface()) => {
-    const { activeSurvey, loading } = get();
+    const { activeSurvey, loading, requestId } = get();
     if (activeSurvey || loading) return;
 
-    set({ loading: true, error: null });
+    const nextRequestId = requestId + 1;
+    set({ loading: true, error: null, requestId: nextRequestId });
     const result = await api.getNextSurvey(trigger, surface);
+    if (get().requestId !== nextRequestId) return;
     if (!result.success) {
-      set({ loading: false, error: result.error });
+      set({ ...createInitialState(nextRequestId), error: result.error });
       return;
     }
 
     const survey = result.data.survey;
     if (!survey) {
-      set({
-        ...initialState,
-        loading: false,
-      });
+      set(createInitialState(nextRequestId));
       return;
     }
 
@@ -91,6 +96,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       error: null,
       callToActionUrl: null,
       responseId: null,
+      requestId: nextRequestId,
     });
   },
 
@@ -117,7 +123,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     const { activeSurvey, context, started } = get();
     if (!activeSurvey || !context) return;
     await sendSurveyEvent(activeSurvey, context, started ? 'abandoned' : 'dismissed', undefined, undefined, options);
-    set({ ...initialState });
+    set((state) => createInitialState(state.requestId + 1));
   },
 
   submit: async (answers, metadata = {}) => {
@@ -162,5 +168,5 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     if (!opened) window.location.href = url;
   },
 
-  clear: () => set({ ...initialState }),
+  clear: () => set((state) => createInitialState(state.requestId + 1)),
 }));
