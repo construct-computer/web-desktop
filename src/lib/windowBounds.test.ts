@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clampBoundsToWorkArea,
+  computeDockMinimizeTransform,
   computeDefaultOpenBounds,
   computeOpenMinSize,
   computeVisuallyCenteredPosition,
@@ -105,6 +106,18 @@ describe('windowBounds', () => {
     expect(clamped.height).toBe(area.height);
     expect(clamped.x).toBeLessThanOrEqual(area.x + area.width - clamped.width);
     expect(clamped.y).toBeLessThanOrEqual(area.y + area.height - clamped.height);
+  });
+
+  it('computeDockMinimizeTransform shrinks toward the dock target', () => {
+    const motion = computeDockMinimizeTransform(
+      { x: 100, y: 80, width: 400, height: 300 },
+      { left: 20, top: 500, width: 80, height: 72 },
+    );
+
+    expect(motion).toEqual({
+      transform: 'translate(-80px, 426px) scale(0.2)',
+      transformOrigin: 'top left',
+    });
   });
 
   it('open min size is at least global mins and half the work area', () => {

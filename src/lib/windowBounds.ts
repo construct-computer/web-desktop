@@ -112,6 +112,26 @@ export function computeChatDockBounds(
   };
 }
 
+export function computeDockMinimizeTransform(
+  source: Pick<WindowBounds, 'x' | 'y' | 'width' | 'height'>,
+  target: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+): { transform: string; transformOrigin: 'top left' } {
+  const scale = Math.min(
+    1,
+    target.width / source.width,
+    target.height / source.height,
+  );
+  const scaledWidth = source.width * scale;
+  const scaledHeight = source.height * scale;
+  const x = target.left - source.x + Math.round((target.width - scaledWidth) / 2);
+  const y = target.top - source.y + Math.round((target.height - scaledHeight) / 2);
+
+  return {
+    transform: `translate(${x}px, ${y}px) scale(${Number(scale.toFixed(3))})`,
+    transformOrigin: 'top left',
+  };
+}
+
 export function computeDefaultOpenBounds(
   workArea?: DesktopWorkArea,
   opts?: { mobile?: boolean },

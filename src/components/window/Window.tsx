@@ -12,7 +12,7 @@ import type { WindowConfig, ResizeHandle } from '@/types';
 import type { MissionControlTarget } from './WindowManager';
 import { MENUBAR_HEIGHT, STAGE_STRIP_WIDTH, DOCK_HEIGHT, Z_INDEX, WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
 import { buildTransformOpacityTransition, kickOpenAnimation } from '@/lib/panelAnimation';
-import { getDesktopWorkArea, computeVisuallyCenteredPosition } from '@/lib/windowBounds';
+import { computeDockMinimizeTransform, getDesktopWorkArea, computeVisuallyCenteredPosition } from '@/lib/windowBounds';
 
 interface StageTarget {
   x: number; // delta x from current position
@@ -45,6 +45,23 @@ export function shouldEnterMissionControlOnTopEdge(opts: {
   missionControlActive: boolean;
 }): boolean {
   return !opts.isChatWindow && opts.clientY < MENUBAR_HEIGHT && !opts.missionControlActive;
+}
+
+function getDockTargetRect(config: WindowConfig): DOMRect | null {
+  // ponytail: read the rendered dock item directly; no separate geometry store.
+  const appId = config.type === 'app' ? (config.metadata?.appId as string | undefined) : undefined;
+  const dockItems = document.querySelectorAll<HTMLElement>('[data-dock-item]');
+
+  for (const item of dockItems) {
+    if (item.dataset.dockWindowId === config.id) return item.getBoundingClientRect();
+    if (config.type === 'app') {
+      if (appId && item.dataset.dockAppId === appId) return item.getBoundingClientRect();
+      continue;
+    }
+    if (item.dataset.dockWindowType === config.type) return item.getBoundingClientRect();
+  }
+
+  return null;
 }
 
 export function Window({ config, children, missionControlTarget, missionControlIndex, slideXOffset = 0, stageTarget, isStageActive }: WindowProps) {
@@ -154,7 +171,9 @@ export function Window({ config, children, missionControlTarget, missionControlI
   /** Opacity fade — only used on close/minimize; open keeps opacity 1 so glass blur stays visible during scale-in */
   const [fadedOut, setFadedOut] = useState(false);
   const [shouldRender, setShouldRender] = useState(true);
+  const [openingFromDock, setOpeningFromDock] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const prevIsMinimized = useRef(isMinimized);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -170,12 +189,16 @@ export function Window({ config, children, missionControlTarget, missionControlI
   // In MC mode, force-render minimized windows so they appear in the grid.
   // When exiting MC, keep rendering until the exit animation completes.
   useEffect(() => {
+    const wasMinimized = prevIsMinimized.current;
+    prevIsMinimized.current = isMinimized;
+
     if (inMC || exitingMC) {
       // Force visible in MC mode (or during exit animation), even for minimized windows
       setShouldRender(true);
       if (inMC) {
         setAnimVisible(true);
         setFadedOut(false);
+        setOpeningFromDock(false);
       }
       return;
     }
@@ -186,19 +209,44 @@ export function Window({ config, children, missionControlTarget, missionControlI
       setShouldRender(true);
       setAnimVisible(true);
       setFadedOut(false);
+      setOpeningFromDock(false);
       return;
     }
 
     if (isMinimized) {
+      setOpeningFromDock(false);
       setAnimVisible(false);
       setFadedOut(true);
       const t = setTimeout(() => setShouldRender(false), unmountDelayMs);
       return () => clearTimeout(t);
-    } else {
-      setShouldRender(true);
-      setFadedOut(false);
-      return kickOpenAnimation(setAnimVisible, prefersReducedMotion);
     }
+
+    setShouldRender(true);
+    setFadedOut(false);
+
+    if (wasMinimized) {
+      setOpeningFromDock(true);
+      if (prefersReducedMotion) {
+        setAnimVisible(true);
+        setOpeningFromDock(false);
+        return;
+      }
+
+      let cancelled = false;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          setAnimVisible(true);
+          setOpeningFromDock(false);
+        });
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setOpeningFromDock(false);
+    return kickOpenAnimation(setAnimVisible, prefersReducedMotion);
   }, [isMinimized, inMC, exitingMC, inWorkspaceTransition, unmountDelayMs, prefersReducedMotion]);
 
   // Re-trigger zoom-in when promoted from stage strip to center
@@ -768,6 +816,18 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const isNormalAnim =
     !inMC && !exitingMC && !stageTarget && !inWorkspaceTransition && !mcDragDelta;
 
+  const dockTargetRect = isNormalAnim && (isMinimized || openingFromDock)
+    ? getDockTargetRect(config)
+    : null;
+  const dockMotion = dockTargetRect
+    ? computeDockMinimizeTransform(
+        { x: config.x + slideXOffset, y: config.y, width: config.width, height: config.height },
+        dockTargetRect,
+      )
+    : null;
+  const minimizedTransform = dockMotion?.transform ?? 'scale(0.1)';
+  const minimizedTransformOrigin = dockMotion?.transformOrigin ?? 'center center';
+
   const chatDockTransition = 'left 600ms cubic-bezier(0.4, 0, 0.2, 1), top 600ms cubic-bezier(0.4, 0, 0.2, 1), width 600ms cubic-bezier(0.4, 0, 0.2, 1), height 600ms cubic-bezier(0.4, 0, 0.2, 1)';
 
   // MC transition (spring curve) — used when entering or exiting MC
@@ -835,7 +895,11 @@ export function Window({ config, children, missionControlTarget, missionControlI
     shellOpacity = 1;
   }
 
-  const animTransform = isNormalAnim ? (animVisible ? 'scale(1)' : 'scale(0.1)') : undefined;
+  const animTransform = isNormalAnim
+    ? (isMinimized || openingFromDock
+      ? minimizedTransform
+      : (animVisible ? 'scale(1)' : minimizedTransform))
+    : undefined;
   const animOpacity = isNormalAnim ? (fadedOut ? 0 : 1) : 1;
   const animTransition = isNormalAnim ? normalAnimTransition : 'none';
   
@@ -850,19 +914,19 @@ export function Window({ config, children, missionControlTarget, missionControlI
           : stageTarget ? 'cursor-pointer select-none'
           : undefined,
       )}
-      style={{
-        left: config.x + slideXOffset,
-        top: config.y,
-        width: config.width,
-        height: config.height,
-        zIndex: stageTarget ? 95 : mcDragDelta ? Z_INDEX.missionControlBar + 1 : config.zIndex,
-        opacity: shellOpacity,
-        transform: shellTransform,
-        transformOrigin: '0 0',
-        transition: shellTransition,
-        pointerEvents: 'auto',
-        cursor: stageTarget ? 'pointer' : undefined,
-      }}
+        style={{
+          left: config.x + slideXOffset,
+          top: config.y,
+          width: config.width,
+          height: config.height,
+          zIndex: stageTarget ? 95 : mcDragDelta ? Z_INDEX.missionControlBar + 1 : config.zIndex,
+          opacity: shellOpacity,
+          transform: shellTransform,
+          transformOrigin: '0 0',
+          transition: shellTransition,
+          pointerEvents: isMinimized || openingFromDock ? 'none' : 'auto',
+          cursor: stageTarget ? 'pointer' : undefined,
+        }}
       onPointerDown={stageTarget
         ? (e) => { 
             e.stopPropagation(); 
@@ -880,16 +944,16 @@ export function Window({ config, children, missionControlTarget, missionControlI
         setMcHovered(false);
       }}
     >
-      <div
-        className="flex h-full w-full flex-col"
-        style={{
-          transform: animTransform,
-          opacity: animOpacity,
-          transformOrigin: 'center center',
-          transition: animTransition,
-          pointerEvents: isNormalAnim && !animVisible ? 'none' : 'auto',
-        }}
-      >
+        <div
+          className="flex h-full w-full flex-col"
+          style={{
+            transform: animTransform,
+            opacity: animOpacity,
+            transformOrigin: minimizedTransformOrigin,
+            transition: animTransition,
+            pointerEvents: isNormalAnim && !animVisible ? 'none' : 'auto',
+          }}
+        >
         <div
           className={cn(
             'relative flex h-full w-full flex-col is-open rounded-lg',
