@@ -17,6 +17,7 @@ import iconSettings from '@/icons/settings.png';
 import iconMemory from '@/icons/memory.png';
 import iconSearch from '@/icons/search.png';
 import iconAccessControl from '@/icons/access-control.png';
+import iconChat from '@/icons/chat.png';
 import iconText from '@/icons/text.png';
 import iconAppStore from '@/icons/app-store.png';
 import iconGeneric from '@/icons/generic.png';
@@ -59,6 +60,16 @@ export interface AppDefinition {
  * Dock-pinned apps first, then utilities.
  */
 export const SYSTEM_APPS: AppDefinition[] = [
+  {
+    id: 'chat',
+    label: 'Construct',
+    windowType: 'chat',
+    icon: iconChat,
+    category: 'system',
+    dockPinned: true,
+    keywords: ['chat', 'construct', 'assistant', 'agent'],
+  },
+
   // ── Apps ──
   {
     id: 'app-registry',
@@ -167,7 +178,7 @@ export const SYSTEM_APPS: AppDefinition[] = [
   },
 ];
 
-export const DESKTOP_DOCK_APP_IDS = ['app-registry', 'files', 'calendar', 'email', 'browser', 'terminal'] as const;
+export const DESKTOP_DOCK_APP_IDS = ['chat', 'app-registry', 'files', 'calendar', 'email', 'browser', 'terminal'] as const;
 export const MOBILE_APP_BAR_APP_IDS = ['app-registry', 'files', 'calendar', 'email'] as const;
 export const MOBILE_HOME_APP_IDS = ['chat', 'files', 'calendar', 'email', 'app-registry', 'memory', 'settings'] as const;
 
@@ -176,6 +187,7 @@ export const SYSTEM_WINDOW_METADATA: Partial<Record<WindowType, { label: string;
   settings: { label: 'Settings', icon: iconSettings },
   auditlogs: { label: 'Activity', icon: iconSearch },
   'access-control': { label: 'Approvals', icon: iconAccessControl },
+  chat: { label: 'Construct', icon: iconChat },
   memory: { label: 'Knowledge', icon: iconMemory },
   editor: { label: 'Editor', icon: iconText },
   'document-viewer': { label: 'Editor', icon: iconText },

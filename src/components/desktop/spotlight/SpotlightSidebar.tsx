@@ -222,13 +222,13 @@ export function SpotlightSidebar() {
   const [attentionActions, setAttentionActions] = useState<api.PendingUserAction[]>([]);
   const initializedRef = useRef(false);
   const userPlan = useAuthStore(s => s.user?.plan);
-  const closeSpotlight = useWindowStore(s => s.closeSpotlight);
+  const closeAgentWindow = useWindowStore(s => s.closeAgentWindow);
   const showUpgradeCta = !hasPaidAccess(userPlan);
 
   const handleUpgradeClick = useCallback(() => {
-    closeSpotlight();
+    closeAgentWindow();
     queueMicrotask(openSubscribeWindow);
-  }, [closeSpotlight]);
+  }, [closeAgentWindow]);
 
   useEffect(() => {
     void loadSessions(true, { preserveActiveKey: activeKey });

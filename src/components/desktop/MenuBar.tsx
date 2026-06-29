@@ -14,6 +14,7 @@ import { getSlackStatus } from '@/services/api';
 import { useLatency, pickDisplayLatency, type LatencyData } from '@/hooks/useLatency';
 import { usePWA } from '@/hooks/usePWA';
 import { openSettingsToSection } from '@/lib/settingsNav';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { useAuthStore } from '@/stores/authStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { Download, ExternalLink, Crown, AlertTriangle } from 'lucide-react';
@@ -572,15 +573,14 @@ function MarqueeText({ text }: { text: string }) {
 
 function AgentActivityIndicator() {
   const { stateLabel, isActive, isIdle } = useAgentStateLabel();
-  const toggleSpotlight = useWindowStore((s) => s.toggleSpotlight);
 
   if (isIdle) return null;
 
   return (
     <button
-      onClick={toggleSpotlight}
+      onClick={() => { void openSpotlightSession(useComputerStore.getState().activeSessionKey || undefined); }}
       className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/8 max-w-[180px] hover:bg-black/10 dark:hover:bg-white/15 transition cursor-pointer"
-      title="Show Construct chat (Ctrl+Space)"
+      title="Open Construct chat"
     >
       {/* Status dot */}
       <span className="relative flex-shrink-0 flex h-2 w-2">

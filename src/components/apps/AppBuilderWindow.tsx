@@ -38,6 +38,7 @@ import * as api from '@/services/api';
 import type { ConstructAppSpec, ConstructComponentAction, ConstructComponentNode, LocalApp } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
 import { useComputerStore, type ComponentMention } from '@/stores/agentStore';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useWindowStore } from '@/stores/windowStore';
 
@@ -345,8 +346,7 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 }
 
 function openSpotlightPrompt(draft?: string) {
-  const windowStore = useWindowStore.getState();
-  if (!windowStore.spotlightOpen) windowStore.toggleSpotlight();
+  void openSpotlightSession();
   window.setTimeout(() => {
     if (draft) {
       window.dispatchEvent(new CustomEvent('spotlight-set-draft', { detail: { text: draft } }));
@@ -1830,7 +1830,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
     addComponentMention(mention);
     openSpotlightPrompt();
     useNotificationStore.getState().addNotification(
-      { title: 'Component attached', body: `${mention.label || mention.componentId} is ready in the Spotlight prompt.`, variant: 'success' },
+      { title: 'Component attached', body: `${mention.label || mention.componentId} is ready in the chat prompt.`, variant: 'success' },
       3500,
     );
     return mention;
@@ -2295,7 +2295,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
               onClick={mentionSelected}
               disabled={!selected}
               className="inline-flex h-7 items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 text-[11px] font-medium text-[var(--color-text-muted)] hover:bg-white/[0.07] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
-              title="Mention selected component in Spotlight"
+              title="Mention selected component in chat"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" />
               Mention
@@ -2401,8 +2401,8 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       type="button"
                       onClick={mentionSelected}
                       className="inline-flex h-7 items-center justify-center rounded-md border border-sky-300/20 bg-sky-300/10 text-sky-100 hover:bg-sky-300/15"
-                      title="Mention in Spotlight"
-                      aria-label="Mention in Spotlight"
+                      title="Mention in chat"
+                      aria-label="Mention in chat"
                     >
                       <MessageSquarePlus className="h-3.5 w-3.5" />
                     </button>
@@ -2647,7 +2647,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                   <div className="space-y-3">
                     <button onClick={mentionSelected} className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[12px] hover:bg-white/[0.08]">
                       <MessageSquarePlus className="h-3.5 w-3.5" />
-                      Mention in Spotlight
+                      Mention in chat
                     </button>
                     <label className="block">
                       <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-muted)]">Ask agent</span>
@@ -2664,7 +2664,7 @@ export function AppBuilderWindow({ config }: { config: WindowConfig }) {
                       className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <Send className="h-3.5 w-3.5" />
-                      {agentPrompt.trim() ? 'Send with component' : 'Attach to Spotlight'}
+                      {agentPrompt.trim() ? 'Send with component' : 'Attach to chat'}
                     </button>
                   </div>
                 )}

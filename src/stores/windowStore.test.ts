@@ -4,6 +4,7 @@ import { useAuthStore } from './authStore';
 import constructLogo from '@/assets/logo.png';
 import { STORAGE_KEYS } from '@/lib/config';
 import {
+  computeChatDockBounds,
   computeDefaultOpenBounds,
   computeVisuallyCenteredPosition,
   getDesktopWorkArea,
@@ -144,6 +145,114 @@ describe('openWindow large defaults', () => {
     expect(w1.height).toBe(expected.height);
     expect(w2.width).toBe(expected.width);
     expect(w2.height).toBe(expected.height);
+  });
+
+  it('opens chat as a right-docked desktop overlay window', () => {
+    useWindowStore.setState({
+      windows: [],
+      focusedWindowId: null,
+      nextZIndex: 100,
+      activeWorkspaceId: 'main',
+      stageManagerActive: true,
+      stageManagerActiveIds: {},
+      stageManagerOrder: {},
+    });
+
+    const baseId = useWindowStore.getState().openWindow('settings');
+    const baseWindow = useWindowStore.getState().windows.find((w) => w.id === baseId)!;
+    const activeBefore = useWindowStore.getState().stageManagerActiveIds.main;
+
+    const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: true });
+    const defaultBounds = computeDefaultOpenBounds(workArea);
+
+    useWindowStore.getState().openWindowsGrid(['chat']);
+    const win = useWindowStore.getState().windows.find((w) => w.type === 'chat');
+
+    expect(win?.workspaceId).not.toBe('main');
+    expect(win?.x).toBe(workArea.x + workArea.width - (win?.width ?? 0));
+    expect(win?.y).toBe(workArea.y + Math.floor((workArea.height - (win?.height ?? 0)) / 2));
+    expect(win?.width).toBeLessThan(defaultBounds.width);
+    expect(win?.height).toBeGreaterThan(defaultBounds.height);
+    expect(useWindowStore.getState().stageManagerActiveIds.main).toEqual(activeBefore);
+    expect(baseWindow.state).toBe('normal');
+    expect(useWindowStore.getState().agentWindowOpen).toBe(true);
+  });
+
+  it('opens chat centered when no other windows are open', () => {
+    useWindowStore.setState({
+      windows: [],
+      focusedWindowId: null,
+      nextZIndex: 100,
+      activeWorkspaceId: 'main',
+      stageManagerActive: true,
+      stageManagerActiveIds: {},
+      stageManagerOrder: {},
+    });
+
+    const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: true });
+    const expected = computeChatDockBounds(workArea, undefined, 'center');
+
+    const id = useWindowStore.getState().openWindow('chat');
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+
+    expect(win?.x).toBe(expected.x);
+    expect(win?.y).toBe(expected.y);
+    expect(win?.workspaceId).not.toBe('main');
+  });
+
+  it('lets chat move without changing workspace', () => {
+    const id = useWindowStore.getState().openWindow('chat');
+    useWindowStore.getState().moveWindow(id, 120, 140);
+
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(win?.x).toBe(120);
+    expect(win?.y).toBe(140);
+    expect(win?.workspaceId).not.toBe('main');
+  });
+
+  it('allows desktop chat resizing', () => {
+    const id = useWindowStore.getState().openWindow('chat');
+    useWindowStore.getState().setBounds(id, { x: 80, y: 90, width: 520, height: 620 });
+
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(win?.x).toBe(80);
+    expect(win?.y).toBe(90);
+    expect(win?.width).toBe(520);
+    expect(win?.height).toBe(620);
+  });
+
+  it('restores minimized chat when opening the agent window again', () => {
+    const id = useWindowStore.getState().openWindow('chat');
+    useWindowStore.getState().minimizeWindow(id);
+
+    const minimized = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(minimized?.state).toBe('minimized');
+
+    useWindowStore.getState().openAgentWindow();
+
+    const restored = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(restored?.state).toBe('normal');
+    expect(useWindowStore.getState().agentWindowOpen).toBe(true);
+  });
+
+  it('toggleSpotlight keeps chat open', () => {
+    const id = useWindowStore.getState().openWindow('chat');
+    expect(useWindowStore.getState().agentWindowOpen).toBe(true);
+
+    useWindowStore.getState().toggleSpotlight();
+
+    const state = useWindowStore.getState();
+    expect(state.spotlightOpen).toBe(true);
+    expect(state.agentWindowOpen).toBe(true);
+    expect(state.windows.some((w) => w.id === id && w.type === 'chat')).toBe(true);
+  });
+
+  it('does not move chat to other workspaces', () => {
+    const id = useWindowStore.getState().openWindow('chat');
+    useWindowStore.getState().moveWindowToWorkspace(id, 'main');
+
+    const win = useWindowStore.getState().windows.find((w) => w.id === id);
+    expect(win?.workspaceId).not.toBe('main');
   });
 });
 

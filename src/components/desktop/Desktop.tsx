@@ -6,6 +6,7 @@ import { MobileAppBar } from './MobileAppBar';
 import { MissionControl, MissionControlScrim } from './MissionControl';
 import { Launchpad } from './Launchpad';
 import { Spotlight } from './Spotlight';
+import { ChatWindowOverlay } from './ChatWindowOverlay';
 import { AgentGraphWidget } from './AgentGraphWidget';
 import { ClippyWidget } from './ClippyWidget';
 import { NotificationCenter } from './NotificationCenter';
@@ -25,6 +26,7 @@ import { validateDiscountCode } from '@/services/api';
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { hasAgentAccess } from '@/lib/plans';
 import { openSubscribeWindow } from '@/lib/settingsNav';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 
 // ── Workspace slide constants ──────────────────────────────────────
 
@@ -132,7 +134,7 @@ export function Desktop({
     slideTranslateX = workspaceTransition.direction === 'left' ? -screenWidth : screenWidth;
   }
 
-  // Deep links (?open=spotlight, etc.)
+  // Deep links (?open=spotlight, ?open=agent, etc.)
   const deepLinkHandledRef = useRef(false);
 
   useEffect(() => {
@@ -148,6 +150,9 @@ export function Desktop({
     } else if (target === 'app-registry') {
       const search = params.get('search') || undefined;
       openWindow('app-registry', search ? { metadata: { view: 'integrations', search } } : undefined);
+    } else if (target === 'agent') {
+      const sessionKey = params.get('session') || params.get('sessionKey') || undefined;
+      void openSpotlightSession(sessionKey || undefined);
     } else if (target === 'spotlight') {
       if (!useWindowStore.getState().spotlightOpen) {
         useWindowStore.getState().toggleSpotlight();
@@ -324,7 +329,10 @@ export function Desktop({
             </div>
           )}
         </div>
+
       </div>
+
+      <ChatWindowOverlay />
 
       {/* Menu bar (top) */}
       <div style={chromeVisibilityStyle(chromeHidden)}>

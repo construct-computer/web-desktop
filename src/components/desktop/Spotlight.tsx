@@ -1,164 +1,187 @@
-/**
- * Spotlight — Polished agent chat interface with sidebar.
- *
- * Toggled via Ctrl+Space. Large floating glass panel with:
- * - Left sidebar: chat history, new chat button
- * - Right: message list (scrollable) + input at bottom
- *
- * Desktop: persistent header (session title, sidebar, close), default size
- * with optional width/height from localStorage, Tab focus loop inside the
- * panel, Ctrl+Shift+B toggles the session list.
- *
- * Sub-components live in ./spotlight/ directory.
- */
-
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelLeftOpen, PanelLeftClose, X, Sparkles, Crown } from 'lucide-react';
+import { ChevronRight, Code2, CreditCard, Monitor, Paintbrush, Search, User, Bot, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Tooltip } from '@/components/ui';
+import { useSound } from '@/hooks/useSound';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useWindowStore } from '@/stores/windowStore';
-import { useComputerStore, shouldRefreshChatHistory } from '@/stores/agentStore';
-import { useAuthStore } from '@/stores/authStore';
-import { openSubscribeWindow } from '@/lib/settingsNav';
-import { hasAgentAccess, hasPaidAccess } from '@/lib/plans';
-import { WINDOW_TRANSITION_MS, WINDOW_TRANSITION_EASING } from '@/lib/constants';
+import { useComputerStore } from '@/stores/agentStore';
+import { openSettingsToSection, type BillingSubsection, type SettingsSection } from '@/lib/settingsNav';
+import { SYSTEM_APPS, type AppDefinition } from '@/lib/appRegistry';
+import { WINDOW_TRANSITION_EASING, WINDOW_TRANSITION_MS, Z_INDEX } from '@/lib/constants';
 import { buildTransformOpacityTransition } from '@/lib/panelAnimation';
-import { SpotlightSidebar } from './spotlight/SpotlightSidebar';
-import { SpotlightInput } from './spotlight/SpotlightInput';
-import { MessageList } from './spotlight/MessageList';
 
-const SPOTLIGHT_DESKTOP_SIZE_KEY = 'construct:spotlight-desktop-size';
+type SpotlightTarget = {
+  id: string;
+  label: string;
+  description: string;
+  keywords: string[];
+  icon: string | ComponentType<{ className?: string }>;
+  kind: 'app' | 'settings';
+  onOpen: () => void;
+};
 
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'textarea:not([disabled])',
-  'select:not([disabled])',
-  '[tabindex]:not([tabindex="-1"]):not([type="hidden"])',
-].join(',');
+type SettingsTarget = {
+  id: string;
+  label: string;
+  description: string;
+  keywords: string[];
+  icon: ComponentType<{ className?: string }>;
+  section: SettingsSection;
+  subsection?: BillingSubsection;
+};
 
-function readDesktopPanelSize(): { w: number; h: number | null } {
-  if (typeof globalThis.window === 'undefined') return { w: 960, h: null };
-  try {
-    const raw = globalThis.localStorage.getItem(SPOTLIGHT_DESKTOP_SIZE_KEY);
-    if (!raw) return { w: 960, h: null };
-    const p = JSON.parse(raw) as { w?: unknown; h?: unknown };
-    const w = Math.min(1200, Math.max(480, Math.round(Number(p.w)) || 960));
-    if (p.h == null || p.h === 0) return { w, h: null };
-    const h = Math.max(320, Math.min(900, Math.round(Number(p.h)) || 0)) || null;
-    return { w, h: h == null || h < 320 ? null : h };
-  } catch {
-    return { w: 960, h: null };
-  }
+const APP_DESCRIPTIONS: Partial<Record<string, string>> = {
+  'app-registry': 'Open the app store and installed integrations',
+  'app-builder': 'Build and edit custom UI apps',
+  settings: 'Open desktop preferences',
+  auditlogs: 'Review activity and audit logs',
+  'access-control': 'Review approvals and permissions',
+  memory: 'Open saved knowledge and reminders',
+  terminal: 'Open a shell session',
+  files: 'Browse files and folders',
+  browser: 'Open the web browser',
+  calendar: 'Open calendar',
+  email: 'Open inbox and mail',
+  editor: 'Open documents and text',
+};
+
+const SETTINGS_TARGETS: SettingsTarget[] = [
+  {
+    id: 'settings-account',
+    label: 'Account',
+    description: 'Profile, login, and email',
+    keywords: ['account', 'profile', 'password', 'email', 'login'],
+    icon: User,
+    section: 'account',
+  },
+  {
+    id: 'settings-construct',
+    label: 'Construct',
+    description: 'Desktop behavior and agent settings',
+    keywords: ['construct', 'desktop', 'agent', 'voice', 'assistant'],
+    icon: Bot,
+    section: 'construct',
+  },
+  {
+    id: 'settings-billing',
+    label: 'Billing',
+    description: 'Plan, payments, and usage',
+    keywords: ['billing', 'plan', 'payment', 'usage', 'limits'],
+    icon: CreditCard,
+    section: 'billing',
+  },
+  {
+    id: 'settings-billing-usage',
+    label: 'Billing / Usage',
+    description: 'Usage, limits, and spend',
+    keywords: ['usage', 'limits', 'spend', 'billing'],
+    icon: CreditCard,
+    section: 'billing',
+    subsection: 'usage',
+  },
+  {
+    id: 'settings-billing-ai',
+    label: 'Billing / AI Provider',
+    description: 'Model provider and API keys',
+    keywords: ['ai provider', 'provider', 'model', 'llm', 'api key', 'billing'],
+    icon: CreditCard,
+    section: 'billing',
+    subsection: 'ai-provider',
+  },
+  {
+    id: 'settings-appearance',
+    label: 'Appearance',
+    description: 'Theme, wallpaper, and voice input',
+    keywords: ['appearance', 'theme', 'wallpaper', 'voice', 'sound'],
+    icon: Paintbrush,
+    section: 'appearance',
+  },
+  {
+    id: 'settings-devices',
+    label: 'Devices',
+    description: 'Linked devices and sessions',
+    keywords: ['devices', 'sessions', 'devices'],
+    icon: Monitor,
+    section: 'devices',
+  },
+  {
+    id: 'settings-developer',
+    label: 'Developer',
+    description: 'Advanced tools and debugging',
+    keywords: ['developer', 'debug', 'logs', 'tools'],
+    icon: Code2,
+    section: 'developer',
+  },
+];
+
+function matchesQuery(target: Pick<SpotlightTarget, 'label' | 'description' | 'keywords'>, query: string) {
+  if (!query) return true;
+  return [target.label, target.description, ...target.keywords].some((value) => value.toLowerCase().includes(query));
 }
 
 function listFocusableInPanel(root: HTMLElement | null): HTMLElement[] {
   if (!root) return [];
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (el) => {
-      if (el.closest('[aria-hidden="true"]') || el.closest('[inert]') || el.hasAttribute('data-focus-guard')) return false;
-      const p = getComputedStyle(el).position;
-      if (p !== 'fixed' && el.offsetParent === null) return false;
-      return !el.hasAttribute('disabled') && (el as HTMLInputElement).type !== 'hidden';
-    },
-  );
+  const selector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'textarea:not([disabled])',
+    'select:not([disabled])',
+    '[tabindex]:not([tabindex="-1"]):not([type="hidden"])',
+  ].join(',');
+  return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((el) => {
+    if (el.closest('[aria-hidden="true"]') || el.closest('[inert]') || el.hasAttribute('data-focus-guard')) return false;
+    const position = getComputedStyle(el).position;
+    if (position !== 'fixed' && el.offsetParent === null) return false;
+    return !el.hasAttribute('disabled') && (el as HTMLInputElement).type !== 'hidden';
+  });
 }
 
-/**
- * Mobile bottom-sheet grab handle — pointer drives sheet translateY to dismiss.
- * Not shown on desktop (close via backdrop, Escape, or window chrome).
- * Release past threshold animates off-screen then closes; otherwise springs back.
- */
-function SpotlightDragHandle({
-  onDragStart,
-  onDragY,
-  onDragEnd,
-}: {
-  onDragStart: () => void;
-  onDragY: (dy: number) => void;
-  onDragEnd: (dy: number) => void;
-}) {
-  const startY = useRef<number | null>(null);
-  const lastDy = useRef(0);
-
-  const finish = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (startY.current === null) return;
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        /* not capturing */
-      }
-      startY.current = null;
-      onDragEnd(lastDy.current);
-    },
-    [onDragEnd],
-  );
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
-      startY.current = e.clientY;
-      lastDy.current = 0;
-      onDragStart();
-      onDragY(0);
-    },
-    [onDragStart, onDragY],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (startY.current === null) return;
-      const dy = Math.max(0, e.clientY - startY.current);
-      lastDy.current = dy;
-      onDragY(dy);
-    },
-    [onDragY],
-  );
-
-  return (
-    <div
-      className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-3 pb-2 touch-none cursor-grab active:cursor-grabbing select-none"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-    >
-      <div
-        className="pointer-events-none h-[5px] w-11 rounded-full border border-white/20 bg-white/35 dark:border-white/15 dark:bg-white/25"
-        aria-hidden
+function SpotlightIcon({ target }: { target: SpotlightTarget }) {
+  if (typeof target.icon === 'string') {
+    return (
+      <img
+        src={target.icon}
+        alt=""
+        draggable={false}
+        className="h-8 w-8 rounded-xl object-cover"
       />
+    );
+  }
+
+  const Icon = target.icon;
+  return (
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+      <Icon className="h-4 w-4" />
     </div>
   );
 }
 
 export function Spotlight() {
-  const open = useWindowStore(s => s.spotlightOpen);
-  const closeSpotlight = useWindowStore(s => s.closeSpotlight);
-  const userPlan = useAuthStore(s => s.user?.plan);
-  const instanceId = useComputerStore(s => s.instanceId);
-  const activeSessionKey = useComputerStore(s => s.activeSessionKey);
-  const loadSessions = useComputerStore(s => s.loadSessions);
-  const refreshActiveChatHistory = useComputerStore(s => s.refreshActiveChatHistory);
-  const chatSessions = useComputerStore(s => s.chatSessions);
-  const sessionTitle = useMemo(
-    () => chatSessions.find(s => s.key === activeSessionKey)?.title || 'Chats',
-    [chatSessions, activeSessionKey],
-  );
-  const hasAccess = hasAgentAccess(userPlan);
+  const open = useWindowStore((s) => s.spotlightOpen);
+  const closeSpotlight = useWindowStore((s) => s.closeSpotlight);
+  const openWindow = useWindowStore((s) => s.openWindow);
+  const openBrowserWindow = useComputerStore((s) => s.openBrowserWindow);
+  const { play } = useSound();
   const isMobile = useIsMobile();
 
-  const [animating, setAnimating] = useState(false);
-  /** Opacity fade on close only — open keeps opacity 1 so glass blur stays visible during scale/slide-in */
-  const [fadedOut, setFadedOut] = useState(false);
   const [show, setShow] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const [fadedOut, setFadedOut] = useState(false);
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focusReturnRef = useRef<HTMLElement | null>(null);
+  const pushedHistoryRef = useRef(false);
+
+  const panelTransition = buildTransformOpacityTransition(
+    WINDOW_TRANSITION_MS,
+    WINDOW_TRANSITION_EASING,
+    prefersReducedMotion,
+  );
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -169,79 +192,9 @@ export function Spotlight() {
   }, []);
 
   useEffect(() => {
-    if (!open || !instanceId) return;
-    void loadSessions(true, { preserveActiveKey: activeSessionKey });
-  }, [open, instanceId, activeSessionKey, loadSessions]);
-
-  // Hydrate when the session/instance changes or Spotlight opens — skip settled empty chats.
-  useEffect(() => {
-    if (!instanceId || !activeSessionKey) return;
-    if (!shouldRefreshChatHistory(activeSessionKey)) return;
-    void refreshActiveChatHistory();
-  }, [instanceId, activeSessionKey, open, refreshActiveChatHistory]);
-
-  const scrimTransition = prefersReducedMotion
-    ? 'none'
-    : `${WINDOW_TRANSITION_MS}ms ${WINDOW_TRANSITION_EASING}`;
-
-  const panelTransition = buildTransformOpacityTransition(
-    WINDOW_TRANSITION_MS,
-    WINDOW_TRANSITION_EASING,
-    prefersReducedMotion,
-  );
-
-  /** Sheet vertical pull from handle (px), 0 = resting — mobile bottom sheet only */
-  const [sheetDragPx, setSheetDragPx] = useState(0);
-  /** No CSS transition while pointer is down so the sheet tracks 1:1 */
-  const [sheetDragLive, setSheetDragLive] = useState(false);
-  const sheetInnerRef = useRef<HTMLDivElement>(null);
-  const closeAfterSlideRef = useRef(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const [panelW, setPanelW] = useState(() => readDesktopPanelSize().w);
-  const [panelH, setPanelH] = useState<number | null>(() => readDesktopPanelSize().h);
-  const pushedHistoryRef = useRef(false);
-
-  const wClampedDesktop = useMemo(() => {
-    if (typeof globalThis.window === 'undefined') return Math.max(480, Math.min(1200, panelW));
-    const cap = globalThis.window.innerWidth - 48;
-    return Math.min(1200, Math.max(480, Math.min(panelW, cap)));
-  }, [panelW]);
-
-  // ── Drag-and-drop on the panel ────────────────────────────────────────
-  const [dragOver, setDragOver] = useState(false);
-  const dragCounter = useRef(0);
-
-  const onPanelDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounter.current++;
-    if (e.dataTransfer?.types.includes('Files')) setDragOver(true);
-  }, []);
-  const onPanelDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
-  const onPanelDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounter.current--;
-    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); }
-  }, []);
-  const onPanelDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragOver(false);
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      // Dispatch to the SpotlightInput via a custom event
-      window.dispatchEvent(new CustomEvent('spotlight-drop-files', { detail: Array.from(files) }));
-    }
-  }, []);
-
-  // ── Open/close animation (Zustand `open` → local animation state) ─────
-  /* eslint-disable react-hooks/set-state-in-effect -- portal visibility + sheet spring; driven by `open` */
-  useEffect(() => {
     if (open) {
-      setSidebarOpen(false);
-      setSheetDragPx(0);
-      setSheetDragLive(false);
-      closeAfterSlideRef.current = false;
+      setQuery('');
+      setActiveIndex(0);
       setShow(true);
       setFadedOut(false);
       if (prefersReducedMotion) {
@@ -250,124 +203,41 @@ export function Spotlight() {
         setAnimating(false);
         requestAnimationFrame(() => requestAnimationFrame(() => setAnimating(true)));
       }
-    } else {
-      setAnimating(false);
-      setFadedOut(true);
-      setSheetDragPx(0);
-      setSheetDragLive(false);
-      closeAfterSlideRef.current = false;
-      const unmountMs = prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS;
-      const t = setTimeout(() => setShow(false), unmountMs);
-      return () => clearTimeout(t);
+      return;
     }
+
+    setAnimating(false);
+    setFadedOut(true);
+    const unmountMs = prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS;
+    const timer = window.setTimeout(() => setShow(false), unmountMs);
+    return () => window.clearTimeout(timer);
   }, [open, prefersReducedMotion]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
-  const onSheetDragY = useCallback((dy: number) => {
-    setSheetDragPx(dy);
-  }, []);
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+  }, [open]);
 
-  const onSheetDragEnd = useCallback(
-    (dy: number) => {
-      setSheetDragLive(false);
-      const h = sheetInnerRef.current?.offsetHeight ?? 560;
-      const threshold = Math.max(96, Math.round(h * 0.2));
-      if (dy >= threshold) {
-        closeAfterSlideRef.current = true;
-        const off =
-          typeof globalThis.innerHeight === 'number'
-            ? Math.max(h + 80, globalThis.innerHeight)
-            : h + 80;
-        setSheetDragPx(off);
-      } else {
-        setSheetDragPx(0);
-      }
-    },
-    [],
-  );
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
 
-  const requestClose = useCallback(() => {
-    if (
-      isMobile &&
-      (globalThis.window.history.state as { __constructSpotlight?: number } | null)
-        ?.__constructSpotlight
-    ) {
-      globalThis.window.history.back();
-    } else {
-      closeSpotlight();
-    }
-  }, [isMobile, closeSpotlight]);
-
-  const closeAndOpenSubscription = useCallback(() => {
-    requestClose();
-    queueMicrotask(openSubscribeWindow);
-  }, [requestClose]);
-
-  const onDesktopResizePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (isMobile) return;
-      e.preventDefault();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startW = wClampedDesktop;
-      const startH = panelRef.current?.offsetHeight ?? panelH ?? 520;
-
-      const onMove = (ev: PointerEvent) => {
-        const maxW =
-          typeof globalThis.window === 'undefined'
-            ? 1200
-            : Math.min(1200, globalThis.window.innerWidth - 48);
-        const maxH =
-          typeof globalThis.window === 'undefined'
-            ? 900
-            : Math.min(900, globalThis.window.innerHeight - 48);
-        setPanelW(Math.round(Math.min(maxW, Math.max(480, startW + ev.clientX - startX))));
-        setPanelH(Math.round(Math.min(maxH, Math.max(400, startH + ev.clientY - startY))));
-      };
-      const onUp = () => {
-        globalThis.window.removeEventListener('pointermove', onMove);
-        globalThis.window.removeEventListener('pointerup', onUp);
-      };
-      globalThis.window.addEventListener('pointermove', onMove);
-      globalThis.window.addEventListener('pointerup', onUp, { once: true });
-    },
-    [isMobile, panelH, wClampedDesktop],
-  );
-
-  // Mobile: one history entry so the OS / browser "back" closes the sheet like a modal.
   useEffect(() => {
     if (!isMobile || !open) return;
-    if ((globalThis.window.history.state as { __constructSpotlight?: number } | null)?.__constructSpotlight) {
+    if ((window.history.state as { __constructSpotlight?: number } | null)?.__constructSpotlight) {
       pushedHistoryRef.current = false;
       return;
     }
-    const state: { __constructSpotlight: number } = { __constructSpotlight: 1 };
-    globalThis.window.history.pushState(
-      state,
-      '',
-      globalThis.window.location.href,
-    );
+    window.history.pushState({ __constructSpotlight: 1 }, '', window.location.href);
     pushedHistoryRef.current = true;
     const onPop = () => {
       pushedHistoryRef.current = false;
       closeSpotlight();
     };
-    globalThis.window.addEventListener('popstate', onPop);
-    return () => { globalThis.window.removeEventListener('popstate', onPop); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, [isMobile, open, closeSpotlight]);
 
-  useEffect(() => {
-    if (typeof globalThis.window === 'undefined') return;
-    try {
-      globalThis.localStorage.setItem(
-        SPOTLIGHT_DESKTOP_SIZE_KEY,
-        JSON.stringify({ w: panelW, h: panelH }),
-      );
-    } catch { /* storage can be unavailable */ }
-  }, [panelW, panelH]);
-
-  const focusReturnRef = useRef<HTMLElement | null>(null);
-  // Capture the opener *before* children auto-focus the textarea (layout, before useEffect in children).
   useLayoutEffect(() => {
     if (!open) {
       const el = focusReturnRef.current;
@@ -380,359 +250,208 @@ export function Spotlight() {
     focusReturnRef.current = document.activeElement as HTMLElement | null;
   }, [open]);
 
-  // Close, sidebar toggle, focus trap (desktop)
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        requestClose();
-        return;
-      }
-      if (!isMobile && (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'b' || e.key === 'B')) {
-        e.preventDefault();
-        setSidebarOpen(s => !s);
-        return;
-      }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [open, requestClose, isMobile]);
+  const requestClose = useCallback(() => {
+    if (isMobile && (window.history.state as { __constructSpotlight?: number } | null)?.__constructSpotlight) {
+      window.history.back();
+      return;
+    }
+    closeSpotlight();
+  }, [closeSpotlight, isMobile]);
 
-  const onPanelKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (isMobile || e.key !== 'Tab' || !panelRef.current) return;
-      const list = listFocusableInPanel(panelRef.current);
-      if (list.length < 1) return;
-      const first = list[0]!;
-      const last = list[list.length - 1]!;
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
+  const targets = useMemo<SpotlightTarget[]>(() => {
+    const appTargets = SYSTEM_APPS.map((app: AppDefinition) => ({
+      id: `app:${app.id}`,
+      label: app.label,
+      description: APP_DESCRIPTIONS[app.id] ?? `Open ${app.label.toLowerCase()}`,
+      keywords: app.keywords ?? [],
+      icon: app.icon,
+      kind: 'app' as const,
+      onOpen: () => {
+        if (app.windowType === 'browser') {
+          openBrowserWindow();
+          return;
         }
-      } else if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    },
-    [isMobile],
-  );
+        openWindow(app.windowType);
+      },
+    }));
 
-  const onSheetInnerTransitionEnd = useCallback(
-    (e: React.TransitionEvent<HTMLDivElement>) => {
-      if (e.propertyName !== 'transform') return;
-      if (closeAfterSlideRef.current) {
-        closeAfterSlideRef.current = false;
-        requestClose();
+    const settingsTargetsMapped = SETTINGS_TARGETS.map((target) => ({
+      id: target.id,
+      label: target.label,
+      description: target.description,
+      keywords: target.keywords,
+      icon: target.icon,
+      kind: 'settings' as const,
+      onOpen: () => openSettingsToSection(target.section, target.subsection ? { subsection: target.subsection } : undefined),
+    }));
+
+    return [...appTargets, ...settingsTargetsMapped];
+  }, [openBrowserWindow, openWindow]);
+
+  const filteredTargets = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? targets.filter((target) => matchesQuery(target, q)) : targets;
+  }, [query, targets]);
+
+  const runTarget = useCallback((target: SpotlightTarget) => {
+    play('click');
+    requestClose();
+    if (isMobile) {
+      window.setTimeout(() => target.onOpen(), prefersReducedMotion ? 0 : WINDOW_TRANSITION_MS);
+      return;
+    }
+    queueMicrotask(() => target.onOpen());
+  }, [isMobile, play, prefersReducedMotion, requestClose]);
+
+  const onInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((index) => Math.min(index + 1, Math.max(filteredTargets.length - 1, 0)));
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const target = filteredTargets[activeIndex];
+      if (target) runTarget(target);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      requestClose();
+    }
+  }, [activeIndex, filteredTargets, requestClose, runTarget]);
+
+  const onPanelKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !panelRef.current) return;
+    const focusables = listFocusableInPanel(panelRef.current);
+    if (focusables.length === 0) return;
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
+
+    if (event.shiftKey) {
+      if (document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
       }
-    },
-    [requestClose],
-  );
+      return;
+    }
+
+    if (document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
 
   if (!show) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[1300]">
-      <style>{`
-        @keyframes spt-in {
-          from { opacity: 0; transform: scale(0.98) translateY(8px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-      `}</style>
-
-      {/* Backdrop */}
+    <div className="fixed inset-0" style={{ zIndex: Z_INDEX.modal }}>
       <div
-        className={cn(
-          'absolute inset-0 spotlight-scrim spotlight-scrim-sync',
-          animating && 'is-open',
-        )}
-        style={{
-          ['--spotlight-scrim-transition' as string]: scrimTransition,
-          pointerEvents: open ? 'auto' : 'none',
-        }}
+        className={cn('absolute inset-0 spotlight-scrim spotlight-scrim-sync', animating && 'is-open')}
+        style={{ ['--spotlight-scrim-transition' as string]: `${WINDOW_TRANSITION_MS}ms ${WINDOW_TRANSITION_EASING}`, pointerEvents: open ? 'auto' : 'none' }}
         onClick={requestClose}
       />
 
-      {/* Centering wrapper */}
-      <div
-        className={cn(
-          "absolute inset-0 flex pointer-events-none",
-          isMobile ? "items-end justify-center" : "items-center justify-center"
-        )}
-        style={{ zIndex: 1310 }}
-      >
-      <div
-        ref={panelRef}
-        onKeyDown={onPanelKeyDown}
-        className={cn(
-          'flex flex-col overflow-hidden',
-          animating ? 'pointer-events-auto' : 'pointer-events-none',
-          isMobile
-              ? "w-full rounded-t-lg"
-            : "rounded-2xl max-w-[min(1200px,calc(100vw-48px))]",
-        )}
-        style={
-          isMobile
-            ? {
-                height: 'calc(100dvh - 10px)',
-                transition: panelTransition,
-                transform: animating ? 'translateY(0)' : 'translateY(100%)',
-                opacity: fadedOut ? 0 : 1,
-              }
-            : {
-                width: wClampedDesktop,
-                minHeight: 400,
-                transition: panelTransition,
-                transformOrigin: 'center center',
-                transform: animating ? 'scale(1)' : 'scale(0.1)',
-                opacity: fadedOut ? 0 : 1,
-                ...(panelH == null
-                  ? { height: '70vh', maxHeight: 720 }
-                  : { height: panelH, maxHeight: 'min(92vh, 900px)' }),
-              }
-        }
-      >
+      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6 pointer-events-none">
         <div
-          ref={sheetInnerRef}
-          className="min-h-0 flex flex-1 flex-col overflow-hidden"
-          style={{
-            transform: `translateY(${sheetDragPx}px)`,
-            transition: sheetDragLive
-              ? 'none'
-              : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
-          }}
-          onTransitionEnd={onSheetInnerTransitionEnd}
-        >
-        <div
-          onDragEnter={onPanelDragEnter}
-          onDragOver={onPanelDragOver}
-          onDragLeave={onPanelDragLeave}
-          onDrop={onPanelDrop}
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Apps and settings search"
+          onKeyDown={onPanelKeyDown}
           className={cn(
-            'relative min-h-0 flex flex-1 flex-col overflow-hidden glass-window spotlight-glass-window spotlight-glass-window-sync is-open ring-1 ring-black/5 dark:ring-white/8',
-            isMobile
-              ? 'rounded-t-lg rounded-b-none border border-b-0 border-white/30 shadow-none dark:border-white/[0.1]'
-              : 'rounded-2xl border border-white/30 shadow-[0_24px_80px_rgba(0,0,0,0.22),0_12px_24px_rgba(0,0,0,0.12)] dark:border-white/[0.1]',
+            'flex flex-col overflow-hidden rounded-2xl glass-window spotlight-glass-window spotlight-glass-window-sync ring-1 ring-black/5 dark:ring-white/8 shadow-[0_24px_80px_rgba(0,0,0,0.22),0_12px_24px_rgba(0,0,0,0.12)] dark:border-white/[0.1]',
+            animating && 'is-open',
+            animating ? 'pointer-events-auto' : 'pointer-events-none',
           )}
           style={{
-            ['--spotlight-scrim-transition' as string]: scrimTransition,
-            transform: 'translateZ(0)',
+            width: 'min(720px, calc(100vw - 24px))',
+            height: 'min(620px, calc(100dvh - 24px))',
+            transition: panelTransition,
+            transformOrigin: 'center center',
+            transform: animating ? 'scale(1)' : 'scale(0.98)',
+            opacity: fadedOut ? 0 : 1,
           }}
         >
-          {isMobile && (
-            <SpotlightDragHandle
-              onDragStart={() => setSheetDragLive(true)}
-              onDragY={onSheetDragY}
-              onDragEnd={onSheetDragEnd}
-            />
-          )}
-
-          {/* Drag overlay */}
-          {dragOver && (
-            <div
-              className={cn(
-                'absolute inset-0 z-50 glass-drawer border-2 border-dashed border-[var(--color-accent)] flex items-center justify-center pointer-events-none',
-                isMobile ? 'rounded-t-lg' : 'rounded-2xl',
-              )}
-            >
-              <div className="flex flex-col items-center gap-1.5 text-[var(--color-accent)]">
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                </svg>
-                <span className="text-sm font-semibold">Drop files to attach</span>
-              </div>
+          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/8 bg-white/3 px-4">
+            <div className="flex flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <Search className="h-4 w-4 shrink-0 text-text-muted/60" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onInputKeyDown}
+                placeholder="Search apps or settings"
+                className="w-full bg-transparent text-[14px] text-text outline-none placeholder:text-text-muted/45"
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
             </div>
-          )}
 
-          {!isMobile && (
-            <div
-              className="absolute bottom-1.5 right-1.5 z-40 h-4 w-4 cursor-nwse-resize rounded-sm opacity-25 hover:opacity-60"
-              onPointerDown={onDesktopResizePointerDown}
-              aria-hidden
+            <button
+              type="button"
+              onClick={requestClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-muted/70 transition-all duration-150 hover:bg-white/10 hover:text-text"
+              aria-label="Close search"
             >
-              <div className="absolute bottom-0 right-0 h-2.5 w-2.5 border-b border-r border-[var(--color-text-muted)]/60" />
-            </div>
-          )}
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-          {/* Sidebar — collapsible.
-              Mobile: full-width overlay that slides over the chat (the sidebar
-              dwarfs the chat area at 240/~375px otherwise).
-              Desktop: left column beside chat (row), not above it, so the main
-              area fills height and the empty state can center. */}
-          {isMobile && (
-            <>
-              {sidebarOpen && (
-                <div
-                  className="absolute inset-0 z-40 bg-black/30 transition-opacity"
-                  onClick={() => setSidebarOpen(false)}
-                />
-              )}
-              <div
-                className={`absolute inset-y-0 left-0 z-40 w-[min(320px,85vw)] transition-transform duration-200 ease-out glass-drawer ${
-                  sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}
-              >
-                <SpotlightSidebar />
-              </div>
-            </>
-          )}
-
-          <div
-            className={cn('flex-1 min-h-0 min-w-0 flex', isMobile ? 'flex-col' : 'flex-row')}
-          >
-            {!isMobile && (
-              <div
-                className={`shrink-0 transition-[width] duration-200 ease-out overflow-hidden ${sidebarOpen ? 'w-[240px]' : 'w-0'}`}
-              >
-                <SpotlightSidebar />
-              </div>
-            )}
-
-            {/* Chat area */}
-            <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
-            {hasAccess ? (
-              <>
-                {isMobile && (
-                  <div
-                    className="shrink-0 z-30 flex min-h-0 items-center gap-2 border-b border-white/[0.08] bg-white/[0.02] pl-1 pr-3"
-                    style={{
-                      // Drag handle is absolutely positioned; reserve space for pill + status bar.
-                      paddingTop: 'max(0.4rem, calc(2.25rem + env(safe-area-inset-top, 0px)))',
-                    }}
-                  >
+          <div className="flex-1 min-h-0 overflow-y-auto p-2">
+            {filteredTargets.length > 0 ? (
+              <div className="space-y-1">
+                {filteredTargets.map((target, index) => {
+                  const active = index === activeIndex;
+                  return (
                     <button
+                      key={target.id}
                       type="button"
-                      onClick={() => setSidebarOpen(true)}
-                      className="touch-manipulation rounded-lg p-2.5 text-[var(--color-text-muted)]/80 active:bg-white/10"
-                      aria-label="Open chat history and sessions"
+                      onClick={() => runTarget(target)}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                        active
+                          ? 'bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/15'
+                          : 'hover:bg-black/5 dark:hover:bg-white/6',
+                      )}
                     >
-                      <PanelLeftOpen className="h-5 w-5" />
-                    </button>
-                    <span
-                      className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--color-text)]"
-                      title={sessionTitle}
-                    >
-                      {sessionTitle}
-                    </span>
-                    {!hasPaidAccess(userPlan) && (
-                      <button
-                        type="button"
-                        onClick={closeAndOpenSubscription}
-                        className="relative flex h-7 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-amber-500/30 surface-control pl-1.5 pr-2 text-amber-600 transition-all active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                        aria-label="Open Subscribe"
-                      >
-                        <span
-                          className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
-                          aria-hidden
-                        />
-                        <span className="relative flex items-center gap-1">
-                          <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
-                          <span className="text-[11px] font-medium">Open Subscribe</span>
+                      <SpotlightIcon target={target} />
+
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-medium text-text">{target.label}</div>
+                        <div className="truncate text-[12px] text-text-muted/70">{target.description}</div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-text-muted/55">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+                          {target.kind === 'app' ? 'App' : 'Settings'}
                         </span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {!isMobile && (
-                  <div
-                    className="flex h-12 shrink-0 z-30 items-center gap-2.5 border-b border-white/8 bg-white/2 px-3"
-                    role="toolbar"
-                    aria-label="Spotlight header"
-                  >
-                    <Tooltip
-                      content={sidebarOpen ? 'Hide session list' : 'Show session list (Ctrl+Shift+B)'}
-                      side="bottom"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => { setSidebarOpen(s => !s); }}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-muted/70 transition-all duration-150 hover:bg-white/10 hover:text-text"
-                        aria-expanded={sidebarOpen}
-                        aria-label={sidebarOpen ? 'Hide session list' : 'Show session list'}
-                      >
-                        {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-                      </button>
-                    </Tooltip>
-                    <span
-                      className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-text"
-                      title={sessionTitle}
-                    >
-                      {sessionTitle}
-                    </span>
-                    {!hasPaidAccess(userPlan) && (
-                      <Tooltip content="Open Subscribe" side="bottom">
-                        <button
-                          type="button"
-                          onClick={closeAndOpenSubscription}
-                          className="relative flex h-8 shrink-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-amber-500/30 surface-control pl-2 pr-2.5 text-amber-600 transition-all duration-150 hover:border-amber-500/40 hover:bg-white/10 active:scale-95 dark:border-amber-400/25 dark:text-amber-400"
-                          aria-label="Open Subscribe"
-                        >
-                          <span
-                            className="pointer-events-none absolute inset-0 rounded-[inherit] bg-amber-400/15 dark:bg-amber-500/20"
-                            aria-hidden
-                          />
-                          <span className="relative flex items-center gap-1">
-                            <Crown className="h-3.5 w-3.5" strokeWidth={2.5} />
-                            <span className="text-xs font-medium">Open Subscribe</span>
-                          </span>
-                        </button>
-                      </Tooltip>
-                    )}
-                    <Tooltip content="Close (Esc)" side="bottom">
-                      <button
-                        type="button"
-                        onClick={requestClose}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-muted/70 transition-all duration-150 hover:bg-white/10 hover:text-text"
-                        aria-label="Close"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                  </div>
-                )}
-
-                <MessageList
-                  paddingTopClass={isMobile ? 'pt-2' : undefined}
-                />
-                <SpotlightInput />
-              </>
+                        <ChevronRight className="h-4 w-4 text-text-muted/35" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="relative flex-1 min-h-0 flex items-center justify-center p-4">
-                {!isMobile && (
-                  <button
-                    type="button"
-                    onClick={requestClose}
-                    className="absolute right-2 top-2 z-20 rounded-lg p-2 text-[var(--color-text-muted)]/70 hover:text-[var(--color-text)] hover:bg-white/10"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-                <div className="text-center max-w-xs">
-                  <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
-                  </div>
-                  <h3 className="text-[15px] font-semibold text-[var(--color-text)] mb-1">Meet Construct</h3>
-                  <p className="text-[13px] text-[var(--color-text-muted)] leading-relaxed">
-                    Starter and Pro unlock the full desktop: web browsing, files, email, calendar, and background work.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={closeAndOpenSubscription}
-                    className="mt-4 inline-flex items-center justify-center rounded-lg border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/10 px-4 py-2 text-[13px] font-medium text-[var(--color-accent)] transition-colors hover:bg-[var(--color-accent)]/15"
-                  >
-                    Open Subscribe
-                  </button>
-                </div>
+              <div className="flex h-full items-center justify-center px-4 text-center text-[13px] text-text-muted/65">
+                No apps or settings found.
               </div>
             )}
-            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between border-t border-white/8 bg-white/3 px-4 py-2 text-[11px] text-text-muted/60">
+            <span>Apps and settings</span>
+            <span>↑↓ Enter Esc</span>
           </div>
         </div>
-        </div>
-      </div>
       </div>
     </div>,
     document.body,

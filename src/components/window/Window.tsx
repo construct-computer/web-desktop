@@ -39,6 +39,14 @@ interface WindowProps {
 const MC_SPRING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 const MC_DURATION = 500; // ms
 
+export function shouldEnterMissionControlOnTopEdge(opts: {
+  isChatWindow: boolean;
+  clientY: number;
+  missionControlActive: boolean;
+}): boolean {
+  return !opts.isChatWindow && opts.clientY < MENUBAR_HEIGHT && !opts.missionControlActive;
+}
+
 export function Window({ config, children, missionControlTarget, missionControlIndex, slideXOffset = 0, stageTarget, isStageActive }: WindowProps) {
   const windowRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -82,7 +90,6 @@ export function Window({ config, children, missionControlTarget, missionControlI
     width: config.width,
     height: config.height,
   };
-
   const { play } = useSound();
   const focusedWindowId = useWindowStore((s) => s.focusedWindowId);
   const closeMissionControl = useWindowStore((s) => s.closeMissionControl);
@@ -109,6 +116,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const isFocused = focusedWindowId === config.id;
   const isMaximized = config.state === 'maximized';
   const isMinimized = config.state === 'minimized';
+  const isChatWindow = config.type === 'chat';
 
   // ── Mission Control state ───────────────────────────────────────
 
@@ -146,7 +154,6 @@ export function Window({ config, children, missionControlTarget, missionControlI
   /** Opacity fade — only used on close/minimize; open keeps opacity 1 so glass blur stays visible during scale-in */
   const [fadedOut, setFadedOut] = useState(false);
   const [shouldRender, setShouldRender] = useState(true);
-  const [animateBounds, setAnimateBounds] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -284,7 +291,11 @@ export function Window({ config, children, missionControlTarget, missionControlI
         // When the cursor enters the menubar area during drag, open MC and
         // seamlessly transition to MC drag mode so the user can drop the
         // window onto a workspace thumbnail.
-        if (e.clientY < MENUBAR_HEIGHT && !useWindowStore.getState().missionControlActive) {
+        if (shouldEnterMissionControlOnTopEdge({
+          isChatWindow,
+          clientY: e.clientY,
+          missionControlActive: useWindowStore.getState().missionControlActive,
+        })) {
           const store = useWindowStore.getState();
           const win = store.windows.find(w => w.id === id);
           // Store grab offset so the window stays under the cursor after MC scales it down
@@ -469,7 +480,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   }, []);
   
   const handleDragStart = useCallback((e: React.PointerEvent) => {
-    if (isMaximized || inMC || stageTarget) return; // Disable drag in MC mode and Stage strip
+    if (isMaximized || inMC || stageTarget) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     
     // Don't initiate drag when clicking window control buttons (close/min/max)
@@ -495,7 +506,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   }, [config.id, config.x, config.y, isMaximized, inMC, stageTarget, focusWindow, attachInteractionListeners]);
   
   const handleResizeStart = useCallback((handle: ResizeHandle, e: React.PointerEvent) => {
-    if (isMaximized || inMC || stageTarget) return; // Disable resize in MC mode and Stage strip
+    if (isMaximized || inMC || stageTarget) return;
     e.preventDefault();
     e.stopPropagation();
     focusWindow(config.id);
@@ -517,7 +528,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
     document.body.style.userSelect = 'none';
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     attachInteractionListeners();
-  }, [config.id, config.x, config.y, config.width, config.height, isMaximized, inMC, stageTarget, focusWindow, attachInteractionListeners]);
+  }, [config.id, config.x, config.y, config.width, config.height, isMaximized, inMC, stageTarget, isChatWindow, focusWindow, attachInteractionListeners]);
   
   const handleClose = useCallback(() => {
     play('close');
@@ -539,9 +550,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   
   const handleMaximize = useCallback(() => {
     play('maximize');
-    setAnimateBounds(true);
     toggleMaximize(config.id);
-    setTimeout(() => setAnimateBounds(false), 300);
   }, [config.id, toggleMaximize, play]);
   
   // Normal click: focus on click
@@ -744,7 +753,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   }, [ctxMenu]);
 
   // Other workspaces this window can move to
-  const otherWorkspaces = workspaces.filter(ws => ws.id !== config.workspaceId);
+  const otherWorkspaces = isChatWindow ? [] : workspaces.filter(ws => ws.id !== config.workspaceId);
 
   if (!shouldRender) return null;
 
@@ -759,7 +768,7 @@ export function Window({ config, children, missionControlTarget, missionControlI
   const isNormalAnim =
     !inMC && !exitingMC && !stageTarget && !inWorkspaceTransition && !mcDragDelta;
 
-  const boundsTransition = 'left 300ms ease-in-out, top 300ms ease-in-out, width 300ms ease-in-out, height 300ms ease-in-out';
+  const chatDockTransition = 'left 600ms cubic-bezier(0.4, 0, 0.2, 1), top 600ms cubic-bezier(0.4, 0, 0.2, 1), width 600ms cubic-bezier(0.4, 0, 0.2, 1), height 600ms cubic-bezier(0.4, 0, 0.2, 1)';
 
   // MC transition (spring curve) — used when entering or exiting MC
   const stagger = missionControlIndex * 15; // ms delay per window for stagger
@@ -782,8 +791,8 @@ export function Window({ config, children, missionControlTarget, missionControlI
     shellTransition = stageTransition;
   } else if (isStageActive) {
     shellTransition = `transform 400ms cubic-bezier(0.32, 0.72, 0, 1), left 400ms cubic-bezier(0.32, 0.72, 0, 1), top 400ms cubic-bezier(0.32, 0.72, 0, 1), width 400ms cubic-bezier(0.32, 0.72, 0, 1), height 400ms cubic-bezier(0.32, 0.72, 0, 1)`;
-  } else if (animateBounds) {
-    shellTransition = boundsTransition;
+  } else if (isChatWindow && !dragRef.current && !resizeRef.current) {
+    shellTransition = chatDockTransition;
   } else {
     shellTransition = 'none';
   }
@@ -883,8 +892,8 @@ export function Window({ config, children, missionControlTarget, missionControlI
       >
         <div
           className={cn(
-            'relative flex h-full w-full flex-col glass-window is-open rounded-lg',
-            'border border-black/10 dark:border-white/10',
+            'relative flex h-full w-full flex-col is-open rounded-lg',
+            'glass-window border border-black/10 dark:border-white/10',
             isFocused
               ? 'shadow-[var(--shadow-window-focus)]'
               : 'shadow-[var(--shadow-window)]',
@@ -904,9 +913,9 @@ export function Window({ config, children, missionControlTarget, missionControlI
               isMobile={false}
               state={config.state}
               onMinimize={inMC ? undefined : handleMinimize}
-              onMaximize={inMC ? undefined : handleMaximize}
+              onMaximize={inMC || isChatWindow ? undefined : handleMaximize}
               onClose={inMC ? undefined : handleClose}
-              onDoubleClick={inMC ? undefined : handleMaximize}
+              onDoubleClick={inMC || isChatWindow ? undefined : handleMaximize}
               onPointerDown={inMC ? undefined : handleDragStart}
               onContextMenu={inMC ? undefined : handleContextMenu}
               rightAccessory={inMC ? undefined : titleBarAccessory}

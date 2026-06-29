@@ -102,9 +102,22 @@ export function openAuthRedirect(url: string): void {
   }
 }
 
+async function openChatSessionFromDeepLink(sessionKey?: string): Promise<void> {
+  const { useComputerStore } = await import('@/stores/agentStore');
+  const { loadSessions, switchSession } = useComputerStore.getState();
+  const { openAgentWindow } = useWindowStore.getState();
+
+  openAgentWindow();
+  await loadSessions(true, sessionKey ? { preserveActiveKey: sessionKey } : undefined);
+  if (sessionKey) {
+    await switchSession(sessionKey, { force: true });
+  }
+}
+
 export function parseConstructDeepLink(url: string): {
-  destination: 'app-registry' | 'spotlight' | 'email';
+  destination: 'app-registry' | 'spotlight' | 'agent' | 'email';
   search?: string;
+  sessionKey?: string;
 } | null {
   try {
     const parsed = new URL(url, window.location.origin);
@@ -114,6 +127,14 @@ export function parseConstructDeepLink(url: string): {
       return { destination: 'app-registry', search: parsed.searchParams.get('search') || undefined };
     }
     if (open === 'spotlight') return { destination: 'spotlight' };
+    if (open === 'agent') {
+      return {
+        destination: 'agent',
+        ...(parsed.searchParams.get('session') || parsed.searchParams.get('sessionKey')
+          ? { sessionKey: parsed.searchParams.get('session') || parsed.searchParams.get('sessionKey') || undefined }
+          : {}),
+      };
+    }
     if (open === 'email') return { destination: 'email' };
     return null;
   } catch {
@@ -127,6 +148,10 @@ export function openConstructDeepLink(url: string): boolean {
   const { openWindow, toggleSpotlight } = useWindowStore.getState();
   if (link.destination === 'app-registry') {
     openWindow('app-registry', link.search ? { metadata: { view: 'integrations', search: link.search } } : undefined);
+    return true;
+  }
+  if (link.destination === 'agent') {
+    void openChatSessionFromDeepLink(link.sessionKey);
     return true;
   }
   if (link.destination === 'email') {

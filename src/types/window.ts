@@ -14,6 +14,7 @@ export type WindowType =
   | 'app-registry'
   | 'app-builder'
   | 'subscribe'
+  | 'chat'
   | 'app';
 
 /** Panel types that live in the MenuBar dropdown, not as standalone windows. */

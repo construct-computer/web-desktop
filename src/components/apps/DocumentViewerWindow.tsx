@@ -14,6 +14,7 @@ import {
 import { useEditorStore } from '@/stores/editorStore';
 import { useDocViewerSignalStore } from '@/stores/documentViewerStore';
 import { useWindowStore } from '@/stores/windowStore';
+import { openSpotlightSession } from '@/lib/spotlightNav';
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import { JsonFileViewer } from '@/components/ui/StructuredDataViewer';
 import type { WindowConfig } from '@/types';
@@ -161,8 +162,7 @@ function spreadsheetColumnName(index: number): string {
 }
 
 function openSpotlightPrompt(draft?: string) {
-  const windowStore = useWindowStore.getState();
-  if (!windowStore.spotlightOpen) windowStore.toggleSpotlight();
+  void openSpotlightSession();
   window.setTimeout(() => {
     if (draft) {
       window.dispatchEvent(new CustomEvent('spotlight-set-draft', { detail: { text: draft } }));

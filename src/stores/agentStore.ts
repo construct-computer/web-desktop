@@ -44,7 +44,6 @@ function stripScheduleDeliveryBlock(prompt: string): string {
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
 import { workOrderNotificationPriority, type NotificationPriority } from '@/lib/notificationPolicy';
-import { openSpotlightSession } from '@/lib/spotlightNav';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
@@ -153,6 +152,18 @@ function isLateStopRelatedFailure(sessionKey: string, data: Record<string, unkno
   if (/model call failed after all retry attempts/i.test(combined)) return true;
   if (/agent loop stopped because of an unexpected error/i.test(combined)) return true;
   return kind === 'llm_failed' && (scope === 'llm' || scope === 'agent');
+}
+
+// Keep this local to avoid a module cycle with spotlightNav.ts.
+async function openChatSession(sessionKey?: string): Promise<void> {
+  const { loadSessions, switchSession } = useComputerStore.getState();
+  const { openAgentWindow } = useWindowStore.getState();
+
+  openAgentWindow();
+  await loadSessions(true, sessionKey ? { preserveActiveKey: sessionKey } : undefined);
+  if (sessionKey) {
+    await switchSession(sessionKey, { force: true });
+  }
 }
 
 function createClientId(prefix = 'msg'): string {
@@ -6648,6 +6659,10 @@ export const useComputerStore = create<ComputerStore>()(
           const actionSessionKey = event.data?.sessionKey as string | undefined;
           const actionWorkspaceId = (event.data?.workspace_id as string | undefined) ||
             'main';
+          if (action === 'open_chat') {
+            void openChatSession(actionSessionKey);
+            break;
+          }
           const windowType = desktopActionToWindowType(action);
 
           if (windowType && windowType !== 'browser' && windowType !== 'editor') {
@@ -7001,8 +7016,8 @@ export const useComputerStore = create<ComputerStore>()(
             || (isHelpRequest ? 'critical' : isWorthwhile ? 'important' : 'critical');
 
           let onClick: (() => void) | undefined;
-          if (action === 'open_spotlight' || (notifSessionKey && !action)) {
-            onClick = () => { void openSpotlightSession(notifSessionKey); };
+          if (action === 'open_spotlight' || action === 'open_agent' || (notifSessionKey && !action)) {
+            onClick = () => { void openChatSession(notifSessionKey); };
           } else if (action === 'open_email') {
             onClick = () => {
               useWindowStore.getState().ensureWindowOpen('email');
@@ -7812,7 +7827,7 @@ export const useComputerStore = create<ComputerStore>()(
               : 'Construct reached the step limit for this run.',
             source: 'Construct',
             variant: 'info',
-            onClick: () => { void openSpotlightSession(eventSessionKey); },
+            onClick: () => { void openChatSession(eventSessionKey); },
             ...(iterationLimit.canContinue ? {
               actions: [{
                 id: 'continue',

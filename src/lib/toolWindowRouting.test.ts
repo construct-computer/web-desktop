@@ -124,7 +124,7 @@ describe('routeToolToWindow — installed/local apps', () => {
 });
 
 describe('desktopActionToWindowType — parity with worker VALID_WINDOW_TYPES', () => {
-  // Mirror of worker/src/tools/desktop.ts VALID_WINDOW_TYPES (minus chat/app, handled specially).
+  // Mirror of worker/src/tools/desktop.ts VALID_WINDOW_TYPES (minus app, handled specially).
   const cases: Array<[string, string | null]> = [
     ['open_browser', 'browser'],
     ['open_terminal', 'terminal'],
@@ -140,7 +140,7 @@ describe('desktopActionToWindowType — parity with worker VALID_WINDOW_TYPES', 
     ['open_app-registry', 'app-registry'],
     ['open_document-viewer', 'document-viewer'],
     ['open_file', 'editor'],
-    ['open_chat', null],
+    ['open_chat', 'chat'],
     ['open_app', null],
     ['nonsense', null],
   ];

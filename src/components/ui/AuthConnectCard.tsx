@@ -131,7 +131,7 @@ export function AuthConnectCard({ payload }: { payload: AuthConnectPayload }) {
       return
     }
     const store = useWindowStore.getState()
-    store.closeSpotlight()
+    store.closeAgentWindow()
 
     if (currentUrl) {
       startAuthRequestWatch({

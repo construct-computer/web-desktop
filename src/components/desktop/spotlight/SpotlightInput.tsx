@@ -736,7 +736,7 @@ export function SpotlightInput() {
     return () => el.removeEventListener('paste', onPaste);
   }, [detectFileTrigger, message, processFiles, setMessageWithCaret]);
 
-  // Listen for files dropped on the Spotlight shell panel
+   // Listen for files dropped on the chat panel
   useEffect(() => {
     const handler = (e: Event) => {
       const files = (e as CustomEvent<File[]>).detail;
@@ -1056,7 +1056,7 @@ export function SpotlightInput() {
                 {isVoiceActive
                   ? 'Listening...'
                   : isExternal
-                    ? `Reply from ${externalLabel}. This Spotlight view is read-only.`
+                    ? `Reply from ${externalLabel}. This chat view is read-only.`
                     : isConnected
                       ? agentConnecting && !agentConnected
                         ? 'Queue a message while Construct reconnects...'
