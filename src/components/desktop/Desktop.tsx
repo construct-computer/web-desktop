@@ -14,31 +14,19 @@ import { Toasts } from '@/components/ui';
 import { WindowManager } from '@/components/window';
 import { useWindowStore } from '@/stores/windowStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useSurveyStore } from '@/stores/surveyStore';
 import { useBillingStore } from '@/stores/billingStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDesktopTour } from '@/hooks/useDesktopTour';
 import { BOOT_EVENTS } from '@/hooks/useBootPhase';
 import { PromoCodeModal } from '@/components/apps/PromoCodeModal';
-import { SurveyModal } from '@/components/surveys/SurveyModal';
 import { MobileDesktopBackground } from './MobileDesktopBackground';
 import { validateDiscountCode } from '@/services/api';
 // import { getEmailStatus } from '@/services/agentmail'; // removed — tour trigger no longer depends on email status
-import { IS_DEV } from '@/lib/config';
 import { MENUBAR_HEIGHT, MOBILE_MENUBAR_HEIGHT, MOBILE_APP_BAR_HEIGHT, Z_INDEX, STORAGE_KEYS } from '@/lib/constants';
 import { openSpotlightSession } from '@/lib/spotlightNav';
 import { hasAgentAccess } from '@/lib/plans';
 import { openSettingsToSection, openSubscribeWindow } from '@/lib/settingsNav';
-import {
-  SURVEY_DEBUG_KINDS,
-  detectSurveySurface,
-  isSurveyKind,
-  nextSurveyDebugKind,
-  surveyDebugTriggerForKind,
-  type SurveyKind,
-  type SurveySurface,
-} from '@/lib/surveys';
 
 // ── Workspace slide constants ──────────────────────────────────────
 
@@ -92,7 +80,6 @@ export function Desktop({
   const workspaceTransition = useWindowStore((s) => s.workspaceTransition);
   const completeWorkspaceTransition = useWindowStore((s) => s.completeWorkspaceTransition);
   const user = useAuthStore((s) => s.user);
-  const refreshSurvey = useSurveyStore((s) => s.refresh);
   const isMobile = useIsMobile();
   const topBarHeight = isMobile ? MOBILE_MENUBAR_HEIGHT : MENUBAR_HEIGHT;
 
@@ -245,71 +232,6 @@ export function Desktop({
   const hasBillingIssue = !!subscription?.dodoCustomerId
     && ['on_hold', 'past_due', 'failed'].includes((subscription.status || '').toLowerCase());
   const promoVisible = Boolean(!chromeHidden && (user?.onboardingCompleted || !hasAccess) && user?.plan !== 'pro' && promoCode && !promoDismissed);
-  const surveySuspended = promoVisible || missionControlActive || spotlightOpen || launchpadOpen;
-  useEffect(() => {
-    if (entering || chromeHidden) return;
-    if (!userId || !user?.setupCompleted || !user?.onboardingCompleted) return;
-    if (promoVisible) return;
-    void refreshSurvey('app_ready');
-  }, [entering, chromeHidden, userId, user?.setupCompleted, user?.onboardingCompleted, promoVisible, refreshSurvey]);
-
-  useEffect(() => {
-    const host = window.location.hostname;
-    const surveyCheatcodeEnabled = IS_DEV || host === 'localhost' || host === '127.0.0.1' || host === 'staging.construct.computer';
-    if (!surveyCheatcodeEnabled) {
-      if ('survey' in window) delete window.survey;
-      return;
-    }
-
-    type SurveyConsoleTarget = SurveyKind | { kind?: SurveyKind; surface?: SurveySurface };
-    type SurveyConsoleResult = { kind: SurveyKind; trigger: string; surface: SurveySurface };
-    type SurveyCheatcode = ((target?: SurveyConsoleTarget) => Promise<SurveyConsoleResult | null>) & {
-      kinds: readonly SurveyKind[];
-      reset: () => void;
-    };
-
-    let nextDebugKind: SurveyKind | null = null;
-
-    // ponytail: staging/local console hook only; production stays dark.
-    const surveyCheatcode = Object.assign(async (target?: SurveyConsoleTarget) => {
-      const store = useSurveyStore.getState();
-      let kind = nextDebugKind ? nextSurveyDebugKind(nextDebugKind) : SURVEY_DEBUG_KINDS[0];
-      let surface: SurveySurface | undefined;
-
-      if (typeof target === 'string') {
-        if (!isSurveyKind(target)) {
-          console.warn(`[survey] Unknown kind "${target}". Use: ${SURVEY_DEBUG_KINDS.join(', ')}`);
-          return null;
-        }
-        kind = target;
-      } else if (target) {
-        if (target.kind && !isSurveyKind(target.kind)) {
-          console.warn(`[survey] Unknown kind "${target.kind}". Use: ${SURVEY_DEBUG_KINDS.join(', ')}`);
-          return null;
-        }
-        if (target.kind) kind = target.kind;
-        surface = target.surface;
-      }
-
-      nextDebugKind = kind;
-      const trigger = surveyDebugTriggerForKind(kind);
-      store.clear();
-      await store.refresh(trigger, surface);
-      return { kind, trigger, surface: surface ?? detectSurveySurface() };
-    }, {
-      kinds: SURVEY_DEBUG_KINDS,
-      reset: () => {
-        nextDebugKind = null;
-        useSurveyStore.getState().clear();
-      },
-    }) as SurveyCheatcode;
-
-    window.survey = surveyCheatcode;
-
-    return () => {
-      if (window.survey === surveyCheatcode) delete window.survey;
-    };
-  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -519,8 +441,6 @@ export function Desktop({
       {promoVisible && (
         <PromoCodeModal code={promoCode || ''} onDismiss={() => setPromoDismissed(true)} />
       )}
-
-      <SurveyModal suspended={surveySuspended} />
     </div>
   );
 }

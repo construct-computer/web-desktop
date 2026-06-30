@@ -9,7 +9,6 @@ import {
 } from '@/lib/onboardingDraftCache';
 import { log } from '@/lib/logger';
 import { track } from '@/lib/analytics';
-import { useSurveyStore } from '@/stores/surveyStore';
 
 const logger = log('OnboardingStore');
 
@@ -121,7 +120,6 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
         : result.data.user,
     });
     get().trackEvent('onboarding_completed');
-    void useSurveyStore.getState().refresh('onboarding_completed');
     return true;
   },
 }));

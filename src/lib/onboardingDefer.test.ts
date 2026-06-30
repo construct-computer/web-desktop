@@ -32,7 +32,6 @@ describe('onboardingStore draft behavior', () => {
       patchOnboarding,
       completeOnboarding,
       getOnboarding,
-      getNextSurvey: vi.fn().mockResolvedValue({ success: true, data: { survey: null } }),
       trackOnboardingEvent: vi.fn(),
     }));
 
@@ -59,7 +58,6 @@ describe('onboardingStore draft behavior', () => {
       patchOnboarding,
       completeOnboarding,
       getOnboarding,
-      getNextSurvey: vi.fn().mockResolvedValue({ success: true, data: { survey: null } }),
       trackOnboardingEvent: vi.fn(),
     }));
 

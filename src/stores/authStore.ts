@@ -11,7 +11,6 @@ import {
 import { saveSessionWallpaper } from '@/lib/wallpaperSession';
 import { setUserWallpaper } from '@/lib/wallpaperPrefs';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useSurveyStore } from '@/stores/surveyStore';
 import { identifyUser, resetAnalytics, track } from '@/lib/analytics';
 
 type MagicLinkState = 'idle' | 'sending' | 'sent' | 'verifying' | 'error';
@@ -79,7 +78,6 @@ function clearStaleUserData(newUserId: string): void {
     deferWallpaperCacheClearForUser(previousUserId);
   }
 
-  useSurveyStore.getState().clear();
   useSettingsStore.getState().applyWallpaperForUser(newUserId);
 }
 
@@ -103,7 +101,6 @@ function persistWallpaperSessionBeforeLogout(): void {
 function clearLocalSessionData(): void {
   void clearWallpaperCacheOnSessionEnd();
   api.clearToken();
-  useSurveyStore.getState().clear();
 
   try { sessionStorage.clear(); } catch { /* */ }
   try { localStorage.removeItem('construct:tracker:dismissedGoals'); } catch { /* */ }
@@ -376,7 +373,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   updateProfile: async (data: { displayName: string }) => {
     const result = await api.updateProfile(data);
     if (result.success) {
-      set({ user: result.data.user });
+      useAuthStore.getState().setUser(result.data.user);
       return true;
     }
     return false;
@@ -385,11 +382,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   markSetupDone: async () => {
     const result = await api.markSetupComplete();
     if (result.success) {
-      set({ user: result.data.user });
+      useAuthStore.getState().setUser(result.data.user);
       return true;
     }
     return false;
   },
 
-  setUser: (user: User) => set({ user }),
+  setUser: (user: User) => {
+    identifyUser(user);
+    set({ user });
+  },
 }));

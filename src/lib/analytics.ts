@@ -1,6 +1,6 @@
 import posthog from 'posthog-js';
 import type { User } from '@/types';
-import { getNativePlatform, isNativePlatform } from '@/native';
+import { isNativePlatform } from '@/native';
 
 let initialized = false;
 
