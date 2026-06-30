@@ -777,6 +777,20 @@ export function describeToolFailure(
   return `Failed ${tool}${exitSuffix}`;
 }
 
+function failedActivityTitle(
+  current: string,
+  tool: string,
+  params: Record<string, unknown> | undefined,
+  opts: { exitCode?: number; error?: string },
+): string {
+  const text = current.trim();
+  if (!text) return describeToolFailure(tool, params, opts);
+  if (/\bfailed\b/i.test(text)) return text;
+  const running = text.match(/^Running\s+(.+)$/i);
+  if (running?.[1]) return `Failed ${running[1]}`;
+  return `${text} failed`;
+}
+
 const WEB_BROWSER_TOOLS = new Set([
   'web_search', 'web_fetch', 'arxiv', 'domain_intel',
   'browser', 'remote_browser',
@@ -837,6 +851,8 @@ export function patchToolActivityFailure<T extends {
   activityType?: string;
   activityStatus?: string;
   content: string;
+  errorDetail?: string;
+  isError?: boolean;
 }>(
   messages: T[],
   opts: ToolActivityPatch,
@@ -864,14 +880,11 @@ export function patchToolActivityFailure<T extends {
   if (matchIndex < 0) return messages;
 
   const existing = messages[matchIndex];
-  const content = describeToolFailure(
-    existing.tool || tool || 'tool',
-    params,
-    { exitCode, error },
-  );
+  const content = failedActivityTitle(existing.content, existing.tool || tool || 'tool', params, { exitCode, error });
+  const errorDetail = typeof error === 'string' && error.trim() ? error.trim() : undefined;
   return messages.map((msg, index) => (
     index === matchIndex
-      ? { ...msg, content, activityStatus: 'failed' as const, isError: true }
+      ? { ...msg, content, activityStatus: 'failed' as const, isError: true, errorDetail }
       : msg
   ));
 }
@@ -1084,6 +1097,7 @@ export function patchTrailingBrowserActivitiesFailed<T extends {
   activityStatus?: string;
   content: string;
   isError?: boolean;
+  errorDetail?: string;
   browserAction?: unknown;
 }>(
   messages: T[],
@@ -1115,16 +1129,17 @@ export function patchTrailingBrowserActivitiesFailed<T extends {
       tool: 'browser',
       activityStatus: 'failed' as const,
       isError: true,
+      errorDetail: error,
     } as T];
   }
   let first = true;
   return messages.map((msg, index) => {
     if (!indices.has(index)) return msg;
     const content = first
-      ? (msg.content.startsWith('Failed') ? msg.content : `Failed · ${failDetail}`)
+      ? failedActivityTitle(msg.content, msg.tool || 'browser', undefined, { error: failDetail })
       : msg.content;
     first = false;
-    return { ...msg, content, activityStatus: 'failed' as const, isError: true };
+    return { ...msg, content, activityStatus: 'failed' as const, isError: true, errorDetail: error };
   });
 }
 

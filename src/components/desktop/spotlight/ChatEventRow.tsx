@@ -28,9 +28,24 @@ function cleanErrorTitle(content: string): { title: string; detail?: string; raw
   return { title: value };
 }
 
+function normalizeDiagnosticDetail(content?: string | null): { text?: string; raw?: string } {
+  const value = (content || '').trim();
+  if (!value) return {};
+  const parsed = cleanErrorTitle(value.startsWith('Error:') ? value : `Error: ${value}`);
+  return {
+    text: parsed.title?.trim() || value,
+    raw: parsed.raw,
+  };
+}
+
+type DetailSection = {
+  label: string;
+  value: string;
+  raw?: boolean;
+};
+
 function eventMeta(msg: ChatMessage): {
   title: string;
-  detail?: string;
   tone: ActivityTone;
   tool?: string;
   repeatCount?: number;
@@ -41,7 +56,6 @@ function eventMeta(msg: ChatMessage): {
     const title = msg.noticeTitle || msg.content.split('\n')[0] || 'Construct issue';
     return {
       title,
-      detail: msg.noticeDetail,
       tone: severity === 'error' ? 'error' : severity === 'warn' ? 'warn' : 'info',
       tool: msg.noticeToolName,
       repeatCount: msg.noticeRepeatCount,
@@ -61,7 +75,7 @@ function eventMeta(msg: ChatMessage): {
   if (msg.activityStatus === 'failed') {
     return {
       title: msg.content,
-      tone: 'error',
+      tone: msg.isError ? 'error' : 'warn',
       tool: msg.tool,
     };
   }
@@ -79,6 +93,35 @@ function eventMeta(msg: ChatMessage): {
     tone: 'default',
     tool: msg.tool,
   };
+}
+
+function eventDetailSections(msg: ChatMessage, meta: ReturnType<typeof eventMeta>): DetailSection[] {
+  if (msg.noticeKind === 'incident') {
+    const sections: DetailSection[] = [];
+    const technical = normalizeDiagnosticDetail(msg.noticeTechnicalDetail);
+    if (technical.text) sections.push({ label: 'What Happened', value: technical.text });
+    if (msg.noticeActionTaken) sections.push({ label: 'Construct Did', value: msg.noticeActionTaken });
+    if (msg.noticeNextStep) sections.push({ label: 'Try Next', value: msg.noticeNextStep });
+    if (technical.raw) sections.push({ label: 'Raw Details', value: technical.raw, raw: true });
+    if (sections.length === 0 && msg.noticeDetail) {
+      sections.push({ label: 'Details', value: msg.noticeDetail });
+    }
+    return sections;
+  }
+
+  if (msg.errorDetail) {
+    const detail = normalizeDiagnosticDetail(msg.errorDetail);
+    const sections: DetailSection[] = [];
+    if (detail.text) sections.push({ label: 'What Happened', value: detail.text });
+    if (detail.raw) sections.push({ label: 'Raw Details', value: detail.raw, raw: true });
+    return sections;
+  }
+
+  if (msg.isError) {
+    return meta.raw ? [{ label: 'Raw Details', value: meta.raw, raw: true }] : [];
+  }
+
+  return [];
 }
 
 type MemoryActivity = NonNullable<ChatMessage['memoryActivity']>;
@@ -115,19 +158,21 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = useMemo(() => eventMeta(msg), [msg]);
+  const detailSections = useMemo(() => eventDetailSections(msg, meta), [msg, meta]);
   const isTerminal = msg.activityType === 'terminal';
   const memoryActivity = msg.memoryActivity;
   const policyActivity = msg.policyActivity;
-  const hasDetails = Boolean(meta.detail || meta.raw);
+  const hasDetails = detailSections.length > 0;
 
   const handleCopy = useCallback(() => {
     const memoryText = memoryActivity?.items
       .map((item) => item.memory)
       .join('\n');
-    navigator.clipboard.writeText(memoryText || meta.raw || meta.detail || msg.content);
+    const detailText = detailSections.map((section) => `${section.label}:\n${section.value}`).join('\n\n');
+    navigator.clipboard.writeText(memoryText || detailText || msg.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [memoryActivity, meta.raw, meta.detail, msg.content]);
+  }, [detailSections, memoryActivity, msg.content]);
 
   if (msg.codePreview) {
     return <CodePreviewCard msg={msg} compact={compact} />;
@@ -294,13 +339,25 @@ export function ChatEventRow({ msg, compact = false }: { msg: ChatMessage; compa
             )}
           </div>
           {expanded && hasDetails && (
-            <div className="mt-1.5 rounded-lg bg-black/10 px-2 py-1.5 text-[10px] leading-4 text-[var(--color-text-muted)]/50">
-              {meta.detail && <div className="whitespace-pre-wrap">{meta.detail}</div>}
-              {meta.raw && <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{meta.raw}</pre>}
+            <div className="mt-1.5 rounded-lg border border-white/6 bg-black/10 px-2.5 py-2 text-[10px] leading-4 text-[var(--color-text-muted)]/55">
+              <div className="space-y-2">
+                {detailSections.map((section, index) => (
+                  <div key={`${section.label}-${index}`} className="min-w-0">
+                    <div className="mb-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]/35">
+                      {section.label}
+                    </div>
+                    {section.raw ? (
+                      <pre className="whitespace-pre-wrap break-all rounded-md bg-black/15 px-2 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]/52">{section.value}</pre>
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words text-[var(--color-text-muted)]/62">{section.value}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={handleCopy}
-                className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/45 hover:text-[var(--color-text-muted)]/70"
+                className="mt-2 inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]/45 hover:text-[var(--color-text-muted)]/70"
               >
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copied ? 'Copied' : 'Copy'}

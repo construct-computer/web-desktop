@@ -24,7 +24,7 @@ describe('describeToolFailure', () => {
 describe('patchToolActivityFailure', () => {
   it('updates the matching activity row by toolCallId', () => {
     const messages = [
-      { role: 'activity', content: 'Running `ls -la`', tool: 'terminal', toolCallId: 'call_1', activityStatus: 'running' as const },
+      { role: 'activity', content: 'Running `ls -la`', tool: 'terminal', toolCallId: 'call_1', activityStatus: 'running' as const, errorDetail: undefined as string | undefined },
     ];
     const patched = patchToolActivityFailure(messages, {
       toolCallId: 'call_1',
@@ -35,6 +35,7 @@ describe('patchToolActivityFailure', () => {
     });
     expect(patched[0]?.activityStatus).toBe('failed');
     expect(patched[0]?.content).toContain('Failed `ls -la`');
+    expect(patched[0]?.errorDetail).toBe('Sandbox error: mount failed');
   });
 });
 

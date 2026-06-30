@@ -303,6 +303,8 @@ export interface ChatMessage {
   isError?: boolean;
   /** True specifically for user-initiated stop — rendered with muted styling instead of error red */
   isStopped?: boolean;
+  /** Expandable detail for failed activity/system rows. */
+  errorDetail?: string;
   /** Step-limit pause metadata, rendered as a continue card. */
   iterationLimit?: { limit?: number; plan?: string; canContinue: boolean };
   /** For delegation-group/consultation-group/background-group messages: links to tracker operation */
@@ -347,6 +349,9 @@ export interface ChatMessage {
   /** Compact notice display metadata. */
   noticeTitle?: string;
   noticeDetail?: string;
+  noticeTechnicalDetail?: string;
+  noticeActionTaken?: string;
+  noticeNextStep?: string;
   noticeToolName?: string;
   noticeSeverity?: 'info' | 'warn' | 'error';
   noticeRepeatCount?: number;
@@ -1288,17 +1293,26 @@ function buildFrontendContext(selectedFiles?: string[]): AgentFrontendContext {
 
 const INCIDENT_COLLAPSE_WINDOW_MS = 2 * 60 * 1000;
 
-function formatToolNoticeTitle(message: string, toolName?: string, noticeKind?: string): string {
+function formatToolNoticeTitle(message: string, toolName?: string, noticeKind?: string, technicalDetail?: string): string {
+  const toolLabel = (name?: string) => (name || '')
+    .split(/[_.-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+  const firstDetailLine = (technicalDetail || '')
+    .split('\n')
+    .map(line => line.trim())
+    .find(Boolean)?.replace(/^Error:\s*/i, '') || '';
   if (noticeKind === 'incident' && /saved-file tracking skipped|configuration_missing/i.test(message)) {
     return message.split('\n')[0]?.trim() || message;
   }
   const failedTool = message.match(/^Tool "([^"]+)" failed\.?$/i)?.[1] || toolName;
   if (failedTool) {
-    const label = failedTool
-      .split(/[_.-]+/)
-      .filter(Boolean)
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    const label = toolLabel(failedTool);
+    if (firstDetailLine) {
+      const summary = firstDetailLine.length > 120 ? `${firstDetailLine.slice(0, 117)}...` : firstDetailLine;
+      return `${label || 'Tool'}: ${summary}`;
+    }
     return `${label || 'Tool'} failed`;
   }
   return message || 'Agent issue';
@@ -1465,6 +1479,11 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
     : typeof data.action_taken === 'string'
       ? data.action_taken
       : undefined;
+  const technicalDetail = typeof data.technicalDetail === 'string'
+    ? data.technicalDetail
+    : typeof data.technical_detail === 'string'
+      ? data.technical_detail
+      : undefined;
   const nextStep = typeof data.nextStep === 'string'
     ? data.nextStep
     : typeof data.next_step === 'string'
@@ -1491,11 +1510,12 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
   }
 
   const detail = [
-    actionTaken ? `Action taken: ${actionTaken}` : '',
-    nextStep ? `Next step: ${nextStep}` : '',
-  ].filter(Boolean).join('\n');
-  const title = formatToolNoticeTitle(message, toolName, 'incident');
-  const signature = [kind, severity, toolName || '', message, actionTaken || '', nextStep || ''].join('|');
+    technicalDetail ? `What happened\n${technicalDetail}` : '',
+    actionTaken ? `Construct did\n${actionTaken}` : '',
+    nextStep ? `Try next\n${nextStep}` : '',
+  ].filter(Boolean).join('\n\n');
+  const title = formatToolNoticeTitle(message, toolName, 'incident', technicalDetail);
+  const signature = [kind, severity, toolName || '', message, technicalDetail || '', actionTaken || '', nextStep || ''].join('|');
 
   return {
     role: 'notice',
@@ -1509,6 +1529,9 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
     noticeSignature: signature,
     noticeTitle: title,
     noticeDetail: detail || undefined,
+    noticeTechnicalDetail: technicalDetail,
+    noticeActionTaken: actionTaken,
+    noticeNextStep: nextStep,
     noticeToolName: toolName,
     noticeSeverity: severity === 'error' ? 'error' : severity === 'warn' ? 'warn' : 'info',
     noticeRepeatCount: 1,

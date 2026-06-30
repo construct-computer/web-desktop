@@ -25,17 +25,36 @@ describe('ChatEventRow', () => {
   it('shows details only when the row has useful diagnostic text', () => {
     const msg: ChatMessage = {
       role: 'notice',
-      content: 'Capability failed\nNext step: reconnect Gmail',
+      content: 'Capability failed\nWhat happened\nGmail is not connected',
       timestamp: new Date(1),
       noticeKind: 'incident',
       noticeTitle: 'Capability failed',
-      noticeDetail: 'Next step: reconnect Gmail',
+      noticeTechnicalDetail: 'Gmail is not connected',
+      noticeNextStep: 'Reconnect Gmail',
       noticeToolName: 'gmail',
     };
 
     const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
 
     expect(html).toContain('Details');
+  });
+
+  it('shows details for failed activity rows when a full error is available', () => {
+    const msg: ChatMessage = {
+      role: 'activity',
+      content: 'Adding Discord reaction failed',
+      timestamp: new Date(1),
+      tool: 'discord',
+      activityType: 'tool',
+      activityStatus: 'failed',
+      isError: true,
+      errorDetail: 'Missing Discord permission: Add Reactions',
+    };
+
+    const html = renderToStaticMarkup(<ChatEventRow msg={msg} />);
+
+    expect(html).toContain('Details');
+    expect(html).toContain('Adding Discord reaction failed');
   });
 
   it('renders live spec previews for app generation', () => {
