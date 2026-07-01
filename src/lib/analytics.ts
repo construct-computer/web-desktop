@@ -46,6 +46,7 @@ export function initPostHog(): void {
   posthog.init(key, {
     api_host: host,
     ui_host: uiHost,
+    cookie_domain: '.construct.computer',
     person_profiles: 'identified_only',
     capture_pageview: false,
     capture_pageleave: true,
@@ -71,8 +72,11 @@ export function initPostHog(): void {
 export function identifyUser(user: User): void {
   if (!isReady()) return;
 
+  const email = user.email?.toLowerCase().trim();
+
   posthog.identify(user.id, {
-    email: user.email ?? undefined,
+    email: email ?? undefined,
+    identification_stage: 'authenticated',
     plan: user.plan,
     user_id: user.id,
     username: user.username,
