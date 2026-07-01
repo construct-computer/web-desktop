@@ -272,11 +272,12 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   previewPlanChange: async (plan: BillingPlanId) => {
     const result = await previewPlanChangeApi(plan);
     if (result.success) return result.data.preview;
+    const code = (result.data as { code?: string } | undefined)?.code;
     useNotificationStore.getState().addNotification({
-      title: 'Could not preview plan change',
-      body: result.error || 'Try again or use the Dodo portal.',
+      title: code === 'lite_trial_upgrade_blocked' ? 'Upgrade unavailable during trial' : 'Could not preview plan change',
+      body: result.error || 'Try again or use Manage Subscription for billing changes.',
       source: 'Billing',
-      variant: 'error',
+      variant: code === 'lite_trial_upgrade_blocked' ? 'info' : 'error',
     }, 8_000);
     return null;
   },
@@ -298,6 +299,13 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     if (!result.success && result.data?.redirectToCheckout) {
       return { redirectToCheckout: true, targetPlan: result.data.targetPlan as string };
     }
+    const code = (result.data as { code?: string } | undefined)?.code;
+    useNotificationStore.getState().addNotification({
+      title: code === 'lite_trial_upgrade_blocked' ? 'Upgrade unavailable during trial' : 'Could not change plan',
+      body: result.error || 'Try again or use Manage Subscription for billing changes.',
+      source: 'Billing',
+      variant: code === 'lite_trial_upgrade_blocked' ? 'info' : 'error',
+    }, 8_000);
     return false;
   },
 
@@ -305,9 +313,13 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     const result = await cancelSubscriptionApi();
     if (result.success) {
       await get().fetchSubscription();
+      await get().fetchUsage();
+      const immediate = result.data.immediate === true;
       useNotificationStore.getState().addNotification({
-        title: 'Cancellation scheduled',
-        body: 'Your access remains active until the end of the current billing period.',
+        title: immediate ? 'Subscription cancelled' : 'Cancellation scheduled',
+        body: immediate
+          ? 'Your Lite trial has ended and workspace access has been removed.'
+          : 'Your access remains active until the end of the current billing period.',
         source: 'Billing',
         variant: 'info',
       }, 6_000);

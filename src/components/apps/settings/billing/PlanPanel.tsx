@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { getBillingPlans, type BillingPlanId, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
 import { BILLING_PLAN_ORDER } from '@/lib/billingPlans';
 import { LITE_FEATURES, STARTER_FEATURES, PRO_FEATURES, type PlanFeature } from '../../../screens/subscribePlanCopy';
@@ -39,6 +40,31 @@ function formatPlanName(plan: string): string {
 
 function isPaidPlan(plan: string | null | undefined): plan is BillingPlanId {
   return plan === 'lite' || plan === 'starter' || plan === 'pro';
+}
+
+function isInactiveSubscriptionStatus(status: string | null | undefined): boolean {
+  const normalized = (status || '').toLowerCase();
+  return normalized === 'cancelled' || normalized === 'canceled' || normalized === 'expired' || normalized === 'failed';
+}
+
+/** Plan tier shown in billing UI — matches effective access, not stale Dodo product id. */
+function getDisplayPlan(subscription: SubscriptionInfo | null): BillingPlanId | 'unsubscribed' {
+  if (!subscription) return 'unsubscribed';
+  if (isInactiveSubscriptionStatus(subscription.status)) return 'unsubscribed';
+  const plan = subscription.plan || subscription.storedPlan || 'unsubscribed';
+  return isPaidPlan(plan) ? plan : 'unsubscribed';
+}
+
+function isLiteTrialActive(subscription: SubscriptionInfo | null): boolean {
+  if (!subscription?.trialEndsAt || subscription.trialEndsAt <= Date.now()) return false;
+  if (isInactiveSubscriptionStatus(subscription.status)) return false;
+  const plan = subscription.storedPlan || subscription.plan;
+  return plan === 'lite';
+}
+
+function isUpgradePlan(currentPlan: BillingPlanId | 'unsubscribed', targetPlan: BillingPlanId): boolean {
+  if (!isPaidPlan(currentPlan)) return true;
+  return BILLING_PLAN_ORDER.indexOf(targetPlan) > BILLING_PLAN_ORDER.indexOf(currentPlan);
 }
 
 function formatMoneyFromMinor(amount: number | undefined, currency: string | undefined): string | null {
@@ -105,7 +131,9 @@ function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice 
     return {
       tone: 'info',
       title: 'Lite trial active',
-      body: date ? `Your first Lite charge is scheduled after the trial ends on ${date}.` : 'Your first Lite charge is scheduled after the 24-hour trial ends.',
+      body: date
+        ? `Your first Lite charge is scheduled after the trial ends on ${date}. Cancelling now ends access immediately. Upgrades unlock after your trial converts to a paid subscription.`
+        : 'Your first Lite charge is scheduled after the 24-hour trial ends. Cancelling now ends access immediately. Upgrades unlock after your trial converts to a paid subscription.',
     };
   }
 
@@ -137,6 +165,7 @@ function PlanCard({
   actionLabel,
   badge,
   loading,
+  blocked,
   onClick,
 }: {
   plan: BillingPlanInfo;
@@ -145,6 +174,7 @@ function PlanCard({
   actionLabel: string;
   badge?: string | null;
   loading?: boolean;
+  blocked?: boolean;
   onClick: () => void;
 }) {
   const isCurrent = plan.id === currentPlan;
@@ -199,7 +229,7 @@ function PlanCard({
 
       <Button
         onClick={onClick}
-        disabled={!!loading || isCurrent}
+        disabled={!!loading || isCurrent || !!blocked}
         className="w-full"
         variant={isPro ? 'primary' : 'default'}
       >
@@ -287,12 +317,21 @@ export function PlanPanel() {
       await handleSwitchPlan(plan);
       return;
     }
-    const billingPlan = subscription?.storedPlan || subscription?.plan || 'unsubscribed';
-    if (!subscription?.dodoSubscriptionId || !isPaidPlan(billingPlan)) {
+    const billingPlan = getDisplayPlan(subscription);
+    if (!subscription?.dodoSubscriptionId || billingPlan === 'unsubscribed') {
       await handleCheckout(plan);
       return;
     }
     if (plan === billingPlan) return;
+    if (isLiteTrialActive(subscription) && isUpgradePlan(billingPlan, plan)) {
+      useNotificationStore.getState().addNotification({
+        title: 'Upgrade unavailable during trial',
+        body: 'Upgrades unlock after your Lite trial ends and your first payment is processed.',
+        source: 'Billing',
+        variant: 'info',
+      }, 8_000);
+      return;
+    }
     setCheckoutLoading(plan);
     const preview = await previewPlanChange(plan);
     setCheckoutLoading(null);
@@ -325,7 +364,7 @@ export function PlanPanel() {
     if ('url' in result) window.location.href = result.url;
   }, [updatePaymentMethod]);
 
-  const currentPlan = subscription?.storedPlan || subscription?.plan || 'unsubscribed';
+  const currentPlan = getDisplayPlan(subscription);
   const currentPlanLabel = formatPlanName(currentPlan);
   const isNonProd = subscription?.environment === 'staging' || subscription?.environment === 'local';
   const billingNotice = getBillingNotice(subscription);
@@ -348,6 +387,9 @@ export function PlanPanel() {
   const orderedPlans = BILLING_PLAN_ORDER
     .map((id) => plans.find((plan) => plan.id === id))
     .filter((plan): plan is BillingPlanInfo => !!plan);
+
+  const liteTrialActive = isLiteTrialActive(subscription);
+  const paidCurrentPlan = isPaidPlan(currentPlan) ? currentPlan : null;
 
   return (
     <div className="space-y-4">
@@ -435,7 +477,9 @@ export function PlanPanel() {
               </div>
             ) : orderedPlans.length > 0 ? (
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                {orderedPlans.map((plan) => (
+                {orderedPlans.map((plan) => {
+                  const upgradeBlocked = liteTrialActive && !!paidCurrentPlan && isUpgradePlan(paidCurrentPlan, plan.id);
+                  return (
                   <PlanCard
                     key={plan.id}
                     plan={plan}
@@ -444,6 +488,7 @@ export function PlanPanel() {
                     actionLabel={(() => {
                       if (plan.id === currentPlan) return 'Current plan';
                       if (subscription?.scheduledPlan === plan.id) return 'Scheduled';
+                      if (upgradeBlocked) return 'After trial';
                       if (!isPaidPlan(currentPlan)) return `Get ${plan.name}`;
                       return BILLING_PLAN_ORDER.indexOf(plan.id) > BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId)
                         ? `Upgrade to ${plan.name}`
@@ -451,9 +496,11 @@ export function PlanPanel() {
                     })()}
                     badge={subscription?.scheduledPlan === plan.id ? 'Scheduled' : null}
                     loading={checkoutLoading === plan.id}
+                    blocked={upgradeBlocked}
                     onClick={() => void handlePlanAction(plan.id)}
                   />
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-[12px] text-[var(--color-text-muted)] py-4">

@@ -2729,7 +2729,7 @@ export async function previewPlanChange(plan: 'lite' | 'starter' | 'pro'): Promi
   });
 }
 
-export async function cancelSubscription(): Promise<ApiResult<{ ok: boolean }>> {
+export async function cancelSubscription(): Promise<ApiResult<{ ok: boolean; immediate?: boolean }>> {
   return request('/billing/cancel-subscription', { method: 'POST' });
 }
 
