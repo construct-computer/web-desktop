@@ -15,6 +15,7 @@ import {
   previewPlanChange as previewPlanChangeApi,
   cancelSubscription as cancelSubscriptionApi,
   resumeSubscription as resumeSubscriptionApi,
+  upgradeFromTrial as upgradeFromTrialApi,
   updateSubscriptionPaymentMethod,
   createPortalSession,
   createTopupCheckout,
@@ -33,6 +34,7 @@ import {
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { BILLING_ERROR_FALLBACK, billingStatusToast, planSwitchSuccessToast } from '@/components/apps/settings/billing/billingCopy';
 
 const BYOK_MODELS_CACHE_MS = 5 * 60 * 1000;
 const BILLING_NOTICE_STORAGE_PREFIX = 'construct:billing-status-notice';
@@ -84,6 +86,7 @@ interface BillingState {
   startCheckout: (plan?: BillingPlanId, coupon?: string) => Promise<string | null>;
   previewPlanChange: (plan: BillingPlanId) => Promise<any | null>;
   switchPlan: (plan: BillingPlanId) => Promise<boolean | { redirectToCheckout: boolean; targetPlan: string }>;
+  upgradeFromTrial: (plan: 'starter' | 'pro') => Promise<string | null>;
   cancelSubscription: () => Promise<boolean>;
   resumeSubscription: () => Promise<boolean>;
   updatePaymentMethod: () => Promise<{ url: string } | { error: string }>;
@@ -114,41 +117,7 @@ function normalizedSubscriptionStatus(subscription: SubscriptionInfo): string {
 }
 
 function billingStatusNotice(subscription: SubscriptionInfo): { title: string; body: string; variant: 'info' | 'error' } | null {
-  const status = normalizedSubscriptionStatus(subscription);
-
-  if (status === 'past_due' || status === 'on_hold') {
-    return {
-      title: 'Payment overdue',
-      body: 'Your subscription payment failed, so paid features and usage limits have been downgraded until billing is fixed.',
-      variant: 'error',
-    };
-  }
-
-  if (status === 'failed') {
-    return {
-      title: 'Subscription payment failed',
-      body: 'Your paid subscription is inactive. Update billing to restore paid features and limits.',
-      variant: 'error',
-    };
-  }
-
-  if (status === 'expired' || status === 'cancelled' || status === 'canceled') {
-    return {
-      title: 'Subscription inactive',
-      body: 'Your paid subscription is no longer active, so your workspace is unsubscribed.',
-      variant: 'error',
-    };
-  }
-
-  if (status === 'cancel_at_period_end') {
-    return {
-      title: 'Subscription cancellation scheduled',
-      body: 'Your paid access remains active until the end of the current billing period.',
-      variant: 'info',
-    };
-  }
-
-  return null;
+  return billingStatusToast(subscription);
 }
 
 function maybeNotifyBillingStatus(previous: SubscriptionInfo | null, next: SubscriptionInfo): void {
@@ -272,12 +241,11 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   previewPlanChange: async (plan: BillingPlanId) => {
     const result = await previewPlanChangeApi(plan);
     if (result.success) return result.data.preview;
-    const code = (result.data as { code?: string } | undefined)?.code;
     useNotificationStore.getState().addNotification({
-      title: code === 'lite_trial_upgrade_blocked' ? 'Upgrade unavailable during trial' : 'Could not preview plan change',
-      body: result.error || 'Try again or use Manage Subscription for billing changes.',
+      title: 'Could not preview plan change',
+      body: result.error || BILLING_ERROR_FALLBACK,
       source: 'Billing',
-      variant: code === 'lite_trial_upgrade_blocked' ? 'info' : 'error',
+      variant: 'error',
     }, 8_000);
     return null;
   },
@@ -285,28 +253,55 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   switchPlan: async (plan: BillingPlanId) => {
     const result = await switchPlanApi(plan);
     if (result.success) {
+      const sub = get().subscription;
       await get().fetchSubscription();
       await get().fetchUsage();
+      const toast = planSwitchSuccessToast({
+        scheduled: !!result.data.scheduled,
+        plan: result.data.plan || plan,
+        currentPeriodEnd: sub?.currentPeriodEnd,
+      });
       useNotificationStore.getState().addNotification({
-        title: result.data.scheduled ? 'Plan change scheduled' : 'Plan updated',
-        body: result.data.scheduled ? 'Your current plan stays active until the next billing date.' : 'Your subscription has been updated.',
+        title: toast.title,
+        body: toast.body,
         source: 'Billing',
         variant: 'info',
       }, 6_000);
       return true;
     }
-    // If upgrade is required, return the error info so UI can redirect to checkout
     if (!result.success && result.data?.redirectToCheckout) {
       return { redirectToCheckout: true, targetPlan: result.data.targetPlan as string };
     }
-    const code = (result.data as { code?: string } | undefined)?.code;
     useNotificationStore.getState().addNotification({
-      title: code === 'lite_trial_upgrade_blocked' ? 'Upgrade unavailable during trial' : 'Could not change plan',
-      body: result.error || 'Try again or use Manage Subscription for billing changes.',
+      title: 'Could not change plan',
+      body: result.error || BILLING_ERROR_FALLBACK,
       source: 'Billing',
-      variant: code === 'lite_trial_upgrade_blocked' ? 'info' : 'error',
+      variant: 'error',
     }, 8_000);
     return false;
+  },
+
+  upgradeFromTrial: async (plan: 'starter' | 'pro') => {
+    const result = await upgradeFromTrialApi(plan);
+    if (result.success) {
+      if (result.data.checkoutUrl) return result.data.checkoutUrl;
+      await get().fetchSubscription();
+      await get().fetchUsage();
+      useNotificationStore.getState().addNotification({
+        title: 'Plan updated',
+        body: `You're now on ${plan.charAt(0).toUpperCase() + plan.slice(1)}.`,
+        source: 'Billing',
+        variant: 'info',
+      }, 6_000);
+      return null;
+    }
+    useNotificationStore.getState().addNotification({
+      title: 'Could not start upgrade',
+      body: result.error || BILLING_ERROR_FALLBACK,
+      source: 'Billing',
+      variant: 'error',
+    }, 8_000);
+    return null;
   },
 
   cancelSubscription: async () => {
@@ -327,7 +322,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
     useNotificationStore.getState().addNotification({
       title: 'Could not cancel subscription',
-      body: result.error || 'Try again or use the Dodo portal.',
+      body: result.error || BILLING_ERROR_FALLBACK,
       source: 'Billing',
       variant: 'error',
     }, 8_000);
@@ -348,7 +343,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
     useNotificationStore.getState().addNotification({
       title: 'Could not resume subscription',
-      body: result.error || 'Try again or use the Dodo portal.',
+      body: result.error || BILLING_ERROR_FALLBACK,
       source: 'Billing',
       variant: 'error',
     }, 8_000);
@@ -360,7 +355,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     if (result.success) {
       const url = result.data.paymentLink || result.data.portalUrl;
       if (url) return { url };
-      const message = 'No payment method update link returned. Please use the Dodo portal.';
+      const message = 'No payment method update link returned. Open Manage Subscription instead.';
       useNotificationStore.getState().addNotification({
         title: 'Could not update payment method',
         body: message,
@@ -369,7 +364,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       }, 8_000);
       return { error: message };
     }
-    const message = result.error || 'Unable to open payment method update. Please try again or use the Dodo portal.';
+    const message = result.error || 'Unable to update payment method. Try again or open Manage Subscription.';
     useNotificationStore.getState().addNotification({
       title: 'Could not update payment method',
       body: message,

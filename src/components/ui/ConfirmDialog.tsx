@@ -10,6 +10,8 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** Wider panel + slightly larger message text (billing confirmations). */
+  wide?: boolean;
   recurringOptions?: {
     onDeleteOccurrence: () => void;
     onDeleteSeries: () => void;
@@ -26,6 +28,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  wide = false,
   recurringOptions,
   onConfirm,
   onCancel,
@@ -50,7 +53,8 @@ export function ConfirmDialog({
         className={cn(
           'soft-popover border border-black/10 dark:border-white/15 rounded-xl',
           'shadow-[0_8px_24px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.36)]',
-          'w-[280px] overflow-hidden',
+          wide ? 'w-[320px]' : 'w-[280px]',
+          'overflow-hidden',
           isClosing && 'closing',
         )}
       >
@@ -59,7 +63,10 @@ export function ConfirmDialog({
             <AlertCircle className="w-5 h-5 text-red-500" />
           </div>
           <h3 className="text-sm font-semibold mb-1">{title}</h3>
-          <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{message}</p>
+          <p className={cn(
+            'text-[var(--color-text-muted)] leading-relaxed',
+            wide ? 'text-[13px]' : 'text-xs',
+          )}>{message}</p>
         </div>
         {recurringOptions ? (
           <div className="flex flex-col border-t border-black/10 dark:border-white/10">

@@ -10,33 +10,26 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useBillingStore } from '@/stores/billingStore';
-import { useNotificationStore } from '@/stores/notificationStore';
+import { useBillingConfirmStore } from '@/stores/billingConfirmStore';
 import { getBillingPlans, type BillingPlanId, type BillingPlanInfo, type SubscriptionInfo } from '@/services/api';
 import { BILLING_PLAN_ORDER } from '@/lib/billingPlans';
 import { LITE_FEATURES, STARTER_FEATURES, PRO_FEATURES, type PlanFeature } from '../../../screens/subscribePlanCopy';
-
-type BillingNotice = {
-  tone: 'warning' | 'danger' | 'info';
-  title: string;
-  body: string;
-};
+import {
+  buildConfirmCopy,
+  formatBillingDate,
+  formatMoneyFromMinor,
+  formatPlanName,
+  getBillingNotice,
+  isUpgradePlan,
+  planSummaryLine,
+  type BillingNotice,
+} from './billingCopy';
 
 const PLAN_FEATURES: Record<BillingPlanId, PlanFeature[]> = {
   lite: LITE_FEATURES,
   starter: STARTER_FEATURES,
   pro: PRO_FEATURES,
 };
-
-function formatBillingDate(timestamp: number | null): string | null {
-  if (!timestamp) return null;
-  return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatPlanName(plan: string): string {
-  if (!plan || plan === 'unsubscribed') return 'Unsubscribed';
-  if (plan === 'free') return 'Unsubscribed';
-  return plan.charAt(0).toUpperCase() + plan.slice(1);
-}
 
 function isPaidPlan(plan: string | null | undefined): plan is BillingPlanId {
   return plan === 'lite' || plan === 'starter' || plan === 'pro';
@@ -47,7 +40,6 @@ function isInactiveSubscriptionStatus(status: string | null | undefined): boolea
   return normalized === 'cancelled' || normalized === 'canceled' || normalized === 'expired' || normalized === 'failed';
 }
 
-/** Plan tier shown in billing UI — matches effective access, not stale Dodo product id. */
 function getDisplayPlan(subscription: SubscriptionInfo | null): BillingPlanId | 'unsubscribed' {
   if (!subscription) return 'unsubscribed';
   if (isInactiveSubscriptionStatus(subscription.status)) return 'unsubscribed';
@@ -62,97 +54,25 @@ function isLiteTrialActive(subscription: SubscriptionInfo | null): boolean {
   return plan === 'lite';
 }
 
-function isUpgradePlan(currentPlan: BillingPlanId | 'unsubscribed', targetPlan: BillingPlanId): boolean {
-  if (!isPaidPlan(currentPlan)) return true;
-  return BILLING_PLAN_ORDER.indexOf(targetPlan) > BILLING_PLAN_ORDER.indexOf(currentPlan);
-}
-
-function formatMoneyFromMinor(amount: number | undefined, currency: string | undefined): string | null {
-  if (amount == null || !currency) return null;
-  try {
-    return new Intl.NumberFormat([], { style: 'currency', currency }).format(amount / 100);
-  } catch {
-    return `${currency} ${(amount / 100).toFixed(2)}`;
-  }
-}
-
-function getBillingNotice(subscription: SubscriptionInfo | null): BillingNotice | null {
-  if (!subscription) return null;
-
-  const status = (subscription.status || '').toLowerCase();
-  if (status === 'past_due' || status === 'on_hold') {
-    return {
-      tone: 'danger',
-      title: 'Payment overdue',
-      body: 'Your subscription payment failed. Paid features and usage limits have been downgraded until billing is fixed.',
-    };
-  }
-
-  if (status === 'failed') {
-    return {
-      tone: 'danger',
-      title: 'Subscription payment failed',
-      body: 'Your paid subscription is inactive. Update billing to restore paid features and limits.',
-    };
-  }
-
-  if (status === 'expired' || status === 'cancelled' || status === 'canceled') {
-    return {
-      tone: 'danger',
-      title: 'Subscription inactive',
-      body: 'Your paid subscription is no longer active, so this workspace is unsubscribed.',
-    };
-  }
-
-  if (subscription.cancelAtPeriodEnd) {
-    const endDate = formatBillingDate(subscription.currentPeriodEnd);
-    return {
-      tone: 'warning',
-      title: 'Cancellation scheduled',
-      body: endDate
-        ? `Your paid access remains active until ${endDate}. After that, your workspace will be unsubscribed.`
-        : 'Your paid access remains active until the current billing period ends.',
-    };
-  }
-
-  if (subscription.scheduledPlan) {
-    const date = formatBillingDate(subscription.scheduledEffectiveAt || null);
-    return {
-      tone: 'info',
-      title: `${formatPlanName(subscription.scheduledPlan)} scheduled`,
-      body: date
-        ? `Your plan changes to ${formatPlanName(subscription.scheduledPlan)} on ${date}.`
-        : `Your plan change to ${formatPlanName(subscription.scheduledPlan)} is scheduled.`,
-    };
-  }
-
-  if (subscription.trialEndsAt && subscription.trialEndsAt > Date.now()) {
-    const date = formatBillingDate(subscription.trialEndsAt);
-    return {
-      tone: 'info',
-      title: 'Lite trial active',
-      body: date
-        ? `Your first Lite charge is scheduled after the trial ends on ${date}. Cancelling now ends access immediately. Upgrades unlock after your trial converts to a paid subscription.`
-        : 'Your first Lite charge is scheduled after the 24-hour trial ends. Cancelling now ends access immediately. Upgrades unlock after your trial converts to a paid subscription.',
-    };
-  }
-
-  return null;
-}
-
 function BillingStatusBanner({ notice }: { notice: BillingNotice }) {
-  const toneClass = notice.tone === 'danger'
-    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+  const borderClass = notice.tone === 'danger'
+    ? 'border-red-500/20 bg-red-500/10'
     : notice.tone === 'warning'
-      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-      : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+      ? 'border-amber-500/20 bg-amber-500/10'
+      : 'border-cyan-500/20 bg-cyan-500/[0.06]';
+
+  const iconClass = notice.tone === 'danger'
+    ? 'text-red-500'
+    : notice.tone === 'warning'
+      ? 'text-amber-500'
+      : 'text-cyan-600 dark:text-cyan-400';
 
   return (
-    <div className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-[12px] ${toneClass}`}>
-      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+    <div className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-[12px] text-[var(--color-text)] ${borderClass}`}>
+      <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${iconClass}`} />
       <div className="flex-1 min-w-0">
         <div className="font-semibold">{notice.title}</div>
-        <p className="mt-0.5 leading-relaxed">{notice.body}</p>
+        <p className="mt-0.5 leading-relaxed text-[var(--color-text-muted)]">{notice.body}</p>
       </div>
     </div>
   );
@@ -165,7 +85,6 @@ function PlanCard({
   actionLabel,
   badge,
   loading,
-  blocked,
   onClick,
 }: {
   plan: BillingPlanInfo;
@@ -174,7 +93,6 @@ function PlanCard({
   actionLabel: string;
   badge?: string | null;
   loading?: boolean;
-  blocked?: boolean;
   onClick: () => void;
 }) {
   const isCurrent = plan.id === currentPlan;
@@ -229,7 +147,7 @@ function PlanCard({
 
       <Button
         onClick={onClick}
-        disabled={!!loading || isCurrent || !!blocked}
+        disabled={!!loading || isCurrent}
         className="w-full"
         variant={isPro ? 'primary' : 'default'}
       >
@@ -248,14 +166,16 @@ export function PlanPanel() {
     startCheckout,
     previewPlanChange,
     switchPlan,
+    upgradeFromTrial,
     cancelSubscription,
     resumeSubscription,
     updatePaymentMethod,
   } = useBillingStore();
 
+  const setBillingConfirm = useBillingConfirmStore((s) => s.setConfirm);
+
   const [checkoutLoading, setCheckoutLoading] = useState<BillingPlanId | null>(null);
   const [secondaryLoading, setSecondaryLoading] = useState<string | null>(null);
-  const [pendingChange, setPendingChange] = useState<{ plan: BillingPlanId; preview: any } | null>(null);
   const [plans, setPlans] = useState<BillingPlanInfo[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
 
@@ -301,7 +221,6 @@ export function PlanPanel() {
     setCheckoutLoading(plan);
     const result = await switchPlan(plan);
     if (result === true) {
-      setPendingChange(null);
       setCheckoutLoading(null);
       return;
     }
@@ -317,26 +236,73 @@ export function PlanPanel() {
       await handleSwitchPlan(plan);
       return;
     }
+
     const billingPlan = getDisplayPlan(subscription);
     if (!subscription?.dodoSubscriptionId || billingPlan === 'unsubscribed') {
-      await handleCheckout(plan);
+      const copy = buildConfirmCopy({ kind: 'checkout', targetPlan: plan });
+      setBillingConfirm({
+        ...copy,
+        onConfirm: () => void handleCheckout(plan),
+      });
       return;
     }
+
     if (plan === billingPlan) return;
+
     if (isLiteTrialActive(subscription) && isUpgradePlan(billingPlan, plan)) {
-      useNotificationStore.getState().addNotification({
-        title: 'Upgrade unavailable during trial',
-        body: 'Upgrades unlock after your Lite trial ends and your first payment is processed.',
-        source: 'Billing',
-        variant: 'info',
-      }, 8_000);
+      if (subscription?.environment === 'staging' || subscription?.environment === 'local') {
+        await handleSwitchPlan(plan);
+        return;
+      }
+      if (plan !== 'starter' && plan !== 'pro') return;
+      const trialTarget = plan;
+      const copy = buildConfirmCopy({
+        kind: 'trial-upgrade',
+        targetPlan: trialTarget,
+        currentPlan: billingPlan,
+      });
+      setBillingConfirm({
+        ...copy,
+        onConfirm: async () => {
+          setCheckoutLoading(trialTarget);
+          const url = await upgradeFromTrial(trialTarget);
+          if (url) window.location.href = url;
+          setCheckoutLoading(null);
+        },
+      });
       return;
     }
+
     setCheckoutLoading(plan);
     const preview = await previewPlanChange(plan);
     setCheckoutLoading(null);
-    if (preview !== null) setPendingChange({ plan, preview });
-  }, [handleCheckout, handleSwitchPlan, previewPlanChange, subscription]);
+    if (preview === null) return;
+
+    const previewCharge = preview?.immediate_charge?.summary;
+    const previewAmount = formatMoneyFromMinor(previewCharge?.total_amount, previewCharge?.currency);
+    const isDowngrade = BILLING_PLAN_ORDER.indexOf(plan) < BILLING_PLAN_ORDER.indexOf(billingPlan as BillingPlanId);
+    const periodEndDate = formatBillingDate(subscription?.currentPeriodEnd ?? null);
+
+    const copy = buildConfirmCopy({
+      kind: isDowngrade ? 'downgrade' : 'upgrade',
+      targetPlan: plan,
+      currentPlan: billingPlan,
+      previewAmount,
+      periodEndDate,
+    });
+
+    setBillingConfirm({
+      ...copy,
+      onConfirm: () => void handleSwitchPlan(plan),
+    });
+  }, [
+    handleCheckout,
+    handleSwitchPlan,
+    previewPlanChange,
+    setBillingConfirm,
+    subscription,
+    upgradeFromTrial,
+  ]);
 
   const handleOpenPortal = useCallback(async () => {
     setSecondaryLoading('portal');
@@ -345,17 +311,37 @@ export function PlanPanel() {
     if ('url' in result) window.location.href = result.url;
   }, [openPortal]);
 
-  const handleCancel = useCallback(async () => {
-    setSecondaryLoading('cancel');
-    await cancelSubscription();
-    setSecondaryLoading(null);
-  }, [cancelSubscription]);
+  const handleCancel = useCallback(() => {
+    const onTrial = isLiteTrialActive(subscription);
+    const copy = buildConfirmCopy({
+      kind: onTrial ? 'cancel-trial' : 'cancel-period-end',
+      periodEndDate: formatBillingDate(subscription?.currentPeriodEnd ?? null),
+    });
+    setBillingConfirm({
+      ...copy,
+      onConfirm: async () => {
+        setSecondaryLoading('cancel');
+        await cancelSubscription();
+        setSecondaryLoading(null);
+      },
+    });
+  }, [cancelSubscription, setBillingConfirm, subscription]);
 
-  const handleResume = useCallback(async () => {
-    setSecondaryLoading('resume');
-    await resumeSubscription();
-    setSecondaryLoading(null);
-  }, [resumeSubscription]);
+  const handleResume = useCallback(() => {
+    const currentPlan = getDisplayPlan(subscription);
+    const copy = buildConfirmCopy({
+      kind: 'resume',
+      currentPlan,
+    });
+    setBillingConfirm({
+      ...copy,
+      onConfirm: async () => {
+        setSecondaryLoading('resume');
+        await resumeSubscription();
+        setSecondaryLoading(null);
+      },
+    });
+  }, [resumeSubscription, setBillingConfirm, subscription]);
 
   const handlePaymentMethod = useCallback(async () => {
     setSecondaryLoading('payment');
@@ -371,25 +357,14 @@ export function PlanPanel() {
   const canManageBilling = !isNonProd && !!subscription?.dodoCustomerId && subscription.dodoCustomerId !== 'admin_grant';
   const billingStatus = (subscription?.status || '').toLowerCase();
   const hasPaymentIssue = billingStatus === 'on_hold' || billingStatus === 'past_due';
+  const liteTrialActive = isLiteTrialActive(subscription);
   const canCancel = canManageBilling && isPaidPlan(currentPlan) && !subscription?.cancelAtPeriodEnd && billingStatus === 'active';
   const canResume = canManageBilling && (!!subscription?.cancelAtPeriodEnd || !!subscription?.scheduledPlan);
-  const summary = currentPlan === 'unsubscribed'
-    ? 'Plan details are shown below. Paid plan management is available after you subscribe.'
-    : canManageBilling
-      ? 'Manage your plan here. Dodo portal remains available for invoices and payment details.'
-      : isNonProd
-        ? 'Plan changes are disabled in this environment.'
-        : 'Billing portal becomes available after checkout.';
-
-  const previewCharge = pendingChange?.preview?.immediate_charge?.summary;
-  const previewAmount = formatMoneyFromMinor(previewCharge?.total_amount, previewCharge?.currency);
+  const summary = planSummaryLine({ currentPlan, canManageBilling, isNonProd });
 
   const orderedPlans = BILLING_PLAN_ORDER
     .map((id) => plans.find((plan) => plan.id === id))
     .filter((plan): plan is BillingPlanInfo => !!plan);
-
-  const liteTrialActive = isLiteTrialActive(subscription);
-  const paidCurrentPlan = isPaidPlan(currentPlan) ? currentPlan : null;
 
   return (
     <div className="space-y-4">
@@ -442,31 +417,9 @@ export function PlanPanel() {
                 {canCancel && (
                   <Button size="sm" variant="default" disabled={secondaryLoading === 'cancel'} onClick={handleCancel}>
                     {secondaryLoading === 'cancel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                    Cancel at period end
+                    {liteTrialActive ? 'End trial' : 'Cancel at period end'}
                   </Button>
                 )}
-              </div>
-            )}
-
-            {pendingChange && (
-              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] p-4 text-[12px] text-cyan-700 dark:text-cyan-300 space-y-3">
-                <div className="font-semibold">Confirm change to {formatPlanName(pendingChange.plan)}</div>
-                <p className="leading-relaxed">
-                  {BILLING_PLAN_ORDER.indexOf(pendingChange.plan) < BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId)
-                    ? 'This downgrade is scheduled for your next billing date, so current plan benefits stay active until then.'
-                    : previewAmount
-                      ? `Dodo previewed an immediate charge of ${previewAmount}. Your plan changes after Dodo confirms payment.`
-                      : 'Dodo previewed this change. Your plan changes after Dodo confirms payment.'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="primary" disabled={checkoutLoading === pendingChange.plan} onClick={() => void handleSwitchPlan(pendingChange.plan)}>
-                    {checkoutLoading === pendingChange.plan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                    Confirm
-                  </Button>
-                  <Button size="sm" variant="default" disabled={!!checkoutLoading} onClick={() => setPendingChange(null)}>
-                    Cancel
-                  </Button>
-                </div>
               </div>
             )}
 
@@ -477,9 +430,7 @@ export function PlanPanel() {
               </div>
             ) : orderedPlans.length > 0 ? (
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                {orderedPlans.map((plan) => {
-                  const upgradeBlocked = liteTrialActive && !!paidCurrentPlan && isUpgradePlan(paidCurrentPlan, plan.id);
-                  return (
+                {orderedPlans.map((plan) => (
                   <PlanCard
                     key={plan.id}
                     plan={plan}
@@ -488,19 +439,16 @@ export function PlanPanel() {
                     actionLabel={(() => {
                       if (plan.id === currentPlan) return 'Current plan';
                       if (subscription?.scheduledPlan === plan.id) return 'Scheduled';
-                      if (upgradeBlocked) return 'After trial';
                       if (!isPaidPlan(currentPlan)) return `Get ${plan.name}`;
-                      return BILLING_PLAN_ORDER.indexOf(plan.id) > BILLING_PLAN_ORDER.indexOf(currentPlan as BillingPlanId)
+                      return isUpgradePlan(currentPlan, plan.id)
                         ? `Upgrade to ${plan.name}`
                         : `Downgrade to ${plan.name}`;
                     })()}
                     badge={subscription?.scheduledPlan === plan.id ? 'Scheduled' : null}
                     loading={checkoutLoading === plan.id}
-                    blocked={upgradeBlocked}
                     onClick={() => void handlePlanAction(plan.id)}
                   />
-                  );
-                })}
+                ))}
               </div>
             ) : (
               <div className="text-[12px] text-[var(--color-text-muted)] py-4">

@@ -6,8 +6,10 @@
 
 import { useState } from 'react';
 import { User, Bot, Paintbrush, CreditCard, Code2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui';
 import { useSettingsNav, type SettingsSection } from '@/lib/settingsNav';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useBillingConfirmStore } from '@/stores/billingConfirmStore';
 import type { WindowConfig } from '@/types';
 import { DeviceSidebarIcon } from './SettingsPrimitives';
 import { AccountSection } from './AccountSection';
@@ -43,6 +45,9 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
     if (pendingSection) setPendingSection(null);
     setLocalSection(next);
   };
+
+  const billingConfirm = useBillingConfirmStore((s) => s.confirm);
+  const setBillingConfirm = useBillingConfirmStore((s) => s.setConfirm);
 
   return (
     <div className={`settings-window relative flex ${isMobile ? 'flex-col' : ''} h-full text-[var(--color-text)] select-none`}>
@@ -86,6 +91,21 @@ export function SettingsWindow({ config }: { config: WindowConfig }) {
         {section === 'devices' && <DevicesSection />}
         {section === 'developer' && <DeveloperSection />}
       </div>
+
+      <ConfirmDialog
+        open={!!billingConfirm}
+        wide
+        title={billingConfirm?.title ?? ''}
+        message={billingConfirm?.message ?? ''}
+        confirmLabel={billingConfirm?.confirmLabel}
+        destructive={billingConfirm?.destructive}
+        onConfirm={() => {
+          const action = billingConfirm?.onConfirm;
+          setBillingConfirm(null);
+          void action?.();
+        }}
+        onCancel={() => setBillingConfirm(null)}
+      />
     </div>
   );
 }

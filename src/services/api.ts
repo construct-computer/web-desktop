@@ -2729,6 +2729,13 @@ export async function previewPlanChange(plan: 'lite' | 'starter' | 'pro'): Promi
   });
 }
 
+export async function upgradeFromTrial(plan: 'starter' | 'pro'): Promise<ApiResult<{ checkoutUrl: string }>> {
+  return request('/billing/upgrade-from-trial', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  });
+}
+
 export async function cancelSubscription(): Promise<ApiResult<{ ok: boolean; immediate?: boolean }>> {
   return request('/billing/cancel-subscription', { method: 'POST' });
 }
