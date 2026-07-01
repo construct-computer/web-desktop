@@ -46,7 +46,7 @@ export function initPostHog(): void {
   posthog.init(key, {
     api_host: host,
     ui_host: uiHost,
-    cookie_domain: '.construct.computer',
+    cross_subdomain_cookie: true,
     person_profiles: 'identified_only',
     capture_pageview: false,
     capture_pageleave: true,
