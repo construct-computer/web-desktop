@@ -92,6 +92,8 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
+    // ponytail: hidden = emit .map for PostHog upload, no public sourceMappingURL in JS
+    sourcemap: isCapacitorBuild ? false : 'hidden',
     rollupOptions: {
       output: {
         manualChunks(id) {

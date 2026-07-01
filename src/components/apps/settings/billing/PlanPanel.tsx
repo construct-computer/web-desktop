@@ -377,7 +377,7 @@ export function PlanPanel() {
                 className="shrink-0 gap-1.5"
               >
                 {secondaryLoading === 'portal' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : canManageBilling ? <ExternalLink className="w-3.5 h-3.5" /> : null}
-                Open Dodo
+                Manage Subscription
               </Button>
             </div>
 
