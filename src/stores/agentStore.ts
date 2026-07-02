@@ -43,7 +43,7 @@ function stripScheduleDeliveryBlock(prompt: string): string {
 }
 import { openSettingsToSection } from '@/lib/settingsNav';
 import { providerCopy } from '@/lib/providerCopy';
-import { workOrderNotificationPriority, type NotificationPriority } from '@/lib/notificationPolicy';
+import type { NotificationPriority } from '@/lib/notificationPolicy';
 import { useAgentTrackerStore } from './agentTrackerStore';
 import {
   clearDesktopAgentRuntime,
@@ -62,11 +62,9 @@ import {
   dispatchAgentEmailRefresh,
   dispatchAgentHistoryCleared,
   dispatchMemoryChanged,
-  dispatchWorkOrderUpdated,
   requestAgentEmailRefresh,
 } from '@/lib/agentUiEvents';
 import { isAgentFilesInlinePreviewPath, syncAgentFilesFromToolArgs, syncAgentFilesLocation } from '@/lib/agentFilesSync';
-import type { WorkOrderActivityUpdate } from '@/services/api';
 import { clearAuthRequestsForSession, getAuthRequest, registerAuthRequest, startAuthRequestWatch } from '@/lib/authRequestCoordinator';
 import { fileNameFromWorkspacePath, isImageWorkspacePath, normalizeWorkspacePath } from '@/lib/workspacePaths';
 import {
@@ -7672,25 +7670,6 @@ export const useComputerStore = create<ComputerStore>()(
           const reason = event.data?.reason as string | undefined;
           if (toModel && fromModel && toModel !== fromModel) {
             logger.info('Model fallback', { sessionKey: eventSessionKey, reason, fromModel, toModel });
-          }
-          break;
-        }
-
-        case 'work_order:updated': {
-          const workOrder = event.data?.workOrder as WorkOrderActivityUpdate | undefined;
-          if (!workOrder?.id) break;
-          dispatchWorkOrderUpdated(workOrder);
-          if (['completed', 'failed', 'cancelled'].includes(workOrder.status)) {
-            const wasActive = workOrder.status === 'completed';
-            const priority = workOrderNotificationPriority(workOrder.status);
-            if (priority !== 'silent') {
-              useNotificationStore.getState().addNotification({
-                title: wasActive ? 'Task completed' : 'Task ended',
-                body: workOrder.activityHint || workOrder.objective,
-                source: 'Construct',
-                variant: workOrder.status === 'failed' ? 'error' : wasActive ? 'success' : 'info',
-              }, 6000, { priority });
-            }
           }
           break;
         }

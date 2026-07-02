@@ -50,9 +50,7 @@ import {
 import {
   AGENT_HISTORY_CLEARED_EVENT,
   MEMORY_CHANGED_EVENT,
-  WORK_ORDER_UPDATED_EVENT,
   type AgentHistoryClearedDetail,
-  type WorkOrderUpdatedDetail,
 } from '@/lib/agentUiEvents';
 import {
   cancelAuthRequest,
@@ -459,51 +457,6 @@ export function AutopilotPanel() {
       window.removeEventListener(AUTH_REQUEST_STATE_CHANGED_EVENT, stateHandler);
       window.removeEventListener(AGENT_HISTORY_CLEARED_EVENT, clearHistoryHandler);
     };
-  }, []);
-
-  useEffect(() => {
-    const onWorkOrderUpdated = (event: Event) => {
-      const wo = (event as CustomEvent<WorkOrderUpdatedDetail>).detail;
-      if (!wo?.id) return;
-      setStatus((current) => {
-        if (!current) return current;
-        const previous = (current.workOrders || []).find((item) => item.id === wo.id);
-        const merged = {
-          ...(previous || {
-            id: wo.id,
-            sessionKey: wo.sessionKey,
-            sourceType: 'user_message',
-            sourceId: null,
-            requesterRole: 'owner',
-            objective: wo.objective,
-            riskLevel: 'low',
-            stepCount: 0,
-            artifactCount: 0,
-            deliveryCount: 0,
-            verificationCount: 0,
-            latestStepTitle: null,
-            latestStepStatus: null,
-            latestArtifactPath: null,
-            latestDeliveryChannel: null,
-            latestDeliveryStatus: null,
-            latestVerificationStatus: null,
-            createdAt: wo.updatedAt,
-          }),
-          status: wo.status,
-          blockerReason: wo.blockerReason,
-          activityHint: wo.activityHint,
-          stalled: wo.stalled,
-          updatedAt: wo.updatedAt,
-          completedAt: wo.completedAt,
-        };
-        const workOrders = ['completed', 'failed', 'cancelled'].includes(wo.status)
-          ? (current.workOrders || []).map((item) => (item.id === wo.id ? { ...item, ...merged } : item))
-          : (current.workOrders || []).map((item) => (item.id === wo.id ? { ...item, ...merged } : item));
-        return { ...current, workOrders };
-      });
-    };
-    window.addEventListener(WORK_ORDER_UPDATED_EVENT, onWorkOrderUpdated);
-    return () => window.removeEventListener(WORK_ORDER_UPDATED_EVENT, onWorkOrderUpdated);
   }, []);
 
   const visiblePendingActions = useMemo(() => (

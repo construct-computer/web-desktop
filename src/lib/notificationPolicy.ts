@@ -15,10 +15,3 @@ export function shouldPersistNotification(priority: NotificationPriority): boole
   return document.hidden;
 }
 
-/** Routine work-order lifecycle — chat/autopilot only, not the notif drawer. */
-export function workOrderNotificationPriority(
-  status: string,
-): NotificationPriority {
-  if (status === 'failed') return 'critical';
-  return 'silent';
-}

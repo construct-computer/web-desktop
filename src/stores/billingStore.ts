@@ -18,7 +18,6 @@ import {
   upgradeFromTrial as upgradeFromTrialApi,
   updateSubscriptionPaymentMethod,
   createPortalSession,
-  createTopupCheckout,
   getByokSettings,
   saveByokKey,
   deleteByokKey,
@@ -91,7 +90,6 @@ interface BillingState {
   resumeSubscription: () => Promise<boolean>;
   updatePaymentMethod: () => Promise<{ url: string } | { error: string }>;
   openPortal: () => Promise<{ url: string } | { error: string }>;
-  buyTopup: (amount: number) => Promise<string | null>;
 
   // BYOK actions
   fetchByok: () => Promise<void>;
@@ -391,14 +389,6 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     return { error: message };
   },
 
-  buyTopup: async (amount: number) => {
-    const result = await createTopupCheckout(amount);
-    if (result.success) {
-      track('billing_topup_started', { amount_usd: amount });
-      return result.data.checkoutUrl;
-    }
-    return null;
-  },
 
   // ── BYOK ───────────────────────────────────────────────────────────────
 

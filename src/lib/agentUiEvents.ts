@@ -6,19 +6,7 @@ export const AGENT_EMAIL_REFRESH_EVENT = 'construct:agent-email-refresh';
 export const AGENT_EMAIL_CONFIGURED_EVENT = 'agent-email-configured';
 export const AGENT_FILES_NAVIGATE_EVENT = 'construct:agent-files-navigate';
 export const MEMORY_CHANGED_EVENT = 'construct:memory-changed';
-export const WORK_ORDER_UPDATED_EVENT = 'construct:work-order-updated';
 
-export interface WorkOrderUpdatedDetail {
-  id: string;
-  sessionKey: string;
-  objective: string;
-  status: string;
-  blockerReason: string | null;
-  activityHint: string;
-  stalled: boolean;
-  updatedAt: number;
-  completedAt: number | null;
-}
 
 export interface AgentHistoryClearedDetail {
   sessionKey: string;
@@ -40,9 +28,6 @@ export function dispatchMemoryChanged(detail: MemoryChangedDetail): void {
   window.dispatchEvent(new CustomEvent<MemoryChangedDetail>(MEMORY_CHANGED_EVENT, { detail }));
 }
 
-export function dispatchWorkOrderUpdated(detail: WorkOrderUpdatedDetail): void {
-  window.dispatchEvent(new CustomEvent<WorkOrderUpdatedDetail>(WORK_ORDER_UPDATED_EVENT, { detail }));
-}
 
 export function dispatchAgentCalendarRefresh(): void {
   window.dispatchEvent(new CustomEvent(AGENT_CALENDAR_REFRESH_EVENT));
