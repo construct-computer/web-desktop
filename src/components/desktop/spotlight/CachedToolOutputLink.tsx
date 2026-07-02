@@ -6,16 +6,20 @@ import { isCachedToolResultPlaceholder } from '@/lib/agentOutput';
 export function CachedToolOutputLink({
   toolCallId,
   content,
+  cached,
 }: {
   toolCallId?: string;
   content: string;
+  /** Set from the tool_result outputCached flag — activity content is a
+   * presentation label, so the placeholder-text match alone never fires. */
+  cached?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!toolCallId || !isCachedToolResultPlaceholder(content)) return null;
+  if (!toolCallId || (!cached && !isCachedToolResultPlaceholder(content))) return null;
 
   const handleToggle = async () => {
     if (expanded) {

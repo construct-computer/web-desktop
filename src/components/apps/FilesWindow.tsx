@@ -46,6 +46,8 @@ import { useDriveSync } from '@/hooks/useDriveSync';
 import { useDriveFiles } from '@/hooks/useDriveFiles';
 import { shouldShowBlockingLoader, useFreshness } from '@/hooks/useFreshness';
 import { FreshnessText, InfoHint, RefreshButton, StatusBanner, AnimatedListItem } from '@/components/ui';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { useAnimatedList } from '@/hooks/useAnimatedList';
 import { log } from '@/lib/logger';
 import { formatBytes } from '@/lib/format';
@@ -848,6 +850,15 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
     [],
   );
 
+  const notifyFileOpError = useCallback((title: string, error?: string) => {
+    useNotificationStore.getState().addNotification({
+      title,
+      body: error || 'The operation failed. Please try again.',
+      source: 'Files',
+      variant: 'error',
+    }, 8000);
+  }, []);
+
   const handleRenameSubmit = useCallback(
     async (newName: string) => {
       if (!instanceId || !renamingName) return;
@@ -858,15 +869,30 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       if (result.success) {
         setSelectedName(newName);
         refresh();
+      } else {
+        notifyFileOpError(`Could not rename "${renamingName}"`, result.error);
       }
     },
-    [instanceId, currentPath, renamingName, refresh],
+    [instanceId, currentPath, renamingName, refresh, notifyFileOpError],
   );
 
+  /** Deletion is confirmed via dialog — a stray Delete keypress must not
+   * permanently destroy a workspace file. */
+  const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
+
   const handleDelete = useCallback(
-    async (entry: FileEntry) => {
-      if (!instanceId) return;
+    (entry: FileEntry) => {
       setContextMenu(null);
+      setPendingDelete(entry);
+    },
+    [],
+  );
+
+  const confirmDelete = useCallback(
+    async () => {
+      const entry = pendingDelete;
+      setPendingDelete(null);
+      if (!instanceId || !entry) return;
       const fullPath = joinPath(currentPath, entry.name);
       const result = await api.deleteItem(instanceId, fullPath);
       if (result.success) {
@@ -874,9 +900,11 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         if (isWallpaperWorkspacePath(fullPath)) {
           notifyWallpaperFilesChanged();
         }
+      } else {
+        notifyFileOpError(`Could not delete "${entry.name}"`, result.error);
       }
     },
-    [instanceId, currentPath, refresh],
+    [instanceId, currentPath, refresh, pendingDelete, notifyFileOpError],
   );
 
   const handleNewFile = useCallback(() => {
@@ -897,13 +925,16 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
         creatingType === 'folder'
           ? await api.createDirectory(instanceId, fullPath)
           : await api.createFile(instanceId, fullPath);
+      const kind = creatingType;
       setCreatingType(null);
       if (result.success) {
         setSelectedName(name);
         refresh();
+      } else {
+        notifyFileOpError(`Could not create ${kind} "${name}"`, result.error);
       }
     },
-    [instanceId, currentPath, creatingType, refresh],
+    [instanceId, currentPath, creatingType, refresh, notifyFileOpError],
   );
 
   // ─── Cloud context menu + cross-copy handlers ────────────────────────────
@@ -966,8 +997,9 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
       }, 200);
     } catch (err) {
       logger.error('Download failed:', err);
+      notifyFileOpError('Download failed', err instanceof Error ? err.message : undefined);
     }
-  }, []);
+  }, [notifyFileOpError]);
 
   /** Download a local (container) file to the user's computer. */
   const handleDownloadLocalFile = useCallback(
@@ -1771,6 +1803,18 @@ export function FilesWindow({ config: _config }: FilesWindowProps) {
           readOnly={isReadOnly}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete "${pendingDelete?.name ?? ''}"?`}
+        message={pendingDelete?.type === 'directory'
+          ? 'This folder and everything inside it will be permanently deleted.'
+          : 'This file will be permanently deleted.'}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { void confirmDelete(); }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

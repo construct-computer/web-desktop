@@ -291,6 +291,8 @@ export interface ChatMessage {
   activityType?: 'browser' | 'web' | 'terminal' | 'file' | 'desktop' | 'calendar' | 'tool' | 'delegation' | 'background' | 'delegation-group' | 'consultation-group' | 'background-group' | 'orchestration-group';
   /** Correlates activity rows with tool_result / terminal_exit events */
   toolCallId?: string;
+  /** True when the tool result was truncated and the full output is cached (read_agent_output) */
+  cachedOutput?: boolean;
   /** Correlates streaming tool_call_delta rows before toolCallId is assigned */
   toolCallIndex?: number;
   /** Truncated live preview of tool arguments while the model is still streaming */
@@ -4365,6 +4367,14 @@ export const useComputerStore = create<ComputerStore>()(
         }
 
         const result = await api.activateAgentSession(instanceId, key);
+        if (!result.success) {
+          useNotificationStore.getState().addNotification({
+            title: 'Could not open that chat',
+            body: result.error || 'Please try again.',
+            source: 'Construct',
+            variant: 'error',
+          }, 8000);
+        }
         if (result.success) {
           const isTargetRunning = get().runningSessions.has(key);
           const cached = cleanZombieActivities(sessionMessageCache.get(key) || []);
@@ -4470,6 +4480,13 @@ export const useComputerStore = create<ComputerStore>()(
             // Load the now-active session's history
             await get().loadChatHistory();
           }
+        } else {
+          useNotificationStore.getState().addNotification({
+            title: 'Could not delete chat',
+            body: result.error || 'Please try again.',
+            source: 'Construct',
+            variant: 'error',
+          }, 8000);
         }
       } catch (err) {
         logger.warn('Error deleting session:', err);
@@ -4489,6 +4506,13 @@ export const useComputerStore = create<ComputerStore>()(
               s.key === key ? { ...s, title } : s
             ),
           });
+        } else {
+          useNotificationStore.getState().addNotification({
+            title: 'Could not rename chat',
+            body: result.error || 'Please try again.',
+            source: 'Construct',
+            variant: 'error',
+          }, 8000);
         }
       } catch (err) {
         logger.warn('Error renaming session:', err);
@@ -5044,6 +5068,7 @@ export const useComputerStore = create<ComputerStore>()(
         toolCallId?: string;
         tool?: string;
         supersedeFailedForTool?: string;
+        cachedOutput?: boolean;
       }) => {
         patchToolActivityInChat(patchToolActivitySuccess, opts);
       };
@@ -5972,6 +5997,7 @@ export const useComputerStore = create<ComputerStore>()(
           const success = event.data?.success as boolean | undefined;
           const error = event.data?.error as string | undefined;
           const resultSubagentId = event.data?.subagentId as string | undefined;
+          const outputCached = event.data?.outputCached === true;
 
           if (!resultSubagentId && success === false) {
             if (tool === 'browser' || tool === 'remote_browser') {
@@ -5990,7 +6016,7 @@ export const useComputerStore = create<ComputerStore>()(
               markIntegrationSucceeded(eventSessionKey);
             }
             const supersedeFailedForTool = tool && INTEGRATION_PLANE_TOOLS.has(tool) ? tool : undefined;
-            patchToolActivitySuccessInChat({ toolCallId, tool, supersedeFailedForTool });
+            patchToolActivitySuccessInChat({ toolCallId, tool, supersedeFailedForTool, cachedOutput: outputCached });
             if (tool && INTEGRATION_PLANE_TOOLS.has(tool)) {
               set(state => {
                 const updates: Partial<typeof state> = {};
@@ -7027,11 +7053,10 @@ export const useComputerStore = create<ComputerStore>()(
                 allowCustom,
               },
             };
-            if (isActiveSession) {
-              set(state => ({
-                chatMessages: appendMessage(state.chatMessages, askMsg),
-              }));
-            }
+            // Route through appendToAgentChat so questions raised by
+            // background sessions land in the per-session cache — previously
+            // they were dropped entirely and unanswerable from the chat UI.
+            appendToAgentChat(askMsg);
           }
           break;
         }
@@ -8672,7 +8697,12 @@ export const useComputerStore = create<ComputerStore>()(
           const permReason = event.data?.reason as string || `${permTool} requires your approval`;
           const permRisk = typeof event.data?.risk === 'string' ? event.data.risk as string : undefined;
           const permRiskLevel = typeof event.data?.riskLevel === 'string' ? event.data.riskLevel as string : undefined;
-          const permDetails = JSON.stringify(permArgs).slice(0, 200);
+          // Human-readable key/value summary instead of a raw JSON dump.
+          const permDetails = Object.entries(permArgs)
+            .slice(0, 4)
+            .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v) ?? ''}`.slice(0, 60))
+            .join(' · ')
+            .slice(0, 200);
           const permMsg: ChatMessage = {
             role: 'agent',
             content: `**Approval needed**: ${permReason}\n\nAction: \`${permTool}\`${permDetails && permDetails !== '{}' ? `\nDetails: \`${permDetails}\`` : ''}`,
@@ -8695,7 +8725,9 @@ export const useComputerStore = create<ComputerStore>()(
               allowCustom: false,
             },
           };
-          if (isActiveSession) set({ chatMessages: appendMessage(get().chatMessages, permMsg) });
+          // Route through appendToAgentChat so approvals raised by background
+          // sessions land in the per-session cache instead of being dropped.
+          appendToAgentChat(permMsg);
           // Also show as a desktop notification so the user doesn't miss it if
           // the chat is scrolled or hidden.
           useNotificationStore.getState().addNotification({
@@ -8703,6 +8735,9 @@ export const useComputerStore = create<ComputerStore>()(
             body: permReason,
             source: 'Construct',
             variant: 'info',
+            onClick: eventSessionKey && !isActiveSession
+              ? () => { void openChatSession(eventSessionKey); }
+              : undefined,
           }, 20_000);
           break;
         }

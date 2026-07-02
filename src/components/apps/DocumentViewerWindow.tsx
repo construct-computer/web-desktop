@@ -142,14 +142,6 @@ function ImageViewer({ blobUrl, fileName }: { blobUrl: string; fileName: string 
   );
 }
 
-function DocxViewer({ htmlContent }: { htmlContent: string }) {
-  return (
-    <div className="w-full h-full overflow-auto">
-      <div className="p-8 max-w-[816px] mx-auto text-[var(--color-text)] text-sm leading-relaxed" style={{ fontFamily: 'Calibri, Arial, sans-serif' }} dangerouslySetInnerHTML={{ __html: htmlContent }} />
-    </div>
-  );
-}
-
 function spreadsheetColumnName(index: number): string {
   let name = '';
   let n = index + 1;
@@ -572,12 +564,16 @@ function ArchiveViewer({ fileName, fileSize, fileModified, onDownload }: { fileN
 function ConversionPreviewViewer({ frames, fileName }: { frames: ConversionFrame[]; fileName: string }) {
   const [active, setActive] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [frameError, setFrameError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   const frame = frames[active];
 
   useEffect(() => {
     let url: string | null = null;
     let cancelled = false;
     if (!frame?.previewPath) return;
+    setFrameError(null);
+    setBlobUrl(null);
     previewContainerFile('', frame.previewPath)
       .then(async (response) => {
         if (!response.ok) throw new Error('Preview frame unavailable');
@@ -586,14 +582,17 @@ function ConversionPreviewViewer({ frames, fileName }: { frames: ConversionFrame
         url = URL.createObjectURL(blob);
         setBlobUrl(url);
       })
-      .catch(() => {
-        if (!cancelled) setBlobUrl(null);
+      .catch((err) => {
+        if (!cancelled) {
+          setBlobUrl(null);
+          setFrameError(err instanceof Error ? err.message : 'Failed to load preview frame');
+        }
       });
     return () => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [frame?.previewPath]);
+  }, [frame?.previewPath, retryToken]);
 
   if (frames.length === 0) return null;
   return (
@@ -617,148 +616,27 @@ function ConversionPreviewViewer({ frames, fileName }: { frames: ConversionFrame
           Conversion preview for {fileName}
         </div>
         <div className="flex-1 min-h-0 overflow-auto bg-black/40 flex items-center justify-center p-5">
-          {blobUrl ? <img src={blobUrl} alt={frame?.label || fileName} className="max-w-full max-h-full bg-white rounded" /> : <RefreshCw className="w-6 h-6 animate-spin text-[var(--color-accent)]" />}
+          {blobUrl ? (
+            <img src={blobUrl} alt={frame?.label || fileName} className="max-w-full max-h-full bg-white rounded" />
+          ) : frameError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="text-xs text-[var(--color-text-muted)]">{frameError}</div>
+              <button
+                onClick={() => setRetryToken((t) => t + 1)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-white/10 hover:bg-white/15 text-[var(--color-text)] transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Retry
+              </button>
+            </div>
+          ) : (
+            <RefreshCw className="w-6 h-6 animate-spin text-[var(--color-accent)]" />
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-function PptxViewer({ slides }: { slides: string[] }) {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const slideAreaRef = useRef<HTMLDivElement>(null);
-  const [slideScale, setSlideScale] = useState(1);
-  const [isPresenterMode, setIsPresenterMode] = useState(false);
-
-  const togglePresenterMode = useCallback(async () => {
-    const el = slideAreaRef.current;
-    if (!el) return;
-    try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
-      }
-    } catch {
-      /* fullscreen may be blocked by browser policy */
-    }
-  }, []);
-
-  useEffect(() => {
-    const handler = () => setIsPresenterMode(document.fullscreenElement === slideAreaRef.current);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
-
-  // Compute scale so the 960×540 slide fits the available area
-  useEffect(() => {
-    const el = slideAreaRef.current;
-    if (!el) return;
-    const compute = () => {
-      const pad = 32; // 16px padding each side
-      const w = el.clientWidth - pad;
-      const h = el.clientHeight - pad;
-      if (w <= 0 || h <= 0) return;
-      setSlideScale(Math.min(w / 960, h / 540, 1));
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        setCurrentSlide(s => Math.min(slides.length - 1, s + 1));
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        setCurrentSlide(s => Math.max(0, s - 1));
-      }
-    };
-    const el = rootRef.current;
-    el?.addEventListener('keydown', handler);
-    return () => el?.removeEventListener('keydown', handler);
-  }, [slides.length]);
-
-  // Thumbnail scale: 116px wide sidebar thumbnail → scale = 116/960
-  const thumbScale = 116 / 960;
-
-  if (slides.length === 0) {
-    return <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)]">No slides</div>;
-  }
-
-  return (
-    <div className="w-full h-full flex" ref={rootRef} tabIndex={0}>
-      {/* Thumbnail sidebar */}
-      <div className="w-[140px] shrink-0 border-r border-white/[0.06] overflow-y-auto py-2 px-2 flex flex-col gap-2">
-        {slides.map((html, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrentSlide(i)}
-            className={`relative rounded overflow-hidden border-2 transition-colors ${
-              i === currentSlide ? 'border-[var(--color-accent)]' : 'border-transparent hover:border-white/20'
-            }`}
-          >
-            <div className="bg-white rounded-sm overflow-hidden" style={{ aspectRatio: '16/9', width: '116px' }}>
-              <div
-                className="pointer-events-none origin-top-left"
-                style={{ width: 960, height: 540, transform: `scale(${thumbScale})` }}
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] text-white/70 text-center py-0.5">
-              {i + 1}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Main slide + bottom bar */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Slide area */}
-        <div ref={slideAreaRef} className={`relative flex-1 overflow-hidden flex items-center justify-center ${isPresenterMode ? 'bg-black' : ''}`}>
-          <button
-            type="button"
-            onClick={() => void togglePresenterMode()}
-            className="absolute top-3 right-3 z-10 p-1.5 rounded bg-black/40 text-white/80 hover:bg-black/60 hover:text-white"
-            title={isPresenterMode ? 'Exit presenter mode' : 'Presenter mode'}
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          <div
-            className="bg-white rounded shadow-2xl overflow-hidden"
-            style={{ width: 960 * slideScale, height: 540 * slideScale }}
-          >
-            <div
-              className="origin-top-left"
-              style={{ width: 960, height: 540, transform: `scale(${slideScale})` }}
-              dangerouslySetInnerHTML={{ __html: slides[currentSlide] }}
-            />
-          </div>
-        </div>
-
-        {/* Bottom navigation bar */}
-        <div className="flex items-center justify-center gap-3 px-3 py-1.5 border-t border-white/[0.06]">
-          <button onClick={() => setCurrentSlide(s => Math.max(0, s - 1))} disabled={currentSlide === 0} className="p-1 rounded hover:bg-white/10 disabled:opacity-30">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-xs text-[var(--color-text-muted)] min-w-[5rem] text-center">
-            Slide {currentSlide + 1} of {slides.length}
-          </span>
-          <button onClick={() => setCurrentSlide(s => Math.min(slides.length - 1, s + 1))} disabled={currentSlide === slides.length - 1} className="p-1 rounded hover:bg-white/10 disabled:opacity-30">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── File type icon helper ────────────────────────────────────────────────
 
 function DocTypeIcon({ type, fileName, className = 'w-4 h-4' }: { type: DocType; fileName: string; className?: string }) {
   const iconKind = getFileIconKind(fileName);
@@ -882,9 +760,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [loading, setLoading] = useState(!isTextMode);
   const [error, setError] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [xlsxSheets, setXlsxSheets] = useState<SheetData[] | null>(null);
-  const [pptxSlides, setPptxSlides] = useState<string[] | null>(null);
   const [markdownText, setMarkdownText] = useState<string | null>(null);
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [rawText, setRawText] = useState<string | null>(null);
@@ -895,13 +771,16 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
   const [conversionFrames, setConversionFrames] = useState<ConversionFrame[] | null>(null);
 
   const hasDocumentContent = Boolean(
-    blobUrl || docxHtml || xlsxSheets || pptxSlides || markdownText || htmlContent || rawText || conversionFrames,
+    blobUrl || xlsxSheets || markdownText || htmlContent || rawText || conversionFrames,
   );
   const showBlockingLoader = loading && !hasDocumentContent;
   const hasRawToggle = fileHasRawToggle(fileName);
   const canEdit = (hasRawToggle || isTextMode) && !driveFileId && !!instanceId && !!filePath;
   const isTableEditable = (docType === 'csv' || docType === 'tsv') && !driveFileId && !!instanceId && !!filePath;
-  const canEditWithAgent = !driveFileId && !!filePath && (docType === 'docx' || docType === 'xlsx' || docType === 'pptx');
+  // Agent-editable formats: everything the backend document tool can revise
+  // (extension-based — the registry routes docx/pptx to the conversion
+  // renderer, so docType never equals 'docx'/'pptx').
+  const canEditWithAgent = !driveFileId && !!filePath && /\.(docx|xlsx|pptx|pdf|csv)$/i.test(filePath);
   const isDirtyDoc = editedText !== null && editedText !== rawText;
   const activeSheets = editedSheets ?? xlsxSheets;
   const isDirtyTable = editedSheets !== null && xlsxSheets !== null
@@ -1011,9 +890,7 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
       blobUrlRef.current = null;
     }
     setBlobUrl(null);
-    setDocxHtml(null);
     setXlsxSheets(null);
-    setPptxSlides(null);
     setMarkdownText(null);
     setHtmlContent(null);
     setRawText(null);
@@ -1096,13 +973,6 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           setBlobUrl(url);
           break;
         }
-        case 'docx': {
-          const mammoth = await import('mammoth');
-          const arrayBuffer = await blob.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer });
-          setDocxHtml(result.value);
-          break;
-        }
         case 'xlsx': {
           const arrayBuffer = await blob.arrayBuffer();
           const XLSX = await import('xlsx');
@@ -1127,22 +997,6 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
           const text = await blob.text();
           setRawText(text);
           setXlsxSheets(parseDelimitedRows(text, '\t'));
-          break;
-        }
-        case 'pptx': {
-          try {
-            const { pptxToHtml } = await import('@jvmr/pptx-to-html');
-            const arrayBuffer = await blob.arrayBuffer();
-            const slidesHtml = await pptxToHtml(arrayBuffer, {
-              width: 960,
-              height: 540,
-              scaleToFit: true,
-            });
-            setPptxSlides(slidesHtml.length > 0 ? slidesHtml : ['<p style="color:#888;text-align:center;padding:40px;">No slides found in presentation.</p>']);
-          } catch (err) {
-            logger.error('PPTX parse error', { error: err });
-            setPptxSlides(['<p style="color:#888;text-align:center;padding:40px;">Could not parse PowerPoint file. Use the download button to open externally.</p>']);
-          }
           break;
         }
         case 'markdown': {
@@ -1487,7 +1341,6 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
             {docType === 'convertible' && conversionFrames && <ConversionPreviewViewer frames={conversionFrames} fileName={fileName} />}
             {docType === 'image' && blobUrl && <ImageViewer blobUrl={blobUrl} fileName={fileName} />}
             {(docType === 'audio' || docType === 'video') && blobUrl && <MediaViewer blobUrl={blobUrl} type={docType} fileName={fileName} />}
-            {docType === 'docx' && docxHtml !== null && <DocxViewer htmlContent={docxHtml} />}
             {(docType === 'xlsx' || docType === 'csv' || docType === 'tsv') && activeSheets !== null && (
               <XlsxViewer
                 sheets={activeSheets}
@@ -1500,7 +1353,6 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
                 }}
               />
             )}
-            {docType === 'pptx' && pptxSlides !== null && <PptxViewer slides={pptxSlides} />}
             {docType === 'markdown' && markdownText !== null && (
               <div className="w-full h-full overflow-auto px-6 py-3">
                 <div className="max-w-3xl mx-auto markdown-rendered [&>*:first-child]:mt-0">

@@ -27,6 +27,7 @@ export function CompactActivityRow({
   clippy,
   className = '',
   toolCallId,
+  cachedOutput,
 }: {
   content: string;
   activityType?: ChatMessage['activityType'];
@@ -41,6 +42,7 @@ export function CompactActivityRow({
   clippy?: boolean;
   className?: string;
   toolCallId?: string;
+  cachedOutput?: boolean;
 }) {
   const line = formatActivityLine(content, { activityType });
   const isTerminal = activityType === 'terminal' || tool === 'terminal' || tool === 'exec';
@@ -94,7 +96,7 @@ export function CompactActivityRow({
         <span className="shrink-0 text-[10px] tabular-nums text-white/40">{duration}</span>
       )}
       </div>
-      <CachedToolOutputLink toolCallId={toolCallId} content={content} />
+      <CachedToolOutputLink toolCallId={toolCallId} content={content} cached={cachedOutput} />
     </div>
   );
 }

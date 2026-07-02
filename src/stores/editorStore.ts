@@ -154,6 +154,21 @@ export const useEditorStore = create<EditorStore>()(
           const hadError = Boolean(prev.error);
           if (!contentChanged && !hadError) return;
 
+          // Never overwrite unsaved local edits: if the buffer is dirty and
+          // the server copy moved (e.g. the agent wrote the same file), keep
+          // the user's content and surface the existing conflict banner
+          // instead of silently discarding their work.
+          const isDirty = prev.content !== prev.savedContent;
+          if (isDirty && contentChanged) {
+            set({
+              files: {
+                ...files,
+                [windowId]: { ...prev, loading: false, conflict: true },
+              },
+            });
+            return;
+          }
+
           set({
             files: {
               ...files,

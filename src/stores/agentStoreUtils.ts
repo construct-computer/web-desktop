@@ -287,10 +287,21 @@ export function describeToolCall(tool: string, params?: Record<string, unknown>)
     switch (action) {
       case 'read': return { text: `Reading ${path}`, activityType: 'file' };
       case 'write': return { text: `Writing ${path}`, activityType: 'file' };
+      case 'edit': return { text: `Editing ${path}`, activityType: 'file' };
       case 'list': return { text: `Listing ${path || '/'}`, activityType: 'file' };
       case 'search': return { text: `Searching for ${p.query || 'files'}`, activityType: 'file' };
       case 'delete': return { text: `Deleting ${path}`, activityType: 'file' };
       default: return { text: `Files: ${action || 'operation'}`, activityType: 'file' };
+    }
+  }
+  if (tool === 'document') {
+    const action = p.action as string | undefined;
+    const path = (p.path as string) || 'document';
+    switch (action) {
+      case 'create': return { text: `Creating ${path}`, activityType: 'file' };
+      case 'edit': return { text: `Revising ${path}`, activityType: 'file' };
+      case 'read': return { text: `Reading ${path}`, activityType: 'file' };
+      default: return { text: `Document: ${action || 'operation'}`, activityType: 'file' };
     }
   }
   if (tool === 'document_guide') {
@@ -898,11 +909,12 @@ export function patchToolActivitySuccess<T extends {
   streamingArgsPreview?: string;
   activityStatus?: string;
   isError?: boolean;
+  cachedOutput?: boolean;
 }>(
   messages: T[],
-  opts: { toolCallId?: string; tool?: string; supersedeFailedForTool?: string },
+  opts: { toolCallId?: string; tool?: string; supersedeFailedForTool?: string; cachedOutput?: boolean },
 ): T[] {
-  const { toolCallId, tool, supersedeFailedForTool } = opts;
+  const { toolCallId, tool, supersedeFailedForTool, cachedOutput } = opts;
   if (!toolCallId && !tool && !supersedeFailedForTool) return messages;
 
   let next = messages;
@@ -925,7 +937,7 @@ export function patchToolActivitySuccess<T extends {
   if (completeIndices.size > 0) {
     next = next.map((msg, index) => (
       completeIndices.has(index)
-        ? { ...msg, activityStatus: 'completed' as const }
+        ? { ...msg, activityStatus: 'completed' as const, ...(cachedOutput && msg.toolCallId === toolCallId ? { cachedOutput: true } : {}) }
         : msg
     ));
     changed = true;

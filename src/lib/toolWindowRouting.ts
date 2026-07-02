@@ -134,8 +134,22 @@ export function routeToolToWindow(tool: string, params?: Record<string, unknown>
   if (tool === 'files') {
     const action = str(p.action);
     const path = filePathParam(p);
-    if (path && (action === 'read' || action === 'write')) {
+    if (path && (action === 'read' || action === 'write' || action === 'edit')) {
       return fileRoute(path.replace(/^\/mnt\/saved\//, ''));
+    }
+    return { type: 'files', autoClose: false };
+  }
+
+  // ── In-Worker document engine (create/edit/read deliverables) ────
+  if (tool === 'document') {
+    const path = filePathParam(p);
+    if (path) {
+      return {
+        type: 'document-viewer',
+        metadata: { filePath: path.replace(/^\/mnt\/saved\//, '') },
+        openMode: 'file',
+        autoClose: true,
+      };
     }
     return { type: 'files', autoClose: false };
   }
