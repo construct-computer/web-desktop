@@ -475,7 +475,12 @@ function scheduleAutoClose(windowType: string) {
     autoCloseTimers.delete(windowType);
     const wStore = useWindowStore.getState();
     const toClose = wStore.windows.filter(
-      (w) => w.type === windowType && autoOpenedWindowIds.has(w.id) && !isEngagedBrowserWindow(w),
+      (w) => w.type === windowType
+        && autoOpenedWindowIds.has(w.id)
+        && !isEngagedBrowserWindow(w)
+        // Never close the window the user currently has focused — an
+        // auto-opened terminal/files window they started using is theirs now.
+        && w.id !== wStore.focusedWindowId,
     );
     for (const w of toClose) {
       wStore.closeWindow(w.id);
@@ -1539,6 +1544,20 @@ function incidentNoticeFromPayload(data: Record<string, unknown>, fallbackTimest
 }
 
 const INFLIGHT_ASSISTANT_STORAGE_PREFIX = 'construct:inflight-assistant:';
+
+// Throttle in-flight assistant persistence: writing the full accumulated text
+// to sessionStorage on EVERY text_delta is O(n²) total bytes over a long
+// response. The snapshot is a crash-recovery nicety — once every ~1.5s is fine.
+const INFLIGHT_PERSIST_INTERVAL_MS = 1500;
+const inflightPersistLastAt = new Map<string, number>();
+
+function shouldPersistInflightAssistant(sessionKey: string): boolean {
+  const now = Date.now();
+  const last = inflightPersistLastAt.get(sessionKey) || 0;
+  if (now - last < INFLIGHT_PERSIST_INTERVAL_MS) return false;
+  inflightPersistLastAt.set(sessionKey, now);
+  return true;
+}
 
 function inflightAssistantStorageKey(instanceId: string, sessionKey: string) {
   return `${INFLIGHT_ASSISTANT_STORAGE_PREFIX}${instanceId}:${sessionKey}`;
@@ -4386,6 +4405,12 @@ export const useComputerStore = create<ComputerStore>()(
               chatMessages: cached,
               replyingTo: null,
               agentThinking: null,
+              // Reset the per-turn reasoning stream/buffer: they belong to the
+              // session being switched away from. Without this, the next
+              // text_delta in the new session folds the OLD session's thinking
+              // into its bubble, and stale thinking text stays pinned.
+              agentThinkingStream: null,
+              agentReasoningBuffer: '',
               agentRunning: isTargetRunning,
               historyLoadError: null,
               sessionSwitching: !hasHydratedCache && !historyHydratedKeys.has(key),
@@ -5391,7 +5416,20 @@ export const useComputerStore = create<ComputerStore>()(
           // Single atomic update: accumulate responseText + chatMessages for
           // this agent, and update desktop singletons if desktop.
           set(state => {
-            if (!shouldUpdateVisibleDesktopAgent) return state;
+            if (!shouldUpdateVisibleDesktopAgent) {
+              // Background session: fold the streamed text into its per-session
+              // cache so switching in mid-run shows the partial answer.
+              // Previously these deltas were dropped entirely and the user saw
+              // tool rows with no text until the next history refetch.
+              if (eventSessionKey && eventSessionKey !== 'default' && !isActiveSession) {
+                const cachedMsgs = sessionMessageCache.get(eventSessionKey) || [];
+                cacheSessionMessages(
+                  eventSessionKey,
+                  applyAgentTextDelta(cachedMsgs, text, attachIterationLimitFromContent),
+                );
+              }
+              return state;
+            }
             const pa = getOrCreateAgent(state);
             const responseText = (pa.responseText || '') + text;
             // Fold the reasoning accumulated this turn into the bubble that is
@@ -5440,7 +5478,7 @@ export const useComputerStore = create<ComputerStore>()(
           });
           {
             const iid = get().instanceId;
-            if (iid && isDesktop) {
+            if (iid && isDesktop && shouldPersistInflightAssistant(eventSessionKey)) {
               queueMicrotask(() => {
                 const st = get();
                 if (!st.runningSessions.has(eventSessionKey)) return;
@@ -6647,11 +6685,11 @@ export const useComputerStore = create<ComputerStore>()(
           const windows = event.data?.windows as string[] | undefined;
           if (Array.isArray(windows) && windows.length > 0) {
             logger.info('Syncing desktop state:', windows);
-            // Filter out browser and editor — browser windows are created by the
-            // tabs reconciler when daemon tab broadcasts arrive; editor windows
-            // require a file path (via editorStore) and can't be meaningfully
-            // restored from just the type string.
-            const nonBrowserWindows = windows.filter(w => w !== 'browser' && w !== 'editor') as WindowType[];
+            // Filter out browser, editor, and document-viewer — browser windows
+            // are created by the tabs reconciler when daemon tab broadcasts
+            // arrive; editor/document-viewer windows require a file path and
+            // restore as useless blank shells from just the type string.
+            const nonBrowserWindows = windows.filter(w => w !== 'browser' && w !== 'editor' && w !== 'document-viewer') as WindowType[];
             if (nonBrowserWindows.length > 0) {
               useWindowStore.getState().openWindowsGrid(nonBrowserWindows);
             }
@@ -8517,7 +8555,9 @@ export const useComputerStore = create<ComputerStore>()(
             if (isDocumentFile(path)) {
               openDocumentViewer(path, fsWsId);
             } else if (isTextFile(path)) {
-              useEditorStore.getState().openOrRefreshFile(path, fsWsId);
+              // Agent-driven refresh: update the buffer without stealing
+              // window focus from whatever the user is doing.
+              useEditorStore.getState().openOrRefreshFile(path, fsWsId, { focus: false });
             } else {
               useWindowStore.getState().ensureWindowOpen('files', fsWsId);
             }

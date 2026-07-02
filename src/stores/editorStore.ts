@@ -33,7 +33,7 @@ interface EditorStore {
    * Open a file if no window exists for it, or refresh it if already open.
    * Returns the window ID.
    */
-  openOrRefreshFile: (filePath: string, workspaceId?: string) => string;
+  openOrRefreshFile: (filePath: string, workspaceId?: string, opts?: { focus?: boolean }) => string;
   /** Remove file state for a window (called when window closes). */
   closeFile: (windowId: string) => void;
   /** Update the content for a window's file. */
@@ -187,10 +187,12 @@ export const useEditorStore = create<EditorStore>()(
       });
     },
 
-    openOrRefreshFile: (filePath: string, workspaceId?: string) => {
+    openOrRefreshFile: (filePath: string, workspaceId?: string, opts?: { focus?: boolean }) => {
       const existingWindowId = get().findWindowByPath(filePath);
       if (existingWindowId) {
-        useWindowStore.getState().focusWindow(existingWindowId);
+        // Agent-driven refreshes (fs:write/fs:edit) pass focus: false so the
+        // viewer updates without yanking focus from what the user is doing.
+        if (opts?.focus !== false) useWindowStore.getState().focusWindow(existingWindowId);
         get().refreshFile(existingWindowId);
         return existingWindowId;
       }

@@ -4,7 +4,7 @@ import { X, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWindowStore } from '@/stores/windowStore';
 import { useWindowAccessoryStore } from '@/stores/windowAccessoryStore';
-import { useComputerStore } from '@/stores/agentStore';
+import { useComputerStore, retainAgentOpenedWindow } from '@/stores/agentStore';
 import { useSound } from '@/hooks/useSound';
 import { TitleBar } from './TitleBar';
 import { ResizeHandles } from './ResizeHandles';
@@ -616,8 +616,11 @@ export function Window({ config, children, missionControlTarget, missionControlI
     if (!isFocused) {
       play('click');
       focusWindow(config.id);
+      // A user click on an agent-opened window claims it — cancel any
+      // pending auto-close so it isn't yanked away mid-use.
+      retainAgentOpenedWindow(config.id, config.type);
     }
-  }, [config.id, isFocused, focusWindow, play]);
+  }, [config.id, config.type, isFocused, focusWindow, play]);
 
   // ── Workspace helpers (used by both MC drag and context menu) ────
   const workspaces = useWindowStore((s) => s.workspaces);

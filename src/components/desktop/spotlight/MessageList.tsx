@@ -50,7 +50,7 @@ function MessageHoverSlot({ timestamp, onReply }: { timestamp?: Date; onReply: (
         Reply
       </button>
       {label && (
-        <span className="text-[9px] text-text-muted/30rap select-none">
+        <span className="text-[9px] text-text-muted/30 whitespace-nowrap select-none">
           {label}
         </span>
       )}

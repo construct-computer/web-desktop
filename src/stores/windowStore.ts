@@ -364,6 +364,28 @@ const SINGLETON_TYPES: Set<WindowType> = new Set([
   // each connecting to a separate tmux session via the terminalId metadata.
 ]);
 
+
+// ── Z-index hygiene ──────────────────────────────────────────────────────
+// nextZIndex only ever increments; without compaction a long-lived session
+// eventually paints windows above the dock/menubar/modals (taskbar = 900).
+// When the counter nears the taskbar layer, re-rank all windows densely from
+// Z_INDEX.window, preserving relative order.
+const Z_INDEX_CEILING = Z_INDEX.taskbar - 50;
+
+function normalizeZIndexes(
+  windows: WindowConfig[],
+  nextZIndex: number,
+): { windows: WindowConfig[]; nextZIndex: number } {
+  if (nextZIndex < Z_INDEX_CEILING) return { windows, nextZIndex };
+  const order = new Map(
+    [...windows].sort((a, b) => a.zIndex - b.zIndex).map((w, i) => [w.id, Z_INDEX.window + i]),
+  );
+  return {
+    windows: windows.map((w) => ({ ...w, zIndex: order.get(w.id) ?? w.zIndex })),
+    nextZIndex: Z_INDEX.window + windows.length,
+  };
+}
+
 export const useWindowStore = create<WindowStore>()(
   subscribeWithSelector((set, get) => ({
     windows: [],
@@ -622,7 +644,7 @@ export const useWindowStore = create<WindowStore>()(
       const height = chatBounds?.height ?? clamp(options.height ?? defaultBounds.height, 1, workArea.height);
       const { x, y } = chatBounds ?? computeVisuallyCenteredPosition(workArea, { width, height }, { mobile });
 
-      const { windows, nextZIndex } = get();
+      const { windows, nextZIndex } = normalizeZIndexes(get().windows, get().nextZIndex);
 
       const id = options.id ?? generateId('window');
       
@@ -822,7 +844,8 @@ export const useWindowStore = create<WindowStore>()(
     },
     
     focusWindow: (id) => {
-      const { windows, nextZIndex, focusedWindowId } = get();
+      const { focusedWindowId } = get();
+      const { windows, nextZIndex } = normalizeZIndexes(get().windows, get().nextZIndex);
       if (id === focusedWindowId) return;
       
       const window = windows.find((w) => w.id === id);
@@ -848,10 +871,13 @@ export const useWindowStore = create<WindowStore>()(
               { width: window.width, height: window.height },
               hasVisibleDesktopWindows(get()) ? 'side' : 'center',
             )
-          : computeVisuallyCenteredPosition(workArea, {
-              width: window.width,
-              height: window.height,
-            });
+          : window.previousBounds
+            // Restore where the user left it, clamped to the current viewport.
+            ? clampBoundsToWorkArea(window.previousBounds, workArea)
+            : computeVisuallyCenteredPosition(workArea, {
+                width: window.width,
+                height: window.height,
+              });
       }
 
       set({
@@ -922,6 +948,11 @@ export const useWindowStore = create<WindowStore>()(
             ? {
                 ...w,
                 state: 'minimized',
+                // Remember placement so un-minimize restores it instead of
+                // recentering (which discarded user positioning).
+                previousBounds: collapseFromMaximized
+                  ? w.previousBounds
+                  : { x: w.x, y: w.y, width: w.width, height: w.height },
                 ...(collapsedBounds ?? {}),
               }
             : w
@@ -985,7 +1016,7 @@ export const useWindowStore = create<WindowStore>()(
     },
     
     maximizeWindow: (id) => {
-      const { windows, nextZIndex } = get();
+      const { windows, nextZIndex } = normalizeZIndexes(get().windows, get().nextZIndex);
       const window = windows.find((w) => w.id === id);
       if (!window) return;
       
@@ -1491,3 +1522,41 @@ function centerStageActiveWindow(wsId: string): void {
 }
 
 // Workspace sync to agent removed — workspaces are client-side only.
+
+// ── Viewport resize re-clamp ─────────────────────────────────────────────
+// Without this, shrinking the browser window leaves windows positioned for
+// the old viewport (off-screen / under the dock), and "maximized" windows
+// keep bounds baked at click time.
+if (typeof window !== 'undefined') {
+  let reclampTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener('resize', () => {
+    clearTimeout(reclampTimer);
+    reclampTimer = setTimeout(() => {
+      const store = useWindowStore.getState();
+      const mobile = isMobileViewport();
+      if (mobile) return; // MobileWindow renders full-screen sheets; nothing to clamp.
+      const workArea = getDesktopWorkArea({ stageManagerActive: store.stageManagerActive, mobile });
+      const next = store.windows.map((w) => {
+        if (w.workspaceId === CHAT_OVERLAY_WORKSPACE_ID) return w;
+        if (w.state === 'maximized') {
+          return {
+            ...w,
+            x: workArea.x,
+            y: workArea.y,
+            width: workArea.width,
+            height: workArea.height,
+          };
+        }
+        if (w.state !== 'normal') return w;
+        const width = Math.min(w.width, workArea.width);
+        const height = Math.min(w.height, workArea.height);
+        const x = Math.min(Math.max(w.x, workArea.x), workArea.x + workArea.width - width);
+        const y = Math.min(Math.max(w.y, workArea.y), workArea.y + workArea.height - height);
+        if (x === w.x && y === w.y && width === w.width && height === w.height) return w;
+        return { ...w, x, y, width, height };
+      });
+      const changed = next.some((w, i) => w !== store.windows[i]);
+      if (changed) useWindowStore.setState({ windows: next });
+    }, 200);
+  });
+}

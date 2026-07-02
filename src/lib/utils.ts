@@ -161,3 +161,16 @@ export function openConstructDeepLink(url: string): boolean {
   if (!useWindowStore.getState().spotlightOpen) toggleSpotlight();
   return true;
 }
+
+/**
+ * True when the user is actively typing in a text-entry element (input,
+ * textarea, contentEditable, or Monaco). Agent-initiated window opens must
+ * not steal keyboard focus in that case.
+ */
+export function isTextEntryFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable
+    || el.closest('.monaco-editor') !== null;
+}

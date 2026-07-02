@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { retainAgentOpenedWindow, useComputerStore } from '@/stores/agentStore';
 import { convertContainerFilePreview, downloadContainerFile, downloadDriveFile, getFileMeta, previewContainerFile, writeFile, type FileMetaResponse } from '@/services/api';
-import { getDocumentType, isTextFile } from '@/lib/utils';
+import { getDocumentType, isTextFile, isTextEntryFocused } from '@/lib/utils';
 import { log } from '@/lib/logger';
 import { fileNameFromWorkspacePath } from '@/lib/workspacePaths';
 import {
@@ -871,12 +871,14 @@ export function DocumentViewerWindow({ config }: { config: WindowConfig }) {
     _editor.onDidChangeCursorSelection(updateCursor);
     updateCursor();
 
-    _editor.focus();
+    // Never steal keyboard focus from something the user is typing in —
+    // agent file writes mount/refresh this editor mid-conversation.
+    if (!isTextEntryFocused()) _editor.focus();
   }, []);
 
   // Focus editor when text file finishes loading
   useEffect(() => {
-    if (editorRef.current && isTextMode && editorFile && !editorFile.loading) {
+    if (editorRef.current && isTextMode && editorFile && !editorFile.loading && !isTextEntryFocused()) {
       requestAnimationFrame(() => editorRef.current?.focus());
     }
   }, [isTextMode, editorFile?.loading]);

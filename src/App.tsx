@@ -133,7 +133,9 @@ function OAuthCallbackCloser() {
       ch.close();
     } catch { /* not supported */ }
     if (window.opener) {
-      try { window.opener.postMessage(payload, '*'); } catch { /* cross-origin */ }
+      // Scope to our own origin — OAuth callback params must not be broadcast
+      // to whatever window happened to open this popup.
+      try { window.opener.postMessage(payload, window.location.origin); } catch { /* cross-origin */ }
     }
     window.close();
   }, []);

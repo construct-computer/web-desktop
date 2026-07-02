@@ -373,21 +373,17 @@ describe('minimize restore visual centering', () => {
     vi.unstubAllGlobals();
   });
 
-  it('focusWindow recenters after minimize restore', () => {
+  it('focusWindow restores the pre-minimize position, clamped to the work area', () => {
     const store = useWindowStore.getState();
     const id = store.openWindow('settings');
-    const opened = useWindowStore.getState().windows.find((w) => w.id === id)!;
     const workArea = getDesktopWorkArea({ mobile: false, stageManagerActive: false });
-    const expected = computeVisuallyCenteredPosition(workArea, {
-      width: opened.width,
-      height: opened.height,
-    });
 
+    // Place the window at a deliberate user position inside the work area.
+    const userX = workArea.x + 12;
+    const userY = workArea.y + 20;
     useWindowStore.setState({
       windows: useWindowStore.getState().windows.map((w) =>
-        w.id === id
-          ? { ...w, y: legacyViewportCenterY(w.height, 900) }
-          : w,
+        w.id === id ? { ...w, x: userX, y: userY } : w,
       ),
     });
 
@@ -396,9 +392,24 @@ describe('minimize restore visual centering', () => {
 
     const restored = useWindowStore.getState().windows.find((w) => w.id === id)!;
     expect(restored.state).toBe('normal');
-    expect(restored.x).toBe(expected.x);
-    expect(restored.y).toBe(expected.y);
-    expect(restored.y).not.toBe(legacyViewportCenterY(restored.height, 900));
+    // User placement is preserved (previously restore always recentered).
+    expect(restored.x).toBe(userX);
+    expect(restored.y).toBe(userY);
+
+    // A position outside the work area (e.g. legacy persisted bounds under
+    // the dock) is clamped back inside on restore.
+    useWindowStore.setState({
+      windows: useWindowStore.getState().windows.map((w) =>
+        w.id === id
+          ? { ...w, y: legacyViewportCenterY(w.height, 900) }
+          : w,
+      ),
+    });
+    store.minimizeWindow(id);
+    useWindowStore.getState().focusWindow(id);
+    const reclamped = useWindowStore.getState().windows.find((w) => w.id === id)!;
+    expect(reclamped.y + reclamped.height).toBeLessThanOrEqual(workArea.y + workArea.height);
+    expect(reclamped.y).toBeGreaterThanOrEqual(workArea.y);
   });
 
   it('stage manager minimize restore keeps dock-aware visual center', async () => {
